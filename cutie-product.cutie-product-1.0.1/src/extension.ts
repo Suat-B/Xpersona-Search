@@ -17,6 +17,7 @@ type WebviewMessage =
   | { type: "submitPrompt"; prompt: string; mentions?: CutieMentionSuggestion[] }
   | { type: "newChat" }
   | { type: "selectSession"; sessionId: string }
+  | { type: "copyDebug" }
   | { type: "captureScreen" }
   | { type: "stopAutomation" }
   | { type: "signIn" }
@@ -214,6 +215,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
     }
     if (message.type === "newChat") return this.newChat();
     if (message.type === "selectSession") return this.loadSession(message.sessionId);
+    if (message.type === "copyDebug") return this.copyDebugReport();
     if (message.type === "captureScreen") return this.captureScreen();
     if (message.type === "stopAutomation") return this.stopAutomation();
     if (message.type === "signIn") return this.auth.signInWithBrowser();
@@ -229,6 +231,8 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
   private async requireAuth(): Promise<RequestAuth | null> {
     const auth = await this.auth.getRequestAuth();
     if (!auth) {
+      this.status = "Sign in to Xpersona or set an API key before running Cutie.";
+      await this.emitState();
       void vscode.window.showWarningMessage("Sign in to Xpersona or set an API key before running Cutie.");
       return null;
     }
@@ -271,9 +275,16 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       ? {
           path: toWorkspaceRelativePath(activeEditor.document.uri) || undefined,
           language: activeEditor.document.languageId,
+          lineCount: activeEditor.document.lineCount,
           ...(activeEditor.selection.isEmpty
-            ? { content: activeEditor.document.getText().slice(0, 16_000) }
-            : { selection: activeEditor.document.getText(activeEditor.selection).slice(0, 12_000) }),
+            ? { preview: activeEditor.document.getText().slice(0, 2_000) }
+            : {
+                selection: activeEditor.document.getText(activeEditor.selection).slice(0, 2_000),
+                selectionRange: {
+                  startLine: activeEditor.selection.start.line + 1,
+                  endLine: activeEditor.selection.end.line + 1,
+                },
+              }),
         }
       : undefined;
 
@@ -284,7 +295,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
         return {
           path: relativePath,
           language: editor.document.languageId,
-          excerpt: editor.document.getText().slice(0, 4_000),
+          lineCount: editor.document.lineCount,
         };
       })
       .filter((value): value is NonNullable<typeof value> => Boolean(value))
@@ -384,7 +395,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       .map((item) => ({
         kind: "file",
         label: item.path,
-        insertText: `@${item.path}`,
+        insertText: `@"${item.path}"`,
         ...(item.detail ? { detail: item.detail } : {}),
       } satisfies CutieMentionSuggestion));
 
@@ -421,7 +432,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       .map((item) => ({
         kind: "window",
         label: item.label,
-        insertText: `@window:${item.label}`,
+        insertText: `@window:"${item.label}"`,
         ...(item.detail ? { detail: item.detail } : {}),
       } satisfies CutieMentionSuggestion));
 
@@ -429,11 +440,14 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async runPrompt(prompt: string, mentions: CutieMentionSuggestion[] = []): Promise<void> {
-    const auth = await this.requireAuth();
-    if (!auth) return;
-
     const trimmedPrompt = String(prompt || "").trim();
     if (!trimmedPrompt) return;
+
+    this.status = "Preparing your Cutie run...";
+    await this.emitState();
+
+    const auth = await this.requireAuth();
+    if (!auth) return;
 
     const session = await this.ensureSession(trimmedPrompt);
     this.currentAbortController?.abort();
@@ -454,8 +468,8 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
             this.activeSession = nextSession;
             this.activeSessionId = nextSession.id;
             this.activeRun = this.sessionStore.getLatestRun(nextSession);
-            await this.refreshDesktopState();
             await this.emitState();
+            void this.refreshDesktopState().then(() => this.emitState());
           },
           onStatusChanged: async (status, run) => {
             this.status = status;
@@ -463,8 +477,8 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
             if (!run || run.status !== "running") {
               this.streamingAssistantText = "";
             }
-            await this.refreshDesktopState();
             await this.emitState();
+            void this.refreshDesktopState().then(() => this.emitState());
           },
           onAssistantDelta: async (_delta, accumulated) => {
             this.streamingAssistantText = accumulated;
@@ -494,6 +508,67 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       await this.refreshDesktopState();
       await this.emitState();
     }
+  }
+
+  private async copyDebugReport(): Promise<void> {
+    const session = this.activeSession;
+    const run = this.activeRun;
+    const messages = this.getVisibleMessages();
+    const debugPayload = {
+      exportedAt: new Date().toISOString(),
+      extensionVersion: getExtensionVersion(this.context),
+      workspaceHash: getWorkspaceHash(),
+      status: this.status,
+      auth: {
+        kind: this.authState.kind,
+        label: this.authState.label,
+      },
+      session: session
+        ? {
+            id: session.id,
+            title: session.title,
+            updatedAt: session.updatedAt,
+            snapshotCount: session.snapshots.length,
+          }
+        : null,
+      activeRun: run
+        ? {
+            id: run.id,
+            status: run.status,
+            phase: run.phase,
+            stepCount: run.stepCount,
+            maxSteps: run.maxSteps,
+            workspaceMutationCount: run.workspaceMutationCount,
+            maxWorkspaceMutations: run.maxWorkspaceMutations,
+            desktopMutationCount: run.desktopMutationCount,
+            maxDesktopMutations: run.maxDesktopMutations,
+            repeatedCallCount: run.repeatedCallCount,
+            lastToolName: run.lastToolName || null,
+            error: run.error || null,
+            startedAt: run.startedAt,
+            endedAt: run.endedAt || null,
+            receipts: run.receipts,
+          }
+        : null,
+      desktop: {
+        platform: this.desktopState.platform,
+        activeWindow: this.desktopState.activeWindow || null,
+        displays: this.desktopState.displays,
+        recentSnapshots: this.desktopState.recentSnapshots,
+      },
+      recentMessages: messages.slice(-12).map((message) => ({
+        role: message.role,
+        content: message.content,
+        createdAt: message.createdAt,
+        runId: message.runId || null,
+      })),
+    };
+
+    const payloadText = JSON.stringify(debugPayload, null, 2);
+    await vscode.env.clipboard.writeText(payloadText);
+    this.status = "Cutie debug report copied to clipboard.";
+    await this.emitState();
+    void vscode.window.showInformationMessage("Cutie debug report copied to your clipboard.");
   }
 
   private getVisibleMessages(): CutieChatMessage[] {

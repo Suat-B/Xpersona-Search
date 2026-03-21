@@ -36,8 +36,8 @@ function extractAvailableFunctions(sourceGraph: BinarySourceGraph | null | undef
   if (!sourceGraph) return [];
   const seen = new Set<string>();
   const out: BinaryExecutionFunction[] = [];
-  for (const module of sourceGraph.modules) {
-    for (const fn of module.functions) {
+  for (const mod of sourceGraph.modules) {
+    for (const fn of mod.functions) {
       if (!fn.exported) continue;
       const key = `${fn.sourcePath}#${fn.name}`;
       if (seen.has(key)) continue;

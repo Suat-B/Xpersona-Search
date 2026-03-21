@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import fs from "node:fs/promises";
 import path from "node:path";
+import Image from "next/image";
 import Link from "next/link";
 
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
@@ -229,9 +230,11 @@ export default async function ArtifactsPage() {
                   className="group rounded-2xl border border-[var(--border)] bg-[var(--bg-elevated)] p-5 transition-colors hover:border-[var(--accent-heart)]/40"
                 >
                   <div className="flex items-start gap-4">
-                    <img
+                    <Image
                       src={artifact.gemSrc}
                       alt=""
+                      width={64}
+                      height={64}
                       className="h-16 w-16 flex-none rounded-2xl border border-white/10 bg-black/10 object-cover"
                     />
                     <div className="min-w-0 flex-1">
@@ -346,7 +349,13 @@ export default async function ArtifactsPage() {
                 key={gemSrc}
                 className="rounded-2xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 text-center"
               >
-                <img src={gemSrc} alt="" className="mx-auto h-24 w-24 rounded-2xl object-cover" />
+                <Image
+                  src={gemSrc}
+                  alt=""
+                  width={96}
+                  height={96}
+                  className="mx-auto h-24 w-24 rounded-2xl object-cover"
+                />
                 <p className="mt-3 text-xs text-[var(--text-tertiary)]">{gemSrc.replace("/", "")}</p>
               </div>
             ))}

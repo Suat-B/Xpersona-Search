@@ -29,6 +29,16 @@ type HfRouterChunk = {
   model?: string;
 };
 
+type HfRouterNonStreamResponse = {
+  choices?: Array<{
+    message?: {
+      content?: string | null;
+    };
+  }>;
+  usage?: Record<string, unknown>;
+  model?: string;
+};
+
 function sse(event: string, data: unknown): string {
   return `data: ${JSON.stringify({ event, data })}\n\n`;
 }
@@ -210,6 +220,59 @@ async function streamHfRouterResponse(input: {
   });
 }
 
+async function requestHfRouterResponse(input: {
+  body: z.infer<typeof zCutieChatRequest>;
+}): Promise<Response> {
+  const token = String(process.env.HF_TOKEN || "").trim();
+  if (!token) {
+    return jsonResponse(
+      {
+        error: {
+          code: "CUTIE_ROUTER_TOKEN_MISSING",
+          message: "HF_TOKEN is not configured for the Cutie model proxy.",
+        },
+      },
+      500
+    );
+  }
+
+  const upstream = await fetch(`${CUTIE_ROUTER_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      model: input.body.model,
+      messages: input.body.messages,
+      stream: false,
+      temperature: input.body.temperature ?? 0.2,
+      max_tokens: input.body.maxTokens ?? 1200,
+    }),
+  });
+
+  if (!upstream.ok) {
+    const raw = await upstream.text().catch(() => "");
+    return jsonResponse(
+      {
+        error: {
+          code: "CUTIE_ROUTER_REQUEST_FAILED",
+          message: raw || `Hugging Face Router request failed with ${upstream.status}.`,
+        },
+      },
+      upstream.status || 502
+    );
+  }
+
+  const data = (await upstream.json().catch(() => ({}))) as HfRouterNonStreamResponse;
+  const text = String(data.choices?.[0]?.message?.content || "");
+  return jsonResponse({
+    text,
+    model: data.model || input.body.model,
+    usage: data.usage || null,
+  });
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
   const auth = await authenticatePlaygroundRequest(request);
   if (!auth) return unauthorized(request);
@@ -227,6 +290,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       },
       400
     );
+  }
+
+  if (parsed.data.stream === false) {
+    return requestHfRouterResponse({
+      body: parsed.data,
+    });
   }
 
   return streamHfRouterResponse({

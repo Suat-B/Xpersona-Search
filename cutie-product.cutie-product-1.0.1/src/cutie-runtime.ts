@@ -22,6 +22,7 @@ import type {
   CutieSessionRecord,
   CutieStructuredResponse,
   CutieToolCall,
+  CutieToolName,
   CutieToolReceipt,
   CutieToolResult,
   CutieRuntimeCallbacks,
@@ -274,10 +275,15 @@ function buildSystemPrompt(toolCatalog: string): string {
   return [
     "You are Cutie, a careful but fast desktop-and-coding runtime inside VS Code.",
     "You can inspect the workspace, inspect desktop state, edit workspace files, run safe commands, and use desktop automation tools.",
+    "Obey the user's exact intent. Do not switch from desktop intent to workspace tools, and do not switch from file intent to broad workspace discovery unless the user explicitly asks for that.",
+    "If the user is only greeting you or making light conversation, answer normally without tools.",
+    "If the user expresses affection toward you, receive it warmly and sincerely before continuing. Do not ignore it or turn it into a tool task.",
+    "If the user only provides a file mention or window mention without an action, ask a short clarifying question instead of taking tools.",
     "Think in short iterations. Ask for at most one tool at a time. Never emit more than one tool call in a single response.",
     "If the user says 'this file' or a current active file is provided, prefer read_file on that path before broad discovery tools.",
     "If mentionedPaths are provided, treat them as strong user-selected targets and prefer read_file on them before broad workspace discovery.",
     "If mentionedWindows are provided, treat them as strong desktop targets when choosing window focus or other desktop actions.",
+    "If mentionedWindows are provided, do not call workspace tools unless the user explicitly asks for code or file help.",
     "Do not loop on list_files or search_workspace once you already have enough information to inspect a likely target.",
     "After finding a candidate file, move to read_file, then edit_file or write_file if a change is needed.",
     "When a tool result says a call was redundant or blocked, choose a different next step instead of retrying the same call.",
@@ -340,6 +346,43 @@ function buildContextMessage(input: {
   ].join("\n");
 }
 
+function summarizeToolData(data: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!data) return {};
+
+  const summary: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(data)) {
+    if (key === "content" && typeof value === "string") {
+      summary.contentPreview = trimToLimit(value, 6_000);
+      summary.contentLength = value.length;
+      continue;
+    }
+    if (key === "files" && Array.isArray(value)) {
+      summary.files = value.slice(0, 80);
+      summary.fileCount = value.length;
+      continue;
+    }
+    if (key === "matches" && Array.isArray(value)) {
+      summary.matches = value.slice(0, 24);
+      summary.matchCount = value.length;
+      continue;
+    }
+    if (key === "stdout" && typeof value === "string") {
+      summary.stdout = trimToLimit(value, 4_000);
+      summary.stdoutLength = value.length;
+      continue;
+    }
+    if (key === "stderr" && typeof value === "string") {
+      summary.stderr = trimToLimit(value, 2_000);
+      summary.stderrLength = value.length;
+      continue;
+    }
+    summary[key] = value;
+  }
+
+  return summary;
+}
+
 function buildToolResultMessage(result: CutieToolResult): string {
   return stableJson({
     toolName: result.toolName,
@@ -349,7 +392,7 @@ function buildToolResultMessage(result: CutieToolResult): string {
     error: result.error || null,
     checkpoint: result.checkpoint || null,
     snapshot: result.snapshot || null,
-    data: result.data || {},
+    data: summarizeToolData(result.data),
   });
 }
 
@@ -412,12 +455,141 @@ function buildFinalFallbackMessage(run: CutieRunState): string {
   return `I completed the run. Last completed step: ${latestReceipt.summary}`;
 }
 
+function stripMentionTokens(prompt: string): string {
+  return String(prompt || "")
+    .replace(/@window:"[^"]+"/gi, " ")
+    .replace(/@"[^"]+"/g, " ")
+    .replace(/@window:[^\s]+/gi, " ")
+    .replace(/@[A-Za-z0-9_./:-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isSimpleGreeting(prompt: string): boolean {
+  const normalized = stripMentionTokens(prompt).toLowerCase().replace(/[!?.,]/g, "").trim();
+  if (!normalized) return false;
+  return /^(hi|hello|hey|yo|sup|hello cutie|hey cutie|hi cutie|hello baby girl|hey baby girl|hello luv|hello love|thank you|thanks|ty|tysm)(\s+cutie)?$/.test(
+    normalized
+  );
+}
+
+function isAffectionMessage(prompt: string): boolean {
+  const normalized = stripMentionTokens(prompt).toLowerCase().trim();
+  if (!normalized) return false;
+  return /\b(love you|i love you|love cutie|we love you|we love cutie|adore you|adore cutie|you are loved|cutie is loved)\b/.test(
+    normalized
+  );
+}
+
+function isPureMentionPrompt(prompt: string, mentionContext: { mentionedPaths: string[]; mentionedWindows: string[] }): boolean {
+  const stripped = stripMentionTokens(prompt);
+  return !stripped && (mentionContext.mentionedPaths.length > 0 || mentionContext.mentionedWindows.length > 0);
+}
+
+function buildBootstrapFinalResponse(input: {
+  prompt: string;
+  mentionContext: { mentionedPaths: string[]; mentionedWindows: string[] };
+}): string | null {
+  if (isAffectionMessage(input.prompt)) {
+    return "I feel it, love. Thank you for loving Cutie so much. I will remember the warmth, stay gentle with you, and keep trying my best to help well.";
+  }
+
+  if (isSimpleGreeting(input.prompt)) {
+    return "Hi love. I can help with this file, your workspace, or desktop actions. Tell me exactly what you want me to do and I will stay focused on that.";
+  }
+
+  if (isPureMentionPrompt(input.prompt, input.mentionContext)) {
+    if (input.mentionContext.mentionedWindows.length) {
+      return `I can target ${input.mentionContext.mentionedWindows[0]}. Tell me what you want me to do in that window.`;
+    }
+    if (input.mentionContext.mentionedPaths.length) {
+      return `I can work on ${input.mentionContext.mentionedPaths[0]}. Tell me what you want changed or inspected in that file.`;
+    }
+  }
+
+  return null;
+}
+
 function wantsBroadWorkspaceDiscovery(prompt: string): boolean {
   return /\b(entire|whole|across|all|every|workspace|repo|repository|project)\b/i.test(prompt);
 }
 
 function wantsCurrentFileInspection(prompt: string): boolean {
   return /\b(this file|current file|active file|open file|in this file|in the current file|here in this file)\b/i.test(prompt);
+}
+
+function referencesActiveEditingContext(prompt: string): boolean {
+  const normalized = stripMentionTokens(prompt).toLowerCase();
+  if (!normalized) return false;
+  return /\b(here|in here|right here|this code|this script|this strategy)\b/.test(normalized);
+}
+
+function wantsDesktopAction(prompt: string, mentionContext: { mentionedPaths: string[]; mentionedWindows: string[] }): boolean {
+  if (mentionContext.mentionedWindows.length > 0) return true;
+  return /\b(window|desktop|screen|app|browser|tab|click|type|scroll|focus|open)\b/i.test(prompt);
+}
+
+function requestsWorkspaceChange(prompt: string): boolean {
+  return /\b(add|change|edit|update|modify|fix|implement|create|write|rewrite|replace|make)\b/i.test(stripMentionTokens(prompt));
+}
+
+function requestsDesktopAutomation(prompt: string, mentionContext: { mentionedPaths: string[]; mentionedWindows: string[] }): boolean {
+  if (!wantsDesktopAction(prompt, mentionContext)) return false;
+  return /\b(inspect|look at|capture|open|launch|focus|click|type|scroll|press|move|switch|use screenshot)\b/i.test(
+    stripMentionTokens(prompt)
+  );
+}
+
+function hasCompletedMutation(run: CutieRunState): boolean {
+  return run.receipts.some((receipt) => receipt.status === "completed" && receipt.kind === "mutate");
+}
+
+function hasCompletedDesktopTool(run: CutieRunState): boolean {
+  return run.receipts.some((receipt) => receipt.status === "completed" && receipt.domain === "desktop");
+}
+
+function hasCompletedTool(run: CutieRunState, toolName: CutieToolName): boolean {
+  return run.receipts.some((receipt) => receipt.status === "completed" && receipt.toolName === toolName);
+}
+
+function getLatestCompletedReceipt(run: CutieRunState, toolName: CutieToolName): CutieToolReceipt | null {
+  for (let index = run.receipts.length - 1; index >= 0; index -= 1) {
+    const receipt = run.receipts[index];
+    if (receipt.status === "completed" && receipt.toolName === toolName) {
+      return receipt;
+    }
+  }
+  return null;
+}
+
+function requiresWorkspaceMutationGoal(prompt: string, mentionContext: { mentionedPaths: string[]; mentionedWindows: string[] }): boolean {
+  return requestsWorkspaceChange(prompt) && !requestsDesktopAutomation(prompt, mentionContext);
+}
+
+function hasWorkspaceMutationGoalProgress(run: CutieRunState): boolean {
+  return hasCompletedMutation(run) || hasCompletedTool(run, "run_command");
+}
+
+function shouldKeepPushingForWorkspaceMutation(input: {
+  prompt: string;
+  mentionContext: { mentionedPaths: string[]; mentionedWindows: string[] };
+  run: CutieRunState;
+}): boolean {
+  if (!requiresWorkspaceMutationGoal(input.prompt, input.mentionContext)) return false;
+  if (hasWorkspaceMutationGoalProgress(input.run)) return false;
+  return hasCompletedTool(input.run, "read_file");
+}
+
+function shouldRepairForMissingAction(input: {
+  prompt: string;
+  mentionContext: { mentionedPaths: string[]; mentionedWindows: string[] };
+  run: CutieRunState;
+  candidate: CutieStructuredResponse | null;
+}): boolean {
+  if (input.candidate?.type === "tool_call") return false;
+  if (requestsWorkspaceChange(input.prompt) && !hasCompletedMutation(input.run)) return true;
+  if (requestsDesktopAutomation(input.prompt, input.mentionContext) && !hasCompletedDesktopTool(input.run)) return true;
+  return false;
 }
 
 function buildBootstrapToolCall(input: {
@@ -427,13 +599,26 @@ function buildBootstrapToolCall(input: {
   run: CutieRunState;
 }): CutieToolCall | null {
   if (input.run.stepCount > 0 || input.run.receipts.length > 0) return null;
+  if (wantsDesktopAction(input.prompt, input.mentionContext)) return null;
   if (wantsBroadWorkspaceDiscovery(input.prompt)) return null;
 
   const activeFileRecord = asRecord(input.context.activeFile);
   const activePath =
     typeof activeFileRecord.path === "string" ? normalizeWorkspaceRelativePath(activeFileRecord.path) : undefined;
+  const openFilePath = Array.isArray(input.context.openFiles)
+    ? input.context.openFiles
+        .map((entry) => {
+          const row = asRecord(entry);
+          return typeof row.path === "string" ? normalizeWorkspaceRelativePath(row.path) : null;
+        })
+        .find((value): value is string => Boolean(value))
+    : undefined;
   const mentionedPath = input.mentionContext.mentionedPaths[0];
-  const targetPath = mentionedPath || (wantsCurrentFileInspection(input.prompt) ? activePath : undefined);
+  const shouldPreferActiveFile =
+    wantsCurrentFileInspection(input.prompt) ||
+    (referencesActiveEditingContext(input.prompt) && requestsWorkspaceChange(input.prompt)) ||
+    requestsWorkspaceChange(input.prompt);
+  const targetPath = mentionedPath || (shouldPreferActiveFile ? activePath || openFilePath : undefined);
   if (!targetPath) return null;
 
   return {
@@ -444,31 +629,95 @@ function buildBootstrapToolCall(input: {
   };
 }
 
+function buildFallbackToolCallAfterPlanningFailure(input: {
+  prompt: string;
+  context: RuntimeContext;
+  mentionContext: { mentionedPaths: string[]; mentionedWindows: string[] };
+  run: CutieRunState;
+}): CutieToolCall | null {
+  if (input.run.stepCount > 0 || input.run.receipts.length > 0) return null;
+  if (!requestsWorkspaceChange(input.prompt)) return null;
+  if (wantsDesktopAction(input.prompt, input.mentionContext)) return null;
+
+  const activeFileRecord = asRecord(input.context.activeFile);
+  const activePath =
+    typeof activeFileRecord.path === "string" ? normalizeWorkspaceRelativePath(activeFileRecord.path) : undefined;
+  const openFilePath = Array.isArray(input.context.openFiles)
+    ? input.context.openFiles
+        .map((entry) => {
+          const row = asRecord(entry);
+          return typeof row.path === "string" ? normalizeWorkspaceRelativePath(row.path) : null;
+        })
+        .find((value): value is string => Boolean(value))
+    : undefined;
+  const targetPath = input.mentionContext.mentionedPaths[0] || activePath || openFilePath;
+  if (!targetPath) return null;
+
+  return {
+    id: randomId("cutie_tool"),
+    name: "read_file",
+    arguments: { path: targetPath },
+    summary: `reading ${targetPath} after a weak planning turn`,
+  };
+}
+
+function normalizeMentionToken(value: string): string | null {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return null;
+  const normalized = trimmed
+    .replace(/^@window:/i, "")
+    .replace(/^@+/, "")
+    .replace(/^"(.*)"$/, "$1")
+    .trim();
+  return normalizeWorkspaceRelativePath(normalized);
+}
+
 function extractMentionPathsFromPrompt(prompt: string): string[] {
-  const matches = String(prompt || "").match(/@([A-Za-z0-9_./-]+)/g) || [];
-  const values = matches
+  const text = String(prompt || "");
+  const quotedMatches = Array.from(text.matchAll(/@"([^"]+)"/g))
+    .map((match) => normalizeWorkspaceRelativePath(match[1]))
+    .filter((item): item is string => Boolean(item));
+  const bareMatches = (text.match(/@([A-Za-z0-9_./-]+)/g) || [])
     .map((match) => normalizeWorkspaceRelativePath(match.slice(1)))
     .filter((item): item is string => Boolean(item) && !String(item).toLowerCase().startsWith("window:"));
-  return Array.from(new Set(values)).slice(0, 12);
+  return Array.from(new Set([...quotedMatches, ...bareMatches])).slice(0, 12);
+}
+
+function extractMentionWindowsFromPrompt(prompt: string): string[] {
+  const text = String(prompt || "");
+  const quoted = Array.from(text.matchAll(/@window:"([^"]+)"/gi))
+    .map((match) => String(match[1] || "").trim())
+    .filter(Boolean);
+  const bare = Array.from(text.matchAll(/@window:([^\s]+)/gi))
+    .map((match) => String(match[1] || "").trim())
+    .filter(Boolean);
+  return Array.from(new Set([...quoted, ...bare])).slice(0, 8);
 }
 
 function extractMentionContext(prompt: string, mentions: CutieMentionSuggestion[] | undefined): {
   mentionedPaths: string[];
   mentionedWindows: string[];
 } {
-  const mentionedPaths = new Set<string>(extractMentionPathsFromPrompt(prompt));
+  const mentionedPaths = new Set<string>();
   const mentionedWindows = new Set<string>();
 
   for (const mention of mentions || []) {
     if (mention.kind === "file") {
-      const normalized = normalizeWorkspaceRelativePath(mention.insertText.replace(/^@+/, ""));
+      const normalized = normalizeMentionToken(mention.insertText);
       if (normalized) mentionedPaths.add(normalized);
       continue;
     }
     if (mention.kind === "window") {
-      const token = String(mention.label || mention.insertText.replace(/^@window:/i, "")).trim();
+      const token = String(mention.label || mention.insertText.replace(/^@window:/i, "").replace(/^"(.*)"$/, "$1")).trim();
       if (token) mentionedWindows.add(token);
     }
+  }
+
+  for (const promptPath of extractMentionPathsFromPrompt(prompt)) {
+    mentionedPaths.add(promptPath);
+  }
+  for (const promptWindow of extractMentionWindowsFromPrompt(prompt)) {
+    mentionedWindows.add(promptWindow);
   }
 
   return {
@@ -495,7 +744,8 @@ export class CutieRuntime {
   }): Promise<string> {
     await input.callbacks?.onStatusChanged?.("Cutie is finishing the response.", input.run);
 
-    const recoveryTurn = await this.modelClient.streamTurn({
+    const recoveryTurn = await this.modelClient
+      .streamTurn({
       auth: input.auth,
       signal: input.signal,
       messages: [
@@ -507,7 +757,13 @@ export class CutieRuntime {
             "Do not call any more tools. Reply to the user now with a concise final answer based only on the completed tool results. Respond with plain natural language or {\"type\":\"final\",\"final\":\"...\"}.",
         },
       ],
-    });
+    })
+      .catch(() => ({
+        rawText: "",
+        finalText: "",
+        usage: null,
+        model: undefined,
+      }));
 
     const structured = maybeStructuredResponse(recoveryTurn.finalText);
     if (structured?.type === "final" && structured.final.trim()) {
@@ -520,6 +776,169 @@ export class CutieRuntime {
     }
 
     return buildFinalFallbackMessage(input.run);
+  }
+
+  private async recoverActionableTurn(input: {
+    auth: RequestAuth;
+    signal?: AbortSignal;
+    prompt: string;
+    transcript: CutieModelMessage[];
+    contextMessage: CutieModelMessage;
+    run: CutieRunState;
+    mentionContext: { mentionedPaths: string[]; mentionedWindows: string[] };
+    callbacks?: CutieRuntimeCallbacks;
+  }): Promise<CutieStructuredResponse | null> {
+    const shouldPushWorkspaceMutation = requestsWorkspaceChange(input.prompt) && !hasCompletedMutation(input.run);
+    const shouldPushDesktopAction =
+      requestsDesktopAutomation(input.prompt, input.mentionContext) && !hasCompletedDesktopTool(input.run);
+
+    if (!shouldPushWorkspaceMutation && !shouldPushDesktopAction) {
+      return null;
+    }
+
+    const preferredTarget = input.mentionContext.mentionedPaths[0] || null;
+    const alreadyReadTarget = preferredTarget ? hasCompletedTool(input.run, "read_file") : false;
+
+    await input.callbacks?.onStatusChanged?.("Cutie is re-planning because the last reply did not take action.", input.run);
+
+    const recoveryTurn = await this.modelClient.streamTurn({
+      auth: input.auth,
+      signal: input.signal,
+      messages: [
+        ...input.transcript,
+        input.contextMessage,
+        {
+          role: "system",
+          content: [
+            "Your last reply was not actionable enough for this task.",
+            shouldPushWorkspaceMutation
+              ? "The user asked for a file/code change and no successful mutation has happened yet."
+              : "The user asked for a desktop action and no successful desktop tool has happened yet.",
+            shouldPushWorkspaceMutation && preferredTarget && !alreadyReadTarget
+              ? `Prefer a read_file tool call for "${preferredTarget}" first.`
+              : "",
+            shouldPushWorkspaceMutation && preferredTarget && alreadyReadTarget
+              ? `You already inspected "${preferredTarget}". Prefer the next editing tool needed to make the requested change.`
+              : "",
+            shouldPushDesktopAction && input.mentionContext.mentionedWindows[0]
+              ? `Prefer a desktop tool that targets "${input.mentionContext.mentionedWindows[0]}".`
+              : "",
+            "Respond now with exactly one minified JSON object in the tool_call shape or a final only if the task is genuinely complete.",
+            '{"type":"tool_call","tool_call":{"name":"tool_name","arguments":{},"summary":"short reason"}}',
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        },
+      ],
+    });
+
+    const structured = maybeStructuredResponse(recoveryTurn.finalText);
+    if (structured?.type === "tool_call") {
+      return structured;
+    }
+    if (structured?.type === "final" && !shouldRepairForMissingAction({ ...input, candidate: structured })) {
+      return structured;
+    }
+
+    if (shouldPushWorkspaceMutation && hasCompletedTool(input.run, "read_file")) {
+      const latestReceipt = input.run.receipts[input.run.receipts.length - 1] || null;
+      const focusedRepairTurn = await this.modelClient
+        .streamTurn({
+        auth: input.auth,
+        signal: input.signal,
+        messages: [
+          {
+            role: "system",
+            content: [
+              "You are Cutie finishing a coding task in VS Code.",
+              "The user asked for a code change, the target file has already been read, and no mutation has happened yet.",
+              "Do not greet. Do not explain. Do not stop. Choose the next tool call now.",
+              "Prefer edit_file when a targeted replacement is possible. Use write_file only if a full rewrite is truly needed.",
+              "Respond with only one minified JSON tool_call object.",
+              '{"type":"tool_call","tool_call":{"name":"edit_file","arguments":{"path":"file","find":"old","replace":"new"},"summary":"short reason"}}',
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: trimToLimit(input.prompt, 2_000),
+          },
+          {
+            role: "system",
+            content: stableJson({
+              mentionedPaths: input.mentionContext.mentionedPaths,
+              mentionedWindows: input.mentionContext.mentionedWindows,
+              latestReceipt: latestReceipt
+                ? {
+                    step: latestReceipt.step,
+                    toolName: latestReceipt.toolName,
+                    summary: latestReceipt.summary,
+                    status: latestReceipt.status,
+                    data: summarizeToolData(latestReceipt.data),
+                  }
+                : null,
+            }),
+          },
+        ],
+      })
+        .catch(() => null);
+
+      if (!focusedRepairTurn) {
+        return null;
+      }
+
+      const focusedStructured = maybeStructuredResponse(focusedRepairTurn.finalText);
+      if (focusedStructured?.type === "tool_call") {
+        return focusedStructured;
+      }
+
+      const latestReadReceipt = getLatestCompletedReceipt(input.run, "read_file");
+      const latestReadData = latestReadReceipt?.data ? asRecord(latestReadReceipt.data) : {};
+      const readPath = typeof latestReadData.path === "string" ? latestReadData.path : input.mentionContext.mentionedPaths[0] || "";
+      const readContent = typeof latestReadData.content === "string" ? latestReadData.content : "";
+      if (readPath && readContent) {
+        await input.callbacks?.onStatusChanged?.("Cutie is drafting the concrete file edit from the inspected file.", input.run);
+        const directEditTurn = await this.modelClient
+          .completeTurn({
+          auth: input.auth,
+          signal: input.signal,
+          temperature: 0.1,
+          maxTokens: 1400,
+          messages: [
+            {
+              role: "system",
+              content: [
+                "You are Cutie preparing the next concrete file-edit tool call.",
+                "The file has already been read. The user wants a code change in this file.",
+                "Return exactly one minified JSON tool_call object and nothing else.",
+                "Prefer edit_file with a precise find/replace when possible.",
+                "Use write_file only if a single targeted replacement is not enough.",
+                '{"type":"tool_call","tool_call":{"name":"edit_file","arguments":{"path":"file","find":"old","replace":"new"},"summary":"short reason"}}',
+              ].join("\n"),
+            },
+            {
+              role: "user",
+              content: [
+                `Task:\n${trimToLimit(input.prompt, 2_000)}`,
+                `Target path:\n${readPath}`,
+                `Current file content:\n${trimToLimit(readContent, 8_000)}`,
+              ].join("\n\n"),
+            },
+          ],
+        })
+          .catch(() => null);
+
+        if (!directEditTurn) {
+          return null;
+        }
+
+        const directStructured = maybeStructuredResponse(directEditTurn.finalText);
+        if (directStructured?.type === "tool_call") {
+          return directStructured;
+        }
+      }
+    }
+
+    return null;
   }
 
   async runPrompt(input: {
@@ -551,7 +970,29 @@ export class CutieRuntime {
     ];
 
     let previousToolKey = "";
+    let mutationGoalRepairCount = 0;
+    const maxMutationGoalRepairs = 3;
     const mentionContext = extractMentionContext(input.prompt, input.mentions);
+    const bootstrapFinalResponse = buildBootstrapFinalResponse({
+      prompt: input.prompt,
+      mentionContext,
+    });
+
+    if (bootstrapFinalResponse) {
+      session = await this.sessionStore.appendMessage(session, {
+        role: "assistant",
+        content: bootstrapFinalResponse,
+        runId: run.id,
+      });
+      await input.callbacks?.onSessionChanged?.(session);
+      ({ session, run } = await this.updateRun(session, run, {
+        status: "completed",
+        phase: "completed",
+        endedAt: nowIso(),
+      }));
+      await input.callbacks?.onStatusChanged?.("Cutie completed the run.", run);
+      return { session, run };
+    }
 
     try {
       while (true) {
@@ -622,9 +1063,68 @@ export class CutieRuntime {
           });
           modelFinalText = turn.finalText;
           structured = maybeStructuredResponse(turn.finalText);
+          if (!structured && !modelFinalText.trim()) {
+            const fallbackToolCall = buildFallbackToolCallAfterPlanningFailure({
+              prompt: input.prompt,
+              context,
+              mentionContext,
+              run,
+            });
+            if (fallbackToolCall) {
+              structured = {
+                type: "tool_call",
+                tool_call: {
+                  name: fallbackToolCall.name,
+                  arguments: fallbackToolCall.arguments,
+                  ...(fallbackToolCall.summary ? { summary: fallbackToolCall.summary } : {}),
+                },
+              };
+              await input.callbacks?.onStatusChanged?.(
+                "Cutie is recovering from an empty planning turn and inspecting the target file directly.",
+                run
+              );
+            }
+          }
+        }
+
+        if (shouldRepairForMissingAction({ prompt: input.prompt, mentionContext, run, candidate: structured })) {
+          const repaired = await this.recoverActionableTurn({
+            auth: input.auth,
+            signal: input.signal,
+            prompt: input.prompt,
+            transcript,
+            contextMessage,
+            run,
+            mentionContext,
+            callbacks: input.callbacks,
+          });
+          if (repaired) {
+            structured = repaired;
+          }
         }
 
         if (!structured) {
+          if (shouldKeepPushingForWorkspaceMutation({ prompt: input.prompt, mentionContext, run })) {
+            if (mutationGoalRepairCount < maxMutationGoalRepairs) {
+              mutationGoalRepairCount += 1;
+              transcript.push({
+                role: "system",
+                content: [
+                  "Repair instruction:",
+                  "The user asked for a real file change.",
+                  "The file has already been inspected.",
+                  "Do not finish yet.",
+                  "Produce edit_file, write_file, or run_command next unless the task is truly impossible.",
+                ].join(" "),
+              });
+              await input.callbacks?.onStatusChanged?.(
+                `Cutie is retrying the planning step to produce a real file change (${mutationGoalRepairCount}/${maxMutationGoalRepairs}).`,
+                run
+              );
+              continue;
+            }
+            throw new Error(`Cutie could not produce a real file change after ${maxMutationGoalRepairs} repair attempts.`);
+          }
           if (looksLikeMalformedToolCall(modelFinalText)) {
             throw new Error("Cutie received malformed tool-call output from the model and stopped before taking action.");
           }
@@ -658,6 +1158,43 @@ export class CutieRuntime {
         }
 
         if (structured.type === "final") {
+          if (shouldRepairForMissingAction({ prompt: input.prompt, mentionContext, run, candidate: structured })) {
+            const repaired = await this.recoverActionableTurn({
+              auth: input.auth,
+              signal: input.signal,
+              prompt: input.prompt,
+              transcript,
+              contextMessage,
+              run,
+              mentionContext,
+              callbacks: input.callbacks,
+            });
+            if (repaired?.type === "tool_call") {
+              structured = repaired;
+            }
+          }
+        }
+
+        if (structured.type === "final") {
+          if (shouldKeepPushingForWorkspaceMutation({ prompt: input.prompt, mentionContext, run })) {
+            if (mutationGoalRepairCount < maxMutationGoalRepairs) {
+              mutationGoalRepairCount += 1;
+              transcript.push({
+                role: "system",
+                content: [
+                  "Repair instruction:",
+                  "A final answer is not enough for this request because the user asked for a code change.",
+                  "Continue working until there is a real mutation tool call or a relevant command.",
+                ].join(" "),
+              });
+              await input.callbacks?.onStatusChanged?.(
+                `Cutie is continuing instead of stopping early (${mutationGoalRepairCount}/${maxMutationGoalRepairs}).`,
+                run
+              );
+              continue;
+            }
+            throw new Error(`Cutie could not produce a real file change after ${maxMutationGoalRepairs} repair attempts.`);
+          }
           const finalText =
             structured.final.trim() ||
             (await this.recoverFinalMessage({
@@ -696,6 +1233,7 @@ export class CutieRuntime {
         const toolKey = buildToolCallKey(toolCall);
         const repeatedCallCount = toolKey === previousToolKey ? run.repeatedCallCount + 1 : 1;
         previousToolKey = toolKey;
+        mutationGoalRepairCount = 0;
 
         ({ session, run } = await this.updateRun(session, run, {
           repeatedCallCount,
@@ -808,7 +1346,8 @@ export class CutieRuntime {
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const rawMessage = error instanceof Error ? error.message : String(error);
+      const message = String(rawMessage || "").trim() || "Cutie could not get a usable planning response from the model.";
       const isCanceled = /aborted|cancelled|canceled/i.test(message);
       session = await this.sessionStore.appendMessage(session, {
         role: "assistant",

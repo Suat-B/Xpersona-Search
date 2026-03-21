@@ -445,16 +445,22 @@ function buildWebviewHtml(webview) {
     .bubble.assistant {
       align-self: flex-start;
       min-width: min(620px, 76%);
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
     }
     .bubble.system {
-      align-self: center;
+      align-self: flex-start;
       max-width: 100%;
-      padding: 10px 14px;
-      border-style: dashed;
-      border-radius: 999px;
+      padding: 0;
+      border: 0;
+      border-style: none;
+      border-radius: 0;
       background: transparent;
       color: var(--muted);
-      text-align: center;
+      text-align: left;
       min-width: 0;
     }
     .composer {
@@ -626,6 +632,10 @@ function buildWebviewHtml(webview) {
       border-color: var(--accent);
       outline: none;
     }
+    .composer-send.is-busy {
+      opacity: 0.82;
+      transform: scale(0.98);
+    }
     .status-line {
       padding: 0 14px 12px;
     }
@@ -729,6 +739,7 @@ function buildWebviewHtml(webview) {
             <button type="button" class="menu-button" id="signInBtn" role="menuitem">Sign in</button>
             <button type="button" class="menu-button danger" id="signOutBtn" role="menuitem">Sign out</button>
             <button type="button" class="menu-button" id="apiKeyBtn" role="menuitem">API key</button>
+            <button type="button" class="menu-button" id="copyDebugBtn" role="menuitem">Copy debug</button>
           </div>
         </div>
       </div>
@@ -785,9 +796,12 @@ function buildWebviewHtml(webview) {
     const settingsToggle = document.getElementById('settingsToggle');
     const settingsMenu = document.getElementById('settingsMenu');
     const stopBtn = document.getElementById('stopBtn');
+    const sendBtn = document.getElementById('sendBtn');
     const drafts = new Map();
     const draftMentions = new Map();
     let state = { sessions: [], messages: [], activeSessionId: null, running: false, status: 'Ready', activeRun: null };
+    let pendingSubmission = null;
+    let isSubmitting = false;
     let mentionState = {
       requestId: 0,
       items: [],
@@ -831,6 +845,12 @@ function buildWebviewHtml(webview) {
     function autoSize() {
       input.style.height = 'auto';
       input.style.height = Math.min(Math.max(input.scrollHeight, 64), 140) + 'px';
+    }
+
+    function setComposerSubmitting(nextSubmitting) {
+      isSubmitting = Boolean(nextSubmitting);
+      sendBtn.disabled = isSubmitting;
+      sendBtn.classList.toggle('is-busy', isSubmitting);
     }
 
     function escapeHtmlText(value) {
@@ -1011,7 +1031,15 @@ function buildWebviewHtml(webview) {
     
     function renderMessages() {
       chat.innerHTML = '';
-      if (!state.messages.length) {
+      const visibleMessages = [...(Array.isArray(state.messages) ? state.messages : [])];
+      if (
+        pendingSubmission &&
+        !visibleMessages.some((message) => message.role === 'user' && message.content === pendingSubmission.content)
+      ) {
+        visibleMessages.push(pendingSubmission);
+      }
+
+      if (!visibleMessages.length) {
         const empty = document.createElement('div');
         empty.className = 'empty';
         empty.innerHTML =
@@ -1021,7 +1049,7 @@ function buildWebviewHtml(webview) {
         return;
       }
 
-      for (const message of state.messages) {
+      for (const message of visibleMessages) {
         const div = document.createElement('div');
         div.className = 'bubble ' + message.role;
         div.textContent = message.content;
@@ -1072,7 +1100,21 @@ function buildWebviewHtml(webview) {
 
     function applyState(next) {
       const previousSessionId = state.activeSessionId;
+      const hasPendingEcho =
+        pendingSubmission &&
+        Array.isArray(next.messages) &&
+        next.messages.some((message) => message.role === 'user' && message.content === pendingSubmission.content);
+      const shouldClearPendingWithoutEcho =
+        pendingSubmission &&
+        !next.running &&
+        typeof next.status === 'string' &&
+        /sign in|failed|stopped|cancelled|canceled/i.test(next.status);
+      if (hasPendingEcho || shouldClearPendingWithoutEcho) {
+        pendingSubmission = null;
+      }
+
       state = next;
+      setComposerSubmitting(false);
 
       const authState = next.authState || { kind: 'none', label: 'Not signed in' };
       authLabel.textContent = authState.label || 'Not signed in';
@@ -1099,6 +1141,15 @@ function buildWebviewHtml(webview) {
       const prompt = String(text || input.value || '').trim();
       if (!prompt) return;
       const mentionItems = text ? [] : collectCurrentMentions(prompt);
+      pendingSubmission = {
+        id: '__pending_user__',
+        role: 'user',
+        content: prompt,
+        createdAt: new Date().toISOString(),
+      };
+      setComposerSubmitting(true);
+      statusPill.textContent = 'Submitting...';
+      runtimeLine.textContent = 'Submitting your prompt...';
       saveDraft();
       drafts.set(currentDraftKey(), '');
       draftMentions.set(currentDraftKey(), []);
@@ -1106,6 +1157,7 @@ function buildWebviewHtml(webview) {
       closeMentions();
       closeSettingsMenu();
       autoSize();
+      renderMessages();
       vscode.postMessage({ type: 'submitPrompt', prompt, mentions: mentionItems });
     }
 
@@ -1134,7 +1186,11 @@ function buildWebviewHtml(webview) {
       closeSettingsMenu();
       vscode.postMessage({ type: 'setApiKey' });
     });
-    document.getElementById('sendBtn').addEventListener('click', () => sendPrompt());
+    document.getElementById('copyDebugBtn').addEventListener('click', () => {
+      closeSettingsMenu();
+      vscode.postMessage({ type: 'copyDebug' });
+    });
+    sendBtn.addEventListener('click', () => sendPrompt());
 
     authStatusButton.addEventListener('click', () => toggleSettingsMenu());
     settingsToggle.addEventListener('click', () => toggleSettingsMenu());

@@ -224,6 +224,8 @@ class CutieSidebarProvider {
             return this.newChat();
         if (message.type === "selectSession")
             return this.loadSession(message.sessionId);
+        if (message.type === "copyDebug")
+            return this.copyDebugReport();
         if (message.type === "captureScreen")
             return this.captureScreen();
         if (message.type === "stopAutomation")
@@ -244,6 +246,8 @@ class CutieSidebarProvider {
     async requireAuth() {
         const auth = await this.auth.getRequestAuth();
         if (!auth) {
+            this.status = "Sign in to Xpersona or set an API key before running Cutie.";
+            await this.emitState();
             void vscode.window.showWarningMessage("Sign in to Xpersona or set an API key before running Cutie.");
             return null;
         }
@@ -283,9 +287,16 @@ class CutieSidebarProvider {
             ? {
                 path: (0, config_1.toWorkspaceRelativePath)(activeEditor.document.uri) || undefined,
                 language: activeEditor.document.languageId,
+                lineCount: activeEditor.document.lineCount,
                 ...(activeEditor.selection.isEmpty
-                    ? { content: activeEditor.document.getText().slice(0, 16000) }
-                    : { selection: activeEditor.document.getText(activeEditor.selection).slice(0, 12000) }),
+                    ? { preview: activeEditor.document.getText().slice(0, 2000) }
+                    : {
+                        selection: activeEditor.document.getText(activeEditor.selection).slice(0, 2000),
+                        selectionRange: {
+                            startLine: activeEditor.selection.start.line + 1,
+                            endLine: activeEditor.selection.end.line + 1,
+                        },
+                    }),
             }
             : undefined;
         const openFiles = vscode.window.visibleTextEditors
@@ -296,7 +307,7 @@ class CutieSidebarProvider {
             return {
                 path: relativePath,
                 language: editor.document.languageId,
-                excerpt: editor.document.getText().slice(0, 4000),
+                lineCount: editor.document.lineCount,
             };
         })
             .filter((value) => Boolean(value))
@@ -389,7 +400,7 @@ class CutieSidebarProvider {
             .map((item) => ({
             kind: "file",
             label: item.path,
-            insertText: `@${item.path}`,
+            insertText: `@"${item.path}"`,
             ...(item.detail ? { detail: item.detail } : {}),
         }));
         const shouldLookupWindows = wantsWindowsOnly || windowQuery.length > 0;
@@ -422,17 +433,19 @@ class CutieSidebarProvider {
             .map((item) => ({
             kind: "window",
             label: item.label,
-            insertText: `@window:${item.label}`,
+            insertText: `@window:"${item.label}"`,
             ...(item.detail ? { detail: item.detail } : {}),
         }));
         return [...fileItems, ...windowItems];
     }
     async runPrompt(prompt, mentions = []) {
-        const auth = await this.requireAuth();
-        if (!auth)
-            return;
         const trimmedPrompt = String(prompt || "").trim();
         if (!trimmedPrompt)
+            return;
+        this.status = "Preparing your Cutie run...";
+        await this.emitState();
+        const auth = await this.requireAuth();
+        if (!auth)
             return;
         const session = await this.ensureSession(trimmedPrompt);
         this.currentAbortController?.abort();
@@ -452,8 +465,8 @@ class CutieSidebarProvider {
                         this.activeSession = nextSession;
                         this.activeSessionId = nextSession.id;
                         this.activeRun = this.sessionStore.getLatestRun(nextSession);
-                        await this.refreshDesktopState();
                         await this.emitState();
+                        void this.refreshDesktopState().then(() => this.emitState());
                     },
                     onStatusChanged: async (status, run) => {
                         this.status = status;
@@ -461,8 +474,8 @@ class CutieSidebarProvider {
                         if (!run || run.status !== "running") {
                             this.streamingAssistantText = "";
                         }
-                        await this.refreshDesktopState();
                         await this.emitState();
+                        void this.refreshDesktopState().then(() => this.emitState());
                     },
                     onAssistantDelta: async (_delta, accumulated) => {
                         this.streamingAssistantText = accumulated;
@@ -493,6 +506,65 @@ class CutieSidebarProvider {
             await this.refreshDesktopState();
             await this.emitState();
         }
+    }
+    async copyDebugReport() {
+        const session = this.activeSession;
+        const run = this.activeRun;
+        const messages = this.getVisibleMessages();
+        const debugPayload = {
+            exportedAt: new Date().toISOString(),
+            extensionVersion: (0, config_1.getExtensionVersion)(this.context),
+            workspaceHash: (0, config_1.getWorkspaceHash)(),
+            status: this.status,
+            auth: {
+                kind: this.authState.kind,
+                label: this.authState.label,
+            },
+            session: session
+                ? {
+                    id: session.id,
+                    title: session.title,
+                    updatedAt: session.updatedAt,
+                    snapshotCount: session.snapshots.length,
+                }
+                : null,
+            activeRun: run
+                ? {
+                    id: run.id,
+                    status: run.status,
+                    phase: run.phase,
+                    stepCount: run.stepCount,
+                    maxSteps: run.maxSteps,
+                    workspaceMutationCount: run.workspaceMutationCount,
+                    maxWorkspaceMutations: run.maxWorkspaceMutations,
+                    desktopMutationCount: run.desktopMutationCount,
+                    maxDesktopMutations: run.maxDesktopMutations,
+                    repeatedCallCount: run.repeatedCallCount,
+                    lastToolName: run.lastToolName || null,
+                    error: run.error || null,
+                    startedAt: run.startedAt,
+                    endedAt: run.endedAt || null,
+                    receipts: run.receipts,
+                }
+                : null,
+            desktop: {
+                platform: this.desktopState.platform,
+                activeWindow: this.desktopState.activeWindow || null,
+                displays: this.desktopState.displays,
+                recentSnapshots: this.desktopState.recentSnapshots,
+            },
+            recentMessages: messages.slice(-12).map((message) => ({
+                role: message.role,
+                content: message.content,
+                createdAt: message.createdAt,
+                runId: message.runId || null,
+            })),
+        };
+        const payloadText = JSON.stringify(debugPayload, null, 2);
+        await vscode.env.clipboard.writeText(payloadText);
+        this.status = "Cutie debug report copied to clipboard.";
+        await this.emitState();
+        void vscode.window.showInformationMessage("Cutie debug report copied to your clipboard.");
     }
     getVisibleMessages() {
         const messages = this.activeSession?.messages || [];
