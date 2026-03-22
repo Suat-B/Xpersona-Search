@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PENDING_PKCE_KEY = exports.REFRESH_TOKEN_SECRET = exports.API_KEY_SECRET = exports.VIEW_ID = exports.EXTENSION_NAMESPACE = void 0;
 exports.getBaseApiUrl = getBaseApiUrl;
+exports.getBinaryApiBaseUrl = getBinaryApiBaseUrl;
 exports.getModelHint = getModelHint;
 exports.getExperimentalDesktopAdaptersEnabled = getExperimentalDesktopAdaptersEnabled;
 exports.getWorkspaceFolder = getWorkspaceFolder;
@@ -55,6 +56,14 @@ function getBaseApiUrl() {
         .getConfiguration(exports.EXTENSION_NAMESPACE)
         .get("baseApiUrl", "http://localhost:3000");
     return String(configured || "http://localhost:3000").trim().replace(/\/+$/, "");
+}
+/** Base URL for portable bundle (binary) API; defaults to `getBaseApiUrl()` when unset. */
+function getBinaryApiBaseUrl() {
+    const configured = vscode.workspace
+        .getConfiguration(exports.EXTENSION_NAMESPACE)
+        .get("binary.baseApiUrl", "");
+    const trimmed = String(configured || "").trim().replace(/\/+$/, "");
+    return trimmed || getBaseApiUrl();
 }
 function getModelHint() {
     const configured = vscode.workspace

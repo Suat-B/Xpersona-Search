@@ -5,6 +5,10 @@ export const CUTIE_MAX_WORKSPACE_MUTATIONS = 8;
 export const CUTIE_MAX_DESKTOP_MUTATIONS = 20;
 export const CUTIE_MAX_WALL_CLOCK_MS = 10 * 60 * 1000;
 export const CUTIE_MAX_IDENTICAL_CALLS = 2;
+/** Max tool calls executed from one model response (observe batch + optional single mutation at end). */
+export const CUTIE_MAX_TOOLS_PER_BATCH = 4;
+/** How many recent tool receipts to include in live context JSON. */
+export const CUTIE_CONTEXT_RECEIPT_WINDOW = 14;
 
 const BLOCKED_COMMAND_PATTERNS = [
   /\brm\s+-rf\b/i,
@@ -83,7 +87,7 @@ export function normalizeWorkspaceRelativePath(input: string | null | undefined)
 }
 
 export function isWorkspaceMutationTool(name: CutieToolName): boolean {
-  return name === "edit_file" || name === "write_file" || name === "mkdir" || name === "run_command";
+  return name === "patch_file" || name === "write_file" || name === "mkdir" || name === "run_command";
 }
 
 export function isDesktopMutationTool(name: CutieToolName): boolean {
@@ -97,6 +101,11 @@ export function isDesktopMutationTool(name: CutieToolName): boolean {
     name === "desktop_scroll" ||
     name === "desktop_wait"
   );
+}
+
+/** Tools that count as a “mutation” for batch ordering (at most one per batch, must be last). */
+export function isCutieBatchMutationTool(name: CutieToolName): boolean {
+  return isWorkspaceMutationTool(name) || isDesktopMutationTool(name) || name === "create_checkpoint";
 }
 
 export function buildToolCallKey(toolCall: CutieToolCall): string {

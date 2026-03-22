@@ -38,6 +38,7 @@ exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
 const auth_1 = require("./auth");
+const cutie_binary_controller_1 = require("./cutie-binary-controller");
 const config_1 = require("./config");
 const cutie_desktop_adapter_1 = require("./cutie-desktop-adapter");
 const cutie_model_client_1 = require("./cutie-model-client");
@@ -45,6 +46,7 @@ const cutie_runtime_1 = require("./cutie-runtime");
 const cutie_session_store_1 = require("./cutie-session-store");
 const cutie_tool_registry_1 = require("./cutie-tool-registry");
 const cutie_workspace_adapter_1 = require("./cutie-workspace-adapter");
+const diff_1 = require("diff");
 const cutie_diff_1 = require("./cutie-diff");
 const webview_html_1 = require("./webview-html");
 function goalLabel(goal) {
@@ -61,6 +63,8 @@ function goalLabel(goal) {
     }
 }
 function phaseLabel(run) {
+    if (run.objectivesPhase === "decomposing")
+        return "Planning task objectives";
     if (run.phase === "needs_guidance")
         return "Need guidance";
     if (run.phase === "repairing")
@@ -108,6 +112,8 @@ function buildProgressViewModel(run) {
         ...(run.suggestedNextAction ? { suggestedNextAction: run.suggestedNextAction } : {}),
         goalSatisfied: run.goalSatisfied,
         escalationState: run.escalationState,
+        ...(run.objectives?.length ? { objectives: run.objectives } : {}),
+        ...(run.objectivesPhase ? { objectivesPhase: run.objectivesPhase } : {}),
     };
 }
 function buildDefaultDesktopState() {
@@ -121,6 +127,72 @@ function buildDefaultDesktopState() {
             experimentalAdaptersEnabled: false,
         },
     };
+}
+function escapeWebviewFailureHtml(value) {
+    return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
+function buildWebviewFailureHtml(message) {
+    const safeMessage = escapeWebviewFailureHtml(message || "Unknown Cutie webview error.");
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cutie</title>
+  <style>
+    :root {
+      color-scheme: var(--vscode-color-scheme, dark);
+    }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--vscode-editor-background, #111418);
+      color: var(--vscode-foreground, #f5f7fb);
+      font-family: var(--vscode-font-family, "Segoe UI", sans-serif);
+    }
+    body {
+      padding: 20px;
+    }
+    .card {
+      max-width: 720px;
+      padding: 16px;
+      border: 1px solid var(--vscode-panel-border, #2d3440);
+      border-radius: 12px;
+      background: var(--vscode-sideBar-background, #171b22);
+      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28);
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 16px;
+    }
+    p {
+      margin: 0 0 12px;
+      color: var(--vscode-descriptionForeground, #a4acb9);
+      line-height: 1.5;
+    }
+    pre {
+      margin: 0;
+      padding: 12px;
+      overflow: auto;
+      border-radius: 10px;
+      background: var(--vscode-input-background, #11161d);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Cutie could not load the chat UI</h1>
+    <p>Reload the window after installing the latest Cutie build. If this keeps happening, the error below is the part we need.</p>
+    <pre>${safeMessage}</pre>
+  </div>
+</body>
+</html>`;
 }
 function asMentionArray(value) {
     if (!Array.isArray(value))
@@ -217,8 +289,13 @@ class CutieSidebarProvider {
         this.activeSessionId = null;
         this.activeSession = null;
         this.status = "Ready for a local Cutie run.";
+        this.webviewReady = false;
+        this.webviewReadyTimeout = null;
+        this.webviewBootNonce = 0;
         this.activeRun = null;
         this.currentAbortController = null;
+        /** Monotonic guard so callbacks from an older aborted run cannot overwrite a newer conversation state. */
+        this.runRequestVersion = 0;
         this.streamingAssistantText = "";
         this.desktopState = buildDefaultDesktopState();
         this.authState = {
@@ -229,11 +306,25 @@ class CutieSidebarProvider {
         this.workspaceMentionPaths = null;
         this.workspaceMentionPathsFetchedAt = 0;
         this.workspaceMentionIndexPromise = null;
+        /** Inline chat diff cards keyed by session id (not persisted to disk). */
+        this.chatDiffsBySessionId = new Map();
         this.desktop = new cutie_desktop_adapter_1.CutieDesktopAdapter();
+        this.workspaceAdapter = new cutie_workspace_adapter_1.CutieWorkspaceAdapter();
         this.modelClient = new cutie_model_client_1.CutieModelClient();
         this.sessionStore = new cutie_session_store_1.CutieSessionStore(context);
         this.toolRegistry = new cutie_tool_registry_1.CutieToolRegistry(new cutie_workspace_adapter_1.CutieWorkspaceAdapter(), this.desktop);
         this.runtime = new cutie_runtime_1.CutieRuntime(this.sessionStore, this.modelClient, this.toolRegistry, async () => this.gatherContext());
+        this.binaryController = new cutie_binary_controller_1.CutieBinaryBundleController(this.context, this.auth, this.sessionStore, {
+            getWorkspaceHash: () => (0, config_1.getWorkspaceHash)(),
+            getActiveSession: () => this.activeSession,
+            setActiveSession: (session) => {
+                this.activeSession = session;
+                this.activeSessionId = session?.id ?? null;
+            },
+            emitState: () => this.emitState(),
+            gatherBinaryContext: () => this.gatherBinaryContextForApi(),
+            showView: () => this.show(),
+        });
         this.auth.onDidChange(() => {
             void this.refreshAuthState().finally(() => {
                 void this.emitState();
@@ -241,7 +332,66 @@ class CutieSidebarProvider {
         });
         this.context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => {
             this.invalidateWorkspaceMentionIndex();
+        }), vscode.workspace.onDidChangeConfiguration((event) => {
+            if (event.affectsConfiguration("cutie-product.baseApiUrl") || event.affectsConfiguration("cutie-product.binary")) {
+                void this.emitState();
+            }
         }));
+        this.context.subscriptions.push({ dispose: () => this.clearWebviewReadyTimeout() });
+    }
+    async gatherBinaryContextForApi() {
+        const excerptMax = 8000;
+        const openExcerptMax = 2000;
+        const activeEditor = vscode.window.activeTextEditor;
+        const activeFile = activeEditor
+            ? {
+                path: (0, config_1.toWorkspaceRelativePath)(activeEditor.document.uri) || undefined,
+                language: activeEditor.document.languageId,
+                ...(activeEditor.selection.isEmpty
+                    ? { content: activeEditor.document.getText().slice(0, excerptMax) }
+                    : {
+                        selection: activeEditor.document.getText(activeEditor.selection).slice(0, excerptMax),
+                    }),
+            }
+            : undefined;
+        const openFiles = vscode.window.visibleTextEditors
+            .map((editor) => {
+            const relativePath = (0, config_1.toWorkspaceRelativePath)(editor.document.uri);
+            if (!relativePath)
+                return null;
+            return {
+                path: relativePath,
+                language: editor.document.languageId,
+                excerpt: editor.document.getText().slice(0, openExcerptMax),
+            };
+        })
+            .filter((row) => Boolean(row));
+        const candidateErrors = [];
+        for (const [uri, diags] of vscode.languages.getDiagnostics()) {
+            const rel = (0, config_1.toWorkspaceRelativePath)(uri);
+            for (const d of diags.slice(0, 2)) {
+                candidateErrors.push(`${rel || "?"}: ${d.message}`);
+                if (candidateErrors.length >= 24)
+                    break;
+            }
+            if (candidateErrors.length >= 24)
+                break;
+        }
+        const context = {};
+        if (activeFile?.path) {
+            context.activeFile = activeFile;
+        }
+        if (openFiles.length) {
+            context.openFiles = openFiles;
+        }
+        return {
+            context,
+            retrievalHints: {
+                mentionedPaths: [],
+                candidateSymbols: [],
+                candidateErrors,
+            },
+        };
     }
     invalidateWorkspaceMentionIndex() {
         this.workspaceMentionPaths = null;
@@ -287,19 +437,49 @@ class CutieSidebarProvider {
     }
     resolveWebviewView(webviewView) {
         this.view = webviewView;
+        this.webviewReady = false;
         webviewView.webview.options = { enableScripts: true };
-        webviewView.webview.html = (0, webview_html_1.buildWebviewHtml)(webviewView.webview);
-        webviewView.webview.onDidReceiveMessage((message) => {
-            void this.handleMessage(message);
-        });
-        void this.initializeView();
+        try {
+            webviewView.webview.html = (0, webview_html_1.buildWebviewHtml)(webviewView.webview);
+            webviewView.webview.onDidReceiveMessage((message) => {
+                void this.handleMessage(message);
+            });
+            this.armWebviewReadyTimeout(webviewView);
+            void this.initializeView();
+        }
+        catch (error) {
+            this.clearWebviewReadyTimeout();
+            const message = error instanceof Error ? error.stack || error.message : String(error);
+            webviewView.webview.html = buildWebviewFailureHtml(message);
+            this.status = `Cutie UI failed to load: ${error instanceof Error ? error.message : String(error)}`;
+            console.error("cutie-product resolveWebviewView failed", error);
+            void vscode.window.showErrorMessage(this.status);
+        }
     }
     async show() {
         await vscode.commands.executeCommand(`${config_1.VIEW_ID}.focus`);
     }
+    async runBinaryGenerateFromEditor(prefill) {
+        await this.binaryController.runBinaryGenerate(prefill);
+    }
+    async runBinaryValidateCommand() {
+        await this.binaryController.runBinaryValidate();
+    }
+    async runBinaryDeployCommand() {
+        await this.binaryController.runBinaryDeploy();
+    }
+    async openBinaryConfigureCommand() {
+        await this.binaryController.openBinaryConfigure();
+    }
+    stopBinaryStreamsForSignOut() {
+        this.binaryController.stopStreamsAndLiveBubble();
+    }
     async newChat() {
+        this.runRequestVersion += 1;
         this.currentAbortController?.abort();
         this.currentAbortController = null;
+        this.binaryController.stopStreamsAndLiveBubble();
+        this.binaryController.binaryActivity = [];
         this.activeSessionId = null;
         this.activeSession = null;
         this.activeRun = null;
@@ -333,13 +513,117 @@ class CutieSidebarProvider {
         this.currentAbortController.abort();
         await this.emitState();
     }
+    getChatDiffsForActiveSession() {
+        if (!this.activeSessionId)
+            return [];
+        return this.chatDiffsBySessionId.get(this.activeSessionId) ?? [];
+    }
+    async recordChatWorkspaceDiff(info) {
+        const sessionId = String(info.sessionId || "").trim() || this.activeSessionId;
+        if (!sessionId)
+            return;
+        const trimmed = String(info.relativePath || "")
+            .trim()
+            .replace(/\\/g, "/");
+        if (!trimmed)
+            return;
+        const root = (0, config_1.getWorkspaceRootPath)();
+        const hasNextContent = typeof info.nextContent === "string";
+        let hasAfterContent = hasNextContent;
+        let after = hasNextContent ? info.nextContent || "" : "";
+        if (!hasNextContent && root) {
+            const uri = vscode.Uri.file(path.join(root, ...trimmed.split("/").filter(Boolean)));
+            try {
+                const raw = await vscode.workspace.fs.readFile(uri);
+                after = Buffer.from(raw).toString("utf8");
+                hasAfterContent = true;
+            }
+            catch {
+                after = "";
+            }
+        }
+        let before = typeof info.previousContent === "string" ? info.previousContent : "";
+        if (before.length > CutieSidebarProvider.MAX_FILE_CHARS_FOR_PATCH) {
+            before = `${before.slice(0, CutieSidebarProvider.MAX_FILE_CHARS_FOR_PATCH)}\n\n/* … truncated before snapshot … */\n`;
+        }
+        if (after.length > CutieSidebarProvider.MAX_FILE_CHARS_FOR_PATCH) {
+            after = `${after.slice(0, CutieSidebarProvider.MAX_FILE_CHARS_FOR_PATCH)}\n\n/* … truncated after snapshot … */\n`;
+        }
+        let patch = hasAfterContent
+            ? (0, diff_1.createTwoFilesPatch)(trimmed, trimmed, before, after, "", "", { context: 3 })
+            : `Inline diff preview unavailable for ${trimmed}.\n\nCutie changed the file, but the updated file contents could not be reconstructed for the chat card.`;
+        if (patch.length > CutieSidebarProvider.MAX_PATCH_CHARS) {
+            patch = `${patch.slice(0, CutieSidebarProvider.MAX_PATCH_CHARS)}\n\n… patch truncated for chat preview …\n`;
+        }
+        const item = {
+            id: `cutie_chat_diff_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+            createdAt: new Date().toISOString(),
+            runId: String(info.runId || "").trim() || this.activeRun?.id || null,
+            relativePath: trimmed,
+            toolName: info.toolName,
+            patch,
+        };
+        const list = [...(this.chatDiffsBySessionId.get(sessionId) ?? [])];
+        const previous = list[list.length - 1];
+        if (previous &&
+            previous.runId === item.runId &&
+            previous.relativePath === item.relativePath &&
+            previous.toolName === item.toolName &&
+            previous.patch === item.patch) {
+            return;
+        }
+        list.push(item);
+        while (list.length > CutieSidebarProvider.MAX_CHAT_DIFFS_PER_SESSION) {
+            list.shift();
+        }
+        this.chatDiffsBySessionId.set(sessionId, list);
+    }
     async initializeView() {
         await this.emitState();
         void this.refreshViewState();
+        void this.binaryController.resumeBinaryBuildIfNeeded();
+    }
+    clearWebviewReadyTimeout() {
+        if (this.webviewReadyTimeout) {
+            clearTimeout(this.webviewReadyTimeout);
+            this.webviewReadyTimeout = null;
+        }
+    }
+    armWebviewReadyTimeout(webviewView) {
+        this.clearWebviewReadyTimeout();
+        const bootNonce = ++this.webviewBootNonce;
+        this.webviewReadyTimeout = setTimeout(() => {
+            if (this.webviewBootNonce !== bootNonce || this.webviewReady || this.view !== webviewView)
+                return;
+            const message = "Cutie UI did not finish loading within 10 seconds. If you just updated the extension, fully restart Trae and open Cutie again.";
+            this.status = `Cutie UI failed to load: ${message}`;
+            webviewView.webview.html = buildWebviewFailureHtml(message);
+            console.error("Cutie webview ready timeout", {
+                version: (0, config_1.getExtensionVersion)(this.context),
+                workspaceHash: (0, config_1.getWorkspaceHash)(),
+            });
+            void vscode.window.showErrorMessage(this.status);
+        }, CutieSidebarProvider.WEBVIEW_READY_TIMEOUT_MS);
     }
     async handleMessage(message) {
         if (message.type === "ready") {
+            this.webviewReady = true;
+            this.clearWebviewReadyTimeout();
             await this.emitState();
+            void this.refreshViewState();
+            return;
+        }
+        if (message.type === "webviewError") {
+            this.clearWebviewReadyTimeout();
+            const raw = String(message.message || "Unknown Cutie webview error.");
+            const summary = raw.split(/\r?\n/)[0].slice(0, 240);
+            this.status = `Cutie UI failed to load: ${summary}`;
+            console.error("Cutie webview reported a fatal error", raw);
+            void vscode.window.showErrorMessage(this.status);
+            await this.emitState();
+            return;
+        }
+        if (message.type === "refreshView") {
             void this.refreshViewState();
             return;
         }
@@ -371,6 +655,40 @@ class CutieSidebarProvider {
             return this.openWorkspaceRelativePath(message.path, { mode: "reveal" });
         if (message.type === "diffWorkspaceFile")
             return this.openCutieDiffForPath(message.path);
+        if (message.type === "openScm") {
+            void vscode.commands.executeCommand("workbench.view.scm");
+            return;
+        }
+        if (message.type === "binaryGenerate") {
+            return this.binaryController.generateBinaryBuild(String(message.intent || "").trim());
+        }
+        if (message.type === "binaryRefine") {
+            return this.binaryController.refineBinaryBuild(String(message.intent || ""));
+        }
+        if (message.type === "binaryBranch") {
+            return this.binaryController.branchBinaryBuild(String(message.intent || ""), String(message.checkpointId || ""));
+        }
+        if (message.type === "binaryRewind") {
+            return this.binaryController.rewindBinaryBuild(String(message.checkpointId || ""));
+        }
+        if (message.type === "binaryExecute") {
+            return this.binaryController.executeBinaryBuild(String(message.entryPoint || ""));
+        }
+        if (message.type === "binaryValidate") {
+            return this.binaryController.validateBinaryBuild();
+        }
+        if (message.type === "binaryPublish") {
+            return this.binaryController.publishBinaryBuild();
+        }
+        if (message.type === "binaryCancel") {
+            return this.binaryController.cancelBinaryBuild();
+        }
+        if (message.type === "binaryConfigure") {
+            return this.binaryController.openBinaryConfigure();
+        }
+        if (message.type === "binarySetTarget") {
+            return this.binaryController.setBinaryTargetRuntime(String(message.runtime || "node18"));
+        }
     }
     async openWorkspaceRelativePath(relativePath, options) {
         const trimmed = String(relativePath || "").trim().replace(/\\/g, "/");
@@ -403,7 +721,7 @@ class CutieSidebarProvider {
             void vscode.window.showErrorMessage(`Cutie could not open “${trimmed}”. Check that the path exists in this workspace.`);
         }
     }
-    async showCutieDiffEditor(info) {
+    async showCutieDiffEditor(info, showOptions) {
         const trimmed = String(info.relativePath || "").trim().replace(/\\/g, "/");
         if (!trimmed)
             return;
@@ -427,7 +745,10 @@ class CutieSidebarProvider {
         const title = info.toolName === "write_file"
             ? `Cutie · ${baseName} (before ⟡ after)`
             : `Cutie · ${baseName} (before ⟡ after · edit)`;
-        await vscode.commands.executeCommand("vscode.diff", leftUri, rightUri, title, { preview: false });
+        await vscode.commands.executeCommand("vscode.diff", leftUri, rightUri, title, {
+            preview: showOptions?.preview ?? false,
+            preserveFocus: showOptions?.preserveFocus ?? false,
+        });
     }
     /** Reopen diff from the chat card using the last remembered “before” buffer for this path. */
     async openCutieDiffForPath(relativePath) {
@@ -438,10 +759,12 @@ class CutieSidebarProvider {
             return;
         }
         await this.showCutieDiffEditor({
+            sessionId: this.activeSessionId || "",
+            runId: this.activeRun?.id || "",
             relativePath: trimmed,
             toolName: "write_file",
             previousContent: previous,
-        });
+        }, { preserveFocus: false, preview: true });
     }
     async requireAuth() {
         const auth = await this.auth.getRequestAuth();
@@ -454,6 +777,9 @@ class CutieSidebarProvider {
         return auth;
     }
     async loadSession(sessionId) {
+        this.runRequestVersion += 1;
+        this.currentAbortController?.abort();
+        this.currentAbortController = null;
         const session = this.sessionStore.getSession((0, config_1.getWorkspaceHash)(), sessionId);
         if (!session) {
             this.status = "That local Cutie session is no longer available.";
@@ -462,6 +788,8 @@ class CutieSidebarProvider {
             await this.emitState();
             return;
         }
+        this.binaryController.stopStreamsAndLiveBubble();
+        this.binaryController.binaryActivity = [];
         this.activeSession = session;
         this.activeSessionId = session.id;
         this.activeRun = this.sessionStore.getLatestRun(session);
@@ -482,6 +810,18 @@ class CutieSidebarProvider {
         return session;
     }
     async gatherContext() {
+        const cfg = vscode.workspace.getConfiguration("cutie-product");
+        const contextPreviewChars = Math.max(1024, Math.min(24000, cfg.get("contextPreviewChars", 6000)));
+        const openFilePreviewLines = Math.max(0, Math.min(120, cfg.get("openFilePreviewLines", 25)));
+        const maxOpenFilesInContext = Math.max(4, Math.min(24, cfg.get("maxOpenFilesInContext", 12)));
+        const maxToolsPerBatch = Math.max(1, Math.min(8, cfg.get("maxToolsPerBatch", 4)));
+        const contextReceiptWindow = Math.max(4, Math.min(32, cfg.get("contextReceiptWindow", 14)));
+        const investigationPreflight = cfg.get("investigationPreflight", false);
+        const objectiveBasedRuns = cfg.get("objectiveBasedRuns", true);
+        const objectiveBasedInvestigation = cfg.get("objectiveBasedInvestigation", false);
+        const maxToolSteps = Math.max(8, Math.min(128, cfg.get("maxToolSteps", 48)));
+        const maxWorkspaceMutations = Math.max(2, Math.min(64, cfg.get("maxWorkspaceMutations", 24)));
+        const unlimitedAutonomy = cfg.get("unlimitedAutonomy", false);
         const activeEditor = vscode.window.activeTextEditor;
         const activeFile = activeEditor
             ? {
@@ -489,9 +829,9 @@ class CutieSidebarProvider {
                 language: activeEditor.document.languageId,
                 lineCount: activeEditor.document.lineCount,
                 ...(activeEditor.selection.isEmpty
-                    ? { preview: activeEditor.document.getText().slice(0, 2000) }
+                    ? { preview: activeEditor.document.getText().slice(0, contextPreviewChars) }
                     : {
-                        selection: activeEditor.document.getText(activeEditor.selection).slice(0, 2000),
+                        selection: activeEditor.document.getText(activeEditor.selection).slice(0, contextPreviewChars),
                         selectionRange: {
                             startLine: activeEditor.selection.start.line + 1,
                             endLine: activeEditor.selection.end.line + 1,
@@ -504,14 +844,21 @@ class CutieSidebarProvider {
             const relativePath = (0, config_1.toWorkspaceRelativePath)(editor.document.uri);
             if (!relativePath)
                 return null;
-            return {
+            const row = {
                 path: relativePath,
                 language: editor.document.languageId,
                 lineCount: editor.document.lineCount,
             };
+            if (openFilePreviewLines > 0) {
+                const lines = editor.document.getText().split(/\r?\n/);
+                const joined = lines.slice(0, openFilePreviewLines).join("\n");
+                row.preview =
+                    joined.length > contextPreviewChars ? `${joined.slice(0, contextPreviewChars)}\n...[truncated]` : joined;
+            }
+            return row;
         })
             .filter((value) => Boolean(value))
-            .slice(0, 6);
+            .slice(0, maxOpenFilesInContext);
         const diagnostics = vscode.languages
             .getDiagnostics()
             .flatMap(([uri, entries]) => entries.map((entry) => ({
@@ -523,6 +870,17 @@ class CutieSidebarProvider {
             .slice(0, 80);
         const desktop = await this.desktop.getDesktopContext().catch(() => this.desktopState);
         this.desktopState = desktop;
+        let gitStatusSummary;
+        try {
+            const gs = await this.workspaceAdapter.gitStatus();
+            const out = (gs.stdout || "").trim();
+            if (out) {
+                gitStatusSummary = out.length > 6000 ? `${out.slice(0, 6000)}\n...[truncated]` : out;
+            }
+        }
+        catch {
+            /* git optional */
+        }
         return {
             workspaceHash: (0, config_1.getWorkspaceHash)(),
             workspaceRootPath: (0, config_1.getWorkspaceRootPath)(),
@@ -532,6 +890,17 @@ class CutieSidebarProvider {
             ...(diagnostics.length ? { diagnostics } : {}),
             desktop,
             latestSnapshot: this.activeSession?.snapshots?.[0] || null,
+            cutieDynamicSettings: {
+                maxToolsPerBatch,
+                contextReceiptWindow,
+                investigationPreflight,
+                objectiveBasedRuns,
+                objectiveBasedInvestigation,
+                maxToolSteps,
+                maxWorkspaceMutations,
+                unlimitedAutonomy,
+            },
+            ...(gitStatusSummary ? { gitStatusSummary } : {}),
         };
     }
     async respondToMentionsQuery(query, requestId) {
@@ -634,84 +1003,115 @@ class CutieSidebarProvider {
     }
     async runPrompt(prompt, mentions = []) {
         const trimmedPrompt = String(prompt || "").trim();
-        if (!trimmedPrompt)
+        if (!trimmedPrompt) {
+            await this.emitState();
             return;
+        }
         this.status = "Preparing your Cutie run...";
         await this.emitState();
-        const auth = await this.requireAuth();
-        if (!auth)
-            return;
-        const session = await this.ensureSession(trimmedPrompt);
-        this.currentAbortController?.abort();
-        this.currentAbortController = new AbortController();
-        this.streamingAssistantText = "";
-        this.status = "Starting local Cutie runtime...";
-        await this.emitState();
         try {
-            const result = await this.runtime.runPrompt({
-                auth,
-                session,
-                prompt: trimmedPrompt,
-                mentions,
-                signal: this.currentAbortController.signal,
-                callbacks: {
-                    onSessionChanged: async (nextSession) => {
-                        this.activeSession = nextSession;
-                        this.activeSessionId = nextSession.id;
-                        this.activeRun = this.sessionStore.getLatestRun(nextSession);
-                        await this.emitState();
-                        void this.refreshDesktopState().then(() => this.emitState());
-                    },
-                    onStatusChanged: async (status, run) => {
-                        this.status = status;
-                        this.activeRun = run;
-                        if (!run || run.status !== "running") {
-                            this.streamingAssistantText = "";
-                        }
-                        await this.emitState();
-                        void this.refreshDesktopState().then(() => this.emitState());
-                    },
-                    onAssistantDelta: async (_delta, accumulated) => {
-                        this.streamingAssistantText = accumulated;
-                        await this.emitState();
-                    },
-                    onWorkspaceFileMutated: async (info) => {
-                        const cfg = vscode.workspace.getConfiguration("cutie-product");
-                        const autoOpenDiff = cfg.get("autoOpenDiff", true) !== false;
-                        if (autoOpenDiff) {
-                            await this.showCutieDiffEditor(info);
-                        }
-                        else {
-                            (0, cutie_diff_1.rememberMutationBefore)(info.relativePath, info.previousContent);
-                        }
-                        if (cfg.get("showDiffToast", false)) {
-                            void vscode.window.showInformationMessage(`Cutie updated ${info.relativePath} — compare before and after in the diff editor.`);
-                        }
-                    },
-                },
-            });
-            this.activeSession = result.session;
-            this.activeSessionId = result.session.id;
-            this.activeRun = result.run;
+            const auth = await this.requireAuth();
+            if (!auth)
+                return;
+            const session = await this.ensureSession(trimmedPrompt);
+            const runRequestVersion = ++this.runRequestVersion;
+            this.currentAbortController?.abort();
+            const abortController = new AbortController();
+            this.currentAbortController = abortController;
             this.streamingAssistantText = "";
-            this.status =
-                result.run.status === "completed"
-                    ? "Cutie completed the run."
-                    : result.run.status === "needs_guidance"
-                        ? "Cutie needs guidance to keep making real progress."
-                        : result.run.status === "canceled"
-                            ? "Cutie run cancelled."
-                            : result.run.error
-                                ? `Cutie stopped: ${result.run.error}`
-                                : "Cutie stopped early.";
+            this.status = "Starting local Cutie runtime...";
+            await this.emitState();
+            try {
+                const result = await this.runtime.runPrompt({
+                    auth,
+                    session,
+                    prompt: trimmedPrompt,
+                    mentions,
+                    signal: abortController.signal,
+                    callbacks: {
+                        onSessionChanged: async (nextSession) => {
+                            if (runRequestVersion !== this.runRequestVersion)
+                                return;
+                            this.activeSession = nextSession;
+                            this.activeSessionId = nextSession.id;
+                            this.activeRun = this.sessionStore.getLatestRun(nextSession);
+                            await this.emitState();
+                            void this.refreshDesktopState().then(() => this.emitState());
+                        },
+                        onStatusChanged: async (status, run) => {
+                            if (runRequestVersion !== this.runRequestVersion)
+                                return;
+                            this.status = status;
+                            this.activeRun = run;
+                            if (!run || run.status !== "running") {
+                                this.streamingAssistantText = "";
+                            }
+                            await this.emitState();
+                            void this.refreshDesktopState().then(() => this.emitState());
+                        },
+                        onAssistantDelta: async (_delta, accumulated) => {
+                            if (runRequestVersion !== this.runRequestVersion)
+                                return;
+                            this.streamingAssistantText = accumulated;
+                            await this.emitState();
+                        },
+                        onWorkspaceFileMutated: async (info) => {
+                            if (runRequestVersion !== this.runRequestVersion)
+                                return;
+                            await this.recordChatWorkspaceDiff(info);
+                            await this.emitState();
+                            const cfg = vscode.workspace.getConfiguration("cutie-product");
+                            const autoOpenDiff = cfg.get("autoOpenDiff", false) !== false;
+                            if (autoOpenDiff) {
+                                await this.showCutieDiffEditor(info, { preserveFocus: true, preview: true });
+                            }
+                            else {
+                                (0, cutie_diff_1.rememberMutationBefore)(info.relativePath, info.previousContent);
+                            }
+                            if (cfg.get("showDiffToast", false)) {
+                                void vscode.window.showInformationMessage(`Cutie updated ${info.relativePath} — compare before and after in the diff editor.`);
+                            }
+                        },
+                    },
+                });
+                if (runRequestVersion !== this.runRequestVersion)
+                    return;
+                this.activeSession = result.session;
+                this.activeSessionId = result.session.id;
+                this.activeRun = result.run;
+                this.streamingAssistantText = "";
+                this.status =
+                    result.run.status === "completed"
+                        ? "Cutie completed the run."
+                        : result.run.status === "needs_guidance"
+                            ? "Cutie needs guidance to keep making real progress."
+                            : result.run.status === "canceled"
+                                ? "Cutie run cancelled."
+                                : result.run.error
+                                    ? `Cutie stopped: ${result.run.error}`
+                                    : "Cutie stopped early.";
+            }
+            catch (error) {
+                if (runRequestVersion !== this.runRequestVersion)
+                    return;
+                const message = error instanceof Error ? error.message : String(error);
+                this.status = `Cutie failed: ${message}`;
+                void vscode.window.showErrorMessage(this.status);
+            }
+            finally {
+                if (this.currentAbortController === abortController) {
+                    this.currentAbortController = null;
+                }
+                if (runRequestVersion !== this.runRequestVersion)
+                    return;
+                await this.refreshDesktopState();
+                await this.emitState();
+            }
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             this.status = `Cutie failed: ${message}`;
             void vscode.window.showErrorMessage(this.status);
-        }
-        finally {
-            this.currentAbortController = null;
             await this.refreshDesktopState();
             await this.emitState();
         }
@@ -785,16 +1185,30 @@ class CutieSidebarProvider {
     }
     getVisibleMessages() {
         const messages = this.activeSession?.messages || [];
-        if (!this.streamingAssistantText.trim())
-            return messages;
+        const withStream = this.streamingAssistantText.trim() === ""
+            ? messages
+            : [
+                ...messages,
+                {
+                    id: "__streaming__",
+                    role: "assistant",
+                    content: this.streamingAssistantText,
+                    createdAt: new Date().toISOString(),
+                    ...(this.activeRun ? { runId: this.activeRun.id } : {}),
+                },
+            ];
+        const bubble = this.binaryController.getLiveBubble();
+        if (!bubble)
+            return withStream;
         return [
-            ...messages,
+            ...withStream,
             {
-                id: "__streaming__",
+                id: bubble.messageId,
                 role: "assistant",
-                content: this.streamingAssistantText,
-                createdAt: new Date().toISOString(),
-                ...(this.activeRun ? { runId: this.activeRun.id } : {}),
+                content: bubble.content,
+                createdAt: bubble.createdAt,
+                presentation: "live_binary",
+                live: bubble.live,
             },
         ];
     }
@@ -820,24 +1234,54 @@ class CutieSidebarProvider {
             sessions: this.sessionStore.listSessions(workspaceHash),
             activeSessionId: this.activeSessionId,
             messages: this.getVisibleMessages(),
+            chatDiffs: this.getChatDiffsForActiveSession(),
             status: this.status,
             running: this.activeRun?.status === "running",
             activeRun: this.activeRun,
             desktop: this.desktopState,
             progress: buildProgressViewModel(this.activeRun),
+            binary: this.binaryController.binary,
+            binaryActivity: this.binaryController.binaryActivity,
+            binaryLiveBubble: this.binaryController.getLiveBubble(),
         };
         this.view.webview.postMessage({ type: "state", state });
     }
 }
 CutieSidebarProvider.WORKSPACE_MENTION_INDEX_TTL_MS = 90000;
+CutieSidebarProvider.MAX_CHAT_DIFFS_PER_SESSION = 120;
+CutieSidebarProvider.MAX_PATCH_CHARS = 52000;
+CutieSidebarProvider.MAX_FILE_CHARS_FOR_PATCH = 500000;
+CutieSidebarProvider.WEBVIEW_READY_TIMEOUT_MS = 10000;
 function activate(context) {
-    (0, cutie_diff_1.registerCutieDiffBeforeProvider)(context);
-    const auth = new auth_1.CutieAuthManager(context);
-    const provider = new CutieSidebarProvider(context, auth);
-    context.subscriptions.push(vscode.window.registerWebviewViewProvider(config_1.VIEW_ID, provider), vscode.window.registerUriHandler(auth), vscode.commands.registerCommand("cutie-product.startChat", async () => provider.show()), vscode.commands.registerCommand("cutie-product.captureScreen", async () => provider.captureScreen()), vscode.commands.registerCommand("cutie-product.setApiKey", async () => auth.setApiKeyInteractive()), vscode.commands.registerCommand("cutie-product.signIn", async () => auth.signInWithBrowser()), vscode.commands.registerCommand("cutie-product.signOut", async () => {
-        await auth.signOut();
-        await provider.newChat();
-    }), vscode.commands.registerCommand("cutie-product.stopAutomation", async () => provider.stopAutomation()));
+    try {
+        (0, cutie_diff_1.registerCutieDiffBeforeProvider)(context);
+        const auth = new auth_1.CutieAuthManager(context);
+        const provider = new CutieSidebarProvider(context, auth);
+        context.subscriptions.push(vscode.window.registerWebviewViewProvider(config_1.VIEW_ID, provider), vscode.window.registerUriHandler(auth), vscode.commands.registerCommand("cutie-product.startChat", async () => provider.show()), vscode.commands.registerCommand("cutie-product.captureScreen", async () => provider.captureScreen()), vscode.commands.registerCommand("cutie-product.setApiKey", async () => auth.setApiKeyInteractive()), vscode.commands.registerCommand("cutie-product.signIn", async () => auth.signInWithBrowser()), vscode.commands.registerCommand("cutie-product.signOut", async () => {
+            await auth.signOut();
+            provider.stopBinaryStreamsForSignOut();
+            await provider.newChat();
+        }), vscode.commands.registerCommand("cutie-product.stopAutomation", async () => provider.stopAutomation()), vscode.commands.registerCommand("cutie-product.binary.generate", async () => {
+            const editor = vscode.window.activeTextEditor;
+            let prefill;
+            if (editor) {
+                const selected = editor.selection.isEmpty
+                    ? editor.document.lineAt(editor.selection.active.line).text
+                    : editor.document.getText(editor.selection);
+                prefill = selected.trim() || undefined;
+            }
+            await provider.runBinaryGenerateFromEditor(prefill);
+        }), vscode.commands.registerCommand("cutie-product.binary.validate", async () => provider.runBinaryValidateCommand()), vscode.commands.registerCommand("cutie-product.binary.deploy", async () => provider.runBinaryDeployCommand()), vscode.commands.registerCommand("cutie-product.binary.configure", async () => provider.openBinaryConfigureCommand()));
+    }
+    catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        const detail = error instanceof Error && error.stack ? error.stack.split("\n").slice(0, 4).join("\n") : "";
+        void vscode.window.showErrorMessage(`CUTIE PRODUCT failed to activate: ${msg}`);
+        console.error("cutie-product activate failed", error);
+        if (detail) {
+            console.error(detail);
+        }
+    }
 }
 function deactivate() { }
 //# sourceMappingURL=extension.js.map

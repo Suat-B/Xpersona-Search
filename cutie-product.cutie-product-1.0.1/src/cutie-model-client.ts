@@ -1,9 +1,41 @@
 import { requestJson, streamJsonEvents, type RequestAuth } from "@xpersona/vscode-core";
 import { getBaseApiUrl, getModelHint } from "./config";
-import type { CutieModelMessage, CutieModelTurnResult } from "./types";
+import { humanizeCutieHostHttpError } from "./cutie-host-http-error";
+import {
+  CutieStructuredProtocolError,
+  normalizeProtocolResponsePayload,
+  parseStructuredStreamEvent,
+} from "./cutie-model-protocol";
+import type { CutieModelMessage, CutieModelTurnResult, CutieProtocolToolDefinition } from "./types";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function rethrowWithHostHttpHint(error: unknown): never {
+  const hint = humanizeCutieHostHttpError(error);
+  if (hint) throw new Error(hint);
+  throw error;
+}
+
+type StructuredTurnInput = {
+  auth: RequestAuth;
+  messages: CutieModelMessage[];
+  tools: CutieProtocolToolDefinition[];
+  maxToolsPerBatch: number;
+  signal?: AbortSignal;
+  onDelta?: (delta: string, accumulated: string) => void | Promise<void>;
+};
+
+function buildStructuredRequestBody(input: StructuredTurnInput, stream: boolean): Record<string, unknown> {
+  return {
+    model: getModelHint(),
+    protocol: "cutie_tools_v2",
+    stream,
+    messages: input.messages,
+    tools: input.tools,
+    maxToolsPerBatch: input.maxToolsPerBatch,
+  };
 }
 
 export class CutieModelClient {
@@ -13,26 +45,31 @@ export class CutieModelClient {
     signal?: AbortSignal;
     temperature?: number;
     maxTokens?: number;
-  }): Promise<CutieModelTurnResult> {
-    const response = await requestJson<{
+  }): Promise<{ rawText: string; finalText: string; usage?: Record<string, unknown> | null; model?: string }> {
+    let response: {
       text?: string;
       model?: string;
       usage?: Record<string, unknown> | null;
-    }>(
-      "POST",
-      `${getBaseApiUrl()}/api/v1/cutie/model/chat`,
-      input.auth,
-      {
-        model: getModelHint(),
-        stream: false,
-        messages: input.messages,
-        ...(typeof input.temperature === "number" ? { temperature: input.temperature } : {}),
-        ...(typeof input.maxTokens === "number" ? { maxTokens: input.maxTokens } : {}),
-      },
-      {
-        signal: input.signal,
-      }
-    );
+    };
+    try {
+      response = await requestJson<typeof response>(
+        "POST",
+        `${getBaseApiUrl()}/api/v1/cutie/model/chat`,
+        input.auth,
+        {
+          model: getModelHint(),
+          stream: false,
+          messages: input.messages,
+          ...(typeof input.temperature === "number" ? { temperature: input.temperature } : {}),
+          ...(typeof input.maxTokens === "number" ? { maxTokens: input.maxTokens } : {}),
+        },
+        {
+          signal: input.signal,
+        }
+      );
+    } catch (e) {
+      rethrowWithHostHttpHint(e);
+    }
 
     return {
       rawText: String(response.text || ""),
@@ -42,77 +79,117 @@ export class CutieModelClient {
     };
   }
 
-  async streamTurn(input: {
-    auth: RequestAuth;
-    messages: CutieModelMessage[];
-    signal?: AbortSignal;
-    onDelta?: (delta: string, accumulated: string) => void | Promise<void>;
-  }): Promise<CutieModelTurnResult> {
-    let accumulated = "";
+  async completeStructuredTurn(input: StructuredTurnInput): Promise<CutieModelTurnResult> {
+    return this.withStructuredProtocolRetry(() => this.completeStructuredTurnOnce(input));
+  }
+
+  async streamStructuredTurn(input: StructuredTurnInput): Promise<CutieModelTurnResult> {
+    return this.withStructuredProtocolRetry(() => this.streamStructuredTurnOnce(input));
+  }
+
+  private async withStructuredProtocolRetry(factory: () => Promise<CutieModelTurnResult>): Promise<CutieModelTurnResult> {
+    try {
+      return await factory();
+    } catch (error) {
+      if (!(error instanceof CutieStructuredProtocolError)) {
+        rethrowWithHostHttpHint(error);
+      }
+      try {
+        return await factory();
+      } catch (secondError) {
+        if (secondError instanceof CutieStructuredProtocolError) {
+          throw new Error(`Cutie server returned an invalid cutie_tools_v2 response. ${secondError.message}`);
+        }
+        rethrowWithHostHttpHint(secondError);
+      }
+    }
+  }
+
+  private async completeStructuredTurnOnce(input: StructuredTurnInput): Promise<CutieModelTurnResult> {
+    let response: {
+      response?: unknown;
+      assistantText?: unknown;
+      model?: string;
+      usage?: Record<string, unknown> | null;
+      type?: unknown;
+      text?: unknown;
+      toolCalls?: unknown;
+      objectives?: unknown;
+    };
+    try {
+      response = await requestJson<typeof response>(
+        "POST",
+        `${getBaseApiUrl()}/api/v1/cutie/model/chat`,
+        input.auth,
+        buildStructuredRequestBody(input, false),
+        {
+          signal: input.signal,
+        }
+      );
+    } catch (error) {
+      rethrowWithHostHttpHint(error);
+    }
+
+    const normalized = normalizeProtocolResponsePayload(response.response ?? response);
+    return {
+      response: normalized,
+      assistantText: typeof response.assistantText === "string" ? response.assistantText : "",
+      usage: response.usage && typeof response.usage === "object" ? response.usage : null,
+      model: typeof response.model === "string" && response.model.trim() ? response.model.trim() : undefined,
+    };
+  }
+
+  private async streamStructuredTurnOnce(input: StructuredTurnInput): Promise<CutieModelTurnResult> {
+    let assistantText = "";
     let usage: Record<string, unknown> | null = null;
     let resolvedModel: string | undefined;
-    const endpoint = `${getBaseApiUrl()}/api/v1/cutie/model/chat`;
+    let responsePayload: CutieModelTurnResult["response"] | null = null;
 
-    await streamJsonEvents(
-      "POST",
-      endpoint,
-      input.auth,
-      {
-        model: getModelHint(),
-        stream: true,
-        messages: input.messages,
-      },
-      async (event, data) => {
-        if (event === "delta") {
-          const text = String(asRecord(data).text || "");
-          if (!text) return;
-          accumulated += text;
-          await input.onDelta?.(text, accumulated);
-          return;
-        }
-        if (event === "final" && typeof data === "string") {
-          accumulated = data;
-          return;
-        }
-        if (event === "meta") {
-          const payload = asRecord(data);
-          if (payload.usage && typeof payload.usage === "object") {
-            usage = payload.usage as Record<string, unknown>;
+    try {
+      await streamJsonEvents(
+        "POST",
+        `${getBaseApiUrl()}/api/v1/cutie/model/chat`,
+        input.auth,
+        buildStructuredRequestBody(input, true),
+        async (event, data) => {
+          const parsed = parseStructuredStreamEvent(event, data);
+          if (parsed.type === "assistant_delta") {
+            assistantText += parsed.text;
+            await input.onDelta?.(parsed.text, assistantText);
+            return;
           }
-          if (typeof payload.model === "string") {
-            resolvedModel = payload.model;
+          if (parsed.type === "noop") {
+            return;
           }
-          return;
+          if (parsed.type === "meta") {
+            if (parsed.usage && typeof parsed.usage === "object") {
+              usage = parsed.usage;
+            }
+            if (parsed.model) {
+              resolvedModel = parsed.model;
+            }
+            return;
+          }
+          if (parsed.type === "error") {
+            throw new Error(parsed.message);
+          }
+          responsePayload = parsed.response;
+        },
+        {
+          signal: input.signal,
         }
-        if (event === "error") {
-          const payload = asRecord(data);
-          throw new Error(String(payload.message || "Cutie model request failed."));
-        }
-      },
-      {
-        signal: input.signal,
-      }
-    );
+      );
+    } catch (error) {
+      rethrowWithHostHttpHint(error);
+    }
 
-    if (!accumulated.trim()) {
-      const fallback = await this.completeTurn({
-        auth: input.auth,
-        signal: input.signal,
-        messages: input.messages,
-      }).catch(() => null);
-
-      if (fallback) {
-        accumulated = fallback.finalText;
-        resolvedModel = fallback.model || resolvedModel;
-        if (fallback.usage && typeof fallback.usage === "object") {
-          usage = fallback.usage;
-        }
-      }
+    if (!responsePayload) {
+      throw new CutieStructuredProtocolError("Missing final or tool_batch event in cutie_tools_v2 stream.");
     }
 
     return {
-      rawText: accumulated,
-      finalText: accumulated,
+      response: responsePayload,
+      assistantText,
       usage,
       model: resolvedModel,
     };

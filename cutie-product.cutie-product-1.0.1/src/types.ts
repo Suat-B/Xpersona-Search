@@ -1,4 +1,5 @@
 import type { HostedAuthState } from "@xpersona/vscode-core";
+import type { BinaryPanelState } from "./binary-types";
 
 export type CutieToolName =
   | "list_files"
@@ -11,7 +12,9 @@ export type CutieToolName =
   | "desktop_get_active_window"
   | "desktop_list_windows"
   | "create_checkpoint"
+  /** Legacy receipt/tool name retained for older sessions; not exposed in cutie_tools_v2. */
   | "edit_file"
+  | "patch_file"
   | "write_file"
   | "mkdir"
   | "run_command"
@@ -29,11 +32,32 @@ export type CutieToolDomain = "workspace" | "desktop";
 export type CutieTaskGoal = "conversation" | "code_change" | "workspace_investigation" | "desktop_action";
 export type CutieEscalationState = "none" | "needs_guidance";
 
+export type CutieObjectiveStatus = "pending" | "done" | "blocked";
+
+export type CutieRunObjective = {
+  id: string;
+  text: string;
+  status: CutieObjectiveStatus;
+  note?: string;
+};
+
+export type CutieObjectivesPhase = "off" | "decomposing" | "active" | "completed";
+
 export type CutieToolCall = {
   id: string;
   name: CutieToolName;
   arguments: Record<string, unknown>;
   summary?: string;
+};
+
+export type CutieToolInputSchema = Record<string, unknown>;
+
+export type CutieProtocolToolDefinition = {
+  name: CutieToolName;
+  kind: CutieToolKind;
+  domain: CutieToolDomain;
+  description: string;
+  inputSchema: CutieToolInputSchema;
 };
 
 export type CutieToolReceipt = {
@@ -57,12 +81,36 @@ export type CutieCheckpoint = {
   trackedPaths: string[];
 };
 
+/** Live bubble while a portable bundle streams (mirrors Binary IDE live assistant). */
+export type CutieBinaryLiveBubbleState = {
+  mode: "shell" | "answer" | "build";
+  status: "pending" | "streaming" | "done" | "failed" | "canceled";
+  phase: string;
+  transport: "local" | "binary";
+  progress?: number;
+  buildId?: string;
+  latestActivity?: string;
+  latestLog?: string;
+  latestFile?: string;
+  startedAt: string;
+  updatedAt: string;
+};
+
+export type CutieBinaryLiveBubbleView = {
+  messageId: string;
+  content: string;
+  createdAt: string;
+  live: CutieBinaryLiveBubbleState;
+};
+
 export type CutieChatMessage = {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
   createdAt: string;
   runId?: string;
+  presentation?: "plain" | "live_binary";
+  live?: CutieBinaryLiveBubbleState;
 };
 
 export type CutieMentionSuggestion = {
@@ -148,6 +196,10 @@ export type CutieRunState = {
   receipts: CutieToolReceipt[];
   checkpoint?: CutieCheckpoint | null;
   repeatedCallCount: number;
+  /** Strict checklist: model must mark each done or blocked before a final answer is accepted. */
+  objectives?: CutieRunObjective[];
+  objectivesPhase?: CutieObjectivesPhase;
+  objectiveRepairCount?: number;
 };
 
 export type CutieSessionRecord = {
@@ -169,16 +221,34 @@ export type CutieSessionSummary = {
   lastStatus: CutieRunState["status"] | "idle";
 };
 
+/** Unified diff patch shown inline in the chat webview after patch_file / write_file. */
+export type CutieChatDiffItem = {
+  id: string;
+  createdAt: string;
+  runId?: string | null;
+  relativePath: string;
+  toolName: "write_file" | "patch_file" | "edit_file";
+  /** Unified diff text (may be truncated for very large files). */
+  patch: string;
+};
+
 export type CutieViewState = {
   authState: HostedAuthState;
   sessions: CutieSessionSummary[];
   activeSessionId: string | null;
   messages: CutieChatMessage[];
+  /** Workspace edits in the active session, merged into the chat timeline by `createdAt`. */
+  chatDiffs: CutieChatDiffItem[];
   status: string;
   running: boolean;
   activeRun: CutieRunState | null;
   desktop: DesktopContextState;
   progress: CutieProgressViewModel | null;
+  /** Portable starter bundle (Binary IDE API) panel state. */
+  binary: BinaryPanelState;
+  binaryActivity: string[];
+  /** Ephemeral streaming assistant row for bundle generation (not persisted until resolved). */
+  binaryLiveBubble: CutieBinaryLiveBubbleView | null;
 };
 
 export type CutieProgressViewModel = {
@@ -202,6 +272,8 @@ export type CutieModelMessage = {
 export type CutieStructuredFinal = {
   type: "final";
   final: string;
+  /** When task objectives are active, must include one entry per objective id with status done or blocked. */
+  objectives?: Array<{ id: string; status: "done" | "blocked"; note?: string }>;
 };
 
 export type CutieStructuredToolCall = {
@@ -213,11 +285,39 @@ export type CutieStructuredToolCall = {
   };
 };
 
-export type CutieStructuredResponse = CutieStructuredFinal | CutieStructuredToolCall;
+/** Multiple tools in one planning response (observe tools first, at most one mutation last). */
+export type CutieStructuredToolCalls = {
+  type: "tool_calls";
+  tool_calls: Array<{
+    name: CutieToolName;
+    arguments: Record<string, unknown>;
+    summary?: string;
+  }>;
+};
+
+export type CutieStructuredResponse = CutieStructuredFinal | CutieStructuredToolCall | CutieStructuredToolCalls;
+
+export type CutieProtocolFinalPayload = {
+  type: "final";
+  text: string;
+  objectives?: Array<{ id: string; status: "done" | "blocked"; note?: string }>;
+};
+
+export type CutieProtocolToolBatchPayload = {
+  type: "tool_batch";
+  toolCalls: Array<{
+    id: string;
+    name: CutieToolName;
+    arguments: Record<string, unknown>;
+    summary?: string;
+  }>;
+};
+
+export type CutieProtocolResponsePayload = CutieProtocolFinalPayload | CutieProtocolToolBatchPayload;
 
 export type CutieModelTurnResult = {
-  rawText: string;
-  finalText: string;
+  response: CutieStructuredResponse;
+  assistantText: string;
   usage?: Record<string, unknown> | null;
   model?: string;
 };
@@ -236,10 +336,15 @@ export type CutieToolResult = {
 };
 
 export type CutieWorkspaceMutationInfo = {
+  sessionId: string;
+  runId: string;
   relativePath: string;
-  toolName: "write_file" | "edit_file";
+  toolName: "write_file" | "patch_file" | "edit_file";
   /** Snapshot immediately before this mutation (empty string if the file did not exist). */
   previousContent: string;
+  /** Snapshot immediately after this mutation when available (can be empty for an empty file). */
+  nextContent?: string;
+  revisionId?: string;
 };
 
 export type CutieRuntimeCallbacks = {

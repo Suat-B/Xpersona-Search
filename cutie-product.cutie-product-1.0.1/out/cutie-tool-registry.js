@@ -2,160 +2,341 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CutieToolRegistry = void 0;
 const cutie_policy_1 = require("./cutie-policy");
+const cutie_workspace_adapter_1 = require("./cutie-workspace-adapter");
+const STRING_SCHEMA = { type: "string" };
+const BOOLEAN_SCHEMA = { type: "boolean" };
+const NUMBER_SCHEMA = { type: "number" };
 const TOOL_DEFINITIONS = [
     {
         name: "list_files",
         kind: "observe",
         domain: "workspace",
         description: "List workspace files filtered by an optional substring query.",
-        inputShape: '{ "query"?: string, "limit"?: number }',
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+                query: STRING_SCHEMA,
+                limit: { type: "integer", minimum: 1, maximum: 200 },
+            },
+        },
     },
     {
         name: "read_file",
         kind: "observe",
         domain: "workspace",
-        description: "Read a workspace-relative file, optionally with a line range.",
-        inputShape: '{ "path": string, "startLine"?: number, "endLine"?: number }',
+        description: "Read a workspace-relative file, optionally with a line range, and return its current revision id.",
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["path"],
+            properties: {
+                path: STRING_SCHEMA,
+                startLine: { type: "integer", minimum: 1 },
+                endLine: { type: "integer", minimum: 1 },
+            },
+        },
     },
     {
         name: "search_workspace",
         kind: "observe",
         domain: "workspace",
         description: "Search text across the workspace.",
-        inputShape: '{ "query": string, "limit"?: number }',
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["query"],
+            properties: {
+                query: STRING_SCHEMA,
+                limit: { type: "integer", minimum: 1, maximum: 50 },
+            },
+        },
     },
     {
         name: "get_diagnostics",
         kind: "observe",
         domain: "workspace",
         description: "Read editor diagnostics for the workspace or a single path.",
-        inputShape: '{ "path"?: string }',
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+                path: STRING_SCHEMA,
+            },
+        },
     },
     {
         name: "git_status",
         kind: "observe",
         domain: "workspace",
         description: "Inspect the current git status.",
-        inputShape: "{}",
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {},
+        },
     },
     {
         name: "git_diff",
         kind: "observe",
         domain: "workspace",
         description: "Inspect git diff statistics or diff for one path.",
-        inputShape: '{ "path"?: string }',
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+                path: STRING_SCHEMA,
+            },
+        },
     },
     {
         name: "desktop_capture_screen",
         kind: "observe",
         domain: "desktop",
         description: "Capture a local desktop screenshot and return snapshot metadata.",
-        inputShape: '{ "displayId"?: string }',
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+                displayId: STRING_SCHEMA,
+            },
+        },
     },
     {
         name: "desktop_get_active_window",
         kind: "observe",
         domain: "desktop",
         description: "Get the currently active desktop window.",
-        inputShape: "{}",
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {},
+        },
     },
     {
         name: "desktop_list_windows",
         kind: "observe",
         domain: "desktop",
         description: "List visible desktop windows.",
-        inputShape: "{}",
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {},
+        },
     },
     {
         name: "create_checkpoint",
         kind: "mutate",
         domain: "workspace",
         description: "Create a local workspace checkpoint before edits.",
-        inputShape: '{ "reason"?: string }',
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+                reason: STRING_SCHEMA,
+            },
+        },
     },
     {
-        name: "edit_file",
+        name: "patch_file",
         kind: "mutate",
         domain: "workspace",
-        description: "Replace text inside a workspace file.",
-        inputShape: '{ "path": string, "find": string, "replace": string, "replaceAll"?: boolean }',
+        description: "Apply ordered line-based edits to a workspace file using a required baseRevision from read_file/write_file/patch_file.",
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["path", "baseRevision", "edits"],
+            properties: {
+                path: STRING_SCHEMA,
+                baseRevision: STRING_SCHEMA,
+                edits: {
+                    type: "array",
+                    minItems: 1,
+                    items: {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["startLine", "deleteLineCount", "replacement"],
+                        properties: {
+                            startLine: { type: "integer", minimum: 1 },
+                            deleteLineCount: { type: "integer", minimum: 0 },
+                            replacement: STRING_SCHEMA,
+                        },
+                    },
+                },
+            },
+        },
     },
     {
         name: "write_file",
         kind: "mutate",
         domain: "workspace",
-        description: "Write a full file inside the workspace.",
-        inputShape: '{ "path": string, "content": string, "overwrite"?: boolean }',
+        description: "Write a full file inside the workspace. Prefer this for large rewrites or file creation.",
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["path", "content"],
+            properties: {
+                path: STRING_SCHEMA,
+                content: STRING_SCHEMA,
+                overwrite: BOOLEAN_SCHEMA,
+                baseRevision: STRING_SCHEMA,
+            },
+        },
     },
     {
         name: "mkdir",
         kind: "mutate",
         domain: "workspace",
         description: "Create a workspace-relative directory.",
-        inputShape: '{ "path": string }',
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["path"],
+            properties: {
+                path: STRING_SCHEMA,
+            },
+        },
     },
     {
         name: "run_command",
         kind: "command",
         domain: "workspace",
         description: "Run a non-destructive shell command inside the workspace.",
-        inputShape: '{ "command": string, "cwd"?: string, "timeoutMs"?: number }',
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["command"],
+            properties: {
+                command: STRING_SCHEMA,
+                cwd: STRING_SCHEMA,
+                timeoutMs: { type: "integer", minimum: 100, maximum: 300000 },
+            },
+        },
     },
     {
         name: "desktop_open_app",
         kind: "mutate",
         domain: "desktop",
         description: "Launch a desktop app locally.",
-        inputShape: '{ "app": string, "args"?: string[] }',
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["app"],
+            properties: {
+                app: STRING_SCHEMA,
+                args: {
+                    type: "array",
+                    items: STRING_SCHEMA,
+                },
+            },
+        },
     },
     {
         name: "desktop_open_url",
         kind: "mutate",
         domain: "desktop",
         description: "Open a URL in the default browser.",
-        inputShape: '{ "url": string }',
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["url"],
+            properties: {
+                url: STRING_SCHEMA,
+            },
+        },
     },
     {
         name: "desktop_focus_window",
         kind: "mutate",
         domain: "desktop",
         description: "Focus a local window by id, title, or app.",
-        inputShape: '{ "windowId"?: string, "title"?: string, "app"?: string }',
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+                windowId: STRING_SCHEMA,
+                title: STRING_SCHEMA,
+                app: STRING_SCHEMA,
+            },
+        },
     },
     {
         name: "desktop_click",
         kind: "mutate",
         domain: "desktop",
         description: "Click a display using normalized coordinates from 0 to 1.",
-        inputShape: '{ "displayId": string, "normalizedX": number, "normalizedY": number, "button"?: "left" | "right" | "middle", "clickCount"?: number }',
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["displayId", "normalizedX", "normalizedY"],
+            properties: {
+                displayId: STRING_SCHEMA,
+                normalizedX: NUMBER_SCHEMA,
+                normalizedY: NUMBER_SCHEMA,
+                button: { type: "string", enum: ["left", "right", "middle"] },
+                clickCount: { type: "integer", minimum: 1, maximum: 4 },
+            },
+        },
     },
     {
         name: "desktop_type",
         kind: "mutate",
         domain: "desktop",
         description: "Type text into the active desktop window.",
-        inputShape: '{ "text": string }',
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["text"],
+            properties: {
+                text: STRING_SCHEMA,
+            },
+        },
     },
     {
         name: "desktop_keypress",
         kind: "mutate",
         domain: "desktop",
         description: "Send a desktop keypress chord.",
-        inputShape: '{ "keys": string[] }',
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["keys"],
+            properties: {
+                keys: {
+                    type: "array",
+                    minItems: 1,
+                    items: STRING_SCHEMA,
+                },
+            },
+        },
     },
     {
         name: "desktop_scroll",
         kind: "mutate",
         domain: "desktop",
         description: "Scroll the active desktop window.",
-        inputShape: '{ "deltaX"?: number, "deltaY"?: number }',
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+                deltaX: NUMBER_SCHEMA,
+                deltaY: NUMBER_SCHEMA,
+            },
+        },
     },
     {
         name: "desktop_wait",
         kind: "mutate",
         domain: "desktop",
         description: "Wait for a bounded amount of time.",
-        inputShape: '{ "durationMs": number }',
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["durationMs"],
+            properties: {
+                durationMs: NUMBER_SCHEMA,
+            },
+        },
     },
 ];
 function asRecord(value) {
@@ -186,6 +367,19 @@ function asNumber(value, fieldName, options) {
 }
 function asBoolean(value) {
     return value === true || value === "true";
+}
+function asLineEdits(value) {
+    if (!Array.isArray(value) || !value.length) {
+        throw new Error("edits must be a non-empty array.");
+    }
+    return value.map((item, index) => {
+        const row = asRecord(item);
+        return {
+            startLine: asNumber(row.startLine, `edits[${index}].startLine`, { min: 1 }),
+            deleteLineCount: asNumber(row.deleteLineCount, `edits[${index}].deleteLineCount`, { min: 0 }),
+            replacement: String(row.replacement ?? ""),
+        };
+    });
 }
 function asStringArray(value, fieldName) {
     if (!Array.isArray(value)) {
@@ -232,11 +426,14 @@ class CutieToolRegistry {
         this.desktop = desktop;
     }
     listDefinitions() {
-        return TOOL_DEFINITIONS.slice();
+        return TOOL_DEFINITIONS.map((tool) => ({
+            ...tool,
+            inputSchema: { ...tool.inputSchema },
+        }));
     }
     describeToolsForPrompt() {
         return this.listDefinitions()
-            .map((tool) => `- ${tool.name} [${tool.kind}/${tool.domain}]: ${tool.description} Args: ${tool.inputShape}`)
+            .map((tool) => `- ${tool.name} [${tool.kind}/${tool.domain}]: ${tool.description} Schema: ${JSON.stringify(tool.inputSchema)}`)
             .join("\n");
     }
     getCurrentCheckpoint() {
@@ -381,23 +578,24 @@ class CutieToolRegistry {
                         checkpoint,
                     };
                 }
-                case "edit_file": {
-                    const data = await this.workspace.editFile({
+                case "patch_file": {
+                    const data = await this.workspace.patchFile({
                         path: asString(argumentsRecord.path, "path"),
-                        find: asString(argumentsRecord.find, "find"),
-                        replace: String(argumentsRecord.replace ?? ""),
-                        replaceAll: asBoolean(argumentsRecord.replaceAll),
+                        baseRevision: asString(argumentsRecord.baseRevision, "baseRevision"),
+                        edits: asLineEdits(argumentsRecord.edits),
                     });
                     return {
                         toolName: toolCall.name,
                         kind: definition.kind,
                         domain: definition.domain,
                         ok: true,
-                        summary: `Updated ${data.path} with ${data.replacedCount} replacement${data.replacedCount === 1 ? "" : "s"}.`,
+                        summary: `Patched ${data.path} with ${data.editCount} line edit${data.editCount === 1 ? "" : "s"}.`,
                         data: {
                             path: data.path,
-                            replacedCount: data.replacedCount,
+                            editCount: data.editCount,
+                            revisionId: data.revisionId,
                             previousContent: data.previousContent,
+                            nextContent: data.nextContent,
                             ...resultFromCheckpoint(data.checkpoint),
                         },
                         checkpoint: data.checkpoint,
@@ -408,6 +606,7 @@ class CutieToolRegistry {
                         path: asString(argumentsRecord.path, "path"),
                         content: String(argumentsRecord.content ?? ""),
                         overwrite: asBoolean(argumentsRecord.overwrite),
+                        baseRevision: maybeString(argumentsRecord.baseRevision),
                     });
                     return {
                         toolName: toolCall.name,
@@ -418,7 +617,9 @@ class CutieToolRegistry {
                         data: {
                             path: data.path,
                             bytes: data.bytes,
+                            revisionId: data.revisionId,
                             previousContent: data.previousContent,
+                            nextContent: data.nextContent,
                             ...resultFromCheckpoint(data.checkpoint),
                         },
                         checkpoint: data.checkpoint,
@@ -592,14 +793,19 @@ class CutieToolRegistry {
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            const extraData = error instanceof cutie_workspace_adapter_1.CutieWorkspaceToolError && error.data && typeof error.data === "object"
+                ? error.data
+                : undefined;
             return {
                 toolName: toolCall.name,
                 kind: definition.kind,
                 domain: definition.domain,
                 ok: false,
-                blocked: /blocked|disabled/.test(message.toLowerCase()),
+                blocked: (error instanceof cutie_workspace_adapter_1.CutieWorkspaceToolError && error.blocked === true) ||
+                    /blocked|disabled/.test(message.toLowerCase()),
                 summary: `${toolCall.name} failed.`,
                 error: message,
+                ...(extraData ? { data: extraData } : {}),
             };
         }
     }

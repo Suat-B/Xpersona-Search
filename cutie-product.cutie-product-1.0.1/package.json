@@ -1,12 +1,12 @@
 {
 	"name": "cutie-product",
 	"displayName": "CUTIE PRODUCT - AI PC Control",
-	"description": "Your AI assistant that controls your PC with love!",
+	"description": "Your AI assistant that controls your PC with love. Optional unlimited autonomy runs until you stop or the API refuses (credits/quota); otherwise local step and time limits apply.",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/cutie/product"
 	},
-	"version": "1.0.3",
+	"version": "1.0.40",
 	"publisher": "cutie-product",
 	"engines": {
 		"vscode": "^1.85.0"
@@ -24,7 +24,11 @@
 		"onCommand:cutie-product.setApiKey",
 		"onCommand:cutie-product.signIn",
 		"onCommand:cutie-product.signOut",
-		"onCommand:cutie-product.stopAutomation"
+		"onCommand:cutie-product.stopAutomation",
+		"onCommand:cutie-product.binary.generate",
+		"onCommand:cutie-product.binary.validate",
+		"onCommand:cutie-product.binary.deploy",
+		"onCommand:cutie-product.binary.configure"
 	],
 	"main": "./out/extension.js",
 	"contributes": {
@@ -70,8 +74,47 @@
 			{
 				"command": "cutie-product.stopAutomation",
 				"title": "CUTIE: Stop Automation"
+			},
+			{
+				"command": "cutie-product.binary.generate",
+				"title": "CUTIE: Generate Portable Starter Bundle",
+				"category": "CUTIE PRODUCT"
+			},
+			{
+				"command": "cutie-product.binary.validate",
+				"title": "CUTIE: Validate Portable Bundle",
+				"category": "CUTIE PRODUCT"
+			},
+			{
+				"command": "cutie-product.binary.deploy",
+				"title": "CUTIE: Publish Portable Bundle",
+				"category": "CUTIE PRODUCT"
+			},
+			{
+				"command": "cutie-product.binary.configure",
+				"title": "CUTIE: Configure Portable Bundle API",
+				"category": "CUTIE PRODUCT"
 			}
 		],
+		"menus": {
+			"commandPalette": [
+				{ "command": "cutie-product.binary.generate" },
+				{ "command": "cutie-product.binary.validate" },
+				{ "command": "cutie-product.binary.deploy" },
+				{ "command": "cutie-product.binary.configure" }
+			],
+			"editor/context": [
+				{
+					"command": "cutie-product.binary.generate",
+					"group": "cutie_binary@1",
+					"when": "editorHasSelection"
+				},
+				{
+					"command": "cutie-product.binary.validate",
+					"group": "cutie_binary@2"
+				}
+			]
+		},
 		"configuration": {
 			"title": "CUTIE PRODUCT",
 			"properties": {
@@ -79,6 +122,11 @@
 					"type": "string",
 					"default": "http://localhost:3000",
 					"description": "Base URL for the hosted Xpersona API."
+				},
+				"cutie-product.binary.baseApiUrl": {
+					"type": "string",
+					"default": "",
+					"description": "Optional separate base URL for portable bundle (binary) API endpoints. When empty, uses cutie-product.baseApiUrl."
 				},
 				"cutie-product.model": {
 					"type": "string",
@@ -93,12 +141,81 @@
 				"cutie-product.showDiffToast": {
 					"type": "boolean",
 					"default": false,
-					"description": "Show an information toast when Cutie updates a workspace file (diff may still open depending on auto-open)."
+					"description": "Show an information toast when Cutie updates a workspace file (in-chat diff is always recorded)."
 				},
 				"cutie-product.autoOpenDiff": {
 					"type": "boolean",
+					"default": false,
+					"description": "Open the side-by-side diff editor when Cutie edits a file. Off by default so your current editor stays focused; the in-chat diff and “Open in editor” still work."
+				},
+				"cutie-product.contextPreviewChars": {
+					"type": "number",
+					"default": 6000,
+					"minimum": 1024,
+					"maximum": 24000,
+					"description": "Maximum characters of the active editor buffer (or selection) included in Cutie live context."
+				},
+				"cutie-product.openFilePreviewLines": {
+					"type": "number",
+					"default": 25,
+					"minimum": 0,
+					"maximum": 120,
+					"description": "First N lines of each open tab to include as a preview in context (0 disables tab previews)."
+				},
+				"cutie-product.maxOpenFilesInContext": {
+					"type": "number",
+					"default": 12,
+					"minimum": 4,
+					"maximum": 24,
+					"description": "How many open editor tabs to list in live context metadata and previews."
+				},
+				"cutie-product.maxToolsPerBatch": {
+					"type": "number",
+					"default": 4,
+					"minimum": 1,
+					"maximum": 8,
+					"description": "Maximum tool calls Cutie may run from a single planning response (observe tools plus optional one mutation last)."
+				},
+				"cutie-product.contextReceiptWindow": {
+					"type": "number",
+					"default": 14,
+					"minimum": 4,
+					"maximum": 32,
+					"description": "How many recent tool receipts are included in live context JSON."
+				},
+				"cutie-product.investigationPreflight": {
+					"type": "boolean",
+					"default": false,
+					"description": "On workspace investigation runs, run a cheap git_status + list_files once before the first model planning turn and inject summaries into context."
+				},
+				"cutie-product.objectiveBasedRuns": {
+					"type": "boolean",
 					"default": true,
-					"description": "Automatically open the diff editor after Cutie edits a file. When off, the before snapshot is still kept for manual diff from chat."
+					"description": "For code tasks, decompose the user request into a checklist and require a structured final that marks every objective done or blocked before the run completes."
+				},
+				"cutie-product.objectiveBasedInvestigation": {
+					"type": "boolean",
+					"default": false,
+					"description": "When enabled, workspace investigation runs also use objective checklists (in addition to code_change)."
+				},
+				"cutie-product.maxToolSteps": {
+					"type": "number",
+					"default": 48,
+					"minimum": 8,
+					"maximum": 128,
+					"description": "Maximum tool-call steps per run (planning waves count tools executed). Edit/mutation repair attempts and objective-checklist JSON repair budget scale with this value (unless Unlimited autonomy is on)."
+				},
+				"cutie-product.maxWorkspaceMutations": {
+					"type": "number",
+					"default": 24,
+					"minimum": 2,
+					"maximum": 64,
+					"description": "Maximum successful workspace mutations (edit/write/mkdir/run_command) per run."
+				},
+				"cutie-product.unlimitedAutonomy": {
+					"type": "boolean",
+					"default": false,
+					"description": "When enabled, Cutie disables the local 10-minute wall clock and the max tool-step / workspace-mutation caps (uses more model calls). Edit/mutation repairs and objective JSON repairs both use a higher but finite cap (256). The run still stops when you cancel, when the model finishes normally (final JSON / objectives), or when the hosted API returns an error (credits, quota, auth, rate limit)."
 				}
 			}
 		}
@@ -107,16 +224,20 @@
 		"vscode:prepublish": "npm run compile",
 		"compile": "tsc -p ./",
 		"watch": "tsc -watch -p ./",
-		"package": "vsce package"
+		"vendor:vscode-core": "node scripts/vendor-xpersona-core.cjs",
+		"package": "vsce package",
+		"test:binary-sse": "npm run compile && node --test tests/binary-sse.test.cjs",
+		"test:cutie-native": "npm run compile && node --test tests/binary-sse.test.cjs tests/cutie-file-patch.test.cjs tests/cutie-model-protocol.test.cjs"
 	},
 	"devDependencies": {
 		"@types/node": "^20.10.0",
 		"@types/vscode": "^1.85.0",
-		"typescript": "^5.3.0",
-		"@vscode/vsce": "^2.22.0"
+		"@vscode/vsce": "^2.22.0",
+		"typescript": "^5.3.0"
 	},
 	"dependencies": {
 		"@xpersona/vscode-core": "file:vendor/xpersona-vscode-core-0.1.0.tgz",
+		"diff": "^8.0.3",
 		"screenshot-desktop": "^1.15.0"
 	},
 	"__metadata": {

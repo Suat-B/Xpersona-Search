@@ -15,6 +15,15 @@ export function getBaseApiUrl(): string {
   return String(configured || "http://localhost:3000").trim().replace(/\/+$/, "");
 }
 
+/** Base URL for portable bundle (binary) API; defaults to `getBaseApiUrl()` when unset. */
+export function getBinaryApiBaseUrl(): string {
+  const configured = vscode.workspace
+    .getConfiguration(EXTENSION_NAMESPACE)
+    .get<string>("binary.baseApiUrl", "");
+  const trimmed = String(configured || "").trim().replace(/\/+$/, "");
+  return trimmed || getBaseApiUrl();
+}
+
 export function getModelHint(): string {
   const configured = vscode.workspace
     .getConfiguration(EXTENSION_NAMESPACE)

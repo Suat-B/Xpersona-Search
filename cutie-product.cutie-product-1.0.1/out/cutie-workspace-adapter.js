@@ -33,17 +33,33 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CutieWorkspaceAdapter = void 0;
+exports.CutieWorkspaceAdapter = exports.CutieWorkspaceToolError = void 0;
 const vscode = __importStar(require("vscode"));
 const fs = __importStar(require("fs/promises"));
 const path = __importStar(require("path"));
 const child_process_1 = require("child_process");
 const util_1 = require("util");
+const cutie_file_patch_1 = require("./cutie-file-patch");
 const cutie_policy_1 = require("./cutie-policy");
 const config_1 = require("./config");
 const execAsync = (0, util_1.promisify)(child_process_1.exec);
+class CutieWorkspaceToolError extends Error {
+    constructor(message, data, blocked = false) {
+        super(message);
+        this.data = data;
+        this.blocked = blocked;
+    }
+}
+exports.CutieWorkspaceToolError = CutieWorkspaceToolError;
 function uniqueStrings(values) {
     return Array.from(new Set(values.filter(Boolean)));
+}
+/** VS Code documents use \\n internally; on-disk may be CRLF — compare semantically. */
+function sameTextContent(a, b) {
+    return a.replace(/\r\n/g, "\n") === b.replace(/\r\n/g, "\n");
+}
+function toCurrentRevisionId(text, existed) {
+    return (0, cutie_file_patch_1.computeWorkspaceRevisionId)(text, existed);
 }
 /**
  * read_file normalizes CRLF→LF in returned content so the model often proposes LF-only find strings.
@@ -123,16 +139,50 @@ class CutieWorkspaceAdapter {
             return { text: "", existed: false };
         }
     }
+    /**
+     * Replace document text and persist. If `workspace.save` returns false (save conflicts, compare editors, etc.),
+     * fall back to writing the workspace file on disk and re-syncing the buffer so Cutie can still complete edits.
+     */
     async replaceEntireFileViaWorkspace(uri, newText, normalizedPath) {
-        const doc = await vscode.workspace.openTextDocument(uri);
-        const range = this.fullDocumentRange(doc);
-        const edit = new vscode.WorkspaceEdit();
-        edit.replace(uri, range, newText);
-        const applied = await vscode.workspace.applyEdit(edit);
-        if (!applied) {
-            throw new Error(`VS Code did not apply Cutie's edit to "${normalizedPath}".`);
+        const replaceFull = async (text) => {
+            const doc = await vscode.workspace.openTextDocument(uri);
+            const range = this.fullDocumentRange(doc);
+            const edit = new vscode.WorkspaceEdit();
+            edit.replace(uri, range, text);
+            const applied = await vscode.workspace.applyEdit(edit);
+            if (!applied) {
+                throw new Error(`VS Code did not apply Cutie's edit to "${normalizedPath}".`);
+            }
+        };
+        const persistIntent = async (intent) => {
+            await replaceFull(intent);
+            let saved = await vscode.workspace.save(uri);
+            if (saved)
+                return;
+            await vscode.workspace.fs.writeFile(uri, new Uint8Array(Buffer.from(intent, "utf8")));
+            const fromDisk = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
+            await replaceFull(fromDisk);
+            saved = await vscode.workspace.save(uri);
+            if (saved)
+                return;
+            const verify = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
+            if (sameTextContent(verify, intent)) {
+                return;
+            }
+            throw new Error(`VS Code refused to save "${normalizedPath}" and the file on disk could not be updated — revert or resolve the save conflict in the editor, then retry.`);
+        };
+        await persistIntent(newText);
+        // Keep the text model aligned with what is actually on disk (format-on-save, diff tabs, or version desync).
+        let fromDisk = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
+        let doc = await vscode.workspace.openTextDocument(uri);
+        if (!sameTextContent(doc.getText(), fromDisk)) {
+            await persistIntent(fromDisk);
+            fromDisk = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
+            doc = await vscode.workspace.openTextDocument(uri);
+            if (!sameTextContent(doc.getText(), fromDisk)) {
+                throw new Error(`Cutie could not sync "${normalizedPath}" with disk — another process may be rewriting the file. Save or revert in the editor, then retry.`);
+            }
         }
-        await vscode.workspace.save(uri);
     }
     async listFiles(query, limit) {
         const rows = await vscode.workspace.findFiles("**/*", undefined, 2000);
@@ -170,6 +220,7 @@ class CutieWorkspaceAdapter {
             range: `${startLine}-${endLine}`,
             content: lines.slice(startLine - 1, endLine).join("\n"),
             lineCount: lines.length,
+            revisionId: toCurrentRevisionId(raw, true),
         };
     }
     async searchWorkspace(query, limit) {
@@ -236,6 +287,21 @@ class CutieWorkspaceAdapter {
             trackedPaths: uniqueStrings(this.checkpoint.files.map((entry) => entry.path)),
         };
     }
+    assertBaseRevisionMatchesCurrent(currentText, existed, baseRevision, normalizedPath) {
+        const currentRevisionId = toCurrentRevisionId(currentText, existed);
+        if (!baseRevision) {
+            return currentRevisionId;
+        }
+        if (baseRevision === currentRevisionId) {
+            return currentRevisionId;
+        }
+        throw new CutieWorkspaceToolError(`stale_revision for ${normalizedPath}`, {
+            code: "stale_revision",
+            path: normalizedPath,
+            currentRevisionId,
+            hint: `Re-read ${normalizedPath} or use the latest revision id before editing again.`,
+        });
+    }
     async editFile(input) {
         const normalizedPath = (0, cutie_policy_1.normalizeWorkspaceRelativePath)(input.path);
         if (!normalizedPath)
@@ -261,6 +327,51 @@ class CutieWorkspaceAdapter {
             path: normalizedPath,
             replacedCount,
             previousContent: before,
+            nextContent: after,
+            checkpoint: this.createCheckpoint(),
+        };
+    }
+    async patchFile(input) {
+        const normalizedPath = (0, cutie_policy_1.normalizeWorkspaceRelativePath)(input.path);
+        if (!normalizedPath)
+            throw new Error("patch_file requires a workspace-relative path.");
+        const absolutePath = toAbsoluteWorkspacePath(normalizedPath);
+        if (!absolutePath)
+            throw new Error(`Invalid workspace-relative path: ${normalizedPath}`);
+        const { text: before, existed } = await this.readUtf8Baseline(absolutePath, normalizedPath);
+        if (!existed) {
+            throw new CutieWorkspaceToolError(`patch_file target does not exist yet: ${normalizedPath}`, {
+                code: "missing_file",
+                path: normalizedPath,
+                hint: `Create ${normalizedPath} with write_file first.`,
+            });
+        }
+        this.assertBaseRevisionMatchesCurrent(before, true, input.baseRevision, normalizedPath);
+        await this.captureUndoSnapshotWithBaseline(normalizedPath, before, true);
+        let after;
+        let changedLineCount = 0;
+        try {
+            const applied = (0, cutie_file_patch_1.applyLineEditsToText)(before, input.edits || []);
+            after = applied.after;
+            changedLineCount = applied.changedLineCount;
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new CutieWorkspaceToolError(`invalid_patch for ${normalizedPath}: ${message}`, {
+                code: "invalid_patch",
+                path: normalizedPath,
+                currentRevisionId: toCurrentRevisionId(before, true),
+                hint: `Use line edits that match the current ${normalizedPath} line layout.`,
+            });
+        }
+        const uri = vscode.Uri.file(absolutePath);
+        await this.replaceEntireFileViaWorkspace(uri, after, normalizedPath);
+        return {
+            path: normalizedPath,
+            editCount: input.edits.length,
+            revisionId: toCurrentRevisionId(after, true),
+            previousContent: before,
+            nextContent: after,
             checkpoint: this.createCheckpoint(),
         };
     }
@@ -278,6 +389,7 @@ class CutieWorkspaceAdapter {
             }
         }
         const { text: previousContent, existed } = await this.readUtf8Baseline(absolutePath, normalizedPath);
+        this.assertBaseRevisionMatchesCurrent(previousContent, existed, input.baseRevision, normalizedPath);
         await this.captureUndoSnapshotWithBaseline(normalizedPath, previousContent, existed);
         await fs.mkdir(path.dirname(absolutePath), { recursive: true });
         const uri = vscode.Uri.file(absolutePath);
@@ -291,7 +403,9 @@ class CutieWorkspaceAdapter {
         return {
             path: normalizedPath,
             bytes: Buffer.byteLength(nextContent, "utf8"),
+            revisionId: toCurrentRevisionId(nextContent, true),
             previousContent,
+            nextContent,
             checkpoint: this.createCheckpoint(),
         };
     }

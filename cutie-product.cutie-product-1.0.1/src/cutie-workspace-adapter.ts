@@ -3,6 +3,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { applyLineEditsToText, computeWorkspaceRevisionId, type CutieLineEdit } from "./cutie-file-patch";
 import {
   normalizeWorkspaceRelativePath,
   nowIso,
@@ -28,8 +29,27 @@ type CheckpointState = {
   createdDirectories: string[];
 };
 
+export class CutieWorkspaceToolError extends Error {
+  constructor(
+    message: string,
+    public readonly data?: Record<string, unknown>,
+    public readonly blocked = false
+  ) {
+    super(message);
+  }
+}
+
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)));
+}
+
+/** VS Code documents use \\n internally; on-disk may be CRLF — compare semantically. */
+function sameTextContent(a: string, b: string): boolean {
+  return a.replace(/\r\n/g, "\n") === b.replace(/\r\n/g, "\n");
+}
+
+function toCurrentRevisionId(text: string, existed: boolean): string {
+  return computeWorkspaceRevisionId(text, existed);
 }
 
 /**
@@ -120,16 +140,57 @@ export class CutieWorkspaceAdapter {
     }
   }
 
+  /**
+   * Replace document text and persist. If `workspace.save` returns false (save conflicts, compare editors, etc.),
+   * fall back to writing the workspace file on disk and re-syncing the buffer so Cutie can still complete edits.
+   */
   private async replaceEntireFileViaWorkspace(uri: vscode.Uri, newText: string, normalizedPath: string): Promise<void> {
-    const doc = await vscode.workspace.openTextDocument(uri);
-    const range = this.fullDocumentRange(doc);
-    const edit = new vscode.WorkspaceEdit();
-    edit.replace(uri, range, newText);
-    const applied = await vscode.workspace.applyEdit(edit);
-    if (!applied) {
-      throw new Error(`VS Code did not apply Cutie's edit to "${normalizedPath}".`);
+    const replaceFull = async (text: string) => {
+      const doc = await vscode.workspace.openTextDocument(uri);
+      const range = this.fullDocumentRange(doc);
+      const edit = new vscode.WorkspaceEdit();
+      edit.replace(uri, range, text);
+      const applied = await vscode.workspace.applyEdit(edit);
+      if (!applied) {
+        throw new Error(`VS Code did not apply Cutie's edit to "${normalizedPath}".`);
+      }
+    };
+
+    const persistIntent = async (intent: string): Promise<void> => {
+      await replaceFull(intent);
+      let saved = await vscode.workspace.save(uri);
+      if (saved) return;
+
+      await vscode.workspace.fs.writeFile(uri, new Uint8Array(Buffer.from(intent, "utf8")));
+      const fromDisk = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
+      await replaceFull(fromDisk);
+      saved = await vscode.workspace.save(uri);
+      if (saved) return;
+
+      const verify = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
+      if (sameTextContent(verify, intent)) {
+        return;
+      }
+      throw new Error(
+        `VS Code refused to save "${normalizedPath}" and the file on disk could not be updated — revert or resolve the save conflict in the editor, then retry.`
+      );
+    };
+
+    await persistIntent(newText);
+
+    // Keep the text model aligned with what is actually on disk (format-on-save, diff tabs, or version desync).
+    let fromDisk = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
+    let doc = await vscode.workspace.openTextDocument(uri);
+    if (!sameTextContent(doc.getText(), fromDisk)) {
+      await persistIntent(fromDisk);
+      fromDisk = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
+      doc = await vscode.workspace.openTextDocument(uri);
+      if (!sameTextContent(doc.getText(), fromDisk)) {
+        throw new Error(
+          `Cutie could not sync "${normalizedPath}" with disk — another process may be rewriting the file. Save or revert in the editor, then retry.`
+        );
+      }
     }
-    await vscode.workspace.save(uri);
   }
 
   async listFiles(query: string, limit: number): Promise<{ files: string[] }> {
@@ -167,6 +228,7 @@ export class CutieWorkspaceAdapter {
       range: `${startLine}-${endLine}`,
       content: lines.slice(startLine - 1, endLine).join("\n"),
       lineCount: lines.length,
+      revisionId: toCurrentRevisionId(raw, true),
     };
   }
 
@@ -242,12 +304,33 @@ export class CutieWorkspaceAdapter {
     };
   }
 
+  private assertBaseRevisionMatchesCurrent(
+    currentText: string,
+    existed: boolean,
+    baseRevision: string | undefined,
+    normalizedPath: string
+  ): string {
+    const currentRevisionId = toCurrentRevisionId(currentText, existed);
+    if (!baseRevision) {
+      return currentRevisionId;
+    }
+    if (baseRevision === currentRevisionId) {
+      return currentRevisionId;
+    }
+    throw new CutieWorkspaceToolError(`stale_revision for ${normalizedPath}`, {
+      code: "stale_revision",
+      path: normalizedPath,
+      currentRevisionId,
+      hint: `Re-read ${normalizedPath} or use the latest revision id before editing again.`,
+    });
+  }
+
   async editFile(input: {
     path: string;
     find: string;
     replace: string;
     replaceAll?: boolean;
-  }): Promise<{ path: string; replacedCount: number; previousContent: string; checkpoint: CutieCheckpoint }> {
+  }): Promise<{ path: string; replacedCount: number; previousContent: string; nextContent: string; checkpoint: CutieCheckpoint }> {
     const normalizedPath = normalizeWorkspaceRelativePath(input.path);
     if (!normalizedPath) throw new Error("edit_file requires a workspace-relative path.");
     if (!input.find) throw new Error("edit_file requires a non-empty find string.");
@@ -274,6 +357,65 @@ export class CutieWorkspaceAdapter {
       path: normalizedPath,
       replacedCount,
       previousContent: before,
+      nextContent: after,
+      checkpoint: this.createCheckpoint(),
+    };
+  }
+
+  async patchFile(input: {
+    path: string;
+    baseRevision: string;
+    edits: CutieLineEdit[];
+  }): Promise<{
+    path: string;
+    editCount: number;
+    revisionId: string;
+    previousContent: string;
+    nextContent: string;
+    checkpoint: CutieCheckpoint;
+  }> {
+    const normalizedPath = normalizeWorkspaceRelativePath(input.path);
+    if (!normalizedPath) throw new Error("patch_file requires a workspace-relative path.");
+    const absolutePath = toAbsoluteWorkspacePath(normalizedPath);
+    if (!absolutePath) throw new Error(`Invalid workspace-relative path: ${normalizedPath}`);
+
+    const { text: before, existed } = await this.readUtf8Baseline(absolutePath, normalizedPath);
+    if (!existed) {
+      throw new CutieWorkspaceToolError(`patch_file target does not exist yet: ${normalizedPath}`, {
+        code: "missing_file",
+        path: normalizedPath,
+        hint: `Create ${normalizedPath} with write_file first.`,
+      });
+    }
+
+    this.assertBaseRevisionMatchesCurrent(before, true, input.baseRevision, normalizedPath);
+    await this.captureUndoSnapshotWithBaseline(normalizedPath, before, true);
+
+    let after: string;
+    let changedLineCount = 0;
+    try {
+      const applied = applyLineEditsToText(before, input.edits || []);
+      after = applied.after;
+      changedLineCount = applied.changedLineCount;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new CutieWorkspaceToolError(`invalid_patch for ${normalizedPath}: ${message}`, {
+        code: "invalid_patch",
+        path: normalizedPath,
+        currentRevisionId: toCurrentRevisionId(before, true),
+        hint: `Use line edits that match the current ${normalizedPath} line layout.`,
+      });
+    }
+
+    const uri = vscode.Uri.file(absolutePath);
+    await this.replaceEntireFileViaWorkspace(uri, after, normalizedPath);
+
+    return {
+      path: normalizedPath,
+      editCount: input.edits.length,
+      revisionId: toCurrentRevisionId(after, true),
+      previousContent: before,
+      nextContent: after,
       checkpoint: this.createCheckpoint(),
     };
   }
@@ -282,7 +424,15 @@ export class CutieWorkspaceAdapter {
     path: string;
     content: string;
     overwrite?: boolean;
-  }): Promise<{ path: string; bytes: number; previousContent: string; checkpoint: CutieCheckpoint }> {
+    baseRevision?: string;
+  }): Promise<{
+    path: string;
+    bytes: number;
+    revisionId: string;
+    previousContent: string;
+    nextContent: string;
+    checkpoint: CutieCheckpoint;
+  }> {
     const normalizedPath = normalizeWorkspaceRelativePath(input.path);
     if (!normalizedPath) throw new Error("write_file requires a workspace-relative path.");
     const absolutePath = toAbsoluteWorkspacePath(normalizedPath);
@@ -296,6 +446,7 @@ export class CutieWorkspaceAdapter {
     }
 
     const { text: previousContent, existed } = await this.readUtf8Baseline(absolutePath, normalizedPath);
+    this.assertBaseRevisionMatchesCurrent(previousContent, existed, input.baseRevision, normalizedPath);
     await this.captureUndoSnapshotWithBaseline(normalizedPath, previousContent, existed);
 
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
@@ -311,7 +462,9 @@ export class CutieWorkspaceAdapter {
     return {
       path: normalizedPath,
       bytes: Buffer.byteLength(nextContent, "utf8"),
+      revisionId: toCurrentRevisionId(nextContent, true),
       previousContent,
+      nextContent,
       checkpoint: this.createCheckpoint(),
     };
   }
