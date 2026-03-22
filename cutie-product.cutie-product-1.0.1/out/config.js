@@ -68,8 +68,8 @@ function getBinaryApiBaseUrl() {
 function getModelHint() {
     const configured = vscode.workspace
         .getConfiguration(exports.EXTENSION_NAMESPACE)
-        .get("model", "MiniMaxAI/MiniMax-M2.5:fastest");
-    return String(configured || "MiniMaxAI/MiniMax-M2.5:fastest").trim();
+        .get("model", "openai/gpt-oss-120b:fastest");
+    return String(configured || "openai/gpt-oss-120b:fastest").trim();
 }
 function getExperimentalDesktopAdaptersEnabled() {
     return vscode.workspace

@@ -7,6 +7,7 @@ import { CutieBinaryBundleController } from "./cutie-binary-controller";
 import { getExtensionVersion, getWorkspaceHash, getWorkspaceRootPath, toWorkspaceRelativePath, VIEW_ID } from "./config";
 import { CutieDesktopAdapter } from "./cutie-desktop-adapter";
 import { CutieModelClient } from "./cutie-model-client";
+import { looksLikeCutieToolArtifactText } from "./cutie-native-autonomy";
 import { CutieRuntime } from "./cutie-runtime";
 import { CutieSessionStore } from "./cutie-session-store";
 import { CutieToolRegistry } from "./cutie-tool-registry";
@@ -297,7 +298,17 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
   /** Monotonic guard so callbacks from an older aborted run cannot overwrite a newer conversation state. */
   private runRequestVersion = 0;
   private streamingAssistantText = "";
+  private suppressedAssistantArtifactText = "";
+  private liveActionLog: string[] = [];
+  private liveActionLogRunId: string | null = null;
+  private liveActionSeenReceiptIds = new Set<string>();
+  private liveActionLastStatus = "";
   private desktopState: DesktopContextForView = buildDefaultDesktopState();
+  private desktopStateFetchedAt = 0;
+  private gitStatusSummary: string | undefined;
+  private gitStatusFetchedAt = 0;
+  private gitStatusPromise: Promise<string | undefined> | null = null;
+  private fastStartWarmupPromise: Promise<void> | null = null;
   private authState: CutieViewState["authState"] = {
     kind: "none",
     label: "Not signed in",
@@ -312,6 +323,9 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
   private static readonly MAX_PATCH_CHARS = 52_000;
   private static readonly MAX_FILE_CHARS_FOR_PATCH = 500_000;
   private static readonly WEBVIEW_READY_TIMEOUT_MS = 10_000;
+  private static readonly MAX_LIVE_ACTION_LINES = 120;
+  private static readonly DESKTOP_CONTEXT_CACHE_TTL_MS = 8_000;
+  private static readonly GIT_STATUS_CACHE_TTL_MS = 15_000;
 
   /** Inline chat diff cards keyed by session id (not persisted to disk). */
   private readonly chatDiffsBySessionId = new Map<string, CutieChatDiffItem[]>();
@@ -361,6 +375,66 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       })
     );
     this.context.subscriptions.push({ dispose: () => this.clearWebviewReadyTimeout() });
+  }
+
+  private resetLiveActionLog(runId: string | null = null): void {
+    this.liveActionLog = [];
+    this.liveActionLogRunId = runId;
+    this.liveActionSeenReceiptIds = new Set<string>();
+    this.liveActionLastStatus = "";
+  }
+
+  private ensureLiveActionLogForRun(run: CutieRunState | null): void {
+    const runId = run?.id || null;
+    if (runId !== this.liveActionLogRunId) {
+      this.resetLiveActionLog(runId);
+    }
+  }
+
+  private appendLiveActionLine(rawLine: string): void {
+    const line = String(rawLine || "").trim();
+    if (!line) return;
+    if (this.liveActionLog.length && this.liveActionLog[this.liveActionLog.length - 1] === line) return;
+    this.liveActionLog.push(line);
+    if (this.liveActionLog.length > CutieSidebarProvider.MAX_LIVE_ACTION_LINES) {
+      this.liveActionLog = this.liveActionLog.slice(-CutieSidebarProvider.MAX_LIVE_ACTION_LINES);
+    }
+  }
+
+  private formatLiveActionReceiptLine(receipt: CutieRunState["receipts"][number]): string {
+    const step =
+      typeof receipt.step === "number" && receipt.step > 0 ? `Step ${receipt.step}: ` : "";
+    const summary = String(receipt.summary || "").trim();
+    if (receipt.status === "failed") {
+      const err = String(receipt.error || "").trim();
+      return `${step}${summary || `${receipt.toolName} failed.`}${err ? ` ${err}` : ""}`.trim();
+    }
+    if (receipt.status === "blocked") {
+      const err = String(receipt.error || "").trim();
+      return `${step}${summary || `${receipt.toolName} was blocked.`}${err ? ` ${err}` : ""}`.trim();
+    }
+    return `${step}${summary || `Ran ${receipt.toolName}.`}`.trim();
+  }
+
+  private syncLiveActionReceipts(run: CutieRunState | null): void {
+    if (!run) return;
+    this.ensureLiveActionLogForRun(run);
+    for (const receipt of run.receipts || []) {
+      const receiptId = String(receipt.id || "").trim();
+      const seenKey = receiptId || `${run.id}:${receipt.step}:${receipt.toolName}:${receipt.status}`;
+      if (this.liveActionSeenReceiptIds.has(seenKey)) continue;
+      this.liveActionSeenReceiptIds.add(seenKey);
+      this.appendLiveActionLine(this.formatLiveActionReceiptLine(receipt));
+    }
+  }
+
+  private noteLiveActionStatus(status: string, run: CutieRunState | null): void {
+    if (!run) return;
+    this.ensureLiveActionLogForRun(run);
+    const line = String(status || "").trim();
+    if (!line || line === this.liveActionLastStatus) return;
+    this.liveActionLastStatus = line;
+    this.appendLiveActionLine(line);
   }
 
   private async gatherBinaryContextForApi(): Promise<{ context: BinaryContextPayload; retrievalHints: RetrievalHints }> {
@@ -518,10 +592,25 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
     this.activeSession = null;
     this.activeRun = null;
     this.streamingAssistantText = "";
+    this.suppressedAssistantArtifactText = "";
+    this.resetLiveActionLog();
     this.status = "Ready for a new Cutie run.";
     await this.emitState();
+    void this.prewarmFastStartState();
     await this.refreshDesktopState();
     await this.emitState();
+  }
+
+  private prewarmFastStartState(): void {
+    if (this.fastStartWarmupPromise) return;
+    this.fastStartWarmupPromise = (async () => {
+      await Promise.allSettled([this.refreshAuthState(), this.refreshDesktopState(), this.getGitStatusSummary()]);
+    })().finally(() => {
+      this.fastStartWarmupPromise = null;
+      if (this.view && this.webviewReady) {
+        void this.emitState();
+      }
+    });
   }
 
   async captureScreen(): Promise<void> {
@@ -618,6 +707,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
 
   private async initializeView(): Promise<void> {
     await this.emitState();
+    void this.prewarmFastStartState();
     void this.refreshViewState();
     void this.binaryController.resumeBinaryBuildIfNeeded();
   }
@@ -651,6 +741,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       this.webviewReady = true;
       this.clearWebviewReadyTimeout();
       await this.emitState();
+      void this.prewarmFastStartState();
       void this.refreshViewState();
       return;
     }
@@ -840,6 +931,8 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
     this.activeSessionId = session.id;
     this.activeRun = this.sessionStore.getLatestRun(session);
     this.streamingAssistantText = "";
+    this.suppressedAssistantArtifactText = "";
+    this.resetLiveActionLog();
     this.status = "Loaded local Cutie session.";
     await this.emitState();
     await this.refreshDesktopState();
@@ -921,19 +1014,8 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       )
       .slice(0, 80);
 
-    const desktop = await this.desktop.getDesktopContext().catch(() => this.desktopState);
-    this.desktopState = desktop;
-
-    let gitStatusSummary: string | undefined;
-    try {
-      const gs = await this.workspaceAdapter.gitStatus();
-      const out = (gs.stdout || "").trim();
-      if (out) {
-        gitStatusSummary = out.length > 6000 ? `${out.slice(0, 6000)}\n...[truncated]` : out;
-      }
-    } catch {
-      /* git optional */
-    }
+    const desktop = await this.getDesktopContextForPrompt().catch(() => this.desktopState);
+    const gitStatusSummary = await this.getGitStatusSummary().catch(() => this.gitStatusSummary);
 
     return {
       workspaceHash: getWorkspaceHash(),
@@ -1085,6 +1167,8 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       const abortController = new AbortController();
       this.currentAbortController = abortController;
       this.streamingAssistantText = "";
+      this.suppressedAssistantArtifactText = "";
+      this.resetLiveActionLog();
       this.status = "Starting local Cutie runtime...";
       await this.emitState();
 
@@ -1101,6 +1185,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
               this.activeSession = nextSession;
               this.activeSessionId = nextSession.id;
               this.activeRun = this.sessionStore.getLatestRun(nextSession);
+              this.syncLiveActionReceipts(this.activeRun);
               await this.emitState();
               void this.refreshDesktopState().then(() => this.emitState());
             },
@@ -1108,6 +1193,8 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
               if (runRequestVersion !== this.runRequestVersion) return;
               this.status = status;
               this.activeRun = run;
+              this.noteLiveActionStatus(status, run);
+              this.syncLiveActionReceipts(run);
               if (!run || run.status !== "running") {
                 this.streamingAssistantText = "";
               }
@@ -1116,7 +1203,18 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
             },
             onAssistantDelta: async (_delta, accumulated) => {
               if (runRequestVersion !== this.runRequestVersion) return;
+              if (looksLikeCutieToolArtifactText(accumulated)) {
+                this.suppressedAssistantArtifactText = accumulated;
+                this.streamingAssistantText = "";
+                await this.emitState();
+                return;
+              }
               this.streamingAssistantText = accumulated;
+              await this.emitState();
+            },
+            onSuppressedAssistantArtifact: async (artifact) => {
+              if (runRequestVersion !== this.runRequestVersion) return;
+              this.suppressedAssistantArtifactText = artifact;
               await this.emitState();
             },
             onWorkspaceFileMutated: async (info) => {
@@ -1143,6 +1241,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
         this.activeSession = result.session;
         this.activeSessionId = result.session.id;
         this.activeRun = result.run;
+        this.syncLiveActionReceipts(result.run);
         this.streamingAssistantText = "";
         this.status =
           result.run.status === "completed"
@@ -1180,12 +1279,16 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
     const session = this.activeSession;
     const run = this.activeRun;
     const messages = this.getVisibleMessages();
-    const debugPayload = {
+      const debugPayload = {
       exportedAt: new Date().toISOString(),
       extensionVersion: getExtensionVersion(this.context),
       workspaceHash: getWorkspaceHash(),
-      status: this.status,
-      auth: {
+        status: this.status,
+        liveActionLogPreview: this.liveActionLog.slice(-40),
+        suppressedAssistantArtifactPreview: this.suppressedAssistantArtifactText
+          ? this.suppressedAssistantArtifactText.slice(0, 4000)
+          : null,
+        auth: {
         kind: this.authState.kind,
         label: this.authState.label,
       },
@@ -1210,6 +1313,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
             maxDesktopMutations: run.maxDesktopMutations,
             repeatedCallCount: run.repeatedCallCount,
             goal: run.goal,
+            autonomyMode: run.autonomyMode || null,
             goalSatisfied: run.goalSatisfied,
             lastMeaningfulProgressAtStep: run.lastMeaningfulProgressAtStep ?? null,
             lastMeaningfulProgressSummary: run.lastMeaningfulProgressSummary || null,
@@ -1277,6 +1381,53 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
 
   private async refreshDesktopState(): Promise<void> {
     this.desktopState = await this.desktop.getDesktopContext().catch(() => this.desktopState || buildDefaultDesktopState());
+    this.desktopStateFetchedAt = Date.now();
+  }
+
+  private async getDesktopContextForPrompt(): Promise<DesktopContextForView> {
+    const now = Date.now();
+    if (
+      this.desktopStateFetchedAt &&
+      now - this.desktopStateFetchedAt < CutieSidebarProvider.DESKTOP_CONTEXT_CACHE_TTL_MS
+    ) {
+      return this.desktopState;
+    }
+    await this.refreshDesktopState();
+    return this.desktopState;
+  }
+
+  private async getGitStatusSummary(force = false): Promise<string | undefined> {
+    const now = Date.now();
+    if (
+      !force &&
+      this.gitStatusFetchedAt &&
+      now - this.gitStatusFetchedAt < CutieSidebarProvider.GIT_STATUS_CACHE_TTL_MS
+    ) {
+      return this.gitStatusSummary;
+    }
+    if (this.gitStatusPromise) {
+      return this.gitStatusPromise;
+    }
+    this.gitStatusPromise = (async () => {
+      let summary: string | undefined;
+      try {
+        const gs = await this.workspaceAdapter.gitStatus();
+        const out = (gs.stdout || "").trim();
+        if (out) {
+          summary = out.length > 6000 ? `${out.slice(0, 6000)}\n...[truncated]` : out;
+        }
+      } catch {
+        summary = undefined;
+      }
+      this.gitStatusSummary = summary;
+      this.gitStatusFetchedAt = Date.now();
+      return summary;
+    })();
+    try {
+      return await this.gitStatusPromise;
+    } finally {
+      this.gitStatusPromise = null;
+    }
   }
 
   private async refreshAuthState(): Promise<void> {
@@ -1304,6 +1455,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       activeSessionId: this.activeSessionId,
       messages: this.getVisibleMessages(),
       chatDiffs: this.getChatDiffsForActiveSession(),
+      liveActionLog: this.activeRun?.status === "running" ? this.liveActionLog : [],
       status: this.status,
       running: this.activeRun?.status === "running",
       activeRun: this.activeRun,

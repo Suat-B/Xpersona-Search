@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Outfit, Inter } from "next/font/google";
+import Script from "next/script";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { ServiceProvider } from "@/components/providers/ServiceProvider";
@@ -11,6 +12,7 @@ import { getService } from "@/lib/service";
 import { auth } from "@/lib/auth";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { HFChrome } from "@/components/layout/HFChrome";
+import { BotAdBanner } from "@/components/ads/BotAdBanner";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -56,6 +58,10 @@ export default async function RootLayout({
 }>) {
   const service = await getService();
   const variant = process.env.NEXT_PUBLIC_HOME_VARIANT?.toLowerCase();
+  const ga4Id = process.env.NEXT_PUBLIC_GA4_MEASUREMENT_ID?.trim();
+  const headerStore = await headers();
+  const isBot = headerStore.get("x-is-bot") === "1";
+  const botPath = headerStore.get("x-bot-path") || "/";
   let isAuthenticated = false;
 
   if (variant === "hf") {
@@ -85,6 +91,14 @@ export default async function RootLayout({
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6090164906593135"
           crossOrigin="anonymous"
         />
+        {ga4Id ? (
+          <>
+            <Script src={`https://www.googletagmanager.com/gtag/js?id=${ga4Id}`} strategy="afterInteractive" />
+            <Script id="ga4-config" strategy="afterInteractive">
+              {`window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${ga4Id}');`}
+            </Script>
+          </>
+        ) : null}
       </head>
   <body
     className={`${outfit.variable} ${inter.variable} min-h-dvh bg-[var(--bg-deep)] font-sans text-[var(--text-primary)] antialiased`}
@@ -92,11 +106,25 @@ export default async function RootLayout({
     <ThemeProvider>
       <ServiceProvider service={service}>
         <AuthProvider>
+          <BotAdBanner className="mx-auto max-w-6xl px-4 pt-2" />
           {variant === "hf" ? (
             <HFChrome isAuthenticated={isAuthenticated}>{children}</HFChrome>
           ) : (
             children
           )}
+          <BotAdBanner className="mx-auto max-w-6xl px-4 pb-6" />
+          {isBot ? (
+            // Tracking pixel (must stay a plain <img>; Next/Image is inappropriate here)
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`/api/v1/beacon?dedupe=mw&p=${encodeURIComponent(botPath)}`}
+              width={1}
+              height={1}
+              alt=""
+              className="pointer-events-none absolute h-px w-px opacity-0"
+              fetchPriority="low"
+            />
+          ) : null}
           <Analytics />
           <SpeedInsights />
         </AuthProvider>

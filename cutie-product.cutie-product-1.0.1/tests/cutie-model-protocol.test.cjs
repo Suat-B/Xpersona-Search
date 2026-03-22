@@ -22,6 +22,19 @@ test("normalizeProtocolResponsePayload maps final payloads into internal final r
   });
 });
 
+test("normalizeProtocolResponsePayload allows empty final text so runtime recovery can continue", () => {
+  const result = normalizeProtocolResponsePayload({
+    type: "final",
+    objectives: [{ id: "1", status: "done" }],
+  });
+
+  assert.deepEqual(result, {
+    type: "final",
+    final: "",
+    objectives: [{ id: "1", status: "done" }],
+  });
+});
+
 test("normalizeProtocolResponsePayload maps single tool batches into tool_call", () => {
   const result = normalizeProtocolResponsePayload({
     type: "tool_batch",
@@ -92,6 +105,19 @@ test("parseStructuredStreamEvent parses assistant deltas and tool batches", () =
   assert.deepEqual(response.response, {
     type: "tool_call",
     tool_call: { name: "read_file", arguments: { path: "src/a.ts" } },
+  });
+});
+
+test("parseStructuredStreamEvent accepts final events with no text", () => {
+  const response = parseStructuredStreamEvent("final", {
+    objectives: [{ id: "1", status: "done" }],
+  });
+
+  assert.equal(response.type, "response");
+  assert.deepEqual(response.response, {
+    type: "final",
+    final: "",
+    objectives: [{ id: "1", status: "done" }],
   });
 });
 

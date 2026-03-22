@@ -31,6 +31,19 @@ export type CutieToolKind = "observe" | "mutate" | "command";
 export type CutieToolDomain = "workspace" | "desktop";
 export type CutieTaskGoal = "conversation" | "code_change" | "workspace_investigation" | "desktop_action";
 export type CutieEscalationState = "none" | "needs_guidance";
+export type CutieAutonomyMode = "direct" | "objective";
+export type CutieStrategyPhase = "inspect" | "mutate" | "verify" | "repair" | "fallback" | "blocked";
+export type CutieProgressConfidence = "low" | "medium" | "high";
+export type CutieBlockerCategory = "planning" | "validation" | "tooling" | "environment" | "impossible";
+export type CutieRetryStrategy =
+  | "none"
+  | "force_mutation"
+  | "alternate_mutation"
+  | "refresh_state"
+  | "full_rewrite"
+  | "command_repair"
+  | "verification_repair"
+  | "fallback_strategy";
 
 export type CutieObjectiveStatus = "pending" | "done" | "blocked";
 
@@ -200,6 +213,15 @@ export type CutieRunState = {
   objectives?: CutieRunObjective[];
   objectivesPhase?: CutieObjectivesPhase;
   objectiveRepairCount?: number;
+  autonomyMode?: CutieAutonomyMode;
+  preferredTargetPath?: string;
+  strategyPhase?: CutieStrategyPhase;
+  progressConfidence?: CutieProgressConfidence;
+  lastVerifiedOutcome?: string;
+  blockerCategory?: CutieBlockerCategory;
+  retryStrategy?: CutieRetryStrategy;
+  loopPreventionTrigger?: string;
+  deadEndMemory?: string[];
 };
 
 export type CutieSessionRecord = {
@@ -239,6 +261,8 @@ export type CutieViewState = {
   messages: CutieChatMessage[];
   /** Workspace edits in the active session, merged into the chat timeline by `createdAt`. */
   chatDiffs: CutieChatDiffItem[];
+  /** Live per-run action transcript shown while Cutie is actively working. */
+  liveActionLog: string[];
   status: string;
   running: boolean;
   activeRun: CutieRunState | null;
@@ -318,6 +342,7 @@ export type CutieProtocolResponsePayload = CutieProtocolFinalPayload | CutieProt
 export type CutieModelTurnResult = {
   response: CutieStructuredResponse;
   assistantText: string;
+  suppressedAssistantArtifact?: string;
   usage?: Record<string, unknown> | null;
   model?: string;
 };
@@ -351,6 +376,7 @@ export type CutieRuntimeCallbacks = {
   onSessionChanged?: (session: CutieSessionRecord) => void | Promise<void>;
   onStatusChanged?: (status: string, run: CutieRunState | null) => void | Promise<void>;
   onAssistantDelta?: (delta: string, accumulated: string) => void | Promise<void>;
+  onSuppressedAssistantArtifact?: (artifact: string) => void | Promise<void>;
   /** Fired after a successful workspace file write or edit so the host can open the file and surface UX cues. */
   onWorkspaceFileMutated?: (info: CutieWorkspaceMutationInfo) => void | Promise<void>;
 };

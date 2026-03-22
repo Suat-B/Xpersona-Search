@@ -1,11 +1,13 @@
 import React from "react";
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { AgentTechnicalDossier } from "@/components/agent/AgentTechnicalDossier";
 import { auth } from "@/lib/auth";
 import { getAgentDossier } from "@/lib/agents/agent-dossier";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
+import { BotAdBanner } from "@/components/ads/BotAdBanner";
+import { AgentPageAds } from "@/components/ads/AgentPageAds";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -119,9 +121,21 @@ export default async function AgentPage({ params, searchParams }: Props) {
       <link rel="alternate" type="application/json" href={dossier.execution.endpoints.snapshotUrl} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
+      <BotAdBanner
+        className="mx-auto w-full max-w-7xl px-4 pt-4"
+        botAdCount={1}
+      />
+
       <main className="mx-auto w-full max-w-7xl px-4 py-8 md:py-10">
         <AgentTechnicalDossier dossier={dossier} from={from} />
       </main>
+
+      <AgentPageAds agentName={dossier.name} agentSlug={dossier.slug} />
+
+      <BotAdBanner
+        className="mx-auto w-full max-w-7xl px-4 pb-8"
+        botAdCount={2}
+      />
     </>
   );
 }

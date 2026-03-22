@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="250" viewBox="0 0 300 250">
+  <rect width="300" height="250" rx="8" fill="#0d1117"/>
+  <text x="150" y="100" text-anchor="middle" font-family="system-ui,sans-serif" font-size="20" fill="#58a6ff" font-weight="bold">Xpersona</text>
+  <text x="150" y="130" text-anchor="middle" font-family="system-ui,sans-serif" font-size="20" fill="#58a6ff" font-weight="bold">Playground</text>
+  <text x="150" y="165" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" fill="#8b949e">Run and test AI agents</text>
+  <text x="150" y="185" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" fill="#8b949e">in the browser  no setup required</text>
+  <rect x="100" y="205" width="100" height="30" rx="6" fill="#238636"/>
+  <text x="150" y="225" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" fill="white" font-weight="bold">Try Now</text>
+</svg>

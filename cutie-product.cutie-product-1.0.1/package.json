@@ -6,7 +6,7 @@
 		"type": "git",
 		"url": "https://github.com/cutie/product"
 	},
-	"version": "1.0.40",
+	"version": "1.0.55",
 	"publisher": "cutie-product",
 	"engines": {
 		"vscode": "^1.85.0"
@@ -130,7 +130,7 @@
 				},
 				"cutie-product.model": {
 					"type": "string",
-					"default": "MiniMaxAI/MiniMax-M2.5:fastest",
+					"default": "openai/gpt-oss-120b:fastest",
 					"description": "Model id for the Cutie proxy. Use a \"fastest\" or small variant if your host exposes one—planning runs once per agent step, so a faster model noticeably shortens waits."
 				},
 				"cutie-product.experimentalDesktopAdapters": {
@@ -227,7 +227,7 @@
 		"vendor:vscode-core": "node scripts/vendor-xpersona-core.cjs",
 		"package": "vsce package",
 		"test:binary-sse": "npm run compile && node --test tests/binary-sse.test.cjs",
-		"test:cutie-native": "npm run compile && node --test tests/binary-sse.test.cjs tests/cutie-file-patch.test.cjs tests/cutie-model-protocol.test.cjs"
+		"test:cutie-native": "npm run compile && node --test tests/binary-sse.test.cjs tests/cutie-file-patch.test.cjs tests/cutie-model-protocol.test.cjs tests/cutie-native-autonomy.test.cjs tests/cutie-autonomy-controller.test.cjs"
 	},
 	"devDependencies": {
 		"@types/node": "^20.10.0",

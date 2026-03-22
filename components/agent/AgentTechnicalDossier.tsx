@@ -11,6 +11,7 @@ import { SourceBadge } from "@/components/agent/SourceBadge";
 import { VerificationTierBadge } from "@/components/agent/VerificationTierBadge";
 import { ProtocolBadge } from "@/components/search/ProtocolBadge";
 import { SafetyBadge } from "@/components/search/SafetyBadge";
+import { InlineBotAd } from "@/components/ads/InlineBotAd";
 import {
   summarizeReliabilityChips,
   summarizeReliabilityStats,
@@ -381,6 +382,8 @@ export function AgentTechnicalDossier({ dossier, from }: AgentTechnicalDossierPr
             </div>
           </SectionShell>
 
+          <InlineBotAd position="after-setup" />
+
           <SectionShell id="api" title="Contract & API" evidence={dossier.execution.evidence}>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-3 rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
@@ -488,6 +491,8 @@ export function AgentTechnicalDossier({ dossier, from }: AgentTechnicalDossierPr
               </div>
             ) : null}
           </SectionShell>
+
+          <InlineBotAd position="after-reliability" />
 
           <SectionShell id="artifacts" title="Artifacts & Dependencies" evidence={dossier.artifacts.evidence}>
             <div className="space-y-4">
@@ -652,6 +657,8 @@ export function AgentTechnicalDossier({ dossier, from }: AgentTechnicalDossierPr
               ))}
             </div>
           </SectionShell>
+
+          <InlineBotAd position="after-alternatives" />
 
           <details className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5 md:p-6">
             <summary className="cursor-pointer text-xl font-semibold text-[var(--text-primary)]">

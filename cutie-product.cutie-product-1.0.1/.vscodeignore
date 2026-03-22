@@ -1,7 +1,1 @@
-src/**
-vendor/**
-tsconfig.json
-package-lock.json
-*.tgz
-*.vsix
-out/**/*.map
+.tmp-webview-script.js

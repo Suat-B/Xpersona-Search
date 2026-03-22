@@ -42,6 +42,7 @@ const cutie_binary_controller_1 = require("./cutie-binary-controller");
 const config_1 = require("./config");
 const cutie_desktop_adapter_1 = require("./cutie-desktop-adapter");
 const cutie_model_client_1 = require("./cutie-model-client");
+const cutie_native_autonomy_1 = require("./cutie-native-autonomy");
 const cutie_runtime_1 = require("./cutie-runtime");
 const cutie_session_store_1 = require("./cutie-session-store");
 const cutie_tool_registry_1 = require("./cutie-tool-registry");
@@ -297,7 +298,16 @@ class CutieSidebarProvider {
         /** Monotonic guard so callbacks from an older aborted run cannot overwrite a newer conversation state. */
         this.runRequestVersion = 0;
         this.streamingAssistantText = "";
+        this.suppressedAssistantArtifactText = "";
+        this.liveActionLog = [];
+        this.liveActionLogRunId = null;
+        this.liveActionSeenReceiptIds = new Set();
+        this.liveActionLastStatus = "";
         this.desktopState = buildDefaultDesktopState();
+        this.desktopStateFetchedAt = 0;
+        this.gitStatusFetchedAt = 0;
+        this.gitStatusPromise = null;
+        this.fastStartWarmupPromise = null;
         this.authState = {
             kind: "none",
             label: "Not signed in",
@@ -338,6 +348,65 @@ class CutieSidebarProvider {
             }
         }));
         this.context.subscriptions.push({ dispose: () => this.clearWebviewReadyTimeout() });
+    }
+    resetLiveActionLog(runId = null) {
+        this.liveActionLog = [];
+        this.liveActionLogRunId = runId;
+        this.liveActionSeenReceiptIds = new Set();
+        this.liveActionLastStatus = "";
+    }
+    ensureLiveActionLogForRun(run) {
+        const runId = run?.id || null;
+        if (runId !== this.liveActionLogRunId) {
+            this.resetLiveActionLog(runId);
+        }
+    }
+    appendLiveActionLine(rawLine) {
+        const line = String(rawLine || "").trim();
+        if (!line)
+            return;
+        if (this.liveActionLog.length && this.liveActionLog[this.liveActionLog.length - 1] === line)
+            return;
+        this.liveActionLog.push(line);
+        if (this.liveActionLog.length > CutieSidebarProvider.MAX_LIVE_ACTION_LINES) {
+            this.liveActionLog = this.liveActionLog.slice(-CutieSidebarProvider.MAX_LIVE_ACTION_LINES);
+        }
+    }
+    formatLiveActionReceiptLine(receipt) {
+        const step = typeof receipt.step === "number" && receipt.step > 0 ? `Step ${receipt.step}: ` : "";
+        const summary = String(receipt.summary || "").trim();
+        if (receipt.status === "failed") {
+            const err = String(receipt.error || "").trim();
+            return `${step}${summary || `${receipt.toolName} failed.`}${err ? ` ${err}` : ""}`.trim();
+        }
+        if (receipt.status === "blocked") {
+            const err = String(receipt.error || "").trim();
+            return `${step}${summary || `${receipt.toolName} was blocked.`}${err ? ` ${err}` : ""}`.trim();
+        }
+        return `${step}${summary || `Ran ${receipt.toolName}.`}`.trim();
+    }
+    syncLiveActionReceipts(run) {
+        if (!run)
+            return;
+        this.ensureLiveActionLogForRun(run);
+        for (const receipt of run.receipts || []) {
+            const receiptId = String(receipt.id || "").trim();
+            const seenKey = receiptId || `${run.id}:${receipt.step}:${receipt.toolName}:${receipt.status}`;
+            if (this.liveActionSeenReceiptIds.has(seenKey))
+                continue;
+            this.liveActionSeenReceiptIds.add(seenKey);
+            this.appendLiveActionLine(this.formatLiveActionReceiptLine(receipt));
+        }
+    }
+    noteLiveActionStatus(status, run) {
+        if (!run)
+            return;
+        this.ensureLiveActionLogForRun(run);
+        const line = String(status || "").trim();
+        if (!line || line === this.liveActionLastStatus)
+            return;
+        this.liveActionLastStatus = line;
+        this.appendLiveActionLine(line);
     }
     async gatherBinaryContextForApi() {
         const excerptMax = 8000;
@@ -484,10 +553,25 @@ class CutieSidebarProvider {
         this.activeSession = null;
         this.activeRun = null;
         this.streamingAssistantText = "";
+        this.suppressedAssistantArtifactText = "";
+        this.resetLiveActionLog();
         this.status = "Ready for a new Cutie run.";
         await this.emitState();
+        void this.prewarmFastStartState();
         await this.refreshDesktopState();
         await this.emitState();
+    }
+    prewarmFastStartState() {
+        if (this.fastStartWarmupPromise)
+            return;
+        this.fastStartWarmupPromise = (async () => {
+            await Promise.allSettled([this.refreshAuthState(), this.refreshDesktopState(), this.getGitStatusSummary()]);
+        })().finally(() => {
+            this.fastStartWarmupPromise = null;
+            if (this.view && this.webviewReady) {
+                void this.emitState();
+            }
+        });
     }
     async captureScreen() {
         const session = await this.ensureSession("Desktop snapshot");
@@ -580,6 +664,7 @@ class CutieSidebarProvider {
     }
     async initializeView() {
         await this.emitState();
+        void this.prewarmFastStartState();
         void this.refreshViewState();
         void this.binaryController.resumeBinaryBuildIfNeeded();
     }
@@ -610,6 +695,7 @@ class CutieSidebarProvider {
             this.webviewReady = true;
             this.clearWebviewReadyTimeout();
             await this.emitState();
+            void this.prewarmFastStartState();
             void this.refreshViewState();
             return;
         }
@@ -794,6 +880,8 @@ class CutieSidebarProvider {
         this.activeSessionId = session.id;
         this.activeRun = this.sessionStore.getLatestRun(session);
         this.streamingAssistantText = "";
+        this.suppressedAssistantArtifactText = "";
+        this.resetLiveActionLog();
         this.status = "Loaded local Cutie session.";
         await this.emitState();
         await this.refreshDesktopState();
@@ -868,19 +956,8 @@ class CutieSidebarProvider {
             line: entry.range.start.line + 1,
         })))
             .slice(0, 80);
-        const desktop = await this.desktop.getDesktopContext().catch(() => this.desktopState);
-        this.desktopState = desktop;
-        let gitStatusSummary;
-        try {
-            const gs = await this.workspaceAdapter.gitStatus();
-            const out = (gs.stdout || "").trim();
-            if (out) {
-                gitStatusSummary = out.length > 6000 ? `${out.slice(0, 6000)}\n...[truncated]` : out;
-            }
-        }
-        catch {
-            /* git optional */
-        }
+        const desktop = await this.getDesktopContextForPrompt().catch(() => this.desktopState);
+        const gitStatusSummary = await this.getGitStatusSummary().catch(() => this.gitStatusSummary);
         return {
             workspaceHash: (0, config_1.getWorkspaceHash)(),
             workspaceRootPath: (0, config_1.getWorkspaceRootPath)(),
@@ -1019,6 +1096,8 @@ class CutieSidebarProvider {
             const abortController = new AbortController();
             this.currentAbortController = abortController;
             this.streamingAssistantText = "";
+            this.suppressedAssistantArtifactText = "";
+            this.resetLiveActionLog();
             this.status = "Starting local Cutie runtime...";
             await this.emitState();
             try {
@@ -1035,6 +1114,7 @@ class CutieSidebarProvider {
                             this.activeSession = nextSession;
                             this.activeSessionId = nextSession.id;
                             this.activeRun = this.sessionStore.getLatestRun(nextSession);
+                            this.syncLiveActionReceipts(this.activeRun);
                             await this.emitState();
                             void this.refreshDesktopState().then(() => this.emitState());
                         },
@@ -1043,6 +1123,8 @@ class CutieSidebarProvider {
                                 return;
                             this.status = status;
                             this.activeRun = run;
+                            this.noteLiveActionStatus(status, run);
+                            this.syncLiveActionReceipts(run);
                             if (!run || run.status !== "running") {
                                 this.streamingAssistantText = "";
                             }
@@ -1052,7 +1134,19 @@ class CutieSidebarProvider {
                         onAssistantDelta: async (_delta, accumulated) => {
                             if (runRequestVersion !== this.runRequestVersion)
                                 return;
+                            if ((0, cutie_native_autonomy_1.looksLikeCutieToolArtifactText)(accumulated)) {
+                                this.suppressedAssistantArtifactText = accumulated;
+                                this.streamingAssistantText = "";
+                                await this.emitState();
+                                return;
+                            }
                             this.streamingAssistantText = accumulated;
+                            await this.emitState();
+                        },
+                        onSuppressedAssistantArtifact: async (artifact) => {
+                            if (runRequestVersion !== this.runRequestVersion)
+                                return;
+                            this.suppressedAssistantArtifactText = artifact;
                             await this.emitState();
                         },
                         onWorkspaceFileMutated: async (info) => {
@@ -1079,6 +1173,7 @@ class CutieSidebarProvider {
                 this.activeSession = result.session;
                 this.activeSessionId = result.session.id;
                 this.activeRun = result.run;
+                this.syncLiveActionReceipts(result.run);
                 this.streamingAssistantText = "";
                 this.status =
                     result.run.status === "completed"
@@ -1125,6 +1220,10 @@ class CutieSidebarProvider {
             extensionVersion: (0, config_1.getExtensionVersion)(this.context),
             workspaceHash: (0, config_1.getWorkspaceHash)(),
             status: this.status,
+            liveActionLogPreview: this.liveActionLog.slice(-40),
+            suppressedAssistantArtifactPreview: this.suppressedAssistantArtifactText
+                ? this.suppressedAssistantArtifactText.slice(0, 4000)
+                : null,
             auth: {
                 kind: this.authState.kind,
                 label: this.authState.label,
@@ -1150,6 +1249,7 @@ class CutieSidebarProvider {
                     maxDesktopMutations: run.maxDesktopMutations,
                     repeatedCallCount: run.repeatedCallCount,
                     goal: run.goal,
+                    autonomyMode: run.autonomyMode || null,
                     goalSatisfied: run.goalSatisfied,
                     lastMeaningfulProgressAtStep: run.lastMeaningfulProgressAtStep ?? null,
                     lastMeaningfulProgressSummary: run.lastMeaningfulProgressSummary || null,
@@ -1214,6 +1314,49 @@ class CutieSidebarProvider {
     }
     async refreshDesktopState() {
         this.desktopState = await this.desktop.getDesktopContext().catch(() => this.desktopState || buildDefaultDesktopState());
+        this.desktopStateFetchedAt = Date.now();
+    }
+    async getDesktopContextForPrompt() {
+        const now = Date.now();
+        if (this.desktopStateFetchedAt &&
+            now - this.desktopStateFetchedAt < CutieSidebarProvider.DESKTOP_CONTEXT_CACHE_TTL_MS) {
+            return this.desktopState;
+        }
+        await this.refreshDesktopState();
+        return this.desktopState;
+    }
+    async getGitStatusSummary(force = false) {
+        const now = Date.now();
+        if (!force &&
+            this.gitStatusFetchedAt &&
+            now - this.gitStatusFetchedAt < CutieSidebarProvider.GIT_STATUS_CACHE_TTL_MS) {
+            return this.gitStatusSummary;
+        }
+        if (this.gitStatusPromise) {
+            return this.gitStatusPromise;
+        }
+        this.gitStatusPromise = (async () => {
+            let summary;
+            try {
+                const gs = await this.workspaceAdapter.gitStatus();
+                const out = (gs.stdout || "").trim();
+                if (out) {
+                    summary = out.length > 6000 ? `${out.slice(0, 6000)}\n...[truncated]` : out;
+                }
+            }
+            catch {
+                summary = undefined;
+            }
+            this.gitStatusSummary = summary;
+            this.gitStatusFetchedAt = Date.now();
+            return summary;
+        })();
+        try {
+            return await this.gitStatusPromise;
+        }
+        finally {
+            this.gitStatusPromise = null;
+        }
     }
     async refreshAuthState() {
         this.authState = await this.auth.getAuthState().catch(() => ({
@@ -1235,6 +1378,7 @@ class CutieSidebarProvider {
             activeSessionId: this.activeSessionId,
             messages: this.getVisibleMessages(),
             chatDiffs: this.getChatDiffsForActiveSession(),
+            liveActionLog: this.activeRun?.status === "running" ? this.liveActionLog : [],
             status: this.status,
             running: this.activeRun?.status === "running",
             activeRun: this.activeRun,
@@ -1252,6 +1396,9 @@ CutieSidebarProvider.MAX_CHAT_DIFFS_PER_SESSION = 120;
 CutieSidebarProvider.MAX_PATCH_CHARS = 52000;
 CutieSidebarProvider.MAX_FILE_CHARS_FOR_PATCH = 500000;
 CutieSidebarProvider.WEBVIEW_READY_TIMEOUT_MS = 10000;
+CutieSidebarProvider.MAX_LIVE_ACTION_LINES = 120;
+CutieSidebarProvider.DESKTOP_CONTEXT_CACHE_TTL_MS = 8000;
+CutieSidebarProvider.GIT_STATUS_CACHE_TTL_MS = 15000;
 function activate(context) {
     try {
         (0, cutie_diff_1.registerCutieDiffBeforeProvider)(context);

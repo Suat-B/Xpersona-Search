@@ -2,6 +2,13 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { authenticatePlaygroundRequest } from "@/lib/playground/auth";
 import { unauthorized } from "@/lib/playground/http";
+import {
+  finalizeStreamingToolCalls,
+  mergeStreamingToolCalls,
+  normalizeStructuredCutieTurnResult,
+  stripCutieToolArtifactText,
+  type StreamingToolCallAccumulator,
+} from "./structured";
 
 const CUTIE_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
 
@@ -10,18 +17,40 @@ const zCutieMessage = z.object({
   content: z.string().min(1).max(120_000),
 });
 
+const zCutieToolDefinition = z.object({
+  name: z.string().min(1).max(120),
+  description: z.string().max(4_000).optional().default(""),
+  kind: z.string().optional(),
+  domain: z.string().optional(),
+  inputSchema: z.record(z.unknown()).optional().default({}),
+});
+
 const zCutieChatRequest = z.object({
-  model: z.string().min(1).max(240).default("MiniMaxAI/MiniMax-M2.5:fastest"),
+  model: z.string().min(1).max(240).default("openai/gpt-oss-120b:fastest"),
+  protocol: z.enum(["cutie_tools_v2"]).optional(),
   messages: z.array(zCutieMessage).min(1).max(80),
+  tools: z.array(zCutieToolDefinition).max(64).optional().default([]),
+  maxToolsPerBatch: z.number().int().min(1).max(8).optional().default(1),
   temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().int().min(64).max(4096).optional(),
   stream: z.boolean().optional().default(true),
 });
 
+type HfRouterToolCall = {
+  id?: string | null;
+  index?: number | null;
+  type?: string | null;
+  function?: {
+    name?: string | null;
+    arguments?: string | null;
+  } | null;
+};
+
 type HfRouterChunk = {
   choices?: Array<{
     delta?: {
       content?: string | null;
+      tool_calls?: HfRouterToolCall[] | null;
     };
     finish_reason?: string | null;
   }>;
@@ -33,6 +62,7 @@ type HfRouterNonStreamResponse = {
   choices?: Array<{
     message?: {
       content?: string | null;
+      tool_calls?: HfRouterToolCall[] | null;
     };
   }>;
   usage?: Record<string, unknown>;
@@ -60,8 +90,44 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function buildAllowedToolNames(input: z.infer<typeof zCutieChatRequest>): Set<string> {
+  return new Set((input.tools || []).map((tool) => String(tool.name || "").trim()).filter(Boolean));
+}
+
 function extractOpenAiDelta(chunk: HfRouterChunk): string {
   return String(chunk.choices?.[0]?.delta?.content || "");
+}
+
+function mapCutieToolsForUpstream(tools: z.infer<typeof zCutieToolDefinition>[]): Array<Record<string, unknown>> {
+  return tools.map((tool) => ({
+    type: "function",
+    function: {
+      name: tool.name,
+      description: tool.description || "",
+      parameters:
+        tool.inputSchema && typeof tool.inputSchema === "object" && !Array.isArray(tool.inputSchema)
+          ? tool.inputSchema
+          : { type: "object", properties: {}, additionalProperties: true },
+    },
+  }));
+}
+
+function buildUpstreamRequestBody(input: { body: z.infer<typeof zCutieChatRequest> }): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    model: input.body.model,
+    messages: input.body.messages,
+    stream: input.body.stream,
+    temperature: input.body.temperature ?? 0.2,
+    max_tokens: input.body.maxTokens ?? 1200,
+  };
+  if (input.body.protocol === "cutie_tools_v2" && input.body.tools.length) {
+    payload.tools = mapCutieToolsForUpstream(input.body.tools);
+    payload.tool_choice = "auto";
+    if (input.body.maxToolsPerBatch > 1) {
+      payload.parallel_tool_calls = true;
+    }
+  }
+  return payload;
 }
 
 async function streamHfRouterResponse(input: {
@@ -80,19 +146,17 @@ async function streamHfRouterResponse(input: {
     );
   }
 
+  const protocolActive = input.body.protocol === "cutie_tools_v2";
+  const allowedToolNames = buildAllowedToolNames(input.body);
+  const maxToolsPerBatch = Math.max(1, input.body.maxToolsPerBatch ?? 1);
+
   const upstream = await fetch(`${CUTIE_ROUTER_BASE_URL}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({
-      model: input.body.model,
-      messages: input.body.messages,
-      stream: true,
-      temperature: input.body.temperature ?? 0.2,
-      max_tokens: input.body.maxTokens ?? 1200,
-    }),
+    body: JSON.stringify(buildUpstreamRequestBody(input)),
   });
 
   if (!upstream.ok || !upstream.body) {
@@ -116,9 +180,42 @@ async function streamHfRouterResponse(input: {
 
   void (async () => {
     let rawBuffer = "";
+    let rawAssistantText = "";
+    let emittedAssistantText = "";
     let finalText = "";
     let usage: Record<string, unknown> | null = null;
     let resolvedModel = input.body.model;
+    let terminalEventSent = false;
+    const streamedToolCalls: StreamingToolCallAccumulator[] = [];
+
+    const emitTerminalEvent = async () => {
+      if (terminalEventSent) return;
+      terminalEventSent = true;
+      if (protocolActive) {
+        const normalized = normalizeStructuredCutieTurnResult({
+          assistantText: rawAssistantText,
+          upstreamToolCalls: finalizeStreamingToolCalls(streamedToolCalls, allowedToolNames, maxToolsPerBatch),
+          allowedToolNames,
+          maxToolsPerBatch,
+        });
+        if (normalized.response.type === "tool_batch") {
+          await writer.write(encoder.encode(sse("tool_batch", { toolCalls: normalized.response.toolCalls })));
+        } else {
+          await writer.write(encoder.encode(sse("final", { text: normalized.response.text })));
+        }
+      } else {
+        await writer.write(encoder.encode(sse("final", { text: finalText })));
+      }
+      await writer.write(
+        encoder.encode(
+          sse("meta", {
+            model: resolvedModel,
+            usage,
+          })
+        )
+      );
+      await writer.write(encoder.encode("data: [DONE]\n\n"));
+    };
 
     const flushBlock = async (block: string) => {
       const lines = block
@@ -130,16 +227,7 @@ async function streamHfRouterResponse(input: {
       const payload = lines.join("\n").trim();
       if (!payload) return;
       if (payload === "[DONE]") {
-        await writer.write(encoder.encode(sse("final", finalText)));
-        await writer.write(
-          encoder.encode(
-            sse("meta", {
-              model: resolvedModel,
-              usage,
-            })
-          )
-        );
-        await writer.write(encoder.encode("data: [DONE]\n\n"));
+        await emitTerminalEvent();
         return;
       }
 
@@ -159,11 +247,25 @@ async function streamHfRouterResponse(input: {
 
       const delta = extractOpenAiDelta(parsed);
       if (delta) {
-        finalText += delta;
-        await writer.write(encoder.encode(sse("delta", { text: delta })));
+        if (protocolActive) {
+          rawAssistantText += delta;
+          const visibleText = stripCutieToolArtifactText(rawAssistantText);
+          const nextDelta = visibleText.slice(emittedAssistantText.length);
+          emittedAssistantText = visibleText;
+          if (nextDelta) {
+            await writer.write(encoder.encode(sse("assistant_delta", { text: nextDelta })));
+          }
+        } else {
+          finalText += delta;
+          await writer.write(encoder.encode(sse("delta", { text: delta })));
+        }
       }
 
-      if (parsed.choices?.[0]?.finish_reason) {
+      if (protocolActive) {
+        mergeStreamingToolCalls(streamedToolCalls, parsed.choices?.[0]?.delta?.tool_calls || []);
+      }
+
+      if (!protocolActive && parsed.choices?.[0]?.finish_reason) {
         await writer.write(
           encoder.encode(
             sse("status", {
@@ -194,6 +296,7 @@ async function streamHfRouterResponse(input: {
       if (trailing) {
         await flushBlock(trailing);
       }
+      await emitTerminalEvent();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await writer.write(
@@ -236,19 +339,17 @@ async function requestHfRouterResponse(input: {
     );
   }
 
+  const protocolActive = input.body.protocol === "cutie_tools_v2";
+  const allowedToolNames = buildAllowedToolNames(input.body);
+  const maxToolsPerBatch = Math.max(1, input.body.maxToolsPerBatch ?? 1);
+
   const upstream = await fetch(`${CUTIE_ROUTER_BASE_URL}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({
-      model: input.body.model,
-      messages: input.body.messages,
-      stream: false,
-      temperature: input.body.temperature ?? 0.2,
-      max_tokens: input.body.maxTokens ?? 1200,
-    }),
+    body: JSON.stringify(buildUpstreamRequestBody({ body: { ...input.body, stream: false } })),
   });
 
   if (!upstream.ok) {
@@ -266,6 +367,22 @@ async function requestHfRouterResponse(input: {
 
   const data = (await upstream.json().catch(() => ({}))) as HfRouterNonStreamResponse;
   const text = String(data.choices?.[0]?.message?.content || "");
+
+  if (protocolActive) {
+    const normalized = normalizeStructuredCutieTurnResult({
+      assistantText: text,
+      upstreamToolCalls: data.choices?.[0]?.message?.tool_calls,
+      allowedToolNames,
+      maxToolsPerBatch,
+    });
+    return jsonResponse({
+      response: normalized.response,
+      assistantText: normalized.assistantText,
+      model: data.model || input.body.model,
+      usage: data.usage || null,
+    });
+  }
+
   return jsonResponse({
     text,
     model: data.model || input.body.model,

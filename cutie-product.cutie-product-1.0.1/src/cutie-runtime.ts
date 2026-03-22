@@ -1,5 +1,21 @@
 import type { RequestAuth } from "@xpersona/vscode-core";
 import {
+  appendDeadEndMemory,
+  batchNeedsMoreAutonomy,
+  buildDeadEndSignature,
+  deadEndAlreadySeen,
+  describeAutonomyGap,
+  getPreferredStrategyPhase,
+  getProgressConfidence,
+  hasCodeChangeCompletionProof,
+  hasSuccessfulWorkspaceMutation,
+  isVerificationReceipt,
+  isVerificationToolCall,
+  requiresCodeChangeMutation,
+  requiresCodeChangeVerification,
+  resolveRetryStrategy,
+} from "./cutie-autonomy-controller";
+import {
   buildToolCallKey,
   CUTIE_CONTEXT_RECEIPT_WINDOW,
   CUTIE_MAX_DESKTOP_MUTATIONS,
@@ -17,16 +33,29 @@ import {
 } from "./cutie-policy";
 import { humanizeCutieHostHttpError } from "./cutie-host-http-error";
 import { CutieModelClient } from "./cutie-model-client";
+import {
+  DIRECT_MUTATION_REPAIR_CAP,
+  UNLIMITED_DIRECT_MUTATION_REPAIR_CAP,
+  extractVisibleAssistantText,
+  looksLikeCutieToolArtifactText,
+  resolveNativeNextToolHints,
+  selectCodeChangeAutonomyMode,
+} from "./cutie-native-autonomy";
 import { CutieSessionStore } from "./cutie-session-store";
 import { CutieToolRegistry } from "./cutie-tool-registry";
 import type {
+  CutieAutonomyMode,
+  CutieBlockerCategory,
   CutieEscalationState,
   CutieModelMessage,
   CutieMentionSuggestion,
+  CutieProgressConfidence,
   CutieProtocolToolDefinition,
+  CutieRetryStrategy,
   CutieRunObjective,
   CutieRunState,
   CutieSessionRecord,
+  CutieStrategyPhase,
   CutieStructuredFinal,
   CutieStructuredResponse,
   CutieTaskGoal,
@@ -119,11 +148,29 @@ function shouldUseObjectiveMode(
   goal: CutieTaskGoal,
   prompt: string,
   mentionContext: { mentionedPaths: string[]; mentionedWindows: string[] },
-  settings?: RuntimeContext["cutieDynamicSettings"]
+  context?: RuntimeContext
 ): boolean {
-  if (settings?.objectiveBasedRuns === false) return false;
+  const settings = context?.cutieDynamicSettings;
   if (!hasConcreteTaskSignals(prompt, mentionContext)) return false;
-  if (goal === "code_change") return true;
+  if (goal === "code_change") {
+    return (
+      selectCodeChangeAutonomyMode({
+        goal,
+        prompt,
+        mentionedPaths: mentionContext.mentionedPaths,
+        activeFilePath: typeof context?.activeFile?.path === "string" ? String(context.activeFile.path) : null,
+        openFilePaths: Array.isArray(context?.openFiles)
+          ? context.openFiles
+              .map((entry) => {
+                const row = asRecord(entry);
+                return typeof row.path === "string" ? String(row.path) : null;
+              })
+              .filter((value): value is string => Boolean(value))
+          : [],
+        objectiveBasedRuns: settings?.objectiveBasedRuns,
+      }) === "objective"
+    );
+  }
   if (goal === "workspace_investigation" && settings?.objectiveBasedInvestigation) return true;
   return false;
 }
@@ -171,8 +218,8 @@ function validateObjectiveFinalAgainstRun(
       ok: false,
       repairMessage: [
         "Repair instruction:",
-        "This run uses task objectives. Finish with minified JSON only, including an objectives array.",
-        "Shape: {\"type\":\"final\",\"final\":\"your summary\",\"objectives\":[{\"id\":\"…\",\"status\":\"done|blocked\",\"note\":\"optional\"}]}",
+        "This run uses task objectives.",
+        "Return a structured final response with a user-facing summary and one outcome per objective id.",
         `Objective ids you must include exactly once each: ${ids}.`,
       ].join(" "),
     };
@@ -277,62 +324,14 @@ function normalizeDecomposedObjectives(rows: Array<{ id: string; text: string }>
 function buildObjectiveProtocolSystemMessage(objectives: CutieRunObjective[]): string {
   return [
     "Task objectives (strict): This run is tracked against a checklist in live context under taskObjectives.",
-    "Do not respond with {\"type\":\"final\",...} until every objective is finished.",
-    "When you are truly done, respond with ONLY minified JSON:",
-    '{"type":"final","final":"user-facing summary","objectives":[{"id":"1","status":"done"},{"id":"2","status":"blocked","note":"reason"}]}',
+    "Do not finish until every objective is done or blocked.",
+    "When you are truly done, return a final response with a user-facing summary and one outcome per objective id.",
     "Each objective id must appear exactly once. Status must be done or blocked.",
-    "Until then, keep using tool_call or tool_calls batches as needed.",
+    "Until then, keep taking native tool actions as needed.",
     "Current objectives:",
     stableJson(objectives.map((o) => ({ id: o.id, text: o.text, status: o.status }))),
   ].join("\n");
 }
-
-const TOOL_NAME_ALIASES: Record<string, CutieToolName> = {
-  filesystem_list_allowed_directories: "list_files",
-  filesystem_list_directory: "list_files",
-  filesystem_list_files: "list_files",
-  filesystem_read_file: "read_file",
-  filesystem_write_file: "write_file",
-  filesystem_edit_file: "edit_file",
-  filesystem_search: "search_workspace",
-  filesystem_search_files: "search_workspace",
-  list_allowed_directories: "list_files",
-  read_text_file: "read_file",
-  write_text_file: "write_file",
-  edit_text_file: "edit_file",
-  execute_command: "run_command",
-  shell_command: "run_command",
-  "cli-mcp-server_run_command": "run_command",
-  cli_mcp_server_run_command: "run_command",
-  mcp_run_command: "run_command",
-  "mcp__run_command": "run_command",
-  run_terminal_command: "run_command",
-};
-
-const KNOWN_TOOL_NAMES = new Set<CutieToolName>([
-  "list_files",
-  "read_file",
-  "search_workspace",
-  "get_diagnostics",
-  "git_status",
-  "git_diff",
-  "desktop_capture_screen",
-  "desktop_get_active_window",
-  "desktop_list_windows",
-  "create_checkpoint",
-  "edit_file",
-  "write_file",
-  "mkdir",
-  "run_command",
-  "desktop_open_app",
-  "desktop_open_url",
-  "desktop_focus_window",
-  "desktop_click",
-  "desktop_type",
-  "desktop_keypress",
-  "desktop_scroll",
-  "desktop_wait",
-]);
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -341,24 +340,6 @@ function asRecord(value: unknown): Record<string, unknown> {
 function trimToLimit(value: unknown, limit = 12_000): string {
   const text = String(value ?? "");
   return text.length <= limit ? text : `${text.slice(0, limit)}\n...[truncated]`;
-}
-
-function normalizeToolName(rawName: string | null, argumentsValue?: Record<string, unknown> | null): CutieToolName | null {
-  if (!rawName) return null;
-  const trimmed = String(rawName || "").trim();
-  if (!trimmed) return null;
-
-  const direct = trimmed as CutieToolName;
-  const normalizedKey = trimmed.toLowerCase();
-  if (KNOWN_TOOL_NAMES.has(direct)) return direct;
-  const alias = TOOL_NAME_ALIASES[normalizedKey];
-  if (alias) return alias;
-
-  if (normalizedKey === "filesystem_list_allowed_directories" && argumentsValue) {
-    delete argumentsValue.path;
-  }
-
-  return null;
 }
 
 function stableJson(value: unknown): string {
@@ -379,105 +360,6 @@ function extractJsonObject(raw: string): unknown | null {
   } catch {
     return null;
   }
-}
-
-type NormalizedToolPayload = {
-  name: CutieToolName;
-  arguments: Record<string, unknown>;
-  summary?: string;
-};
-
-function tryNormalizeToolCallPayload(parsed: unknown): NormalizedToolPayload | null {
-  const record = asRecord(parsed);
-  const toolCall = asRecord(record.tool_call || record.toolCall || record);
-  const rawName = typeof toolCall.name === "string" ? toolCall.name : typeof toolCall.tool === "string" ? toolCall.tool : null;
-  const argumentsValue =
-    toolCall.arguments && typeof toolCall.arguments === "object"
-      ? toolCall.arguments
-      : toolCall.args && typeof toolCall.args === "object"
-        ? toolCall.args
-        : toolCall.parameters && typeof toolCall.parameters === "object"
-          ? toolCall.parameters
-          : null;
-  const normalizedName = normalizeToolName(rawName, argumentsValue as Record<string, unknown> | null);
-  if (!normalizedName || !argumentsValue || typeof argumentsValue !== "object") return null;
-  return {
-    name: normalizedName,
-    arguments: argumentsValue as Record<string, unknown>,
-    ...(typeof toolCall.summary === "string" ? { summary: toolCall.summary } : {}),
-  };
-}
-
-function payloadsToStructuredResponse(payloads: NormalizedToolPayload[]): CutieStructuredResponse {
-  if (payloads.length === 1) {
-    return {
-      type: "tool_call",
-      tool_call: {
-        name: payloads[0].name,
-        arguments: payloads[0].arguments,
-        ...(payloads[0].summary ? { summary: payloads[0].summary } : {}),
-      },
-    };
-  }
-  return { type: "tool_calls", tool_calls: payloads };
-}
-
-function tryNormalizeStructuredResponse(parsed: unknown): CutieStructuredResponse | null {
-  if (Array.isArray(parsed)) {
-    const payloads: NormalizedToolPayload[] = [];
-    for (const item of parsed) {
-      const p = tryNormalizeToolCallPayload(item);
-      if (p) payloads.push(p);
-    }
-    if (payloads.length >= 1) return payloadsToStructuredResponse(payloads);
-    for (const item of parsed) {
-      const normalized = tryNormalizeStructuredResponse(item);
-      if (normalized) return normalized;
-    }
-    return null;
-  }
-
-  const record = asRecord(parsed);
-  if (record.type === "final" && typeof record.final === "string") {
-    const objectives = parseFinalObjectiveOutcomes(record);
-    return {
-      type: "final",
-      final: record.final,
-      ...(objectives ? { objectives } : {}),
-    };
-  }
-  const nested = record.response || record.output || record.next_action || record.action;
-  if (nested && nested !== parsed) {
-    const nestedNormalized = tryNormalizeStructuredResponse(nested);
-    if (nestedNormalized) return nestedNormalized;
-  }
-
-  const toolCallsArray = Array.isArray(record.tool_calls)
-    ? record.tool_calls
-    : Array.isArray(record.toolCalls)
-      ? record.toolCalls
-      : null;
-  if (toolCallsArray?.length) {
-    const payloads: NormalizedToolPayload[] = [];
-    for (const candidate of toolCallsArray) {
-      const p = tryNormalizeToolCallPayload(candidate);
-      if (p) payloads.push(p);
-    }
-    if (payloads.length >= 1) return payloadsToStructuredResponse(payloads);
-  }
-
-  const single = tryNormalizeToolCallPayload(parsed);
-  if (single && (record.type === "tool_call" || !record.type)) {
-    return {
-      type: "tool_call",
-      tool_call: {
-        name: single.name,
-        arguments: single.arguments,
-        ...(single.summary ? { summary: single.summary } : {}),
-      },
-    };
-  }
-  return null;
 }
 
 function extractBalancedJsonObjects(raw: string): string[] {
@@ -520,80 +402,11 @@ function extractBalancedJsonObjects(raw: string): string[] {
   return candidates;
 }
 
-function salvageToolCallFromText(raw: string): CutieStructuredResponse | null {
-  const source = stripCodeFence(raw);
-  const nameMatch = /"name"\s*:\s*"([^"]+)"/i.exec(source);
-  if (!nameMatch) return null;
-
-  const argsAnchor = source.search(/"arguments"\s*:\s*\{/i);
-  if (argsAnchor < 0) return null;
-  const braceStart = source.indexOf("{", argsAnchor);
-  if (braceStart < 0) return null;
-
-  let depth = 0;
-  let inString = false;
-  let escapeNext = false;
-  let braceEnd = -1;
-  for (let index = braceStart; index < source.length; index += 1) {
-    const char = source[index];
-    if (escapeNext) {
-      escapeNext = false;
-      continue;
-    }
-    if (char === "\\") {
-      escapeNext = true;
-      continue;
-    }
-    if (char === '"') {
-      inString = !inString;
-      continue;
-    }
-    if (inString) continue;
-    if (char === "{") depth += 1;
-    if (char === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        braceEnd = index;
-        break;
-      }
-    }
-  }
-  if (braceEnd < 0) return null;
-
-  try {
-    const argumentsObject = JSON.parse(source.slice(braceStart, braceEnd + 1)) as Record<string, unknown>;
-    const summaryMatch = /"summary"\s*:\s*"([^"]*)"/i.exec(source);
-    const normalizedName = normalizeToolName(nameMatch[1], argumentsObject);
-    if (!normalizedName) return null;
-    return {
-      type: "tool_call",
-      tool_call: {
-        name: normalizedName,
-        arguments: argumentsObject,
-        ...(summaryMatch ? { summary: summaryMatch[1] } : {}),
-      },
-    };
-  } catch {
-    return null;
-  }
-}
-
-function maybeStructuredResponse(raw: string): CutieStructuredResponse | null {
-  const direct = tryNormalizeStructuredResponse(extractJsonObject(raw));
-  if (direct) return direct;
-
-  for (const candidate of extractBalancedJsonObjects(raw)) {
-    try {
-      const parsed = JSON.parse(candidate) as unknown;
-      const normalized = tryNormalizeStructuredResponse(parsed);
-      if (normalized) return normalized;
-    } catch {
-      continue;
-    }
-  }
-
-  return salvageToolCallFromText(raw);
-}
+type NormalizedToolPayload = {
+  name: CutieToolName;
+  arguments: Record<string, unknown>;
+  summary?: string;
+};
 
 function formatStructuredResponse(response: CutieStructuredResponse): string {
   return JSON.stringify(response);
@@ -660,25 +473,13 @@ function batchHasProgressMutationTool(calls: Array<{ name: CutieToolName }>): bo
 
 function shouldBlockObserveOnlyBatchAfterInspection(goal: CutieTaskGoal, run: CutieRunState, batch: CutieToolCall[]): boolean {
   if (goal !== "code_change") return false;
+  if (run.autonomyMode === "objective") return false;
+  const autonomyGap = batchNeedsMoreAutonomy({ goal, run, batch });
+  if (autonomyGap === "missing_mutation" || autonomyGap === "missing_verification") return true;
   if (!hasCompletedTool(run, "read_file")) return false;
   if (batchHasProgressMutationTool(batch)) return false;
   const last = batch[batch.length - 1];
   return isNonProgressToolAfterInspection(goal, run, last.name);
-}
-
-function looksLikeMalformedToolCall(raw: string): boolean {
-  const text = stripCodeFence(raw);
-  return /tool_call|\"name\"\s*:|\"arguments\"\s*:|\{\"type\"\s*:\s*\"tool/i.test(text);
-}
-
-/** Natural-language prefix before the first `{` that likely starts tool JSON (for streamed narration). */
-function extractPreStructuredNarration(accumulated: string): string {
-  const raw = accumulated;
-  if (!raw.trim()) return "";
-  const braceIdx = raw.indexOf("{");
-  if (braceIdx < 0) return raw.trimEnd();
-  if (braceIdx === 0) return "";
-  return raw.slice(0, braceIdx).trimEnd();
 }
 
 function shouldSurfaceStreamingAssistantText(accumulated: string, goal: CutieTaskGoal): boolean {
@@ -686,11 +487,11 @@ function shouldSurfaceStreamingAssistantText(accumulated: string, goal: CutieTas
     const trimmed = accumulated.trimStart();
     if (!trimmed) return false;
     if (trimmed.startsWith("{") || trimmed.startsWith("```")) return false;
-    if (looksLikeMalformedToolCall(trimmed)) return false;
+    if (looksLikeCutieToolArtifactText(trimmed)) return false;
     return true;
   }
   if (goal === "workspace_investigation" || goal === "code_change") {
-    return extractPreStructuredNarration(accumulated).length > 0;
+    return extractVisibleAssistantText(accumulated).trim().length > 0;
   }
   return false;
 }
@@ -730,6 +531,7 @@ function buildSystemPrompt(toolCatalog = ""): string {
     "If mentionedWindows are provided, do not call workspace tools unless the user explicitly asks for code or file help.",
     "Do not loop on list_files or search_workspace once you already have enough information to inspect a likely target.",
     "After finding a candidate file, move to read_file, then patch_file or write_file if a change is needed.",
+    "For code-change tasks, a final answer is invalid until you have both made the requested workspace change and completed a relevant verification step, unless the runtime explicitly records a blocker.",
     "When a tool result says a call was redundant or blocked, choose a different next step instead of retrying the same call.",
     "When you need tool(s), respond with ONLY minified JSON — either one tool:",
     '{"type":"tool_call","tool_call":{"name":"tool_name","arguments":{},"summary":"short reason"}}',
@@ -791,6 +593,12 @@ function buildContextMessage(input: {
         repairAttemptCount: input.run.repairAttemptCount,
         lastMeaningfulProgressAtStep: input.run.lastMeaningfulProgressAtStep ?? null,
         lastMeaningfulProgressSummary: input.run.lastMeaningfulProgressSummary || null,
+        strategyPhase: input.run.strategyPhase || null,
+        progressConfidence: input.run.progressConfidence || null,
+        retryStrategy: input.run.retryStrategy || null,
+        lastVerifiedOutcome: input.run.lastVerifiedOutcome || null,
+        blockerCategory: input.run.blockerCategory || null,
+        loopPreventionTrigger: input.run.loopPreventionTrigger || null,
         escalationState: input.run.escalationState,
         stepCount: input.run.stepCount,
         maxSteps: input.run.maxSteps,
@@ -846,6 +654,9 @@ function buildNativeSystemPrompt(): string {
     "If mentionedWindows are provided, do not call workspace tools unless the user explicitly asks for code or file help.",
     "Do not loop on list_files or search_workspace once you already have enough information to inspect a likely target.",
     "After finding a candidate file, move to read_file, then patch_file or write_file if a change is needed.",
+    "For a straightforward single-file code change, after reading the target file once, choose patch_file, write_file, or a relevant run_command next.",
+    "For code-change tasks, you are not done after the edit alone. Run a relevant verification step before finishing unless context proves verification is unavailable and you must explain the blocker.",
+    "Do not emit [TOOL_CALL], tool_call JSON, tool_calls JSON, or any other handwritten tool markup inside assistant prose.",
     "When a tool result says a call was redundant or blocked, choose a different next step instead of retrying the same call.",
     "When tools are needed, return native structured tool calls. When tools are not needed, return a structured final answer for the user.",
     "If live context JSON includes taskObjectives with objectivesPhase active, you must not finish until every objective is done or blocked.",
@@ -866,6 +677,8 @@ function buildNativeContextMessage(input: {
   context: RuntimeContext;
   run: CutieRunState;
   latestFileStates?: Map<string, RuntimeFileState>;
+  preferredTargetPath?: string | null;
+  allowedNextTools?: string[];
 }): string {
   const receiptWindow = Math.max(
     4,
@@ -904,6 +717,7 @@ function buildNativeContextMessage(input: {
       ...(input.context.investigationPreflightSummary
         ? { investigationPreflight: input.context.investigationPreflightSummary }
         : {}),
+      ...(input.preferredTargetPath ? { preferredTargetPath: input.preferredTargetPath } : {}),
       runLimits: {
         goal: input.run.goal,
         goalSatisfied: input.run.goalSatisfied,
@@ -919,6 +733,18 @@ function buildNativeContextMessage(input: {
         maxWorkspaceMutations: input.run.maxWorkspaceMutations,
         desktopMutationCount: input.run.desktopMutationCount,
         maxDesktopMutations: input.run.maxDesktopMutations,
+      },
+      ...(input.run.autonomyMode ? { autonomyMode: input.run.autonomyMode } : {}),
+      ...(input.allowedNextTools?.length ? { allowedNextTools: input.allowedNextTools } : {}),
+      autonomyState: {
+        strategyPhase: input.run.strategyPhase || null,
+        progressConfidence: input.run.progressConfidence || null,
+        retryStrategy: input.run.retryStrategy || null,
+        lastVerifiedOutcome: input.run.lastVerifiedOutcome || null,
+        blockerCategory: input.run.blockerCategory || null,
+        loopPreventionTrigger: input.run.loopPreventionTrigger || null,
+        deadEndMemory: input.run.deadEndMemory || [],
+        autonomyGap: describeAutonomyGap(input.run),
       },
       ...(input.run.objectives?.length && input.run.objectivesPhase === "active"
         ? {
@@ -995,10 +821,69 @@ function buildToolResultMessage(result: CutieToolResult): string {
   });
 }
 
+function getDiagnosticsCountFromResult(result: CutieToolResult): number | null {
+  const data = asRecord(result.data);
+  return Array.isArray(data.diagnostics) ? data.diagnostics.length : null;
+}
+
+function runtimeStringValue(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function buildVerificationOutcome(toolCall: CutieToolCall, toolResult: CutieToolResult): string | undefined {
+  if (!toolResult.ok) return undefined;
+  if (toolCall.name === "run_command" && isVerificationToolCall(toolCall)) {
+    const command = runtimeStringValue(toolCall.arguments.command);
+    return command ? `Verified by running: ${command}` : "Verified by running a targeted workspace check.";
+  }
+  if (toolCall.name === "get_diagnostics") {
+    const diagnosticCount = getDiagnosticsCountFromResult(toolResult);
+    if (diagnosticCount === 0) {
+      return "Verified with workspace diagnostics: no diagnostics were reported for the target file.";
+    }
+  }
+  return undefined;
+}
+
+function isVerificationFailure(toolCall: CutieToolCall, toolResult: CutieToolResult, run: CutieRunState): boolean {
+  if (!requiresCodeChangeVerification(run)) return false;
+  if (toolCall.name === "get_diagnostics" && toolResult.ok) {
+    const diagnosticCount = getDiagnosticsCountFromResult(toolResult);
+    return typeof diagnosticCount === "number" && diagnosticCount > 0;
+  }
+  return isVerificationToolCall(toolCall) && !toolResult.ok;
+}
+
+function inferBlockerCategoryFromMessage(message: string): CutieBlockerCategory {
+  const text = String(message || "").toLowerCase();
+  if (
+    text.includes("quota") ||
+    text.includes("rate limit") ||
+    text.includes("econn") ||
+    text.includes("network") ||
+    text.includes("timed out") ||
+    text.includes("timeout")
+  ) {
+    return "environment";
+  }
+  if (text.includes("diagnostic") || text.includes("test") || text.includes("build") || text.includes("compile")) {
+    return "validation";
+  }
+  if (text.includes("stale_revision") || text.includes("patch") || text.includes("write_file") || text.includes("tool")) {
+    return "tooling";
+  }
+  if (text.includes("impossible") || text.includes("cannot") || text.includes("can not")) {
+    return "impossible";
+  }
+  return "planning";
+}
+
 function createInitialRunState(
   sessionId: string,
   goal: CutieTaskGoal,
-  budget?: { maxSteps: number; maxWorkspaceMutations: number }
+  budget?: { maxSteps: number; maxWorkspaceMutations: number },
+  autonomyMode?: CutieAutonomyMode,
+  preferredTargetPath?: string | null
 ): CutieRunState {
   return {
     id: randomId("cutie_run"),
@@ -1021,6 +906,12 @@ function createInitialRunState(
     repeatedCallCount: 0,
     objectivesPhase: "off",
     objectiveRepairCount: 0,
+    ...(autonomyMode ? { autonomyMode } : {}),
+    ...(preferredTargetPath ? { preferredTargetPath } : {}),
+    strategyPhase: goal === "code_change" ? "inspect" : "mutate",
+    progressConfidence: goal === "conversation" ? "high" : "low",
+    retryStrategy: "none",
+    deadEndMemory: [],
   };
 }
 
@@ -1071,6 +962,9 @@ function createRepeatedCallResult(toolCall: CutieToolCall): CutieToolResult {
 }
 
 function buildFinalFallbackMessage(run: CutieRunState): string {
+  if (run.goal === "code_change" && run.lastVerifiedOutcome) {
+    return `I completed the run. ${run.lastVerifiedOutcome}`;
+  }
   const completedReceipts = [...run.receipts].filter((receipt) => receipt.status === "completed");
   const latestReceipt = completedReceipts[completedReceipts.length - 1] || run.receipts[run.receipts.length - 1];
   if (!latestReceipt) {
@@ -1201,7 +1095,7 @@ function classifyTaskGoal(
 }
 
 function hasCompletedMutation(run: CutieRunState): boolean {
-  return run.receipts.some((receipt) => receipt.status === "completed" && receipt.kind === "mutate");
+  return hasSuccessfulWorkspaceMutation(run);
 }
 
 function hasCompletedDesktopTool(run: CutieRunState): boolean {
@@ -1231,7 +1125,7 @@ function requiresWorkspaceMutationGoal(prompt: string, mentionContext: { mention
 }
 
 function hasWorkspaceMutationGoalProgress(run: CutieRunState): boolean {
-  return run.goalSatisfied || hasCompletedMutation(run) || hasCompletedTool(run, "run_command");
+  return hasSuccessfulWorkspaceMutation(run);
 }
 
 function shouldKeepPushingForWorkspaceMutation(input: {
@@ -1240,8 +1134,14 @@ function shouldKeepPushingForWorkspaceMutation(input: {
   run: CutieRunState;
 }): boolean {
   if (input.run.goal !== "code_change" && !requiresWorkspaceMutationGoal(input.prompt, input.mentionContext)) return false;
+  if (input.run.autonomyMode === "objective") return false;
   if (hasWorkspaceMutationGoalProgress(input.run)) return false;
   return hasCompletedTool(input.run, "read_file");
+}
+
+function shouldKeepPushingForVerification(run: CutieRunState): boolean {
+  if (run.goal !== "code_change") return false;
+  return requiresCodeChangeVerification(run);
 }
 
 function shouldBlockBroadWorkspaceProbe(input: {
@@ -1286,7 +1186,8 @@ function shouldRepairForMissingAction(input: {
   candidate: CutieStructuredResponse | null;
 }): boolean {
   if (input.candidate?.type === "tool_call" || input.candidate?.type === "tool_calls") return false;
-  if (input.run.goal === "code_change" && !input.run.goalSatisfied) return true;
+  if (shouldKeepPushingForWorkspaceMutation(input)) return true;
+  if (shouldKeepPushingForVerification(input.run)) return true;
   if (input.run.goal === "desktop_action" && !input.run.goalSatisfied && !hasCompletedDesktopTool(input.run)) return true;
   return false;
 }
@@ -1312,15 +1213,6 @@ function isMeaningfulProgressReceipt(goal: CutieTaskGoal, receipt: CutieToolRece
 }
 
 /** After real progress, a garbage planning turn should end completed — not failed. */
-function shouldCompleteRunDespiteMalformedPlanning(run: CutieRunState): boolean {
-  if (run.goal === "conversation") return false;
-  if (!run.goalSatisfied) return false;
-  if (run.goal === "code_change") return hasCompletedMutation(run);
-  if (run.goal === "desktop_action") return hasCompletedDesktopTool(run);
-  if (run.goal === "workspace_investigation") return true;
-  return false;
-}
-
 function countFailedWorkspaceMutations(run: CutieRunState): number {
   return run.receipts.filter(
     (receipt) => receipt.domain === "workspace" && receipt.kind === "mutate" && receipt.status === "failed"
@@ -1388,8 +1280,8 @@ function buildRetryableEditFailureInstruction(input: {
     latestContent ? `Current file content:\n${latestContent}` : "",
     "Do not call read_file, list_files, or search_workspace again.",
     shouldForceWrite
-      ? "Your targeted edit attempts have already failed multiple times. Return exactly one minified write_file tool_call with the full updated file content."
-      : "Return exactly one next mutation tool call.",
+      ? "Your targeted edit attempts have already failed multiple times. Choose exactly one native write_file call next with the full updated file content."
+      : "Choose exactly one next native mutation call.",
     shouldForceWrite ? "" : "- Prefer patch_file with the latest baseRevision and corrected ordered line edits.",
     shouldForceWrite ? "" : "- Use write_file only if a precise targeted patch is not reliable.",
   ]
@@ -1441,7 +1333,7 @@ function buildGenericMutationFailureRepairInstruction(input: {
   ];
   if (forceWrite) {
     lines.push(
-      "Multiple workspace mutations failed. Return exactly one minified write_file tool_call with the full corrected file content and overwrite true.",
+      "Multiple workspace mutations failed. Choose exactly one native write_file call next with the full corrected file content and overwrite true.",
       "Do not call read_file, list_files, search_workspace, or patch_file."
     );
   } else if (!latestContent && isWorkspaceMutationTool(input.toolCall.name)) {
@@ -1482,6 +1374,7 @@ function buildPostInspectionMutationInstruction(input: {
     latestState?.revisionId ? `Latest revisionId: ${latestState.revisionId}` : "",
     latestContent ? `Current file content:\n${latestContent}` : "",
     "Return exactly one next tool call that makes real progress.",
+    "Allowed next tools for this turn: patch_file, write_file, run_command.",
     "Prefer patch_file with a valid baseRevision and ordered line edits.",
     "Use write_file if a targeted edit is not reliable.",
   ]
@@ -1502,6 +1395,10 @@ function getKnownTargetPath(
   const latestReadPath = typeof latestRead?.data?.path === "string" ? normalizeWorkspaceRelativePath(latestRead.data.path) : null;
   if (latestReadPath) return latestReadPath;
 
+  if (run.preferredTargetPath) {
+    return normalizeWorkspaceRelativePath(run.preferredTargetPath) || run.preferredTargetPath;
+  }
+
   const activeFile = asRecord(context?.activeFile);
   const activePath = typeof activeFile.path === "string" ? normalizeWorkspaceRelativePath(activeFile.path) : null;
   if (activePath) return activePath;
@@ -1510,6 +1407,29 @@ function getKnownTargetPath(
   if (latestState?.path) return latestState.path;
 
   return null;
+}
+
+function resolvePreferredTargetPath(input: {
+  prompt: string;
+  mentionContext: { mentionedPaths: string[]; mentionedWindows: string[] };
+  context: RuntimeContext;
+}): string | null {
+  const mentionedPath = input.mentionContext.mentionedPaths[0];
+  if (mentionedPath) return mentionedPath;
+  if (wantsDesktopAction(input.prompt, input.mentionContext)) return null;
+
+  const activeFileRecord = asRecord(input.context.activeFile);
+  const activePath =
+    typeof activeFileRecord.path === "string" ? normalizeWorkspaceRelativePath(activeFileRecord.path) : undefined;
+  const openFilePath = Array.isArray(input.context.openFiles)
+    ? input.context.openFiles
+        .map((entry) => {
+          const row = asRecord(entry);
+          return typeof row.path === "string" ? normalizeWorkspaceRelativePath(row.path) : null;
+        })
+        .find((value): value is string => Boolean(value))
+    : undefined;
+  return activePath || openFilePath || null;
 }
 
 function getPreferredRuntimeFileState(input: {
@@ -1761,7 +1681,8 @@ function buildBootstrapToolCall(input: {
     wantsCurrentFileInspection(input.prompt) ||
     (referencesActiveEditingContext(input.prompt) && requestsWorkspaceChange(input.prompt)) ||
     requestsWorkspaceChange(input.prompt);
-  const targetPath = mentionedPath || (shouldPreferActiveFile ? activePath || openFilePath : undefined);
+  const targetPath =
+    mentionedPath || input.run.preferredTargetPath || (shouldPreferActiveFile ? activePath || openFilePath : undefined);
   if (!targetPath) return null;
 
   return {
@@ -1793,7 +1714,7 @@ function buildFallbackToolCallAfterPlanningFailure(input: {
         })
         .find((value): value is string => Boolean(value))
     : undefined;
-  const targetPath = input.mentionContext.mentionedPaths[0] || activePath || openFilePath;
+  const targetPath = input.mentionContext.mentionedPaths[0] || input.run.preferredTargetPath || activePath || openFilePath;
   if (!targetPath) return null;
 
   return {
@@ -1925,7 +1846,7 @@ export class CutieRuntime {
         {
           role: "system",
           content:
-            "Do not call any more tools. Reply to the user now with a concise final answer based only on the completed tool results. Respond with plain natural language or {\"type\":\"final\",\"final\":\"...\"}.",
+            "Do not call any more tools. Reply to the user now with a concise natural-language final answer based only on the completed tool results.",
         },
       ],
     })
@@ -1936,13 +1857,12 @@ export class CutieRuntime {
         model: undefined,
       }));
 
-    const structured = tryNormalizeStructuredResponse(extractJsonObject(recoveryTurn.finalText));
-    if (structured?.type === "final" && structured.final.trim()) {
-      return structured.final.trim();
-    }
+    const parsed = asRecord(extractJsonObject(recoveryTurn.finalText));
+    const structuredFinal = String(parsed.final || "").trim();
+    if (String(parsed.type || "").trim() === "final" && structuredFinal) return structuredFinal;
 
     const trimmed = recoveryTurn.finalText.trim();
-    if (trimmed && !looksLikeMalformedToolCall(trimmed)) {
+    if (trimmed && !looksLikeCutieToolArtifactText(trimmed)) {
       return trimmed;
     }
 
@@ -1962,22 +1882,43 @@ export class CutieRuntime {
     latestFileStates?: Map<string, RuntimeFileState>;
     callbacks?: CutieRuntimeCallbacks;
   }): Promise<CutieStructuredResponse | null> {
-    const shouldPushWorkspaceMutation = requestsWorkspaceChange(input.prompt) && !hasCompletedMutation(input.run);
+    const shouldPushWorkspaceMutation = requestsWorkspaceChange(input.prompt) && !hasSuccessfulWorkspaceMutation(input.run);
+    const shouldPushVerification = requiresCodeChangeVerification(input.run);
     const shouldPushDesktopAction =
       requestsDesktopAutomation(input.prompt, input.mentionContext) && !hasCompletedDesktopTool(input.run);
 
-    if (!shouldPushWorkspaceMutation && !shouldPushDesktopAction) {
+    if (!shouldPushWorkspaceMutation && !shouldPushDesktopAction && !shouldPushVerification) {
       return null;
     }
 
-    const preferredTarget = input.mentionContext.mentionedPaths[0] || null;
+    const preferredTarget = getKnownTargetPath(input.run, input.mentionContext, input.context, input.latestFileStates);
     const alreadyReadTarget = preferredTarget ? hasCompletedTool(input.run, "read_file") : false;
+    if (shouldPushWorkspaceMutation && preferredTarget && !alreadyReadTarget) {
+      return {
+        type: "tool_call",
+        tool_call: {
+          name: "read_file",
+          arguments: { path: preferredTarget, startLine: 1, endLine: 4000 },
+          summary: `reading ${preferredTarget} after a weak planning turn`,
+        },
+      };
+    }
+
     const maxRecBatch = Math.max(
       1,
       Math.min(8, input.context.cutieDynamicSettings?.maxToolsPerBatch ?? CUTIE_MAX_TOOLS_PER_BATCH)
     );
 
-    await input.callbacks?.onStatusChanged?.("Cutie is re-planning because the last reply did not take action.", input.run);
+    await input.callbacks?.onStatusChanged?.(
+      shouldPushWorkspaceMutation && hasCompletedTool(input.run, "read_file")
+        ? "Cutie read the target file but did not choose an edit tool. Re-planning the next concrete action."
+        : shouldPushVerification
+          ? "Cutie changed the file but still owes a verification step before it can finish."
+        : shouldPushDesktopAction
+          ? "Cutie did not choose a desktop action. Re-planning the next concrete step."
+          : "Cutie is re-planning because the last reply did not take action.",
+      input.run
+    );
 
     const recoveryTurn = await this.requestStructuredTurn({
       auth: input.auth,
@@ -1993,6 +1934,8 @@ export class CutieRuntime {
             "Your last reply was not actionable enough for this task.",
             shouldPushWorkspaceMutation
               ? "The user asked for a file/code change and no successful mutation has happened yet."
+              : shouldPushVerification
+                ? "The requested file change already happened, but the run still requires a relevant verification step before it may finish."
               : "The user asked for a desktop action and no successful desktop tool has happened yet.",
             shouldPushWorkspaceMutation && preferredTarget && !alreadyReadTarget
               ? `Prefer reading "${preferredTarget}" first.`
@@ -2001,7 +1944,10 @@ export class CutieRuntime {
               ? `You already inspected "${preferredTarget}". Prefer the next editing tool needed to make the requested change.`
               : "",
             shouldPushWorkspaceMutation && alreadyReadTarget
-              ? "Do not call read_file again for the same target. Choose patch_file, write_file, or a relevant run_command."
+              ? "Do not call read_file again for the same target. Allowed next tools: patch_file, write_file, run_command."
+              : "",
+            shouldPushVerification
+              ? "Do not finish yet. Allowed next tools should focus on verification: prefer run_command for targeted test/build/check/compile validation, or get_diagnostics if shell verification is unavailable."
               : "",
             shouldPushDesktopAction && input.mentionContext.mentionedWindows[0]
               ? `Prefer a desktop tool that targets "${input.mentionContext.mentionedWindows[0]}".`
@@ -2020,15 +1966,18 @@ export class CutieRuntime {
     }
     if (
       isStructuredTooling(structured) &&
-      toolStructuredShowsProgressAfterInspection({
-        goal: input.run.goal,
-        run: input.run,
-        structured,
-        maxBatch: maxRecBatch,
-        mentionContext: input.mentionContext,
-        context: input.context,
-        latestFileStates: input.latestFileStates,
-      })
+      (() => {
+        const batch = buildToolCallBatchFromStructured({
+          structured,
+          maxBatch: maxRecBatch,
+          run: input.run,
+          mentionContext: input.mentionContext,
+          context: input.context,
+          latestFileStates: input.latestFileStates,
+        });
+        if (!batch.length) return false;
+        return batchNeedsMoreAutonomy({ goal: input.run.goal, run: input.run, batch }) === "ok";
+      })()
     ) {
       return structured;
     }
@@ -2143,6 +2092,7 @@ export class CutieRuntime {
                 "You are Cutie preparing the next concrete file-edit tool call.",
                 "The file has already been read. The user wants a code change in this file.",
                 "Do not call read_file again for this file.",
+                "Allowed next tools: patch_file, write_file, run_command.",
                 "Prefer patch_file with a reliable baseRevision and ordered line edits.",
                 "Use write_file only if a targeted patch is not enough.",
               ].join("\n"),
@@ -2202,54 +2152,75 @@ export class CutieRuntime {
       }
     }
 
-    return null;
-  }
+    if (shouldPushVerification) {
+      const latestState = getPreferredRuntimeFileState({
+        run: input.run,
+        mentionContext: input.mentionContext,
+        context: input.context,
+        latestFileStates: input.latestFileStates,
+      });
+      const targetPath = latestState?.path || input.mentionContext.mentionedPaths[0] || "";
+      const verificationTurn = await this.requestStructuredTurn({
+        auth: input.auth,
+        signal: input.signal,
+        tools: input.tools,
+        maxToolsPerBatch: 1,
+        messages: [
+          {
+            role: "system",
+            content: [
+              "You are Cutie verifying a completed coding task in VS Code.",
+              "A workspace mutation already happened, but the run is not done until verification succeeds or a concrete blocker is recorded.",
+              "Do not finish yet.",
+              "Choose exactly one next verification tool call.",
+              "Prefer run_command for a targeted compile, build, test, lint, or check command.",
+              "If no shell verification fits, choose get_diagnostics for the target file.",
+              "Do not call read_file, list_files, search_workspace, patch_file, or write_file in this turn.",
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: [
+              `Task:\n${trimToLimit(input.prompt, 2_000)}`,
+              targetPath ? `Target path:\n${targetPath}` : "",
+              latestState?.revisionId ? `Latest revisionId:\n${latestState.revisionId}` : "",
+              latestState?.full ? `Current file content:\n${trimToLimit(latestState.content, 8_000)}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n\n"),
+          },
+        ],
+        stream: false,
+      }).catch(() => null);
 
-  private async finalizeSuccessfulRunWithAssistant(input: {
-    auth: RequestAuth;
-    signal?: AbortSignal;
-    session: CutieSessionRecord;
-    run: CutieRunState;
-    transcript: CutieModelMessage[];
-    contextMessage: CutieModelMessage;
-    surfacedStreaming: boolean;
-    callbacks?: CutieRuntimeCallbacks;
-  }): Promise<{ session: CutieSessionRecord; run: CutieRunState }> {
-    let session = input.session;
-    let run = input.run;
-    const recovered = await this.recoverFinalMessage({
-      auth: input.auth,
-      signal: input.signal,
-      transcript: input.transcript,
-      contextMessage: input.contextMessage,
-      run,
-      callbacks: input.callbacks,
-    });
-    const fallback =
-      run.goal === "code_change" && hasCompletedMutation(run)
-        ? "The requested change is saved in your workspace."
-        : run.goal === "desktop_action" && hasCompletedDesktopTool(run)
-          ? "The desktop step completed."
-          : "Done.";
-    const finalText = (recovered && recovered.trim()) || fallback;
-    if (!input.surfacedStreaming && finalText) {
-      await input.callbacks?.onAssistantDelta?.(finalText, finalText);
+      const verificationStructured = verificationTurn?.response || null;
+      if (isStructuredTooling(verificationStructured)) {
+        const batch = buildToolCallBatchFromStructured({
+          structured: verificationStructured,
+          maxBatch: 1,
+          run: input.run,
+          mentionContext: input.mentionContext,
+          context: input.context,
+          latestFileStates: input.latestFileStates,
+        });
+        if (batch.length && batchNeedsMoreAutonomy({ goal: input.run.goal, run: input.run, batch }) === "ok") {
+          return verificationStructured;
+        }
+      }
+
+      if (targetPath) {
+        return {
+          type: "tool_call",
+          tool_call: {
+            name: "get_diagnostics",
+            arguments: { path: targetPath },
+            summary: `verifying ${targetPath}`,
+          },
+        };
+      }
     }
-    session = await this.sessionStore.appendMessage(session, {
-      role: "assistant",
-      content: finalText,
-      runId: run.id,
-    });
-    input.transcript.push({ role: "assistant", content: finalText });
-    await input.callbacks?.onSessionChanged?.(session);
-    ({ session, run } = await this.updateRun(session, run, {
-      status: "completed",
-      phase: "completed",
-      goalSatisfied: run.goal === "conversation" ? true : run.goalSatisfied,
-      endedAt: nowIso(),
-    }));
-    await input.callbacks?.onStatusChanged?.("Cutie completed the run.", run);
-    return { session, run };
+
+    return null;
   }
 
   private async enterAutonomyTerminalFailure(input: {
@@ -2277,6 +2248,8 @@ export class CutieRuntime {
       goalSatisfied: false,
       stuckReason: reason,
       suggestedNextAction: undefined,
+      strategyPhase: "blocked",
+      blockerCategory: inferBlockerCategoryFromMessage(reason),
       error: reason,
       endedAt: nowIso(),
     }));
@@ -2303,8 +2276,32 @@ export class CutieRuntime {
 
     const initialContext = await this.getContext();
     const budget = resolveRunBudgetFromContext(initialContext);
+    const preferredTargetPath = resolvePreferredTargetPath({
+      prompt: input.prompt,
+      mentionContext,
+      context: initialContext,
+    });
     const unlimitedAutonomy = Boolean(initialContext.cutieDynamicSettings?.unlimitedAutonomy);
-    let run = createInitialRunState(session.id, goal, budget);
+    const autonomyMode =
+      goal === "code_change"
+        ? selectCodeChangeAutonomyMode({
+            goal,
+            prompt: input.prompt,
+            mentionedPaths: mentionContext.mentionedPaths,
+            activeFilePath:
+              typeof initialContext.activeFile?.path === "string" ? String(initialContext.activeFile.path) : null,
+            openFilePaths: Array.isArray(initialContext.openFiles)
+              ? initialContext.openFiles
+                  .map((entry) => {
+                    const row = asRecord(entry);
+                    return typeof row.path === "string" ? String(row.path) : null;
+                  })
+                  .filter((value): value is string => Boolean(value))
+              : [],
+            objectiveBasedRuns: initialContext.cutieDynamicSettings?.objectiveBasedRuns,
+          })
+        : undefined;
+    let run = createInitialRunState(session.id, goal, budget, autonomyMode, preferredTargetPath);
     session = await this.sessionStore.appendRun(session, run);
     await input.callbacks?.onSessionChanged?.(session);
     await input.callbacks?.onStatusChanged?.("Cutie is collecting context.", run);
@@ -2318,7 +2315,7 @@ export class CutieRuntime {
     ];
     const availableTools = this.toolRegistry.listDefinitions();
 
-    if (shouldUseObjectiveMode(goal, input.prompt, mentionContext, initialContext.cutieDynamicSettings)) {
+    if (shouldUseObjectiveMode(goal, input.prompt, mentionContext, initialContext)) {
       ({ session, run } = await this.updateRun(session, run, {
         phase: "collecting_context",
         objectivesPhase: "decomposing",
@@ -2347,11 +2344,11 @@ export class CutieRuntime {
     let previousToolKey = "";
     let mutationGoalRepairCount = 0;
     const latestFileStates = new Map<string, RuntimeFileState>();
-    /** When set, skip streaming planning and execute this tool call (e.g. forced write_file after edit_file mismatch loops). */
+    /** When set, skip streaming planning and execute this tool call (for example a forced write_file after weak edit planning). */
     let injectedPlanningTool: CutieStructuredResponse | null = null;
-    const maxMutationGoalRepairsBase = Math.max(8, run.maxSteps - 4);
+    const maxMutationGoalRepairsBase = DIRECT_MUTATION_REPAIR_CAP;
     const maxMutationGoalRepairs = unlimitedAutonomy
-      ? UNLIMITED_OBJECTIVE_FINAL_REPAIR_CAP
+      ? UNLIMITED_DIRECT_MUTATION_REPAIR_CAP
       : maxMutationGoalRepairsBase;
     const objectiveFinalRepairCap = unlimitedAutonomy
       ? UNLIMITED_OBJECTIVE_FINAL_REPAIR_CAP
@@ -2421,6 +2418,15 @@ export class CutieRuntime {
           mentionedPaths: mentionContext.mentionedPaths,
           mentionedWindows: mentionContext.mentionedWindows,
         };
+        const preferredTargetPath = getKnownTargetPath(run, mentionContext, mergedContext, latestFileStates);
+        const allowedNextTools = resolveNativeNextToolHints({
+          goal: run.goal,
+          autonomyMode: run.autonomyMode,
+          preferredTargetPath,
+          hasCompletedRead: hasCompletedTool(run, "read_file"),
+          hasCompletedMutation: hasCompletedMutation(run),
+          hasVerifiedOutcome: hasCodeChangeCompletionProof(run),
+        });
         const contextMessage: CutieModelMessage = {
           role: "system",
           content: buildNativeContextMessage({
@@ -2428,10 +2434,11 @@ export class CutieRuntime {
             context: mergedContext,
             run,
             latestFileStates,
+            preferredTargetPath,
+            allowedNextTools,
           }),
         };
 
-        let modelFinalText = "";
         let surfacedStreaming = false;
         ({ session, run } = await this.updateRun(session, run, { phase: "planning", status: "running" }));
         await input.callbacks?.onStatusChanged?.(`Cutie is planning step ${run.stepCount + 1}.`, run);
@@ -2482,6 +2489,9 @@ export class CutieRuntime {
               }
             },
           });
+          if (turn.suppressedAssistantArtifact) {
+            await input.callbacks?.onSuppressedAssistantArtifact?.(turn.suppressedAssistantArtifact);
+          }
           structured = turn.response;
         }
 
@@ -2508,190 +2518,6 @@ export class CutieRuntime {
           throw new Error("Cutie server did not return a structured tool_batch or final response.");
         }
 
-        if (!structured) {
-          if (looksLikeMalformedToolCall(modelFinalText)) {
-            if (
-              shouldCompleteRunDespiteMalformedPlanning(run) &&
-              !(run.objectivesPhase === "active" && run.objectives?.length)
-            ) {
-              return this.finalizeSuccessfulRunWithAssistant({
-                auth: input.auth,
-                signal: input.signal,
-                session,
-                run,
-                transcript,
-                contextMessage,
-                surfacedStreaming,
-                callbacks: input.callbacks,
-              });
-            }
-            const repaired = await this.recoverActionableTurn({
-              auth: input.auth,
-              signal: input.signal,
-              prompt: input.prompt,
-              transcript,
-              contextMessage,
-              run,
-              mentionContext,
-              context: mergedContext,
-              tools: availableTools,
-              latestFileStates,
-              callbacks: input.callbacks,
-            });
-            if (isStructuredTooling(repaired)) {
-              structured = repaired;
-            } else if (shouldKeepPushingForWorkspaceMutation({ prompt: input.prompt, mentionContext, run })) {
-              if (mutationGoalRepairCount < maxMutationGoalRepairs) {
-                mutationGoalRepairCount += 1;
-                ({ session, run } = await this.updateRun(session, run, {
-                  phase: "repairing",
-                  status: "running",
-                  repairAttemptCount: mutationGoalRepairCount,
-                  escalationState: "none",
-                  stuckReason: undefined,
-                  suggestedNextAction: undefined,
-                }));
-                transcript.push({
-                  role: "system",
-                  content: [
-                    "Repair instruction:",
-                    "The last tool-call output was malformed.",
-                    "Do not stop.",
-                    "Return one valid minified tool_call JSON object for edit_file, write_file, or run_command.",
-                  ].join(" "),
-                });
-                await input.callbacks?.onStatusChanged?.(
-                  `Cutie is retrying after malformed tool output (${mutationGoalRepairCount}/${maxMutationGoalRepairs}).`,
-                  run
-                );
-                continue mainLoop;
-              }
-              return this.enterAutonomyTerminalFailure({
-                session,
-                run,
-                reason: "The model kept returning malformed tool output instead of a concrete edit call.",
-                callbacks: input.callbacks,
-              });
-            }
-          }
-
-          if (shouldKeepPushingForWorkspaceMutation({ prompt: input.prompt, mentionContext, run })) {
-            if (mutationGoalRepairCount < maxMutationGoalRepairs) {
-              mutationGoalRepairCount += 1;
-              ({ session, run } = await this.updateRun(session, run, {
-                phase: "repairing",
-                status: "running",
-                repairAttemptCount: mutationGoalRepairCount,
-                escalationState: "none",
-                stuckReason: undefined,
-                suggestedNextAction: undefined,
-              }));
-              transcript.push({
-                role: "system",
-                content: [
-                  "Repair instruction:",
-                  "The user asked for a real file change.",
-                  "The file has already been inspected.",
-                  "Do not finish yet.",
-                  "Produce edit_file, write_file, or run_command next unless the task is truly impossible.",
-                ].join(" "),
-              });
-              await input.callbacks?.onStatusChanged?.(
-                `Cutie is retrying the planning step to produce a real file change (${mutationGoalRepairCount}/${maxMutationGoalRepairs}).`,
-                run
-              );
-              continue mainLoop;
-            }
-            return this.enterAutonomyTerminalFailure({
-              session,
-              run,
-              reason: `The model could not produce a concrete edit after ${maxMutationGoalRepairs} repair attempts.`,
-              callbacks: input.callbacks,
-            });
-          }
-          if (looksLikeMalformedToolCall(modelFinalText)) {
-            if (
-              shouldCompleteRunDespiteMalformedPlanning(run) &&
-              !(run.objectivesPhase === "active" && run.objectives?.length)
-            ) {
-              return this.finalizeSuccessfulRunWithAssistant({
-                auth: input.auth,
-                signal: input.signal,
-                session,
-                run,
-                transcript,
-                contextMessage,
-                surfacedStreaming,
-                callbacks: input.callbacks,
-              });
-            }
-            return this.enterAutonomyTerminalFailure({
-              session,
-              run,
-              reason: "The model returned malformed tool-call output before taking action.",
-              callbacks: input.callbacks,
-            });
-          }
-          if (run.objectivesPhase === "active" && run.objectives?.length) {
-            const nextObj = (run.objectiveRepairCount ?? 0) + 1;
-            if (nextObj > objectiveFinalRepairCap) {
-              return this.enterAutonomyTerminalFailure({
-                session,
-                run,
-                reason: "Cutie could not get structured JSON that completes every task objective.",
-                callbacks: input.callbacks,
-              });
-            }
-            ({ session, run } = await this.updateRun(session, run, {
-              objectiveRepairCount: nextObj,
-              phase: "repairing",
-              status: "running",
-            }));
-            transcript.push({
-              role: "system",
-              content: [
-                "Repair instruction:",
-                "This run uses taskObjectives. Respond with ONLY minified JSON.",
-                "Continue with tool_call or tool_calls, OR when finished:",
-                '{"type":"final","final":"user summary","objectives":[{"id":"…","status":"done|blocked","note":"optional"}]}',
-                "Include every objective id once. Plain prose without this JSON is not allowed until all objectives are done or blocked.",
-              ].join(" "),
-            });
-            await input.callbacks?.onStatusChanged?.(
-              `Cutie needs structured JSON for objectives (${nextObj}/${objectiveFinalRepairCap}).`,
-              run
-            );
-            continue mainLoop;
-          }
-          const finalText =
-            modelFinalText.trim() ||
-            (await this.recoverFinalMessage({
-              auth: input.auth,
-              signal: input.signal,
-              transcript,
-              contextMessage,
-              run,
-              callbacks: input.callbacks,
-            }));
-          if (!surfacedStreaming && finalText) {
-            await input.callbacks?.onAssistantDelta?.(finalText, finalText);
-          }
-          session = await this.sessionStore.appendMessage(session, {
-            role: "assistant",
-            content: finalText,
-            runId: run.id,
-          });
-          transcript.push({ role: "assistant", content: finalText });
-          await input.callbacks?.onSessionChanged?.(session);
-          ({ session, run } = await this.updateRun(session, run, {
-            status: "completed",
-            phase: "completed",
-            endedAt: nowIso(),
-          }));
-          await input.callbacks?.onStatusChanged?.("Cutie completed the run.", run);
-          return { session, run };
-        }
-
         if (structured.type === "final") {
           if (shouldRepairForMissingAction({ prompt: input.prompt, mentionContext, run, candidate: structured })) {
             const repaired = await this.recoverActionableTurn({
@@ -2714,7 +2540,15 @@ export class CutieRuntime {
         }
 
         if (structured.type === "final") {
-          if (shouldKeepPushingForWorkspaceMutation({ prompt: input.prompt, mentionContext, run })) {
+          const needsMutation = shouldKeepPushingForWorkspaceMutation({ prompt: input.prompt, mentionContext, run });
+          const needsVerification = shouldKeepPushingForVerification(run);
+          if (needsMutation || needsVerification) {
+            const repairReason = needsVerification ? "verification_failure" : "missing_mutation";
+            const retryStrategy = resolveRetryStrategy({ run, reason: repairReason });
+            const deadEndSignature = buildDeadEndSignature({
+              note: needsVerification ? "final_without_verification" : "final_without_mutation",
+            });
+            const repeatedDeadEnd = deadEndAlreadySeen(run.deadEndMemory, deadEndSignature);
             if (mutationGoalRepairCount < maxMutationGoalRepairs) {
               mutationGoalRepairCount += 1;
               ({ session, run } = await this.updateRun(session, run, {
@@ -2723,18 +2557,35 @@ export class CutieRuntime {
                 repairAttemptCount: mutationGoalRepairCount,
                 escalationState: "none",
                 stuckReason: undefined,
-                suggestedNextAction: undefined,
+                suggestedNextAction: needsVerification
+                  ? "Run a relevant verification step before finishing."
+                  : "Choose the next concrete edit tool instead of stopping.",
+                retryStrategy,
+                strategyPhase:
+                  retryStrategy === "fallback_strategy" || retryStrategy === "full_rewrite" ? "fallback" : "repair",
+                loopPreventionTrigger: repeatedDeadEnd
+                  ? "Repeated final attempt without the proof needed to finish."
+                  : undefined,
+                deadEndMemory: appendDeadEndMemory(run.deadEndMemory, deadEndSignature),
               }));
               transcript.push({
                 role: "system",
-                content: [
-                  "Repair instruction:",
-                  "A final answer is not enough for this request because the user asked for a code change.",
-                  "Continue working until there is a real mutation tool call or a relevant command.",
-                ].join(" "),
+                content: needsVerification
+                  ? [
+                      "Repair instruction:",
+                      "The workspace change is not fully done yet because verification is still missing.",
+                      "Do not finish. Choose a relevant verification tool next, preferably run_command or get_diagnostics.",
+                    ].join(" ")
+                  : [
+                      "Repair instruction:",
+                      "A final answer is not enough for this request because the user asked for a code change.",
+                      "Continue working until there is a real mutation tool call or a relevant verification-backed completion proof.",
+                    ].join(" "),
               });
               await input.callbacks?.onStatusChanged?.(
-                `Cutie is continuing instead of stopping early (${mutationGoalRepairCount}/${maxMutationGoalRepairs}).`,
+                needsVerification
+                  ? `Cutie is continuing because the edit still needs proof (${mutationGoalRepairCount}/${maxMutationGoalRepairs}).`
+                  : `Cutie is continuing instead of stopping early (${mutationGoalRepairCount}/${maxMutationGoalRepairs}).`,
                 run
               );
               continue mainLoop;
@@ -2742,7 +2593,9 @@ export class CutieRuntime {
             return this.enterAutonomyTerminalFailure({
               session,
               run,
-              reason: `The model kept trying to finish without producing a real file change after ${maxMutationGoalRepairs} repair attempts.`,
+              reason: needsVerification
+                ? `The model kept trying to finish without completing a real verification step after ${maxMutationGoalRepairs} repair attempts.`
+                : `The model kept trying to finish without producing a real file change after ${maxMutationGoalRepairs} repair attempts.`,
               callbacks: input.callbacks,
             });
           }
@@ -2800,8 +2653,11 @@ export class CutieRuntime {
           ({ session, run } = await this.updateRun(session, run, {
             status: "completed",
             phase: "completed",
-            goalSatisfied: run.goal === "conversation" ? true : run.goalSatisfied,
+            goalSatisfied: run.goal === "conversation" ? true : hasCodeChangeCompletionProof(run) || run.goalSatisfied,
             endedAt: nowIso(),
+            retryStrategy: "none",
+            blockerCategory: undefined,
+            loopPreventionTrigger: undefined,
           }));
           await input.callbacks?.onStatusChanged?.("Cutie completed the run.", run);
           return { session, run };
@@ -2846,10 +2702,7 @@ export class CutieRuntime {
                 latestFileStates,
               }),
             });
-            const tryMidLoopRecover =
-              mutationGoalRepairCount === 3 ||
-              mutationGoalRepairCount === 6 ||
-              mutationGoalRepairCount === 9;
+            const tryMidLoopRecover = mutationGoalRepairCount >= 2;
             if (tryMidLoopRecover) {
               await input.callbacks?.onStatusChanged?.(
                 "Cutie is drafting a concrete edit after repeated inspection-only plans.",
@@ -2972,9 +2825,17 @@ export class CutieRuntime {
           }));
 
           if (repeatedCallCount > CUTIE_MAX_IDENTICAL_CALLS) {
-            if (shouldRedirectRepeatedReadFile({ prompt: input.prompt, mentionContext, run, toolName: toolCall.name })) {
+            if (
+              shouldRedirectRepeatedReadFile({ prompt: input.prompt, mentionContext, run, toolName: toolCall.name }) ||
+              shouldKeepPushingForVerification(run)
+            ) {
               if (mutationGoalRepairCount < maxMutationGoalRepairs) {
                 mutationGoalRepairCount += 1;
+                const retryStrategy = resolveRetryStrategy({ run, reason: "repeat_identical" });
+                const deadEndSignature = buildDeadEndSignature({
+                  toolCall,
+                  note: shouldKeepPushingForVerification(run) ? "repeated_verification_call" : "repeated_identical_call",
+                });
                 ({ session, run } = await this.updateRun(session, run, {
                   phase: "repairing",
                   status: "running",
@@ -2982,18 +2843,32 @@ export class CutieRuntime {
                   escalationState: "none",
                   stuckReason: undefined,
                   suggestedNextAction: undefined,
+                  retryStrategy,
+                  strategyPhase: retryStrategy === "fallback_strategy" ? "fallback" : "repair",
+                  loopPreventionTrigger: deadEndAlreadySeen(run.deadEndMemory, deadEndSignature)
+                    ? "The same tool path repeated without new evidence."
+                    : undefined,
+                  deadEndMemory: appendDeadEndMemory(run.deadEndMemory, deadEndSignature),
                 }));
                 transcript.push({
                   role: "system",
-                  content: [
-                    "Repair instruction:",
-                    "The file has already been read.",
-                    "Do not call read_file again for the same target.",
-                    "Choose patch_file, write_file, or a relevant run_command now.",
-                  ].join(" "),
+                  content: shouldKeepPushingForVerification(run)
+                    ? [
+                        "Repair instruction:",
+                        "The same verification path repeated without resolving the task.",
+                        "Choose a different verification step or repair strategy now.",
+                      ].join(" ")
+                    : [
+                        "Repair instruction:",
+                        "The file has already been read.",
+                        "Do not call read_file again for the same target.",
+                        "Choose patch_file, write_file, or a relevant run_command now.",
+                      ].join(" "),
                 });
                 await input.callbacks?.onStatusChanged?.(
-                  `Cutie is redirecting repeated file inspection into an edit path (${mutationGoalRepairCount}/${maxMutationGoalRepairs}).`,
+                  shouldKeepPushingForVerification(run)
+                    ? `Cutie is redirecting a repeated verification path (${mutationGoalRepairCount}/${maxMutationGoalRepairs}).`
+                    : `Cutie is redirecting repeated file inspection into an edit path (${mutationGoalRepairCount}/${maxMutationGoalRepairs}).`,
                   run
                 );
                 continue mainLoop;
@@ -3001,7 +2876,9 @@ export class CutieRuntime {
               return this.enterAutonomyTerminalFailure({
                 session,
                 run,
-                reason: `Cutie stayed stuck in file inspection instead of moving to an edit after ${maxMutationGoalRepairs} repair attempts.`,
+                reason: shouldKeepPushingForVerification(run)
+                  ? `Cutie stayed stuck trying to verify the task without making new progress after ${maxMutationGoalRepairs} repair attempts.`
+                  : `Cutie stayed stuck in file inspection instead of moving to an edit after ${maxMutationGoalRepairs} repair attempts.`,
                 callbacks: input.callbacks,
               });
             }
@@ -3062,6 +2939,8 @@ export class CutieRuntime {
           const desktopMutationCount =
             run.desktopMutationCount + (toolResult.ok && isDesktopMutationTool(toolCall.name) ? 1 : 0);
           const madeMeaningfulProgress = isMeaningfulProgressReceipt(run.goal, receipt);
+          const verificationOutcome = buildVerificationOutcome(toolCall, toolResult);
+          const verificationFailure = isVerificationFailure(toolCall, toolResult, run);
 
           ({ session, run } = await this.updateRun(session, run, {
             receipts: [...run.receipts, receipt],
@@ -3069,7 +2948,6 @@ export class CutieRuntime {
             desktopMutationCount,
             ...(madeMeaningfulProgress
               ? {
-                  goalSatisfied: true,
                   lastMeaningfulProgressAtStep: receipt.step,
                   lastMeaningfulProgressSummary: receipt.summary,
                   stuckReason: undefined,
@@ -3077,15 +2955,39 @@ export class CutieRuntime {
                   escalationState: "none" as CutieEscalationState,
                 }
               : {}),
+            ...(verificationOutcome
+              ? {
+                  lastVerifiedOutcome: verificationOutcome,
+                }
+              : {}),
+            ...(toolResult.ok && isWorkspaceMutationTool(toolCall.name)
+              ? {
+                  strategyPhase: "verify" as CutieStrategyPhase,
+                  progressConfidence: "medium" as CutieProgressConfidence,
+                  retryStrategy: "none" as CutieRetryStrategy,
+                  blockerCategory: undefined,
+                  loopPreventionTrigger: undefined,
+                }
+              : {}),
             ...(toolResult.checkpoint ? { checkpoint: toolResult.checkpoint } : {}),
           }));
 
           rememberLatestFileStateFromToolResult(latestFileStates, receipt.step, toolCall, toolResult);
 
-          if (toolResult.ok && (isWorkspaceMutationTool(toolCall.name) || toolCall.name === "run_command")) {
+          if (toolResult.ok && (isWorkspaceMutationTool(toolCall.name) || toolCall.name === "run_command" || toolCall.name === "get_diagnostics")) {
             mutationGoalRepairCount = 0;
             ({ session, run } = await this.updateRun(session, run, {
               repairAttemptCount: 0,
+              retryStrategy: "none",
+              ...(verificationOutcome
+                ? {
+                    strategyPhase: "verify" as CutieStrategyPhase,
+                    progressConfidence: "high" as CutieProgressConfidence,
+                    goalSatisfied: true,
+                    blockerCategory: undefined,
+                    loopPreventionTrigger: undefined,
+                  }
+                : {}),
             }));
           }
 
@@ -3124,6 +3026,44 @@ export class CutieRuntime {
             });
           }
 
+          if (verificationFailure && toolResult.ok && mutationGoalRepairCount < maxMutationGoalRepairs) {
+            mutationGoalRepairCount += 1;
+            const retryStrategy = resolveRetryStrategy({ run, reason: "verification_failure" });
+            const deadEndSignature = buildDeadEndSignature({
+              toolCall,
+              receipt,
+              note: "verification_failure",
+            });
+            ({ session, run } = await this.updateRun(session, run, {
+              phase: "repairing",
+              status: "running",
+              repairAttemptCount: mutationGoalRepairCount,
+              escalationState: "none",
+              stuckReason: undefined,
+              suggestedNextAction: "Repair the code or run a more relevant verification step.",
+              retryStrategy,
+              strategyPhase: retryStrategy === "fallback_strategy" ? "fallback" : "repair",
+              blockerCategory: "validation",
+              loopPreventionTrigger: deadEndAlreadySeen(run.deadEndMemory, deadEndSignature)
+                ? "Repeated verification result with unresolved diagnostics."
+                : undefined,
+              deadEndMemory: appendDeadEndMemory(run.deadEndMemory, deadEndSignature),
+            }));
+            transcript.push({
+              role: "system",
+              content: [
+                "Repair instruction:",
+                `The verification step found a blocker: ${toolResult.summary}`,
+                "Repair the code or choose a different relevant verification step. Do not finish yet.",
+              ].join("\n"),
+            });
+            await input.callbacks?.onStatusChanged?.(
+              `Cutie is repairing after verification found unresolved issues (${mutationGoalRepairCount}/${maxMutationGoalRepairs}).`,
+              run
+            );
+            continue mainLoop;
+          }
+
           if (!toolResult.ok) {
             if (
               toolResult.blocked &&
@@ -3138,6 +3078,13 @@ export class CutieRuntime {
             }
             if (isRetryableEditFailure(toolCall, toolResult, run) && mutationGoalRepairCount < maxMutationGoalRepairs) {
               mutationGoalRepairCount += 1;
+              const retryStrategy = resolveRetryStrategy({
+                run,
+                reason: String(toolResult.error || "").toLowerCase().includes("stale_revision")
+                  ? "stale_revision"
+                  : "mutation_failure",
+              });
+              const deadEndSignature = buildDeadEndSignature({ toolCall, receipt, note: "retryable_edit_failure" });
               ({ session, run } = await this.updateRun(session, run, {
                 phase: "repairing",
                 status: "running",
@@ -3145,6 +3092,13 @@ export class CutieRuntime {
                 escalationState: "none",
                 stuckReason: undefined,
                 suggestedNextAction: undefined,
+                retryStrategy,
+                strategyPhase:
+                  retryStrategy === "full_rewrite" || retryStrategy === "fallback_strategy" ? "fallback" : "repair",
+                loopPreventionTrigger: deadEndAlreadySeen(run.deadEndMemory, deadEndSignature)
+                  ? "Repeated edit failure with no new file state."
+                  : undefined,
+                deadEndMemory: appendDeadEndMemory(run.deadEndMemory, deadEndSignature),
               }));
 
               const latestState = getPreferredRuntimeFileState({
@@ -3211,6 +3165,14 @@ export class CutieRuntime {
               isGenericMutationRepairEligible(toolCall, toolResult, run)
             ) {
               mutationGoalRepairCount += 1;
+              const retryStrategy = verificationFailure
+                ? resolveRetryStrategy({ run, reason: "verification_failure" })
+                : resolveRetryStrategy({ run, reason: "generic_failure" });
+              const deadEndSignature = buildDeadEndSignature({
+                toolCall,
+                receipt,
+                note: verificationFailure ? "verification_failure" : "generic_failure",
+              });
               ({ session, run } = await this.updateRun(session, run, {
                 phase: "repairing",
                 status: "running",
@@ -3218,21 +3180,38 @@ export class CutieRuntime {
                 escalationState: "none",
                 stuckReason: undefined,
                 suggestedNextAction: undefined,
+                retryStrategy,
+                strategyPhase:
+                  retryStrategy === "fallback_strategy" || retryStrategy === "full_rewrite" ? "fallback" : "repair",
+                blockerCategory: verificationFailure ? "validation" : undefined,
+                loopPreventionTrigger: deadEndAlreadySeen(run.deadEndMemory, deadEndSignature)
+                  ? "Repeated failed repair path with the same tool result."
+                  : undefined,
+                deadEndMemory: appendDeadEndMemory(run.deadEndMemory, deadEndSignature),
               }));
               transcript.push({
                 role: "system",
-                content: buildGenericMutationFailureRepairInstruction({
-                  prompt: input.prompt,
-                  toolCall,
-                  toolResult,
-                  run,
-                  mentionContext,
-                  context: mergedContext,
-                  latestFileStates,
-                }),
+                content: verificationFailure
+                  ? [
+                      "Repair instruction:",
+                      `The verification step failed: ${toolResult.error || toolResult.summary}`,
+                      "Do not stop yet.",
+                      "Either repair the code and verify again, or choose a different concrete verification step if the previous one was the wrong check.",
+                    ].join("\n")
+                  : buildGenericMutationFailureRepairInstruction({
+                      prompt: input.prompt,
+                      toolCall,
+                      toolResult,
+                      run,
+                      mentionContext,
+                      context: mergedContext,
+                      latestFileStates,
+                    }),
               });
               await input.callbacks?.onStatusChanged?.(
-                `Cutie is recovering from a failed tool call (${mutationGoalRepairCount}/${maxMutationGoalRepairs}).`,
+                verificationFailure
+                  ? `Cutie is repairing after a failed verification step (${mutationGoalRepairCount}/${maxMutationGoalRepairs}).`
+                  : `Cutie is recovering from a failed tool call (${mutationGoalRepairCount}/${maxMutationGoalRepairs}).`,
                 run
               );
               continue mainLoop;
@@ -3290,6 +3269,8 @@ export class CutieRuntime {
       ({ session, run } = await this.updateRun(session, run, {
         status: isCanceled ? "canceled" : "failed",
         phase: isCanceled ? "canceled" : "failed",
+        strategyPhase: isCanceled ? "blocked" : "blocked",
+        ...(isCanceled ? {} : { blockerCategory: inferBlockerCategoryFromMessage(message) }),
         error: isCanceled ? undefined : message,
         endedAt: nowIso(),
       }));
@@ -3375,6 +3356,11 @@ export class CutieRuntime {
       ...current,
       ...patch,
     };
+    if (next.goal === "code_change") {
+      next.goalSatisfied = hasCodeChangeCompletionProof(next);
+    }
+    next.strategyPhase = patch.strategyPhase ?? getPreferredStrategyPhase(next);
+    next.progressConfidence = patch.progressConfidence ?? getProgressConfidence(next);
     const nextSession = await this.sessionStore.updateRun(session, next);
     return {
       session: nextSession,

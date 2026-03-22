@@ -642,6 +642,66 @@ function buildWebviewHtml(webview) {
       box-shadow: none;
       min-width: 0;
       opacity: 1;
+      cursor: pointer;
+    }
+    .bubble.ran-line .activity-row {
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      gap: 0;
+      align-items: flex-start;
+    }
+    .bubble.ran-line .activity-badge {
+      display: none;
+    }
+    .bubble.ran-line .activity-body {
+      gap: 2px;
+    }
+    .bubble.ran-line .activity-title,
+    .bubble.ran-line .activity-meta {
+      text-align: left;
+    }
+    .bubble.ran-line .activity-title {
+      color: var(--muted);
+      font-family: var(--vscode-editor-font-family, ui-monospace, "Cascadia Code", Consolas, monospace);
+      font-size: 11px;
+      line-height: 1.45;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      word-break: normal;
+      opacity: 0.96;
+    }
+    .bubble.ran-line:hover .activity-title,
+    .bubble.ran-line:focus-visible .activity-title {
+      color: var(--text);
+    }
+    .bubble.ran-line .activity-meta {
+      display: none;
+    }
+    .bubble.ran-line .activity-row.is-expanded .activity-title {
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+    }
+    .ran-inline-details {
+      display: none;
+      margin-top: 6px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--canvas) 34%, var(--panel-elevated) 66%);
+      color: var(--text);
+      font-family: var(--vscode-editor-font-family, ui-monospace, "Cascadia Code", Consolas, monospace);
+      font-size: 11px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-x: auto;
+    }
+    .bubble.ran-line .activity-row.is-expanded .ran-inline-details {
+      display: block;
     }
     .activity-row {
       display: flex;
@@ -654,13 +714,39 @@ function buildWebviewHtml(webview) {
       background: color-mix(in srgb, var(--panel-elevated) 90%, var(--canvas) 10%);
     }
     .activity-row.is-prominent {
-      border-color: color-mix(in srgb, var(--accent) 26%, var(--line) 74%);
-      background: linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--accent) 8%, transparent),
-        color-mix(in srgb, var(--panel-elevated) 92%, var(--canvas) 8%)
-      );
-      box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 12%, transparent);
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      max-width: min(100%, 540px);
+      min-height: 30px;
+      padding: 0 12px;
+      border-color: var(--line);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--widget-surface) 82%, transparent);
+      box-shadow: none;
+    }
+    .activity-row.is-prominent .activity-badge {
+      min-width: 0;
+      padding: 0;
+      background: transparent;
+      color: var(--text);
+      font-size: 10px;
+      line-height: 1.1;
+    }
+    .activity-row.is-prominent .activity-body {
+      flex: 0 1 auto;
+      min-width: 0;
+      gap: 0;
+    }
+    .activity-row.is-prominent .activity-title {
+      font-size: 11px;
+      line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .activity-row.is-prominent .activity-meta {
+      display: none;
     }
     .activity-badge {
       flex: 0 0 auto;
@@ -826,52 +912,100 @@ function buildWebviewHtml(webview) {
       max-width: 100%;
       min-width: 0;
       padding: 0;
-      margin: 8px 0 6px;
-      border: 1px solid color-mix(in srgb, var(--line) 92%, var(--muted) 8%);
-      border-radius: 8px;
-      background: color-mix(in srgb, var(--panel-elevated) 94%, var(--canvas) 6%);
+      margin: 10px 0 8px;
+      border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line) 78%);
+      border-radius: 12px;
+      background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--accent) 10%, transparent),
+        color-mix(in srgb, var(--panel-elevated) 95%, var(--canvas) 5%)
+      );
+      box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 12%, transparent);
       overflow: hidden;
     }
     .cutie-diff-head {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 6px 10px;
-      padding: 8px 10px;
-      border-bottom: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+      gap: 8px 10px;
+      padding: 10px 12px;
+      border-bottom: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
       background: transparent;
     }
+    .cutie-diff-title-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      flex: 1 1 180px;
+      min-width: 0;
+    }
+    .cutie-diff-kicker {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
     .cutie-diff-title {
-      flex: 1 1 140px;
       min-width: 0;
       font-size: 12px;
-      font-weight: 600;
+      font-weight: 700;
       color: var(--text);
       word-break: break-word;
       line-height: 1.35;
       letter-spacing: 0.01em;
     }
+    .cutie-diff-meta {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 6px;
+      flex: 0 1 auto;
+    }
     .cutie-diff-badge {
       flex: 0 0 auto;
       font-size: 9px;
-      font-weight: 600;
+      font-weight: 700;
       letter-spacing: 0.06em;
       text-transform: uppercase;
-      padding: 3px 7px;
-      border-radius: 4px;
-      border: 0;
-      background: color-mix(in srgb, var(--line) 55%, transparent);
-      color: var(--muted);
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+      background: color-mix(in srgb, var(--canvas) 26%, transparent);
+      color: var(--text);
+    }
+    .cutie-diff-stats {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex: 0 0 auto;
+    }
+    .cutie-diff-stat {
+      font-size: 10px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      padding: 2px 7px;
+      border-radius: 999px;
+      line-height: 1.35;
+    }
+    .cutie-diff-stat.add {
+      background: color-mix(in srgb, var(--success) 22%, transparent);
+      color: var(--success);
+    }
+    .cutie-diff-stat.del {
+      background: color-mix(in srgb, var(--danger) 18%, transparent);
+      color: var(--danger);
     }
     .cutie-diff-open {
       flex: 0 0 auto;
       font-size: 11px;
-      font-weight: 500;
-      padding: 4px 10px;
+      font-weight: 600;
+      padding: 5px 11px;
       border-radius: 6px;
       border: 1px solid color-mix(in srgb, var(--line) 70%, var(--accent) 30%);
-      background: transparent;
-      color: color-mix(in srgb, var(--text) 88%, var(--accent) 12%);
+      background: color-mix(in srgb, var(--canvas) 16%, transparent);
+      color: color-mix(in srgb, var(--text) 92%, var(--accent) 8%);
       cursor: pointer;
     }
     .cutie-diff-open:hover,
@@ -881,14 +1015,15 @@ function buildWebviewHtml(webview) {
       outline: none;
     }
     .cutie-diff-body {
-      max-height: 280px;
+      max-height: 360px;
       overflow: auto;
       scrollbar-gutter: stable;
-      border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+      border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+      background: color-mix(in srgb, var(--canvas) 30%, transparent);
     }
     .cutie-diff-patch {
       margin: 0;
-      padding: 4px 0 6px;
+      padding: 8px 0 10px;
       font-family: var(--vscode-editor-font-family, ui-monospace, "Cascadia Code", Consolas, monospace);
       font-size: 11px;
       line-height: 1.5;
@@ -914,7 +1049,7 @@ function buildWebviewHtml(webview) {
     }
     .cutie-diff-patch .diff-line.hunk {
       color: color-mix(in srgb, var(--muted) 75%, var(--accent) 25%);
-      font-weight: 500;
+      font-weight: 700;
       font-size: 10px;
       margin-top: 4px;
       padding-top: 4px;
@@ -1565,6 +1700,44 @@ function buildWebviewHtml(webview) {
       word-break: break-word;
       line-height: 1.5;
     }
+    .bubble.assistant.live-actions {
+      align-self: stretch;
+      max-width: 100%;
+      margin: 2px 0 8px;
+      padding: 10px 12px;
+      border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line) 80%);
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--panel-elevated) 94%, var(--canvas) 6%);
+      box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 10%, transparent);
+    }
+    .live-actions-meta {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .live-actions-body {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      font-family: var(--vscode-editor-font-family, ui-monospace, "Cascadia Code", Consolas, monospace);
+      font-size: 11px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .live-actions-line {
+      color: var(--text);
+      opacity: 0.96;
+    }
+    .live-actions-line.is-status {
+      color: var(--muted);
+    }
+    .live-actions-line.is-step {
+      color: color-mix(in srgb, var(--text) 88%, var(--accent) 12%);
+    }
     @media (max-width: 1080px) {
       .workspace-main {
         grid-template-columns: 200px minmax(0, 1fr);
@@ -1826,6 +1999,7 @@ function buildWebviewHtml(webview) {
       sessions: [],
       messages: [],
       chatDiffs: [],
+      liveActionLog: [],
       activeSessionId: null,
       running: false,
       status: 'Ready',
@@ -1853,6 +2027,7 @@ function buildWebviewHtml(webview) {
     let allowNextLineBreak = false;
     let lastInputValue = input ? String(input.value || '') : '';
     let composerWatchTimer = null;
+    let lastBareEnterIntentAt = 0;
 
     if (composerForm) composerForm.addEventListener('submit', postSendOrStop, true);
     if (sendBtn) {
@@ -1947,6 +2122,12 @@ function buildWebviewHtml(webview) {
 
     function syncLastInputValue() {
       lastInputValue = input ? String(input.value || '') : '';
+    }
+
+    function noteBareEnterIntent(event) {
+      if (!event) return;
+      if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+      lastBareEnterIntentAt = Date.now();
     }
 
     function startComposerWatch() {
@@ -2317,6 +2498,22 @@ function buildWebviewHtml(webview) {
         });
     }
 
+    function chatDiffsForRun(runId, chatDiffs) {
+      if (!runId) return [];
+      const list = Array.isArray(chatDiffs) ? chatDiffs : [];
+      return list
+        .filter(function (diff) {
+          return diff && diff.runId === runId;
+        })
+        .sort(function (a, b) {
+          const aSort = a && a.createdAt ? a.createdAt : '';
+          const bSort = b && b.createdAt ? b.createdAt : '';
+          if (aSort < bSort) return -1;
+          if (aSort > bSort) return 1;
+          return String(a && a.id ? a.id : '').localeCompare(String(b && b.id ? b.id : ''));
+        });
+    }
+
     function isTerminalAssistantForRun(message, timelineMessages) {
       const runId = message && message.runId;
       if (!runId || message.role !== 'assistant') return false;
@@ -2434,25 +2631,60 @@ function buildWebviewHtml(webview) {
       const head = document.createElement('div');
       head.className = 'cutie-diff-head';
 
+      const titleWrap = document.createElement('div');
+      titleWrap.className = 'cutie-diff-title-wrap';
+
+      const kicker = document.createElement('div');
+      kicker.className = 'cutie-diff-kicker';
+      kicker.textContent = 'Edited file';
+
       const title = document.createElement('div');
       title.className = 'cutie-diff-title';
       title.textContent = diff.relativePath || 'File';
+
+      titleWrap.appendChild(kicker);
+      titleWrap.appendChild(title);
+
+      const meta = document.createElement('div');
+      meta.className = 'cutie-diff-meta';
 
       const badge = document.createElement('span');
       badge.className = 'cutie-diff-badge';
       badge.textContent = diff.toolName === 'write_file' ? 'write' : diff.toolName === 'patch_file' ? 'patch' : 'edit';
 
+      const stats = countPatchLineStats(diff.patch);
+      if (stats.added || stats.removed) {
+        const statWrap = document.createElement('div');
+        statWrap.className = 'cutie-diff-stats';
+        if (stats.added) {
+          const addPill = document.createElement('span');
+          addPill.className = 'cutie-diff-stat add';
+          addPill.textContent = '+' + stats.added;
+          statWrap.appendChild(addPill);
+        }
+        if (stats.removed) {
+          const delPill = document.createElement('span');
+          delPill.className = 'cutie-diff-stat del';
+          delPill.textContent = '-' + stats.removed;
+          statWrap.appendChild(delPill);
+        }
+        meta.appendChild(statWrap);
+      }
+
+      meta.appendChild(badge);
+
       const openBtn = document.createElement('button');
       openBtn.type = 'button';
       openBtn.className = 'cutie-diff-open';
-      openBtn.textContent = 'Open in editor';
+      openBtn.textContent = 'Review diff';
       openBtn.addEventListener('click', function () {
         vscode.postMessage({ type: 'diffWorkspaceFile', path: diff.relativePath });
       });
 
-      head.appendChild(title);
-      head.appendChild(badge);
-      head.appendChild(openBtn);
+      meta.appendChild(openBtn);
+
+      head.appendChild(titleWrap);
+      head.appendChild(meta);
 
       const body = document.createElement('div');
       body.className = 'cutie-diff-body';
@@ -2497,6 +2729,72 @@ function buildWebviewHtml(webview) {
         .trim();
       if (s.length <= maxLen) return s;
       return s.slice(0, Math.max(0, maxLen - 1)) + '…';
+    }
+
+    function truncateReceiptDetailBlock(text, maxLen) {
+      const value = String(text || '').trim();
+      if (!value) return '';
+      if (value.length <= maxLen) return value;
+      return value.slice(0, Math.max(0, maxLen - 1)) + '…';
+    }
+
+    function buildReceiptDetailText(receipt) {
+      if (!receipt) return '';
+      const d = receipt.data && typeof receipt.data === 'object' ? receipt.data : {};
+      const parts = [];
+      const name = String(receipt.toolName || 'tool');
+
+      if (typeof receipt.step === 'number' && receipt.step > 0) {
+        parts.push('step: ' + receipt.step);
+      }
+      parts.push('tool: ' + name);
+      if (receipt.domain) parts.push('domain: ' + String(receipt.domain));
+      if (receipt.kind) parts.push('kind: ' + String(receipt.kind));
+      if (receipt.status) parts.push('status: ' + String(receipt.status));
+      if (typeof d.command === 'string' && d.command.trim()) {
+        parts.push('');
+        parts.push('$ ' + d.command.trim());
+      }
+      if (typeof d.path === 'string' && d.path.trim()) {
+        parts.push(parts.length ? '' : '');
+        parts.push('path: ' + d.path.trim());
+      }
+      if (typeof d.range === 'string' && d.range.trim()) {
+        parts.push('range: ' + d.range.trim());
+      }
+      if (typeof d.exitCode === 'number') {
+        parts.push('exit code: ' + d.exitCode);
+      }
+      if (typeof receipt.summary === 'string' && receipt.summary.trim()) {
+        parts.push('');
+        parts.push('summary: ' + truncateReceiptDetailBlock(receipt.summary, 1000));
+      }
+      if (typeof d.stdout === 'string' && d.stdout.trim()) {
+        parts.push('');
+        parts.push('stdout:');
+        parts.push(truncateReceiptDetailBlock(d.stdout, 4000));
+      }
+      if (typeof d.stderr === 'string' && d.stderr.trim()) {
+        parts.push('');
+        parts.push('stderr:');
+        parts.push(truncateReceiptDetailBlock(d.stderr, 3000));
+      }
+      if (receipt.status !== 'completed' && receipt.error) {
+        parts.push('');
+        parts.push('error:');
+        parts.push(truncateReceiptDetailBlock(String(receipt.error || ''), 1500));
+      }
+
+      if (name === 'read_file' && typeof d.content === 'string' && d.content.trim()) {
+        parts.push('');
+        parts.push('preview:');
+        parts.push(truncateReceiptDetailBlock(d.content, 2500));
+      }
+
+      if (!parts.filter(Boolean).length) {
+        return 'No additional details recorded for this action.';
+      }
+      return parts.join('\\n').replace(/\\n{3,}/g, '\\n\\n').trim();
     }
 
     function formatRanLineFromReceipt(receipt) {
@@ -2610,7 +2908,9 @@ function buildWebviewHtml(webview) {
       body.className = 'activity-body';
       const title = document.createElement('div');
       title.className = 'activity-title';
-      title.textContent = formatRanLineFromReceipt(receipt);
+      const ranLine = formatRanLineFromReceipt(receipt);
+      title.textContent = ranLine;
+      title.title = ranLine;
       const meta = document.createElement('div');
       meta.className = 'activity-meta';
       const metaParts = [];
@@ -2621,6 +2921,29 @@ function buildWebviewHtml(webview) {
       meta.textContent = metaParts.join(' - ');
       body.appendChild(title);
       if (meta.textContent) body.appendChild(meta);
+      if (!options || !options.prominent) {
+        const detailText = buildReceiptDetailText(receipt);
+        if (detailText) {
+          const detail = document.createElement('div');
+          detail.className = 'ran-inline-details';
+          detail.textContent = detailText;
+          body.appendChild(detail);
+          row.setAttribute('role', 'button');
+          row.setAttribute('tabindex', '0');
+          row.setAttribute('aria-expanded', 'false');
+          const toggleExpanded = function () {
+            const expanded = row.classList.toggle('is-expanded');
+            row.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+          };
+          row.addEventListener('click', toggleExpanded);
+          row.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              toggleExpanded();
+            }
+          });
+        }
+      }
       row.appendChild(badge);
       row.appendChild(body);
       container.appendChild(row);
@@ -2684,10 +3007,10 @@ function buildWebviewHtml(webview) {
 
       const list = document.createElement('div');
       list.className = 'run-activity-list';
-      const recentReceipts = Array.isArray(receipts) ? receipts.slice(-5) : [];
-      if (recentReceipts.length) {
-        for (let index = 0; index < recentReceipts.length; index += 1) {
-          appendReceiptActivityRow(list, recentReceipts[index], { prominent: true });
+      const visibleReceipts = Array.isArray(receipts) ? receipts : [];
+      if (visibleReceipts.length) {
+        for (let index = 0; index < visibleReceipts.length; index += 1) {
+          appendReceiptActivityRow(list, visibleReceipts[index], { prominent: true });
         }
       } else {
         const empty = document.createElement('div');
@@ -2709,6 +3032,17 @@ function buildWebviewHtml(webview) {
       card.appendChild(head);
       card.appendChild(body);
       chat.appendChild(card);
+    }
+
+    function formatLiveActionLogText(lines) {
+      const rows = Array.isArray(lines) ? lines.filter(Boolean).slice(-48) : [];
+      if (!rows.length) return '';
+      return rows
+        .map(function (line) {
+          return String(line || '').trim();
+        })
+        .filter(Boolean)
+        .join('\\n');
     }
 
     function renderBinaryPanel() {
@@ -2775,15 +3109,14 @@ function buildWebviewHtml(webview) {
       }
 
       const chatDiffs = Array.isArray(state.chatDiffs) ? state.chatDiffs : [];
+      const liveActionLog = Array.isArray(state.liveActionLog) ? state.liveActionLog : [];
+      const liveActionText = state.running ? formatLiveActionLogText(liveActionLog) : '';
+      const displayedDiffIds = new Set();
       const merged = [];
       let mergeSeq = 0;
       for (let i = 0; i < timelineMessages.length; i += 1) {
         const message = timelineMessages[i];
         merged.push({ kind: 'msg', sort: message.createdAt || '', seq: mergeSeq++, message: message });
-      }
-      for (let j = 0; j < chatDiffs.length; j += 1) {
-        const diff = chatDiffs[j];
-        merged.push({ kind: 'diff', sort: diff.createdAt || '', seq: mergeSeq++, diff: diff });
       }
       const runReceipts = receiptsForActiveRunTimeline();
       if (!state.running) {
@@ -2849,30 +3182,60 @@ function buildWebviewHtml(webview) {
             isTerminalAssistantForRun(entry.message, timelineMessages)
           ) {
             appendRunFilesSummaryCard(entry.message.runId, chatDiffs);
+            const runDiffs = chatDiffsForRun(entry.message.runId, chatDiffs);
+            for (let d = 0; d < runDiffs.length; d += 1) {
+              const diff = runDiffs[d];
+              appendCutieDiffBubble(diff);
+              if (diff && diff.id) displayedDiffIds.add(diff.id);
+            }
           }
         } else if (entry.kind === 'ran') {
           const wrap = document.createElement('div');
           wrap.className = 'bubble assistant ran-line';
           appendReceiptActivityRow(wrap, entry.receipt, { prominent: false });
           chat.appendChild(wrap);
-        } else {
-          appendCutieDiffBubble(entry.diff);
         }
       }
 
       if (streamingMessage) {
         const div = document.createElement('div');
         div.className = 'bubble assistant';
-        div.textContent = streamingMessage.content;
+        div.textContent = liveActionText
+          ? [String(streamingMessage.content || '').trim(), liveActionText].filter(Boolean).join('\\n\\n')
+          : streamingMessage.content;
+        chat.appendChild(div);
+      } else if (liveActionText) {
+        const div = document.createElement('div');
+        div.className = 'bubble assistant';
+        div.textContent = liveActionText;
         chat.appendChild(div);
       } else {
-        const progressText = formatObjectiveSummaryText(state.activeRun || null) || liveStatusBubbleText();
-        if (progressText) {
+        const progressText = buildLiveAssistantNarrationText(state.activeRun || null, state.progress || null, runReceipts);
+        const pendingStartupText = buildPendingAssistantStartupText();
+        const fallbackAssistantText = progressText || pendingStartupText;
+        if (fallbackAssistantText) {
           const div = document.createElement('div');
           div.className = 'bubble assistant';
-          div.textContent = progressText;
+          div.textContent = fallbackAssistantText;
           chat.appendChild(div);
         }
+      }
+
+      if (state.running && state.activeRun) {
+        const activeRunDiffs = chatDiffsForRun(state.activeRun.id, chatDiffs);
+        for (let d = 0; d < activeRunDiffs.length; d += 1) {
+          const diff = activeRunDiffs[d];
+          if (diff && diff.id && displayedDiffIds.has(diff.id)) continue;
+          appendCutieDiffBubble(diff);
+          if (diff && diff.id) displayedDiffIds.add(diff.id);
+        }
+      }
+
+      for (let d = 0; d < chatDiffs.length; d += 1) {
+        const diff = chatDiffs[d];
+        if (diff && diff.id && displayedDiffIds.has(diff.id)) continue;
+        appendCutieDiffBubble(diff);
+        if (diff && diff.id) displayedDiffIds.add(diff.id);
       }
 
       chat.scrollTop = chat.scrollHeight;
@@ -2905,6 +3268,12 @@ function buildWebviewHtml(webview) {
       return queuedPrompts.length ? base + ' · ' + queuedPrompts.length + ' queued next' : base;
     }
 
+    function ensureSentence(text) {
+      const trimmed = String(text || '').trim();
+      if (!trimmed) return '';
+      return /[.!?]$/.test(trimmed) ? trimmed : trimmed + '.';
+    }
+
     function formatObjectiveSummaryText(run) {
       const objectives = run && Array.isArray(run.objectives) ? run.objectives : [];
       if (!objectives.length) return '';
@@ -2931,6 +3300,65 @@ function buildWebviewHtml(webview) {
         lines.push('After that I’ll keep going through the remaining steps.');
       }
       return lines.join('\\n');
+    }
+
+    function buildLiveAssistantNarrationText(run, progress, receipts) {
+      if (!state.running) return '';
+      const lines = [];
+      const objectiveText = formatObjectiveSummaryText(run);
+      const statusText = liveStatusBubbleText();
+
+      if (objectiveText) {
+        lines.push(objectiveText);
+      } else if (statusText) {
+        lines.push(ensureSentence(statusText));
+      } else {
+        lines.push('I’m working through this now.');
+      }
+
+      if (!objectiveText && progress && progress.pursuingLabel) {
+        lines.push('');
+        lines.push(ensureSentence(progress.pursuingLabel));
+      }
+
+      if (progress && progress.phaseLabel) {
+        lines.push('');
+        lines.push('Current phase: ' + ensureSentence(progress.phaseLabel));
+      }
+
+      if (progress && progress.repairLabel) {
+        lines.push('Repair status: ' + ensureSentence(progress.repairLabel));
+      }
+
+      const latestReceipt = Array.isArray(receipts) && receipts.length ? receipts[receipts.length - 1] : null;
+      if (latestReceipt) {
+        lines.push('');
+        lines.push('Latest action: ' + formatRanLineFromReceipt(latestReceipt));
+      }
+
+      if (progress && progress.lastMeaningfulProgressSummary) {
+        lines.push('');
+        lines.push(ensureSentence(progress.lastMeaningfulProgressSummary));
+      } else if (!objectiveText && progress && progress.suggestedNextAction) {
+        lines.push('');
+        lines.push('Next up: ' + ensureSentence(progress.suggestedNextAction));
+      }
+
+      if (progress && progress.escalationMessage) {
+        lines.push('');
+        lines.push(ensureSentence(progress.escalationMessage));
+      }
+
+      return lines.join('\\n').trim();
+    }
+
+    function buildPendingAssistantStartupText() {
+      if (!isSubmitting || state.running) return '';
+      const status = String(state.status || '').trim();
+      if (status && !/^ready\\b/i.test(status)) {
+        return ensureSentence(status);
+      }
+      return 'Iâ€™m picking this up now.';
     }
 
     function refreshComposerStatusLine() {
@@ -3367,6 +3795,25 @@ function buildWebviewHtml(webview) {
       return false;
     }
 
+    function shouldTreatTrailingNewlineAsSend(previousValue, currentValue) {
+      const current = String(currentValue || '');
+      const previous = String(previousValue || '');
+      const normalizedCurrent = current.replace(/\\r\\n/g, '\\n');
+      const normalizedPrevious = previous.replace(/\\r\\n/g, '\\n');
+      if (!normalizedCurrent.endsWith('\\n')) return false;
+      if (!normalizePromptText(normalizedCurrent)) return false;
+      if (normalizedCurrent === normalizedPrevious + '\\n') return true;
+      if (Date.now() - lastBareEnterIntentAt <= 300) return true;
+      const currentWithoutTrailing = normalizedCurrent.replace(/\\n$/, '');
+      if (
+        currentWithoutTrailing === normalizePromptText(currentWithoutTrailing) &&
+        normalizedCurrent.split('\\n').length <= 2
+      ) {
+        return true;
+      }
+      return false;
+    }
+
     function onComposerKeydown(event) {
       if (!isComposerEvent(event)) return;
 
@@ -3426,6 +3873,7 @@ function buildWebviewHtml(webview) {
         return;
       }
       if (event.isComposing) return;
+      noteBareEnterIntent(event);
       allowNextLineBreak = false;
       event.preventDefault();
       event.stopPropagation();
@@ -3447,6 +3895,7 @@ function buildWebviewHtml(webview) {
         allowNextLineBreak = true;
         return;
       }
+      noteBareEnterIntent(event);
       if (allowNextLineBreak) {
         allowNextLineBreak = false;
         return;
@@ -3462,6 +3911,7 @@ function buildWebviewHtml(webview) {
     function composerKeypressFallback(event) {
       if (!isComposerEvent(event)) return;
       if (!isMainEnterNoShift(event)) return;
+      noteBareEnterIntent(event);
       event.preventDefault();
       event.stopPropagation();
       if (typeof event.stopImmediatePropagation === 'function') {
@@ -3477,12 +3927,13 @@ function buildWebviewHtml(webview) {
         inputType === 'insertLineBreak' ||
         inputType === 'insertParagraph' ||
         (inputType === 'insertText' && event.data === '\\n');
-      if (!isPlainLineBreak) return;
+      const currentValue = String(input.value || '');
+      const previousValue = String(lastInputValue || '');
+      if (!isPlainLineBreak && !shouldTreatTrailingNewlineAsSend(previousValue, currentValue)) return;
       if (allowNextLineBreak) {
         allowNextLineBreak = false;
         return;
       }
-      const currentValue = String(input.value || '');
       if (!currentValue.endsWith('\\n')) return;
       input.value = currentValue.replace(/\\r?\\n$/, '');
       autoSize();
@@ -3504,7 +3955,7 @@ function buildWebviewHtml(webview) {
       }
       const caretAtEnd =
         (input.selectionStart || 0) === currentValue.length && (input.selectionEnd || 0) === currentValue.length;
-      const appendedBareEnter = currentValue === previousValue + '\\n' || currentValue === previousValue + '\\r\\n';
+      const appendedBareEnter = shouldTreatTrailingNewlineAsSend(previousValue, currentValue);
       if (!caretAtEnd || !appendedBareEnter) {
         syncLastInputValue();
         return false;
@@ -3518,6 +3969,9 @@ function buildWebviewHtml(webview) {
 
     function composerKeyupFallback(event) {
       if (!isComposerEvent(event)) return;
+      if (isMainEnterNoShift(event)) {
+        noteBareEnterIntent(event);
+      }
       if (isMainEnterNoShift(event) && maybeSendFromImplicitTrailingLineBreak()) {
         return;
       }

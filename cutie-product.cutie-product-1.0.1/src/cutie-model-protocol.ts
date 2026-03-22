@@ -88,9 +88,6 @@ export function normalizeProtocolResponsePayload(payload: unknown): CutieStructu
 
   if (type === "final") {
     const text = String(row.text || row.final || "").trim();
-    if (!text) {
-      throw new CutieStructuredProtocolError("cutie_tools_v2 final payload is missing text.");
-    }
     return {
       type: "final",
       final: text,

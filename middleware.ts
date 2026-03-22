@@ -1,8 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import type { NextRequest } from "next/server";
 import { getPathForService, getServiceBaseUrl, getServiceFromHost, isAllowedRoute, type Service } from "@/lib/subdomain";
+import { getCrawlerName } from "@/lib/bot-detect";
+import { trackBotPageViewAll } from "@/lib/server-analytics";
 
 const X_SERVICE_HEADER = "x-service";
+const X_IS_BOT = "x-is-bot";
+const X_BOT_NAME = "x-bot-name";
+const X_BOT_PATH = "x-bot-path";
+const X_BOT_PAGEVIEW_SENT = "x-bot-pageview-sent";
 const X_REQUEST_ID_HEADER = "x-request-id";
 const INTERNAL_V1_PROXY_HEADER = "x-internal-api-proxy";
 const REMOVED_PREFIXES = ["/casino", "/faucet", "/register", "/ans"] as const;
@@ -130,9 +136,43 @@ export async function middleware(req: NextRequest) {
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set(X_SERVICE_HEADER, serviceForHeader);
 
+  const ua = req.headers.get("user-agent") ?? "";
+  const botName = getCrawlerName(ua);
+  if (botName && wantsHtml(req)) {
+    requestHeaders.set(X_IS_BOT, "1");
+    requestHeaders.set(X_BOT_NAME, botName);
+    requestHeaders.set(X_BOT_PATH, `${url.pathname}${url.search}`);
+    requestHeaders.set(X_BOT_PAGEVIEW_SENT, "1");
+
+    const forwardedHost = req.headers.get("x-forwarded-host") ?? host;
+    const proto =
+      req.headers.get("x-forwarded-proto") ??
+      (hostname === "localhost" || hostname.startsWith("127.") ? "http" : "https");
+    const pageUrl = `${proto}://${forwardedHost}${url.pathname}${url.search}`;
+    const xff = req.headers.get("x-forwarded-for") ?? "";
+    const cookie = req.headers.get("cookie") ?? "";
+    const referer = req.headers.get("referer") ?? "";
+
+    after(() =>
+      trackBotPageViewAll({
+        pageUrl,
+        path: `${url.pathname}${url.search}`,
+        botName,
+        userAgent: ua,
+        xForwardedFor: xff,
+        cookie,
+        referrer: referer || undefined,
+      })
+    );
+  }
+
   const res = NextResponse.next({
     request: { headers: requestHeaders },
   });
+
+  if (botName && wantsHtml(req)) {
+    res.headers.set("x-bot-tracked", "1");
+  }
 
   if (url.pathname.startsWith("/api/") && (hasBearer || hasAgentCookie)) {
     res.cookies.set(AI_CONTACT_COOKIE, "1", {

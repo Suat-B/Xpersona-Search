@@ -5,6 +5,7 @@ const vscode_core_1 = require("@xpersona/vscode-core");
 const config_1 = require("./config");
 const cutie_host_http_error_1 = require("./cutie-host-http-error");
 const cutie_model_protocol_1 = require("./cutie-model-protocol");
+const cutie_native_autonomy_1 = require("./cutie-native-autonomy");
 function asRecord(value) {
     return value && typeof value === "object" ? value : {};
 }
@@ -93,6 +94,8 @@ class CutieModelClient {
     }
     async streamStructuredTurnOnce(input) {
         let assistantText = "";
+        let rawAssistantText = "";
+        let suppressedAssistantArtifact = "";
         let usage = null;
         let resolvedModel;
         let responsePayload = null;
@@ -100,8 +103,16 @@ class CutieModelClient {
             await (0, vscode_core_1.streamJsonEvents)("POST", `${(0, config_1.getBaseApiUrl)()}/api/v1/cutie/model/chat`, input.auth, buildStructuredRequestBody(input, true), async (event, data) => {
                 const parsed = (0, cutie_model_protocol_1.parseStructuredStreamEvent)(event, data);
                 if (parsed.type === "assistant_delta") {
-                    assistantText += parsed.text;
-                    await input.onDelta?.(parsed.text, assistantText);
+                    rawAssistantText += parsed.text;
+                    const visibleText = (0, cutie_native_autonomy_1.extractVisibleAssistantText)(rawAssistantText);
+                    if ((0, cutie_native_autonomy_1.looksLikeCutieToolArtifactText)(rawAssistantText)) {
+                        suppressedAssistantArtifact = rawAssistantText.trim();
+                    }
+                    if (visibleText.length > assistantText.length) {
+                        const nextDelta = visibleText.slice(assistantText.length);
+                        assistantText = visibleText;
+                        await input.onDelta?.(nextDelta, assistantText);
+                    }
                     return;
                 }
                 if (parsed.type === "noop") {
@@ -133,6 +144,7 @@ class CutieModelClient {
         return {
             response: responsePayload,
             assistantText,
+            ...(suppressedAssistantArtifact ? { suppressedAssistantArtifact } : {}),
             usage,
             model: resolvedModel,
         };

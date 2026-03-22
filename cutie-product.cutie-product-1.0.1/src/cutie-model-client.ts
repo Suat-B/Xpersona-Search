@@ -6,6 +6,7 @@ import {
   normalizeProtocolResponsePayload,
   parseStructuredStreamEvent,
 } from "./cutie-model-protocol";
+import { extractVisibleAssistantText, looksLikeCutieToolArtifactText } from "./cutie-native-autonomy";
 import type { CutieModelMessage, CutieModelTurnResult, CutieProtocolToolDefinition } from "./types";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -141,6 +142,8 @@ export class CutieModelClient {
 
   private async streamStructuredTurnOnce(input: StructuredTurnInput): Promise<CutieModelTurnResult> {
     let assistantText = "";
+    let rawAssistantText = "";
+    let suppressedAssistantArtifact = "";
     let usage: Record<string, unknown> | null = null;
     let resolvedModel: string | undefined;
     let responsePayload: CutieModelTurnResult["response"] | null = null;
@@ -154,8 +157,16 @@ export class CutieModelClient {
         async (event, data) => {
           const parsed = parseStructuredStreamEvent(event, data);
           if (parsed.type === "assistant_delta") {
-            assistantText += parsed.text;
-            await input.onDelta?.(parsed.text, assistantText);
+            rawAssistantText += parsed.text;
+            const visibleText = extractVisibleAssistantText(rawAssistantText);
+            if (looksLikeCutieToolArtifactText(rawAssistantText)) {
+              suppressedAssistantArtifact = rawAssistantText.trim();
+            }
+            if (visibleText.length > assistantText.length) {
+              const nextDelta = visibleText.slice(assistantText.length);
+              assistantText = visibleText;
+              await input.onDelta?.(nextDelta, assistantText);
+            }
             return;
           }
           if (parsed.type === "noop") {
@@ -190,6 +201,7 @@ export class CutieModelClient {
     return {
       response: responsePayload,
       assistantText,
+      ...(suppressedAssistantArtifact ? { suppressedAssistantArtifact } : {}),
       usage,
       model: resolvedModel,
     };
