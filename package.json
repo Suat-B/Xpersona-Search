@@ -29,6 +29,7 @@
     "db:ensure-agents-table": "node scripts/ensure-agents-table.mjs",
     "db:ensure-crawler-schema": "node scripts/ensure-crawler-schema.mjs",
     "db:ensure-search-vectors": "node scripts/ensure-search-vectors.mjs",
+    "db:ensure-capability-tokens": "node scripts/ensure-capability-tokens.mjs",
     "crawl": "tsx scripts/run-crawl.ts",
     "crawl:full": "tsx scripts/run-crawl.ts 2500",
     "crawl:100k": "tsx scripts/run-crawl.ts 100k",

@@ -1,6 +1,24 @@
 @tailwind base;
 @tailwind components;
 
+/* AdSense: blend with dark UI; empty / loading slots look less like harsh white slabs */
+@layer components {
+  .ad-slot-host {
+    background-color: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    min-height: 0;
+  }
+  .ad-slot-host ins.adsbygoogle {
+    background: transparent !important;
+  }
+  .light-mode .ad-slot-host {
+    background-color: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.08);
+  }
+}
+
 @layer utilities {
   .animate-gradient {
     animation: gradient 3s ease infinite;

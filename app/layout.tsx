@@ -106,7 +106,6 @@ export default async function RootLayout({
     <ThemeProvider>
       <ServiceProvider service={service}>
         <AuthProvider>
-          <BotAdBanner className="mx-auto max-w-6xl px-4 pt-2" />
           {variant === "hf" ? (
             <HFChrome isAuthenticated={isAuthenticated}>{children}</HFChrome>
           ) : (

@@ -42,13 +42,15 @@ export function AdUnit({
   if (!slot.trim()) return null;
 
   return (
-    <ins
-      className={`adsbygoogle ${className}`.trim()}
-      style={{ display: "block", ...style }}
-      data-ad-client={client}
-      data-ad-slot={slot.trim()}
-      data-ad-format={format}
-      data-full-width-responsive={fullWidthResponsive ? "true" : "false"}
-    />
+    <div className={`ad-slot-host w-full ${className}`.trim()}>
+      <ins
+        className="adsbygoogle block w-full min-h-0 bg-transparent"
+        style={{ display: "block", ...style }}
+        data-ad-client={client}
+        data-ad-slot={slot.trim()}
+        data-ad-format={format}
+        data-full-width-responsive={fullWidthResponsive ? "true" : "false"}
+      />
+    </div>
   );
 }

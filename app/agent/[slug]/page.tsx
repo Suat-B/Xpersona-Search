@@ -1,6 +1,6 @@
 import React from "react";
 import type { Metadata } from "next";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { AgentTechnicalDossier } from "@/components/agent/AgentTechnicalDossier";
 import { auth } from "@/lib/auth";
@@ -120,11 +120,6 @@ export default async function AgentPage({ params, searchParams }: Props) {
       <link rel="alternate" type="application/json" href={dossier.execution.endpoints.dossierUrl} />
       <link rel="alternate" type="application/json" href={dossier.execution.endpoints.snapshotUrl} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-
-      <BotAdBanner
-        className="mx-auto w-full max-w-7xl px-4 pt-4"
-        botAdCount={1}
-      />
 
       <main className="mx-auto w-full max-w-7xl px-4 py-8 md:py-10">
         <AgentTechnicalDossier dossier={dossier} from={from} />
