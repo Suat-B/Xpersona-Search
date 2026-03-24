@@ -1,4 +1,9 @@
-import type { CutieAutonomyMode, CutieTaskGoal } from "./types";
+import type {
+  CutieAutonomyMode,
+  CutieRepairTactic,
+  CutieTargetAcquisitionPhase,
+  CutieTaskGoal,
+} from "./types";
 
 export const DIRECT_MUTATION_REPAIR_CAP = 4;
 export const UNLIMITED_DIRECT_MUTATION_REPAIR_CAP = 12;
@@ -45,6 +50,10 @@ export function selectCodeChangeAutonomyMode(input: {
   mentionedPaths?: string[];
   activeFilePath?: string | null;
   openFilePaths?: string[];
+  preferredTargetPath?: string | null;
+  resolvedTargetCount?: number;
+  trustedTargetCount?: number;
+  concreteEntityResolved?: boolean;
   objectiveBasedRuns?: boolean;
 }): CutieAutonomyMode {
   if (input.goal !== "code_change") return "objective";
@@ -53,6 +62,10 @@ export function selectCodeChangeAutonomyMode(input: {
   const mentionedPaths = Array.isArray(input.mentionedPaths) ? input.mentionedPaths.filter(Boolean) : [];
   const activeFilePath = String(input.activeFilePath || "").trim();
   const openFilePaths = Array.isArray(input.openFilePaths) ? input.openFilePaths.filter(Boolean) : [];
+  const preferredTargetPath = String(input.preferredTargetPath || "").trim();
+  const resolvedTargetCount = Math.max(0, Number(input.resolvedTargetCount ?? 0));
+  const trustedTargetCount = Math.max(0, Number(input.trustedTargetCount ?? 0));
+  const concreteEntityResolved = input.concreteEntityResolved !== false;
   const stripped = stripMentionTokens(input.prompt);
 
   const hasSingularExplicitTarget = mentionedPaths.length === 1;
@@ -60,10 +73,16 @@ export function selectCodeChangeAutonomyMode(input: {
     mentionedPaths.length === 0 &&
     (wantsCurrentFileInspection(input.prompt) || referencesActiveEditingContext(input.prompt)) &&
     Boolean(activeFilePath || openFilePaths[0]);
-  const hasSingleTarget = hasSingularExplicitTarget || hasImplicitEditorTarget;
+  const hasRuntimeResolvedSingleTarget =
+    Boolean(preferredTargetPath) &&
+    concreteEntityResolved &&
+    (trustedTargetCount === 1 || resolvedTargetCount === 1);
+  const hasSingleTarget = hasSingularExplicitTarget || hasImplicitEditorTarget || hasRuntimeResolvedSingleTarget;
   const hasBroadSignals = wantsBroadWorkspaceDiscovery(input.prompt);
   const hasMultiTargetSignals =
     mentionedPaths.length > 1 ||
+    trustedTargetCount > 1 ||
+    resolvedTargetCount > 1 ||
     /\b(files|modules|components|screens|routes|across|throughout|everywhere|multiple|repo-wide|project-wide)\b/i.test(stripped);
 
   if (hasSingleTarget && hasActionVerb(input.prompt) && !hasBroadSignals && !hasMultiTargetSignals) {
@@ -81,19 +100,39 @@ export function resolveNativeNextToolHints(input: {
   goal: CutieTaskGoal;
   autonomyMode?: CutieAutonomyMode;
   preferredTargetPath?: string | null;
+  targetAcquisitionPhase?: CutieTargetAcquisitionPhase;
+  currentRepairTactic?: CutieRepairTactic;
   hasCompletedRead: boolean;
   hasCompletedMutation: boolean;
   hasVerifiedOutcome?: boolean;
+  noOpConclusion?: string | null;
 }): string[] {
   if (input.goal !== "code_change") return [];
   if (input.autonomyMode !== "direct") return [];
+  if (input.noOpConclusion) {
+    return input.hasVerifiedOutcome ? [] : ["run_command", "get_diagnostics"];
+  }
   if (input.hasCompletedMutation) {
     return input.hasVerifiedOutcome ? [] : ["run_command", "get_diagnostics"];
   }
-  if (!input.hasCompletedRead) {
-    return input.preferredTargetPath ? ["read_file"] : [];
+  if (!input.preferredTargetPath) {
+    return ["search_workspace", "list_files"];
   }
-  return ["patch_file", "write_file", "run_command"];
+  if (!input.hasCompletedRead) {
+    return ["read_file"];
+  }
+  if (
+    input.targetAcquisitionPhase === "semantic_recovery" ||
+    input.currentRepairTactic === "semantic_search" ||
+    input.currentRepairTactic === "example_search" ||
+    input.currentRepairTactic === "command_assisted_repair"
+  ) {
+    return ["run_command", "search_workspace", "patch_file", "write_file"];
+  }
+  if (input.currentRepairTactic === "full_rewrite") {
+    return ["write_file", "run_command"];
+  }
+  return ["patch_file", "run_command", "write_file"];
 }
 
 export function findToolArtifactStart(raw: string): number {
@@ -109,6 +148,9 @@ export function findToolArtifactStart(raw: string): number {
     /"tool_calls"\s*:/i,
     /"toolCalls"\s*:/i,
     /"type"\s*:\s*"tool_batch"/i,
+    /\{\s*"toolName"\s*:\s*"[^"]+"\s*,?[\s\S]*"(?:arguments|args)"\s*:/i,
+    /\{\s*"name"\s*:\s*"[^"]+"\s*,?[\s\S]*"(?:arguments|args)"\s*:/i,
+    /\{\s*"tool"\s*:\s*"[^"]+"\s*,?[\s\S]*"(?:arguments|args)"\s*:/i,
   ];
   for (const pattern of directPatterns) {
     const match = pattern.exec(text);
@@ -119,7 +161,9 @@ export function findToolArtifactStart(raw: string): number {
   const leadingOffset = text.length - trimmed.length;
   if (/^(?:\{|\[)/.test(trimmed)) {
     if (/"type"\s*:\s*"tool_(?:call|calls)"/i.test(trimmed)) return leadingOffset;
-    if (/"name"\s*:\s*"[^"]+"\s*,?[\s\S]*"arguments"\s*:/i.test(trimmed)) return leadingOffset;
+    if (/"toolName"\s*:\s*"[^"]+"\s*,?[\s\S]*"(?:arguments|args)"\s*:/i.test(trimmed)) return leadingOffset;
+    if (/"name"\s*:\s*"[^"]+"\s*,?[\s\S]*"(?:arguments|args)"\s*:/i.test(trimmed)) return leadingOffset;
+    if (/"tool"\s*:\s*"[^"]+"\s*,?[\s\S]*"(?:arguments|args)"\s*:/i.test(trimmed)) return leadingOffset;
   }
 
   return -1;

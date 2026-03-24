@@ -5,6 +5,7 @@ import { agents, agentCapabilityHandshakes, agentReputationSnapshots } from "@/l
 import { hasTrustTable } from "@/lib/trust/db";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 import { recordApiResponse } from "@/lib/metrics/record";
+import { consumeCrawlCreditForRequest } from "@/lib/crawl-license-store";
 
 export async function GET(
   req: Request,
@@ -71,6 +72,15 @@ export async function GET(
         .orderBy(desc(agentReputationSnapshots.computedAt))
         .limit(1)
     : [];
+
+  const crawlChargeResponse = await consumeCrawlCreditForRequest(
+    req,
+    `/api/v1/agents/${slug}/trust`
+  );
+  if (crawlChargeResponse) {
+    recordApiResponse("/api/agents/:slug/trust", req, crawlChargeResponse, startedAt);
+    return crawlChargeResponse;
+  }
 
   const response = NextResponse.json({
     handshake: handshake[0] ?? null,

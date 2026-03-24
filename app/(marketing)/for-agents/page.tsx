@@ -29,6 +29,10 @@ export default function ForAgentsPage() {
   const snapshot = `${baseUrl}/api/v1/agents/example-research/snapshot`;
   const contract = `${baseUrl}/api/v1/agents/example-research/contract`;
   const trust = `${baseUrl}/api/v1/agents/example-research/trust`;
+  const card = `${baseUrl}/api/v1/agents/example-research/card`;
+  const facts = `${baseUrl}/api/v1/agents/example-research/facts`;
+  const feed = `${baseUrl}/api/v1/feeds/agents/latest`;
+  const crawlLicense = `${baseUrl}/api/v1/crawl-license`;
   const openapi = `${baseUrl}/api/v1/openapi/public`;
   const policy = `${baseUrl}/api/v1/search/policy`;
 
@@ -40,7 +44,7 @@ export default function ForAgentsPage() {
         name: "Xpersona for AI Agents",
         url: `${baseUrl}/for-agents`,
         description: "Machine-first onboarding page for autonomous agents integrating Xpersona.",
-        isBasedOn: [searchAi, openapi, snapshot, contract, trust, policy],
+        isBasedOn: [searchAi, openapi, card, facts, feed, snapshot, contract, trust, policy, crawlLicense],
       },
       {
         "@type": "Dataset",
@@ -88,9 +92,29 @@ export default function ForAgentsPage() {
           <p className="mt-2 text-xs text-[var(--accent-heart)] font-mono">{UNIFIED_CTA}</p>
           <ol className="mt-3 list-decimal pl-5 text-sm text-[var(--text-secondary)] space-y-2">
             <li>Call AI search: <code>GET /api/v1/search/ai</code>.</li>
+            <li>Warm caches with the public card/facts layer: <code>GET /api/v1/agents/{`{slug}`}/card</code> and <code>/facts</code>.</li>
             <li>Inspect candidate snapshot: <code>GET /api/v1/agents/{`{slug}`}/snapshot</code>.</li>
             <li>Evaluate contract and trust: <code>GET /api/v1/agents/{`{slug}`}/contract</code> and <code>GET /api/v1/agents/{`{slug}`}/trust</code>.</li>
           </ol>
+        </section>
+
+        <section className="agent-card p-5">
+          <h2 className="text-lg font-semibold">Public teaser + licensed crawl flow</h2>
+          <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
+            Xpersona keeps public teaser surfaces fully crawlable so companies can discover fresh cards, facts, and feed
+            pages first. Deep snapshot, contract, trust, and premium dossier reads stay behind the crawl-license flow.
+          </p>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 text-sm text-[var(--text-secondary)]">
+              Public feed pages like <code>/agent/benchmarked</code> and <code>/agent/recent-updates</code> are the crawl magnet.
+            </div>
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 text-sm text-[var(--text-secondary)]">
+              Public machine endpoints like <code>/card</code> and <code>/facts</code> expose provenance-rich summaries.
+            </div>
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 text-sm text-[var(--text-secondary)]">
+              Licensed crawlers graduate to <code>/api/v1/crawl-license</code> for deeper premium access.
+            </div>
+          </div>
         </section>
 
         <section className="agent-card p-5">
@@ -106,10 +130,13 @@ export default function ForAgentsPage() {
               </thead>
               <tbody className="text-[var(--text-secondary)]">
                 <tr><td className="py-1 pr-4">GET</td><td className="py-1 pr-4">/api/v1/search/ai</td><td>Low-token discovery response for autonomous systems</td></tr>
+                <tr><td className="py-1 pr-4">GET</td><td className="py-1 pr-4">/api/v1/agents/{`{slug}`}/card</td><td>Public teaser card for preview generation and cache warming</td></tr>
+                <tr><td className="py-1 pr-4">GET</td><td className="py-1 pr-4">/api/v1/agents/{`{slug}`}/facts</td><td>Public normalized evidence facts with provenance and freshness</td></tr>
                 <tr><td className="py-1 pr-4">GET</td><td className="py-1 pr-4">/api/v1/agents/{`{slug}`}/snapshot</td><td>Stable agent summary for execution pre-check</td></tr>
                 <tr><td className="py-1 pr-4">GET</td><td className="py-1 pr-4">/api/v1/agents/{`{slug}`}/contract</td><td>Capability contract metadata</td></tr>
                 <tr><td className="py-1 pr-4">GET</td><td className="py-1 pr-4">/api/v1/agents/{`{slug}`}/trust</td><td>Verification and reliability telemetry</td></tr>
                 <tr><td className="py-1 pr-4">GET</td><td className="py-1 pr-4">/api/v1/search/policy</td><td>Versioned machine decision policy and confidence rules</td></tr>
+                <tr><td className="py-1 pr-4">GET</td><td className="py-1 pr-4">/api/v1/feeds/agents/{`{view}`}</td><td>Public feed surfaces for latest, benchmarked, security, and OpenAPI-ready agents</td></tr>
               </tbody>
             </table>
           </div>
@@ -118,6 +145,8 @@ export default function ForAgentsPage() {
         <section className="agent-card p-5 space-y-3">
           <h2 className="text-lg font-semibold">Copy-paste examples</h2>
           <pre className="overflow-x-auto rounded bg-black/40 p-3 text-xs text-emerald-300">{`curl -s "${searchAi}"`}</pre>
+          <pre className="overflow-x-auto rounded bg-black/40 p-3 text-xs text-emerald-300">{`curl -s "${card}"`}</pre>
+          <pre className="overflow-x-auto rounded bg-black/40 p-3 text-xs text-emerald-300">{`curl -s "${facts}"`}</pre>
           <pre className="overflow-x-auto rounded bg-black/40 p-3 text-xs text-emerald-300">{`curl -s "${snapshot}"`}</pre>
           <pre className="overflow-x-auto rounded bg-black/40 p-3 text-xs text-emerald-300">{`curl -s "${contract}"`}</pre>
           <pre className="overflow-x-auto rounded bg-black/40 p-3 text-xs text-emerald-300">{`curl -s "${trust}"`}</pre>
@@ -191,6 +220,16 @@ export default function ForAgentsPage() {
               </Link>
             </li>
             <li>
+              <Link className="text-[var(--accent-heart)] hover:underline" href="/api/v1/feeds/agents/latest">
+                Agent feeds
+              </Link>
+            </li>
+            <li>
+              <Link className="text-[var(--accent-heart)] hover:underline" href="/agent/benchmarked">
+                Public crawl entry pages
+              </Link>
+            </li>
+            <li>
               <Link className="text-[var(--accent-heart)] hover:underline" href="/docs">
                 API Docs
               </Link>
@@ -218,6 +257,11 @@ export default function ForAgentsPage() {
             <li>
               <Link className="text-[var(--accent-heart)] hover:underline" href="/llms-full.txt">
                 llms-full.txt
+              </Link>
+            </li>
+            <li>
+              <Link className="text-[var(--accent-heart)] hover:underline" href="/api/v1/crawl-license">
+                Crawl license
               </Link>
             </li>
           </ul>

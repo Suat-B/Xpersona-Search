@@ -105,14 +105,14 @@ export function SearchFiltersSidebar({
   };
 
   return (
-    <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/30 overflow-hidden">
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.08)] [--bg-deep:#ffffff] [--bg-elevated:#f8fafc] [--border:rgba(148,163,184,0.35)] [--text-primary:#0f172a] [--text-secondary:#334155] [--text-tertiary:#475569] [--text-quaternary:#64748b]">
       <section className="border-b border-[var(--border)]/70 last:border-b-0">
         <button
           type="button"
           onClick={() => setOpenSections((prev) => ({ ...prev, protocols: !prev.protocols }))}
           aria-expanded={openSections.protocols}
           aria-controls="filters-protocols"
-          className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)] hover:bg-white/5 transition-colors"
+          className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)] transition-colors hover:bg-slate-50"
         >
           Protocols
           <span className={`transition-transform ${openSections.protocols ? "rotate-180" : ""}`} aria-hidden>
@@ -134,7 +134,7 @@ export function SearchFiltersSidebar({
                       type="checkbox"
                       checked={selectedProtocols.includes(protocolId)}
                       onChange={() => toggleProtocol(protocolId)}
-                      className="h-3.5 w-3.5 rounded border-white/20 bg-transparent text-[var(--accent-heart)] focus:ring-[var(--accent-heart)]/40"
+                      className="h-3.5 w-3.5 rounded border-slate-300 bg-white text-[var(--accent-heart)] focus:ring-[var(--accent-heart)]/40"
                     />
                     <span className="text-sm">{label}</span>
                   </span>
@@ -154,7 +154,7 @@ export function SearchFiltersSidebar({
           onClick={() => setOpenSections((prev) => ({ ...prev, trust: !prev.trust }))}
           aria-expanded={openSections.trust}
           aria-controls="filters-trust"
-          className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)] hover:bg-white/5 transition-colors"
+          className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)] transition-colors hover:bg-slate-50"
         >
           Trust
           <span className={`transition-transform ${openSections.trust ? "rotate-180" : ""}`} aria-hidden>
@@ -185,7 +185,7 @@ export function SearchFiltersSidebar({
           onClick={() => setOpenSections((prev) => ({ ...prev, execution: !prev.execution }))}
           aria-expanded={openSections.execution}
           aria-controls="filters-execution"
-          className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)] hover:bg-white/5 transition-colors"
+          className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)] transition-colors hover:bg-slate-50"
         >
           Execution
           <span className={`transition-transform ${openSections.execution ? "rotate-180" : ""}`} aria-hidden>
@@ -246,7 +246,7 @@ export function SearchFiltersSidebar({
           onClick={() => setOpenSections((prev) => ({ ...prev, compliance: !prev.compliance }))}
           aria-expanded={openSections.compliance}
           aria-controls="filters-compliance"
-          className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)] hover:bg-white/5 transition-colors"
+          className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)] transition-colors hover:bg-slate-50"
         >
           Compliance
           <span className={`transition-transform ${openSections.compliance ? "rotate-180" : ""}`} aria-hidden>
@@ -297,7 +297,7 @@ export function SearchFiltersSidebar({
           onClick={() => setOpenSections((prev) => ({ ...prev, advanced: !prev.advanced }))}
           aria-expanded={openSections.advanced}
           aria-controls="filters-advanced"
-          className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)] hover:bg-white/5 transition-colors"
+          className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)] transition-colors hover:bg-slate-50"
         >
           Advanced
           <span className={`transition-transform ${openSections.advanced ? "rotate-180" : ""}`} aria-hidden>

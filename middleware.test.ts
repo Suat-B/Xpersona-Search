@@ -1,8 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 import { middleware } from "./middleware";
+import { mintCrawlLicenseToken } from "@/lib/crawl-license-mint";
 
 describe("api hard cutover middleware", () => {
+  afterEach(() => {
+    delete process.env.ENABLE_PAY_PER_CRAWL;
+    delete process.env.CRAWL_LICENSE_SECRET;
+  });
+
   it("returns 410 for deprecated unversioned api routes", async () => {
     const req = new NextRequest("http://localhost/api/search?q=test");
     const res = await middleware(req);
@@ -24,6 +30,64 @@ describe("api hard cutover middleware", () => {
       headers: { "x-internal-api-proxy": "1" },
     });
     const res = await middleware(req);
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 402 for gated crawler requests without a crawl token", async () => {
+    process.env.ENABLE_PAY_PER_CRAWL = "1";
+    process.env.CRAWL_LICENSE_SECRET = "0123456789abcdef";
+
+    const req = new NextRequest("http://localhost/api/v1/agents/demo-agent/snapshot", {
+      headers: { "user-agent": "GPTBot" },
+    });
+    const res = await middleware(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(402);
+    expect(json.error.code).toBe("CRAWL_LICENSE_REQUIRED");
+  });
+
+  it("returns 402 for gated agent detail pages without a crawl token", async () => {
+    process.env.ENABLE_PAY_PER_CRAWL = "1";
+    process.env.CRAWL_LICENSE_SECRET = "0123456789abcdef";
+
+    const req = new NextRequest("http://localhost/agent/demo-agent", {
+      headers: { "user-agent": "GPTBot", accept: "text/html" },
+    });
+    const res = await middleware(req);
+
+    expect(res.status).toBe(402);
+  });
+
+  it("keeps public agent collection pages ungated for crawler requests", async () => {
+    process.env.ENABLE_PAY_PER_CRAWL = "1";
+    process.env.CRAWL_LICENSE_SECRET = "0123456789abcdef";
+
+    const req = new NextRequest("http://localhost/agent/benchmarked", {
+      headers: { "user-agent": "GPTBot", accept: "text/html" },
+    });
+    const res = await middleware(req);
+
+    expect(res.status).toBe(200);
+  });
+
+  it("allows gated crawler requests with a valid crawl token", async () => {
+    process.env.ENABLE_PAY_PER_CRAWL = "1";
+    process.env.CRAWL_LICENSE_SECRET = "0123456789abcdef";
+    const token = mintCrawlLicenseToken({
+      customerId: "crawl_customer_1",
+      keyPrefix: "xpcrawl_12345678",
+      ttlSeconds: 3600,
+    });
+
+    const req = new NextRequest("http://localhost/api/v1/agents/demo-agent/snapshot", {
+      headers: {
+        "user-agent": "GPTBot",
+        "x-crawl-license": token ?? "",
+      },
+    });
+    const res = await middleware(req);
+
     expect(res.status).toBe(200);
   });
 });

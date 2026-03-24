@@ -16,6 +16,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { agents } from "./search-schema";
 export * from "./search-schema";
+export * from "./crawl-schema";
 
 /** Account type: agent (AI), human (decoy), google (OAuth, deprecated), email (credentials). */
 export type AccountType = "agent" | "human" | "google" | "email";

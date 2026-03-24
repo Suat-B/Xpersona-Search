@@ -9,6 +9,14 @@ export type BotAnalyticsHeaders = {
 
 const GA4_COLLECT = "https://www.google-analytics.com/mp/collect";
 
+/** Optional; register matching custom dimensions / event params in GA4. */
+export type GamAnalyticsDimensions = {
+  gam_ad_unit?: string;
+  gam_bot_creative_id?: string;
+  agent_slug?: string;
+  page_type?: string;
+};
+
 function getGa4MeasurementId(): string | undefined {
   return process.env.GA4_MEASUREMENT_ID?.trim() || process.env.NEXT_PUBLIC_GA4_MEASUREMENT_ID?.trim() || undefined;
 }
@@ -51,14 +59,18 @@ export function buildVercelTrackHeaders(input: {
 
 export async function trackBotPageViewVercel(
   pageUrl: string,
-  properties: { path: string; botName: string },
+  properties: { path: string; botName: string; gamDimensions?: GamAnalyticsDimensions },
   trackHeaders: BotAnalyticsHeaders
 ): Promise<void> {
+  const g = properties.gamDimensions;
   await vercelTrack(
     "bot_pageview",
     {
       path: properties.path,
       bot_name: properties.botName,
+      ...(g?.agent_slug ? { agent_slug: g.agent_slug } : {}),
+      ...(g?.page_type ? { page_type: g.page_type } : {}),
+      ...(g?.gam_ad_unit ? { gam_ad_unit: g.gam_ad_unit } : {}),
     },
     { request: { headers: trackHeaders } }
   );
@@ -71,6 +83,8 @@ export async function trackBotPageViewGA4(input: {
   referrer?: string;
   userAgent: string;
   xForwardedFor: string;
+  /** Register matching custom dimensions in GA4 before relying on reports. */
+  gamDimensions?: GamAnalyticsDimensions;
 }): Promise<void> {
   const measurementId = getGa4MeasurementId();
   const apiSecret = getGa4ApiSecret();
@@ -81,6 +95,13 @@ export async function trackBotPageViewGA4(input: {
   const url = new URL(GA4_COLLECT);
   url.searchParams.set("measurement_id", measurementId);
   url.searchParams.set("api_secret", apiSecret);
+
+  const gam = input.gamDimensions ?? {};
+  const gamParams: Record<string, string> = {};
+  if (gam.gam_ad_unit) gamParams.gam_ad_unit = gam.gam_ad_unit.slice(0, 100);
+  if (gam.gam_bot_creative_id) gamParams.gam_bot_creative_id = gam.gam_bot_creative_id.slice(0, 100);
+  if (gam.agent_slug) gamParams.agent_slug = gam.agent_slug.slice(0, 100);
+  if (gam.page_type) gamParams.page_type = gam.page_type.slice(0, 100);
 
   const body = {
     client_id: clientId,
@@ -95,6 +116,7 @@ export async function trackBotPageViewGA4(input: {
           page_referrer: input.referrer ?? "",
           engagement_time_msec: 1,
           bot_traffic: "1",
+          ...gamParams,
         },
       },
     ],
@@ -118,6 +140,7 @@ export async function trackBotPageViewAll(input: {
   cookie: string;
   title?: string;
   referrer?: string;
+  gamDimensions?: GamAnalyticsDimensions;
 }): Promise<void> {
   const trackHeaders = buildVercelTrackHeaders({
     pageUrl: input.pageUrl,
@@ -129,7 +152,7 @@ export async function trackBotPageViewAll(input: {
   await Promise.all([
     trackBotPageViewVercel(
       input.pageUrl,
-      { path: input.path, botName: input.botName },
+      { path: input.path, botName: input.botName, gamDimensions: input.gamDimensions },
       trackHeaders
     ).catch(() => {
       /* ignore */
@@ -141,6 +164,7 @@ export async function trackBotPageViewAll(input: {
       referrer: input.referrer,
       userAgent: input.userAgent,
       xForwardedFor: input.xForwardedFor,
+      gamDimensions: input.gamDimensions,
     }),
   ]);
 }

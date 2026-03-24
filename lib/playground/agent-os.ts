@@ -123,6 +123,23 @@ type AgentArtifactInput = {
   modelMetadata?: { modelResolvedAlias?: string; providerResolved?: string };
   completionStatus: "complete" | "incomplete";
   missingRequirements: string[];
+  progressState: {
+    status: "running" | "stalled" | "repairing" | "completed" | "failed";
+    lastMeaningfulProgressAtStep: number;
+    lastMeaningfulProgressSummary: string;
+    stallCount: number;
+    stallReason?: string;
+    nextDeterministicAction?: string;
+    pendingToolCallSignature?: string;
+  };
+  objectiveState: {
+    status: "in_progress" | "satisfied" | "blocked";
+    goalType: "code_edit" | "command_run" | "plan" | "unknown";
+    targetPath?: string;
+    requiredProof: string[];
+    observedProof: string[];
+    missingProof: string[];
+  };
   nextBestActions: string[];
   workspaceMemory?: WorkspaceMemoryState | null;
   now?: Date;
@@ -178,7 +195,10 @@ function inferLane(input: AgentArtifactInput, touchedFiles: string[]): AssistExe
 }
 
 function buildTaskGraph(input: AgentArtifactInput, touchedFiles: string[], lane: AssistExecutionLane): AssistTaskGraphStage[] {
-  const blocked = input.completionStatus === "incomplete";
+  const blocked =
+    input.completionStatus === "incomplete" ||
+    input.objectiveState.status === "blocked" ||
+    input.progressState.status === "failed";
   return [
     {
       id: "scout",
@@ -186,7 +206,11 @@ function buildTaskGraph(input: AgentArtifactInput, touchedFiles: string[], lane:
       status: "completed",
       summary: input.targetInference.path ? `Resolved likely target ${input.targetInference.path}.` : "Prepared workspace context.",
       evidence: uniqueStrings(
-        [input.targetInference.path ? `Target ${input.targetInference.path}` : "", ...input.contextSelection.files.map((file) => `${file.path}: ${file.reason}`)],
+        [
+          input.targetInference.path ? `Target ${input.targetInference.path}` : "",
+          ...input.contextSelection.files.map((file) => `${file.path}: ${file.reason}`),
+          ...input.objectiveState.observedProof.map((proof) => `Proof ${proof}`),
+        ],
         4
       ),
     },
@@ -201,8 +225,16 @@ function buildTaskGraph(input: AgentArtifactInput, touchedFiles: string[], lane:
       id: "verifier",
       title: "Verifier",
       status: blocked ? "blocked" : "completed",
-      summary: blocked ? "Validation or actionability requires follow-up." : "Prepared targeted validation and review state.",
-      evidence: uniqueStrings([...input.validationPlan.checks, ...input.missingRequirements], 5),
+      summary: blocked ? "Validation, proof, or actionability requires follow-up." : "Prepared targeted validation and review state.",
+      evidence: uniqueStrings(
+        [
+          ...input.validationPlan.checks,
+          ...input.missingRequirements,
+          ...input.objectiveState.missingProof,
+          input.progressState.stallReason || "",
+        ],
+        5
+      ),
     },
     {
       id: "summarizer",
@@ -317,10 +349,18 @@ function buildMemoryWrites(input: AgentArtifactInput, nowIso: string): AssistMem
 }
 
 function buildReviewState(input: AgentArtifactInput, lane: AssistExecutionLane): AssistReviewState {
-  if (input.completionStatus === "incomplete") {
+  if (
+    input.completionStatus === "incomplete" ||
+    input.objectiveState.status === "blocked" ||
+    input.progressState.status === "failed"
+  ) {
     return {
       status: "blocked",
-      reason: input.missingRequirements[0] || "The run still has unmet completion requirements.",
+      reason:
+        input.progressState.stallReason ||
+        input.objectiveState.missingProof[0] ||
+        input.missingRequirements[0] ||
+        "The run still has unmet completion requirements.",
       recommendedAction: "Repair the run and review the receipt before applying anything else.",
       surface: "playground_panel",
       controlActions: ["resume", "cancel", "repair"],
@@ -355,7 +395,10 @@ function buildReceipt(
   nowIso: string
 ): AssistExecutionReceipt {
   const unresolvedRisk = input.completionStatus === "incomplete"
-    ? uniqueStrings(input.missingRequirements, 5)
+    ? uniqueStrings(
+        [...input.missingRequirements, ...input.objectiveState.missingProof, input.progressState.stallReason || ""],
+        5
+      )
     : input.risk.blastRadius === "high"
       ? ["High blast radius workspace change"]
       : [];
@@ -370,7 +413,16 @@ function buildReceipt(
     provider: input.modelMetadata?.providerResolved || "playground",
     touchedFiles,
     commands: uniqueStrings(input.commands, 8, 512),
-    validationEvidence: uniqueStrings([...input.validationPlan.checks, input.validationPlan.reason], 6, 280),
+    validationEvidence: uniqueStrings(
+      [
+        ...input.validationPlan.checks,
+        input.validationPlan.reason,
+        ...input.objectiveState.observedProof,
+        input.progressState.lastMeaningfulProgressSummary,
+      ],
+      6,
+      280
+    ),
     unresolvedRisk,
     checkpointId: checkpoint.status === "not_required" ? null : checkpoint.id,
     reviewState: reviewState.status === "blocked" ? "blocked" : reviewState.status === "needs_attention" ? "needs_attention" : "ready",

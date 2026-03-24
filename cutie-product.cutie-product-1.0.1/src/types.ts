@@ -1,5 +1,6 @@
 import type { HostedAuthState } from "@xpersona/vscode-core";
 import type { BinaryPanelState } from "./binary-types";
+import type { BinaryIdeChatRuntime } from "./config";
 
 export type CutieToolName =
   | "list_files"
@@ -35,6 +36,84 @@ export type CutieAutonomyMode = "direct" | "objective";
 export type CutieStrategyPhase = "inspect" | "mutate" | "verify" | "repair" | "fallback" | "blocked";
 export type CutieProgressConfidence = "low" | "medium" | "high";
 export type CutieBlockerCategory = "planning" | "validation" | "tooling" | "environment" | "impossible";
+export type CutieStallLevel = "none" | "warning" | "severe";
+export type CutieSubmitState = "idle" | "submitting" | "starting" | "running" | "stopping" | "settled";
+export type CutieTargetConfidence = "trusted" | "untrusted" | "none";
+export type CutieModelToolSupport = "none" | "partial" | "reliable";
+export type CutieModelStreamSupport = "none" | "partial" | "reliable";
+export type CutieAssistantDeltaReliability = "low" | "medium" | "high";
+export type CutieMaxToolsPerTurnPolicy = "single_only" | "allow_parallel" | "prefer_serial";
+export type CutieProtocolMode = "native_tools" | "text_extraction" | "final_only";
+export type CutieModelAdapterKind = "capability_negotiated_v1" | "canonical_portability_v1";
+export type CutieOrchestratorContractVersion = "canonical_portability_v1";
+export type CutiePortabilityMode = "canonical_default";
+export type CutieNormalizationTier =
+  | "transport_normalized"
+  | "artifact_rescue"
+  | "plain_final"
+  | "deterministic_recovery"
+  | "validation_coercion";
+export type CutieRepairTierEntered =
+  | "none"
+  | "artifact_rescue"
+  | "payload_validation"
+  | "deterministic_recovery";
+export type CutieNormalizationSource =
+  | "upstream_tool_calls"
+  | "streamed_tool_calls"
+  | "text_tool_artifact"
+  | "plain_final"
+  | "deterministic_bootstrap";
+export type CutieArtifactExtractionShape =
+  | "tool_call_wrapper"
+  | "tool_calls_wrapper"
+  | "top_level_tool_name"
+  | "top_level_name"
+  | "top_level_tool";
+export type CutiePromptSource = "builtin_only" | "external_markdown" | "bundled_markdown" | "external_fallback";
+
+export type CutieMutationCoercionMode =
+  | "none"
+  | "artifact_rescue"
+  | "patch_argument_coercion"
+  | "force_write_file"
+  | "patch_disabled_write_mode";
+export type CutieFallbackModeUsed = "none" | "text_extraction" | "tool_forcing" | "deterministic_bootstrap";
+export type CutieTargetSource =
+  | "mentioned_path"
+  | "active_file"
+  | "visible_editor"
+  | "latest_runtime_state"
+  | "latest_read"
+  | "stale_session_target"
+  | "none";
+export type CutieTaskFrameAction = "add" | "remove" | "update" | "verify";
+export type CutieTaskTargetMode = "mentioned" | "implied_current_file" | "inferred_candidate" | "unknown";
+export type CutieGoalClassificationSource =
+  | "small_talk"
+  | "mentioned_file_entity"
+  | "trusted_target_entity"
+  | "explicit_workspace_change"
+  | "desktop_request"
+  | "workspace_investigation"
+  | "fallback_conversation"
+  | "sanity_upgrade";
+export type CutieTargetAcquisitionPhase =
+  | "none"
+  | "target_acquisition"
+  | "target_inspection"
+  | "semantic_recovery"
+  | "mutation"
+  | "verification";
+export type CutieRepairTactic =
+  | "infer_target"
+  | "read_target"
+  | "semantic_search"
+  | "example_search"
+  | "command_assisted_repair"
+  | "patch_mutation"
+  | "full_rewrite"
+  | "verification";
 export type CutieRetryStrategy =
   | "none"
   | "force_mutation"
@@ -52,6 +131,90 @@ export type CutieRunObjective = {
   text: string;
   status: CutieObjectiveStatus;
   note?: string;
+};
+
+export type CutieTaskFrame = {
+  action: CutieTaskFrameAction;
+  entity: string;
+  entityLabel: string;
+  targetMode: CutieTaskTargetMode;
+  confidence: CutieProgressConfidence;
+  evidence: string[];
+  semanticQueries: string[];
+};
+
+export type CutieEditScope = "single_file" | "multi_file";
+export type CutieEditPlanStatus =
+  | "intent_resolved"
+  | "anchors_resolved"
+  | "plan_synthesized"
+  | "realized_patch"
+  | "realized_write"
+  | "failed";
+export type CutieEditPlanConfidence = "low" | "medium" | "high";
+export type CutieEditRealizationMode = "patch_file" | "write_file" | "unrealizable";
+export type CutieEditAnchor = {
+  kind: "line_contains" | "line_regex";
+  query: string;
+  occurrence?: "first" | "last";
+};
+export type CutieEditOperation = {
+  kind: "insert_before" | "insert_after" | "replace_block" | "extend_call_args" | "remove_block" | "replace_value";
+  description: string;
+  anchor: CutieEditAnchor;
+  text?: string;
+  argsToAdd?: string[];
+  deleteLineCount?: number;
+  searchValue?: string;
+  replaceValue?: string;
+};
+export type CutieEditTarget = {
+  path: string;
+  revisionId?: string;
+  operations: CutieEditOperation[];
+  verificationHints?: string[];
+};
+export type CutieEditIntent = {
+  action: CutieTaskFrameAction;
+  entity: string;
+  entityLabel: string;
+  scope: CutieEditScope;
+  confidence: CutieProgressConfidence;
+  requestedOutcomes: string[];
+  inferredConstraints: string[];
+  targetPaths: string[];
+};
+export type CutieEditPlan = {
+  targets: CutieEditTarget[];
+  realizationPreference: "patch_first" | "rewrite_allowed";
+  verificationHints: string[];
+  confidence: CutieEditPlanConfidence;
+  fallbackReason?: string;
+};
+export type CutieEditRealizationResult = {
+  mode: CutieEditRealizationMode;
+  toolCall: CutieToolCall | null;
+  realizedTargetPaths: string[];
+  failedTargetPaths?: string[];
+  failureReason?: string;
+};
+
+export type CutieTargetCandidate = {
+  path: string;
+  source: CutieTargetSource;
+  confidence: CutieTargetConfidence;
+  note?: string;
+};
+
+export type CutieModelCapabilityProfile = {
+  profileId: string;
+  modelPattern: string;
+  nativeTools: CutieModelToolSupport;
+  streamStructured: CutieModelStreamSupport;
+  parallelTools: boolean;
+  assistantDeltaReliability: CutieAssistantDeltaReliability;
+  maxToolsPerTurnPolicy: CutieMaxToolsPerTurnPolicy;
+  textExtractionFallback: boolean;
 };
 
 export type CutieObjectivesPhase = "off" | "decomposing" | "active" | "completed";
@@ -122,8 +285,27 @@ export type CutieChatMessage = {
   content: string;
   createdAt: string;
   runId?: string;
-  presentation?: "plain" | "live_binary";
+  presentation?: "plain" | "live_binary" | "run_transcript";
   live?: CutieBinaryLiveBubbleState;
+};
+
+export type CutieTranscriptEventKind =
+  | "assistant_text"
+  | "status"
+  | "tool_call"
+  | "tool_result"
+  | "repair"
+  | "artifact_rescue"
+  | "final";
+
+export type CutieTranscriptEvent = {
+  id: string;
+  kind: CutieTranscriptEventKind;
+  text: string;
+  createdAt: string;
+  runId?: string;
+  slot?: string;
+  dedupeKey?: string;
 };
 
 export type CutieMentionSuggestion = {
@@ -189,6 +371,9 @@ export type CutieRunState = {
     | "failed"
     | "canceled";
   goal: CutieTaskGoal;
+  goalClassificationSource?: CutieGoalClassificationSource;
+  goalClassificationEvidence?: string[];
+  goalReclassifiedFrom?: CutieTaskGoal;
   goalSatisfied: boolean;
   lastMeaningfulProgressAtStep?: number;
   lastMeaningfulProgressSummary?: string;
@@ -215,8 +400,69 @@ export type CutieRunState = {
   objectiveRepairCount?: number;
   autonomyMode?: CutieAutonomyMode;
   preferredTargetPath?: string;
+  targetConfidence?: CutieTargetConfidence;
+  targetSource?: CutieTargetSource;
+  targetPromotionSource?: CutieTargetSource;
+  taskFrame?: CutieTaskFrame;
+  editIntent?: CutieEditIntent;
+  editPlan?: CutieEditPlan;
+  editPlanStatus?: CutieEditPlanStatus;
+  editPlanConfidence?: CutieEditPlanConfidence;
+  editPlanRepairCount?: number;
+  editPlanRealizationMode?: CutieEditRealizationMode;
+  editPlanFailureReason?: string;
+  plannedTargetPaths?: string[];
+  remainingPlannedTargets?: string[];
+  entityRefinementApplied?: boolean;
+  refinedEntityLabel?: string;
+  targetCandidates?: CutieTargetCandidate[];
+  targetAcquisitionPhase?: CutieTargetAcquisitionPhase;
+  currentRepairTactic?: CutieRepairTactic;
+  lastNewEvidence?: string;
+  noOpConclusion?: string;
+  modelAdapter?: CutieModelAdapterKind;
+  modelCapabilities?: CutieModelCapabilityProfile;
+  protocolMode?: CutieProtocolMode;
+  orchestratorContractVersion?: CutieOrchestratorContractVersion;
+  portabilityMode?: CutiePortabilityMode;
+  transportModeUsed?: CutieProtocolMode;
+  normalizationSource?: CutieNormalizationSource;
+  normalizationTier?: CutieNormalizationTier;
+  artifactExtractionShape?: CutieArtifactExtractionShape;
+  fallbackModeUsed?: CutieFallbackModeUsed;
+  repairTierEntered?: CutieRepairTierEntered;
+  batchCollapsedToSingleAction?: boolean;
+  simpleTaskFastPath?: boolean;
+  objectiveSuspendedForDirectRecovery?: boolean;
+  nextDeterministicAction?: string;
+  postInspectionRecoveryActive?: boolean;
+  postInspectionRecoveryAttempted?: boolean;
+  postInspectionFailureReason?: string;
+  suppressedToolRescued?: boolean;
+  suppressedToolName?: CutieToolName;
+  suppressedToolRejectedReason?: string;
+  lastMutationValidationError?: string;
+  validatedSearchQuery?: string;
+  blockedInvalidSearchQuery?: string;
+  patchDisabledForRun?: boolean;
+  mutationCoercionMode?: CutieMutationCoercionMode;
+  executedRecoveredArtifact?: boolean;
+  promptSource?: CutiePromptSource;
+  promptMarkdownPath?: string;
+  promptLoaded?: boolean;
+  promptLoadError?: string;
+  promptLastLoadedAt?: string;
   strategyPhase?: CutieStrategyPhase;
   progressConfidence?: CutieProgressConfidence;
+  lastActionAtStep?: number;
+  lastActionSummary?: string;
+  lastStrategyShiftAtStep?: number;
+  noProgressTurns?: number;
+  stallSinceStep?: number;
+  stallSinceSummary?: string;
+  stallLevel?: CutieStallLevel;
+  stallReason?: string;
+  stallNextAction?: string;
   lastVerifiedOutcome?: string;
   blockerCategory?: CutieBlockerCategory;
   retryStrategy?: CutieRetryStrategy;
@@ -254,6 +500,41 @@ export type CutieChatDiffItem = {
   patch: string;
 };
 
+/** Model + reasoning controls under the chat composer (synced with workspace settings). */
+export type CutieComposerPrefs = {
+  selectedModel: string;
+  modelOptions: string[];
+  reasoningLevel: string;
+};
+
+export type CutieWarmStartViewState = {
+  localReady: boolean;
+  hostReady: boolean | null;
+  warming: boolean;
+  lastWarmAt?: string;
+  requestAuthReady?: boolean;
+  warmFailureSummary?: string;
+  subsystemReady?: {
+    authState: boolean;
+    requestAuth: boolean;
+    desktop: boolean;
+    gitStatus: boolean;
+    mentionIndex: boolean;
+    editorContext: boolean;
+    diagnostics: boolean;
+    settings: boolean;
+    hostProbe: boolean;
+  };
+};
+
+export type CutiePromptViewState = {
+  promptSource: CutiePromptSource;
+  promptMarkdownPath?: string;
+  promptLoaded: boolean;
+  promptLoadError?: string;
+  promptLastLoadedAt?: string;
+};
+
 export type CutieViewState = {
   authState: HostedAuthState;
   sessions: CutieSessionSummary[];
@@ -263,7 +544,10 @@ export type CutieViewState = {
   chatDiffs: CutieChatDiffItem[];
   /** Live per-run action transcript shown while Cutie is actively working. */
   liveActionLog: string[];
+  /** Unified live transcript rendered in the main assistant bubble while a run is active. */
+  liveTranscript: CutieTranscriptEvent[];
   status: string;
+  submitState: CutieSubmitState;
   running: boolean;
   activeRun: CutieRunState | null;
   desktop: DesktopContextState;
@@ -273,6 +557,12 @@ export type CutieViewState = {
   binaryActivity: string[];
   /** Ephemeral streaming assistant row for bundle generation (not persisted until resolved). */
   binaryLiveBubble: CutieBinaryLiveBubbleView | null;
+  composerPrefs: CutieComposerPrefs;
+  warmStartState: CutieWarmStartViewState | null;
+  promptState: CutiePromptViewState | null;
+  /** Hosted playground assist undo (ActionRunner batch) when runtime is playgroundApi. */
+  canUndoPlayground: boolean;
+  ideRuntime: BinaryIdeChatRuntime;
 };
 
 export type CutieProgressViewModel = {
@@ -281,11 +571,25 @@ export type CutieProgressViewModel = {
   phaseLabel: string;
   pursuingLabel: string;
   lastMeaningfulProgressSummary?: string;
+  lastActionSummary?: string;
+  taskFrameSummary?: string;
+  targetSummary?: string;
   repairLabel?: string;
+  objectiveRepairLabel?: string;
+  repairTacticLabel?: string;
+  currentStrategyLabel?: string;
+  stallLabel?: string;
+  stallReason?: string;
+  stallNextAction?: string;
+  lastNewEvidence?: string;
+  noOpConclusion?: string;
+  modelStrategySummary?: string;
   escalationMessage?: string;
   suggestedNextAction?: string;
   goalSatisfied: boolean;
   escalationState: CutieEscalationState;
+  objectives?: CutieRunObjective[];
+  objectivesPhase?: CutieObjectivesPhase;
 };
 
 export type CutieModelMessage = {
@@ -345,6 +649,18 @@ export type CutieModelTurnResult = {
   suppressedAssistantArtifact?: string;
   usage?: Record<string, unknown> | null;
   model?: string;
+  modelAdapter?: CutieModelAdapterKind;
+  modelCapabilities?: CutieModelCapabilityProfile;
+  protocolMode?: CutieProtocolMode;
+  orchestratorContractVersion?: CutieOrchestratorContractVersion;
+  portabilityMode?: CutiePortabilityMode;
+  transportModeUsed?: CutieProtocolMode;
+  normalizationSource?: CutieNormalizationSource;
+  normalizationTier?: CutieNormalizationTier;
+  artifactExtractionShape?: CutieArtifactExtractionShape;
+  fallbackModeUsed?: CutieFallbackModeUsed;
+  repairTierEntered?: CutieRepairTierEntered;
+  batchCollapsedToSingleAction?: boolean;
 };
 
 export type CutieToolResult = {
@@ -373,7 +689,7 @@ export type CutieWorkspaceMutationInfo = {
 };
 
 export type CutieRuntimeCallbacks = {
-  onSessionChanged?: (session: CutieSessionRecord) => void | Promise<void>;
+  onSessionChanged?: (session: CutieSessionRecord, run?: CutieRunState | null) => void | Promise<void>;
   onStatusChanged?: (status: string, run: CutieRunState | null) => void | Promise<void>;
   onAssistantDelta?: (delta: string, accumulated: string) => void | Promise<void>;
   onSuppressedAssistantArtifact?: (artifact: string) => void | Promise<void>;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, useTransition } from "react";
 import { applyPreset, HOME_ACCENT_STORAGE_KEY } from "@/lib/theme-presets";
 import type { ThemePresetId } from "@/lib/theme-presets";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -18,6 +18,15 @@ import {
   capabilityTokenToLabel,
   parseCapabilityParam,
 } from "@/lib/search/capability-tokens";
+import {
+  buildSearchPageKey,
+  buildSearchScopeKey,
+  getPrefetchOrder,
+  getRequestVertical,
+  isSkillsOnlyVertical,
+  type ResolvedSearchState,
+  type SearchVertical,
+} from "@/components/home/searchTabState";
 
 const BROWSE_PROTOCOLS = [
   { id: "MCP", label: "MCP" },
@@ -164,11 +173,21 @@ interface SearchOverrides {
 }
 
 const PAGE_SIZE = 30;
-
-type PageKey = "results" | "artifacts";
-type PageCache = Record<number, SearchResultItem[]>;
-type MediaPageCache = Record<number, MediaResult[]>;
 type PageCursorMap = Record<number, string | null>;
+
+interface CachedSearchPage {
+  agents: SearchResultItem[];
+  mediaResults: MediaResult[];
+  fallbackAgents: Agent[];
+  total: number;
+  hasMore: boolean;
+  facets?: Facets;
+  searchMeta: SearchMeta | null;
+  nextCursor: string | null;
+}
+
+type SearchCacheStore = Record<string, CachedSearchPage>;
+type CursorStore = Record<string, PageCursorMap>;
 
 function dedupeById<T extends { id: string }>(items: T[]): T[] {
   const seen = new Set<string>();
@@ -244,6 +263,7 @@ function parseSortFromUrl(value: string | null): string {
 export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const [isTransitionPending, startTransition] = useTransition();
   const normalizedBasePath = basePath.startsWith("/") ? basePath : `/${basePath}`;
   const buildPath = useCallback(
     (params: URLSearchParams) => {
@@ -271,7 +291,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
   const [intent, setIntent] = useState<"discover" | "execute">(
     searchParams.get("intent") === "execute" ? "execute" : "discover"
   );
-  const [vertical, setVertical] = useState<"all" | "agents" | "skills" | "artifacts">(() => {
+  const [vertical, setVertical] = useState<SearchVertical>(() => {
     const urlVertical = searchParams.get("vertical");
     if (
       urlVertical === "artifacts" ||
@@ -304,14 +324,63 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
       .filter(Boolean)
   );
   const [page, setPage] = useState(1);
-  const [pageCursors, setPageCursors] = useState<{
-    results: PageCursorMap;
-    artifacts: PageCursorMap;
-  }>({ results: { 1: null }, artifacts: { 1: null } });
-  const [pageCache, setPageCache] = useState<{
-    results: PageCache;
-    artifacts: MediaPageCache;
-  }>({ results: {}, artifacts: {} });
+  const cacheRef = useRef<SearchCacheStore>({});
+  const cursorStoreRef = useRef<CursorStore>({});
+  const inFlightRequestsRef = useRef<Map<string, Promise<CachedSearchPage>>>(new Map());
+  const latestVisibleRequestRef = useRef(0);
+  const latestVisiblePageKeyRef = useRef<string | null>(null);
+
+  const buildResolvedState = useCallback(
+    (overrides?: SearchOverrides): ResolvedSearchState => ({
+      query: overrides?.query ?? query,
+      selectedProtocols: overrides?.selectedProtocols ?? selectedProtocols,
+      selectedCapabilities: overrides?.selectedCapabilities ?? selectedCapabilities,
+      minSafety: overrides?.minSafety ?? minSafety,
+      sort: overrides?.sort ?? sort,
+      vertical: overrides?.vertical ?? vertical,
+      intent: overrides?.intent ?? intent,
+      taskType: overrides?.taskType ?? taskType,
+      maxLatencyMs: overrides?.maxLatencyMs ?? maxLatencyMs,
+      maxCostUsd: overrides?.maxCostUsd ?? maxCostUsd,
+      dataRegion: overrides?.dataRegion ?? dataRegion,
+      requires: overrides?.requires ?? requires,
+      forbidden: overrides?.forbidden ?? forbidden,
+      bundle: overrides?.bundle ?? bundle,
+      explain: overrides?.explain ?? explain,
+      recall: overrides?.recall ?? recall,
+      includeSources: overrides?.includeSources ?? includeSources,
+    }),
+    [
+      bundle,
+      dataRegion,
+      explain,
+      includeSources,
+      intent,
+      maxCostUsd,
+      maxLatencyMs,
+      minSafety,
+      query,
+      recall,
+      requires,
+      forbidden,
+      selectedCapabilities,
+      selectedProtocols,
+      sort,
+      taskType,
+      vertical,
+    ]
+  );
+
+  const applyCachedPage = useCallback((entry: CachedSearchPage, pageIndex: number) => {
+    setAgents(entry.agents);
+    setMediaResults(entry.mediaResults);
+    setFallbackAgents(entry.fallbackAgents);
+    setTotal(entry.total);
+    setHasMore(entry.hasMore);
+    setFacets(entry.facets);
+    setSearchMeta(entry.searchMeta);
+    setPage(pageIndex);
+  }, []);
 
   const handleProtocolChange = useCallback(
     (protocols: string[]) => {
@@ -325,230 +394,206 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
   );
 
   const loadPage = useCallback(
-    async (pageIndex: number, overrides?: SearchOverrides & { resetCaches?: boolean }) => {
-      setLoading(true);
-      const nextQuery = overrides?.query ?? query;
-      const nextSelectedProtocols = overrides?.selectedProtocols ?? selectedProtocols;
-      const nextSelectedCapabilities = overrides?.selectedCapabilities ?? selectedCapabilities;
-      const nextMinSafety = overrides?.minSafety ?? minSafety;
-      const nextSort = overrides?.sort ?? sort;
-      const nextVertical = overrides?.vertical ?? vertical;
-      const nextIntent = overrides?.intent ?? intent;
-      const nextTaskType = overrides?.taskType ?? taskType;
-      const nextMaxLatencyMs = overrides?.maxLatencyMs ?? maxLatencyMs;
-      const nextMaxCostUsd = overrides?.maxCostUsd ?? maxCostUsd;
-      const nextDataRegion = overrides?.dataRegion ?? dataRegion;
-      const nextRequires = overrides?.requires ?? requires;
-      const nextForbidden = overrides?.forbidden ?? forbidden;
-      const nextBundle = overrides?.bundle ?? bundle;
-      const nextExplain = overrides?.explain ?? explain;
-      const nextRecall = overrides?.recall ?? recall;
-      const nextIncludeSources = overrides?.includeSources ?? includeSources;
-
-      // Keep "All" and "Agents" sourced from the same ranking pipeline so totals are comparable.
-      const requestVertical =
-        nextVertical === "skills" || nextVertical === "all" ? "agents" : nextVertical;
-      const requestSkillsOnly = nextVertical === "skills";
-      const urlIncludeSources = nextIncludeSources;
-      const requestIncludeSources = nextIncludeSources;
-      const paginationKey: PageKey = requestVertical === "artifacts" ? "artifacts" : "results";
-      const cached = overrides?.resetCaches ? undefined : pageCache[paginationKey][pageIndex];
-      const cursorMap = pageCursors[paginationKey];
+    async (pageIndex: number, overrides?: SearchOverrides, options?: { prefetch?: boolean }) => {
+      const resolvedState = buildResolvedState(overrides);
+      const requestVertical = getRequestVertical(resolvedState.vertical);
+      const scopeKey = buildSearchScopeKey(resolvedState);
+      const pageKey = buildSearchPageKey(scopeKey, pageIndex);
+      const requestId = options?.prefetch ? 0 : latestVisibleRequestRef.current + 1;
+      const cursorMap = cursorStoreRef.current[scopeKey] ?? { 1: null };
       const pageCursor = pageIndex === 1 ? null : cursorMap[pageIndex] ?? null;
-      const previousPageCached = pageIndex > 1 ? pageCache[paginationKey][pageIndex - 1] : undefined;
-      const derivedCursor =
-        requestVertical !== "artifacts" &&
-        !pageCursor &&
-        Array.isArray(previousPageCached) &&
-        previousPageCached.length > 0
-          ? previousPageCached[previousPageCached.length - 1]?.id ?? null
-          : null;
-      const effectiveCursor = pageCursor ?? derivedCursor;
 
       const urlParams = new URLSearchParams();
-      if (nextQuery.trim()) urlParams.set("q", nextQuery.trim());
-      if (nextSelectedProtocols.length) urlParams.set("protocols", nextSelectedProtocols.join(","));
-      if (nextSelectedCapabilities.length) {
-        urlParams.set("capabilities", nextSelectedCapabilities.join(","));
+      if (resolvedState.query.trim()) urlParams.set("q", resolvedState.query.trim());
+      if (resolvedState.selectedProtocols.length) {
+        urlParams.set("protocols", resolvedState.selectedProtocols.join(","));
       }
-      if (nextMinSafety > 0) urlParams.set("minSafety", String(nextMinSafety));
-      urlParams.set("sort", nextSort);
+      if (resolvedState.selectedCapabilities.length) {
+        urlParams.set("capabilities", resolvedState.selectedCapabilities.join(","));
+      }
+      if (resolvedState.minSafety > 0) urlParams.set("minSafety", String(resolvedState.minSafety));
+      urlParams.set("sort", resolvedState.sort);
       urlParams.set("limit", String(PAGE_SIZE));
-      urlParams.set("vertical", nextVertical);
+      urlParams.set("vertical", resolvedState.vertical);
       urlParams.set("page", String(pageIndex));
-      if (requestVertical === "agents") {
-        urlParams.set("include", "content");
+      urlParams.set("recall", resolvedState.recall);
+      urlParams.set("intent", resolvedState.intent);
+      if (resolvedState.taskType.trim()) urlParams.set("taskType", resolvedState.taskType.trim());
+      if (resolvedState.maxLatencyMs.trim()) urlParams.set("maxLatencyMs", resolvedState.maxLatencyMs.trim());
+      if (resolvedState.maxCostUsd.trim()) urlParams.set("maxCostUsd", resolvedState.maxCostUsd.trim());
+      if (resolvedState.dataRegion && resolvedState.dataRegion !== "global") {
+        urlParams.set("dataRegion", resolvedState.dataRegion);
       }
-      urlParams.set("recall", nextRecall);
-      if (urlIncludeSources.length > 0) {
-        urlParams.set("includeSources", urlIncludeSources.join(","));
+      if (resolvedState.requires.trim()) urlParams.set("requires", resolvedState.requires.trim());
+      if (resolvedState.forbidden.trim()) urlParams.set("forbidden", resolvedState.forbidden.trim());
+      if (resolvedState.bundle) urlParams.set("bundle", "1");
+      if (resolvedState.explain) urlParams.set("explain", "1");
+      if (resolvedState.includeSources.length > 0) {
+        urlParams.set("includeSources", resolvedState.includeSources.join(","));
       }
-      urlParams.set("intent", nextIntent);
-      if (nextTaskType.trim()) urlParams.set("taskType", nextTaskType.trim());
-      if (nextMaxLatencyMs.trim()) urlParams.set("maxLatencyMs", nextMaxLatencyMs.trim());
-      if (nextMaxCostUsd.trim()) urlParams.set("maxCostUsd", nextMaxCostUsd.trim());
-      if (nextDataRegion && nextDataRegion !== "global") urlParams.set("dataRegion", nextDataRegion);
-      if (nextRequires.trim()) urlParams.set("requires", nextRequires);
-      if (nextForbidden.trim()) urlParams.set("forbidden", nextForbidden);
-      if (nextBundle) urlParams.set("bundle", "1");
-      if (nextExplain) urlParams.set("explain", "1");
+
       const requestParams = new URLSearchParams(urlParams.toString());
       requestParams.set("vertical", requestVertical);
-      if (requestSkillsOnly) {
+      if (requestVertical === "agents") {
+        requestParams.set("include", "content");
+      }
+      if (isSkillsOnlyVertical(resolvedState.vertical)) {
         requestParams.set("skillsOnly", "1");
       } else {
         requestParams.delete("skillsOnly");
       }
-      if (requestIncludeSources.length > 0) {
-        requestParams.set("includeSources", requestIncludeSources.join(","));
+      if (resolvedState.includeSources.length > 0) {
+        requestParams.set("includeSources", resolvedState.includeSources.join(","));
       } else {
         requestParams.delete("includeSources");
       }
-      if (requestVertical !== "artifacts" && effectiveCursor) {
-        requestParams.set("cursor", effectiveCursor);
+      if (requestVertical !== "artifacts" && pageCursor) {
+        requestParams.set("cursor", pageCursor);
       }
       if (requestVertical === "artifacts" && pageCursor) {
         requestParams.set("mediaCursor", pageCursor);
       }
 
-      router.replace(buildPath(urlParams), { scroll: false });
+      const cached = cacheRef.current[pageKey];
 
-      try {
-        if (cached) {
-          if (requestVertical === "artifacts") {
-            setMediaResults(cached as MediaResult[]);
-            setAgents([]);
-          } else {
-            setAgents(cached as SearchResultItem[]);
-            setMediaResults([]);
-          }
-          setPage(pageIndex);
-          setHasMore(Boolean(pageCursors[paginationKey][pageIndex + 1]));
-          setSearchMeta(null);
-          setFallbackAgents([]);
-          return;
+      if (!options?.prefetch) {
+        latestVisibleRequestRef.current = requestId;
+        latestVisiblePageKeyRef.current = pageKey;
+        if (!cached) {
+          setLoading(true);
         }
-        if (pageIndex > 1 && requestVertical !== "artifacts" && !effectiveCursor) return;
+        router.replace(buildPath(urlParams), { scroll: false });
+      }
+      if (cached) {
+        if (!options?.prefetch && latestVisiblePageKeyRef.current === pageKey) {
+          applyCachedPage(cached, pageIndex);
+          setLoading(false);
+        }
+        return cached;
+      }
+
+      if (pageIndex > 1 && !pageCursor) {
+        if (!options?.prefetch && latestVisiblePageKeyRef.current === pageKey) {
+          setLoading(false);
+        }
+        return null;
+      }
+
+      const existingRequest = inFlightRequestsRef.current.get(pageKey);
+      const requestPromise = existingRequest ?? (async () => {
         const searchResponse = await safeFetchJson(`/api/v1/search?${requestParams}`);
         if (!searchResponse.ok) {
           throw new Error(extractClientErrorMessage(searchResponse.data, "Search failed"));
         }
         const searchData = unwrapClientResponse<SearchResponsePayload>(searchResponse.data);
-        const nextAgents = dedupeById(searchData.results ?? []);
-        const nextMedia = dedupeById(searchData.mediaResults ?? []);
-        setAgents(nextAgents);
-        setMediaResults(nextMedia);
-        setTotal(searchData.pagination?.total ?? 0);
-        setHasMore(searchData.pagination?.hasMore ?? false);
-        if (searchData.facets) setFacets(searchData.facets);
-        setSearchMeta(searchData.searchMeta ?? null);
-        setPage(pageIndex);
+        const nextAgents = dedupeById<SearchResultItem>(searchData.results ?? []);
+        const nextMedia = dedupeById<MediaResult>(searchData.mediaResults ?? []);
+        let nextFallbackAgents: Agent[] = [];
+
+        if (pageIndex === 1 && requestVertical === "artifacts" && nextMedia.length === 0) {
+          const fallbackParams = new URLSearchParams(requestParams.toString());
+          fallbackParams.set("vertical", "agents");
+          fallbackParams.delete("mediaCursor");
+          fallbackParams.delete("cursor");
+          fallbackParams.set("limit", String(PAGE_SIZE));
+          fallbackParams.set("page", "1");
+          const fallbackResponse = await safeFetchJson(`/api/v1/search?${fallbackParams}`);
+          if (fallbackResponse.ok) {
+            const fallbackData = unwrapClientResponse<SearchResponsePayload>(fallbackResponse.data);
+            nextFallbackAgents = (fallbackData.results ?? []).filter(isAgentResult);
+          }
+        }
 
         const nextCursor = searchData.pagination?.nextCursor ?? null;
-        const fallbackNextCursor =
-          hasMore && requestVertical !== "artifacts" && !nextCursor
-            ? nextAgents[nextAgents.length - 1]?.id ?? null
-            : nextCursor;
-        if (fallbackNextCursor) {
-          setPageCursors((prev) => ({
-            ...prev,
-            [paginationKey]: { ...prev[paginationKey], [pageIndex + 1]: fallbackNextCursor },
-          }));
-        }
-        if (requestVertical === "artifacts") {
-          setPageCache((prev) => ({
-            ...prev,
-            artifacts: { ...prev.artifacts, [pageIndex]: nextMedia },
-          }));
-        } else {
-          setPageCache((prev) => ({
-            ...prev,
-            results: { ...prev.results, [pageIndex]: nextAgents },
-          }));
-        }
+        cursorStoreRef.current[scopeKey] = {
+          ...(cursorStoreRef.current[scopeKey] ?? { 1: null }),
+          [pageIndex]: pageCursor,
+          ...(nextCursor ? { [pageIndex + 1]: nextCursor } : {}),
+        };
 
-        if (pageIndex === 1 && requestVertical === "artifacts") {
-          if ((searchData.mediaResults ?? []).length > 0) {
-            setFallbackAgents([]);
-          } else {
-            const fallbackParams = new URLSearchParams(requestParams.toString());
-            fallbackParams.set("vertical", "agents");
-            fallbackParams.delete("mediaCursor");
-            fallbackParams.set("limit", String(PAGE_SIZE));
-            const fallbackResponse = await safeFetchJson(`/api/v1/search?${fallbackParams}`);
-            if (fallbackResponse.ok) {
-              const fallbackData = unwrapClientResponse<SearchResponsePayload>(fallbackResponse.data);
-              setFallbackAgents((fallbackData.results ?? []).filter(isAgentResult));
-            } else {
-              setFallbackAgents([]);
-            }
-          }
-        } else if (requestVertical === "agents") {
-          setFallbackAgents([]);
+        const entry: CachedSearchPage = {
+          agents: nextAgents,
+          mediaResults: nextMedia,
+          fallbackAgents: requestVertical === "artifacts" ? nextFallbackAgents : [],
+          total: searchData.pagination?.total ?? 0,
+          hasMore: searchData.pagination?.hasMore ?? false,
+          facets: searchData.facets,
+          searchMeta: searchData.searchMeta ?? null,
+          nextCursor,
+        };
+        cacheRef.current[pageKey] = entry;
+        return entry;
+      })();
+
+      if (!existingRequest) {
+        inFlightRequestsRef.current.set(
+          pageKey,
+          requestPromise.finally(() => {
+            inFlightRequestsRef.current.delete(pageKey);
+          })
+        );
+      }
+
+      try {
+        const entry = await requestPromise;
+        if (!options?.prefetch && latestVisiblePageKeyRef.current === pageKey && latestVisibleRequestRef.current === requestId) {
+          applyCachedPage(entry, pageIndex);
         }
+        return entry;
       } catch (err) {
-        console.error(err);
-        setAgents([]);
-        setMediaResults([]);
-        setTotal(0);
-        setSearchMeta(null);
-        setFallbackAgents([]);
+        if (!options?.prefetch && latestVisiblePageKeyRef.current === pageKey && latestVisibleRequestRef.current === requestId) {
+          console.error(err);
+          setAgents([]);
+          setMediaResults([]);
+          setFallbackAgents([]);
+          setTotal(0);
+          setHasMore(false);
+          setFacets(undefined);
+          setSearchMeta(null);
+        }
+        return null;
       } finally {
-        setLoading(false);
+        if (!options?.prefetch && latestVisiblePageKeyRef.current === pageKey && latestVisibleRequestRef.current === requestId) {
+          setLoading(false);
+        }
       }
     },
-    [
-      query,
-      selectedProtocols,
-      selectedCapabilities,
-      minSafety,
-      sort,
-      vertical,
-      intent,
-      taskType,
-      maxLatencyMs,
-      maxCostUsd,
-      dataRegion,
-      requires,
-      forbidden,
-      bundle,
-      explain,
-      recall,
-      includeSources,
-      hasMore,
-      router,
-      pageCache,
-      pageCursors,
-      buildPath,
-    ]
+    [applyCachedPage, buildPath, buildResolvedState, router]
   );
 
   const handleVerticalChange = useCallback(
-    (v: "all" | "agents" | "skills" | "artifacts") => {
-      setVertical(v);
-      setPage(1);
-      setPageCursors({ results: { 1: null }, artifacts: { 1: null } });
-      setPageCache({ results: {}, artifacts: {} });
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("vertical", v);
-      params.set("page", "1");
-      router.replace(buildPath(params), { scroll: false });
+    (v: SearchVertical) => {
+      if (v === vertical) return;
+      startTransition(() => {
+        setVertical(v);
+        setPage(1);
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("vertical", v);
+        params.set("page", "1");
+        router.replace(buildPath(params), { scroll: false });
+      });
     },
-    [searchParams, router, buildPath]
+    [buildPath, router, searchParams, startTransition, vertical]
   );
 
   useEffect(() => {
-    setPage(1);
-    setPageCursors({ results: { 1: null }, artifacts: { 1: null } });
-    setPageCache({ results: {}, artifacts: {} });
-    loadPage(1, { resetCaches: true });
+    const activeState = buildResolvedState();
+    void loadPage(1, activeState).then((entry) => {
+      if (!entry || activeState.vertical !== vertical) return;
+      const siblingOverrides = getPrefetchOrder(activeState.vertical).map((nextVertical) => ({
+        ...activeState,
+        vertical: nextVertical,
+      }));
+      siblingOverrides.forEach((prefetchState) => {
+        void loadPage(1, prefetchState, { prefetch: true });
+      });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     selectedProtocols,
     selectedCapabilities,
     minSafety,
     sort,
-    vertical,
     intent,
     taskType,
     maxLatencyMs,
@@ -560,6 +605,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     explain,
     recall,
     includeSources,
+    vertical,
   ]);
 
   useEffect(() => {
@@ -607,9 +653,6 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     requestAnimationFrame(() => window.scrollTo(0, 0));
   }, [searchParams]);
 
-  const currentSearch = searchParams.toString();
-  const fromPath = currentSearch ? `${normalizedBasePath}?${currentSearch}` : normalizedBasePath;
-
   useEffect(() => {
     try {
       const stored = localStorage.getItem(HOME_ACCENT_STORAGE_KEY) as ThemePresetId | null;
@@ -624,9 +667,9 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
   const countValue = vertical === "artifacts" ? mediaResults.length : agents.length;
   const totalValue = total > 0 ? total : countValue;
   const totalLabel = totalValue > 0
-    ? `${totalValue} ${
-      vertical === "artifacts"
-        ? "assets"
+    ? `${totalValue.toLocaleString("en-US")} ${
+        vertical === "artifacts"
+          ? "assets"
         : vertical === "skills"
           ? "skills"
           : vertical === "all"
@@ -672,15 +715,15 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
       explain: false,
       recall: "normal",
       includeSources: [],
-      resetCaches: true,
     });
   }, [loadPage]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const paginationKey: PageKey = vertical === "artifacts" ? "artifacts" : "results";
+  const activeScopeKey = buildSearchScopeKey(buildResolvedState());
+  const activeCursorMap = cursorStoreRef.current[activeScopeKey] ?? { 1: null };
   const maxNavigablePage = Math.max(
     1,
-    ...Object.keys(pageCursors[paginationKey]).map((p) => Number(p)),
+    ...Object.keys(activeCursorMap).map((p) => Number(p)),
     hasMore ? page + 1 : 1
   );
   const pageItems = buildPageItems(page, totalPages);
@@ -751,11 +794,10 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
                 setSort("popularity");
               }
               setPage(1);
-              setPageCursors({ results: { 1: null }, artifacts: { 1: null } });
-              setPageCache({ results: {}, artifacts: {} });
-              void loadPage(1, { query: resolvedQuery, sort: submitSort, resetCaches: true });
+              void loadPage(1, { query: resolvedQuery, sort: submitSort });
             }}
             loading={loading}
+            isRefreshing={isTransitionPending || (loading && hasResults)}
             vertical={vertical}
             onVerticalChange={handleVerticalChange}
             sort={sort}

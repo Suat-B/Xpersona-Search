@@ -1,8 +1,9 @@
 import { requestJson } from "./api-client";
-import { getBaseApiUrl } from "./config";
+import { getBaseApiUrl, getBinaryStreamGatewayUrl } from "./config";
 import type {
   BinaryBuildEvent,
   BinaryBuildRecord,
+  BinaryBuildStream,
   BinaryTargetEnvironment,
   RequestAuth,
   RetrievalHints,
@@ -28,6 +29,16 @@ type StreamBinaryBuildInput = BinaryBuildCreateInput & {
   onEvent: (event: BinaryBuildEvent) => void | Promise<void>;
 };
 
+type BinaryWebSocketLike = {
+  addEventListener?: (type: string, listener: (...args: unknown[]) => void) => void;
+  removeEventListener?: (type: string, listener: (...args: unknown[]) => void) => void;
+  close: (code?: number, reason?: string) => void;
+  onopen: ((event: unknown) => void) | null;
+  onmessage: ((event: { data: unknown }) => void) | null;
+  onerror: ((event: unknown) => void) | null;
+  onclose: ((event: unknown) => void) | null;
+};
+
 function buildAuthHeaders(auth: RequestAuth | null | undefined): HeadersInit {
   const headers: Record<string, string> = {};
   if (auth?.bearer) headers.Authorization = `Bearer ${auth.bearer}`;
@@ -44,6 +55,52 @@ function buildCreatePayload(input: BinaryBuildCreateInput): Record<string, unkno
     ...(input.context ? { context: input.context } : {}),
     ...(input.retrievalHints ? { retrievalHints: input.retrievalHints } : {}),
   };
+}
+
+function getBinaryWebSocketConstructor():
+  | (new (url: string) => BinaryWebSocketLike)
+  | undefined {
+  const candidate = (globalThis as typeof globalThis & { WebSocket?: new (url: string) => BinaryWebSocketLike }).WebSocket;
+  return typeof candidate === "function" ? candidate : undefined;
+}
+
+function toWebSocketUrl(value: string, baseHttpUrl: string): string {
+  if (/^wss?:\/\//i.test(value)) return value;
+  if (/^https?:\/\//i.test(value)) {
+    const url = new URL(value);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    return url.toString();
+  }
+
+  const baseUrl = new URL(baseHttpUrl);
+  const wsBase = `${baseUrl.protocol === "https:" ? "wss:" : "ws:"}//${baseUrl.host}`;
+  return new URL(value.startsWith("/") ? value : `/${value}`, wsBase).toString();
+}
+
+function resolveBinaryStreamWebSocketUrl(
+  stream: BinaryBuildStream | null | undefined,
+  buildId: string,
+  cursor?: string | null
+): string | null {
+  const rawPath = String(stream?.wsPath || "").trim();
+  const sessionId = String(stream?.streamSessionId || buildId || "").trim();
+  const candidate = rawPath || (sessionId ? `/ws/${encodeURIComponent(sessionId)}` : "");
+  if (!candidate) return null;
+  const gatewayBase = getBinaryStreamGatewayUrl() || getBaseApiUrl();
+  const url = new URL(toWebSocketUrl(candidate, gatewayBase));
+  if (stream?.resumeToken) {
+    url.searchParams.set("resumeToken", stream.resumeToken);
+  }
+  if (sessionId) {
+    url.searchParams.set("streamSessionId", sessionId);
+  }
+  if (cursor) {
+    url.searchParams.set("cursor", cursor);
+  }
+  if (buildId) {
+    url.searchParams.set("buildId", buildId);
+  }
+  return url.toString();
 }
 
 async function readBinarySse(input: {
@@ -110,6 +167,141 @@ async function readBinarySse(input: {
   }
 }
 
+async function readBinaryWebSocket(input: {
+  url: string;
+  signal?: AbortSignal;
+  onEvent: (event: BinaryBuildEvent) => void | Promise<void>;
+}): Promise<void> {
+  const WebSocketCtor = getBinaryWebSocketConstructor();
+  if (!WebSocketCtor) {
+    throw new Error("WebSocket transport is not available in this extension host.");
+  }
+
+  const decoder = new TextDecoder();
+
+  await new Promise<void>((resolve, reject) => {
+    const ws = new WebSocketCtor(input.url);
+    let opened = false;
+    let settled = false;
+    let pending = Promise.resolve();
+
+    const cleanup = () => {
+      input.signal?.removeEventListener("abort", onAbort);
+    };
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try {
+        ws.close();
+      } catch {
+        // Ignore close failures while we are already failing the stream.
+      }
+      reject(error instanceof Error ? error : new Error(String(error)));
+    };
+
+    const onAbort = () => {
+      fail(new Error("Binary stream aborted."));
+    };
+
+    const onMessage = (event: unknown) => {
+      const raw = (event as { data?: unknown }).data;
+      let payload = "";
+      if (typeof raw === "string") {
+        payload = raw;
+      } else if (raw instanceof ArrayBuffer) {
+        payload = decoder.decode(new Uint8Array(raw));
+      } else if (ArrayBuffer.isView(raw)) {
+        payload = decoder.decode(new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength));
+      } else if (typeof Buffer !== "undefined" && Buffer.isBuffer(raw)) {
+        payload = raw.toString("utf8");
+      }
+
+      const text = payload.trim();
+      if (!text) return;
+
+      pending = pending.then(async () => {
+        const parsed = JSON.parse(text) as BinaryBuildEvent;
+        await input.onEvent(parsed);
+      });
+    };
+
+    const onError = () => {
+      fail(new Error(opened ? "Binary WebSocket stream failed." : "Binary WebSocket stream could not be established."));
+    };
+
+    const onClose = () => {
+      pending.then(finish).catch(fail);
+    };
+
+    if (input.signal) {
+      if (input.signal.aborted) {
+        onAbort();
+        return;
+      }
+      input.signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    if (typeof ws.addEventListener === "function") {
+      ws.addEventListener("open", () => {
+        opened = true;
+      });
+      ws.addEventListener("message", onMessage);
+      ws.addEventListener("error", onError);
+      ws.addEventListener("close", onClose);
+    } else {
+      ws.onopen = () => {
+        opened = true;
+      };
+      ws.onmessage = onMessage;
+      ws.onerror = onError;
+      ws.onclose = onClose;
+    }
+  });
+}
+
+async function readBinaryBuildStream(input: {
+  auth: RequestAuth;
+  build: BinaryBuildRecord;
+  cursor?: string | null;
+  signal?: AbortSignal;
+  onEvent: (event: BinaryBuildEvent) => void | Promise<void>;
+}): Promise<void> {
+  const stream = input.build.stream;
+  const wsUrl =
+    stream?.transport === "websocket" ? resolveBinaryStreamWebSocketUrl(stream, input.build.id, input.cursor) : null;
+  if (wsUrl) {
+    try {
+      await readBinaryWebSocket({
+        url: wsUrl,
+        signal: input.signal,
+        onEvent: input.onEvent,
+      });
+      return;
+    } catch {
+      // Fall back to the replay-capable SSE endpoint below.
+    }
+  }
+
+  const url = new URL(`${getBaseApiUrl()}/api/v1/binary/builds/${encodeURIComponent(input.build.id)}/events`);
+  if (input.cursor) url.searchParams.set("cursor", input.cursor);
+  await readBinarySse({
+    url: url.toString(),
+    auth: input.auth,
+    method: "GET",
+    signal: input.signal,
+    onEvent: input.onEvent,
+  });
+}
+
 export async function createBinaryBuild(input: BinaryBuildCreateInput): Promise<BinaryBuildRecord> {
   const response = await requestJson<{ data?: BinaryBuildRecord }>(
     "POST",
@@ -121,11 +313,17 @@ export async function createBinaryBuild(input: BinaryBuildCreateInput): Promise<
 }
 
 export async function createBinaryBuildStream(input: StreamBinaryBuildInput): Promise<void> {
-  await readBinarySse({
-    url: `${getBaseApiUrl()}/api/v1/binary/builds/stream`,
+  const build = await createBinaryBuild(input);
+  await input.onEvent({
+    id: `${build.id}:created`,
+    buildId: build.id,
+    timestamp: build.createdAt || new Date().toISOString(),
+    type: "build.created",
+    data: { build },
+  });
+  await readBinaryBuildStream({
     auth: input.auth,
-    method: "POST",
-    body: buildCreatePayload(input),
+    build,
     signal: input.signal,
     onEvent: input.onEvent,
   });
@@ -138,12 +336,11 @@ export async function streamBinaryBuildEvents(input: {
   signal?: AbortSignal;
   onEvent: (event: BinaryBuildEvent) => void | Promise<void>;
 }): Promise<void> {
-  const url = new URL(`${getBaseApiUrl()}/api/v1/binary/builds/${encodeURIComponent(input.buildId)}/events`);
-  if (input.cursor) url.searchParams.set("cursor", input.cursor);
-  await readBinarySse({
-    url: url.toString(),
+  const build = await getBinaryBuild(input.auth, input.buildId);
+  await readBinaryBuildStream({
     auth: input.auth,
-    method: "GET",
+    build,
+    cursor: input.cursor,
     signal: input.signal,
     onEvent: input.onEvent,
   });

@@ -9,6 +9,7 @@ import {
   getConnectStatus,
   markEscrowFundedByPaymentIntent,
 } from "@/lib/economy/payments";
+import { upsertCrawlPurchaseFromCheckoutSession } from "@/lib/crawl-license-store";
 import { requireStripe } from "@/lib/stripe";
 
 type PlaygroundSubStatus = "active" | "trial" | "past_due" | "cancelled";
@@ -196,6 +197,9 @@ export async function POST(request: NextRequest) {
 
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
+      if (session.metadata?.xpersona_product === "crawl_license") {
+        await upsertCrawlPurchaseFromCheckoutSession(session);
+      }
       if (session.mode === "subscription" && session.subscription) {
         const subId =
           typeof session.subscription === "string"

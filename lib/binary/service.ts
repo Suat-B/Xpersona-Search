@@ -1,6 +1,8 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type {
+  BinaryAstDelta,
+  BinaryAstState,
   BinaryArtifactMetadata,
   BinaryArtifactState,
   BinaryBuildCheckpoint,
@@ -14,10 +16,14 @@ import type {
   BinaryExecutionState,
   BinaryGenerationDelta,
   BinaryManifest,
+  BinaryLiveReliabilityState,
   BinaryPendingRefinement,
   BinaryPlanPreview,
   BinaryPreviewFile,
   BinaryPublishResult,
+  BinaryRuntimePatch,
+  BinaryRuntimeState,
+  BinarySnapshotSummary,
   BinarySourceGraph,
   BinaryTargetEnvironment,
   BinaryValidationReport,
@@ -37,6 +43,13 @@ import {
   writeBinaryBuildCheckpoint,
 } from "@/lib/binary/store";
 import { runStreamingBinaryBuild, type BinaryStreamingControlAction } from "@/lib/binary/streaming-runner";
+import {
+  buildBinaryAstDeltaFromState,
+  buildBinaryAstStateFromSourceGraph,
+  buildBinaryLiveReliabilityState,
+  buildBinaryRuntimeState,
+  buildBinarySnapshotSummary,
+} from "@/lib/binary/live-state";
 import {
   assertBinaryDownloadSigningReady,
   createBinaryDownloadSignature,
@@ -78,6 +91,153 @@ function buildStreamPaths(buildId: string) {
     eventsPath: `/api/v1/binary/builds/${encodeURIComponent(buildId)}/events`,
     controlPath: `/api/v1/binary/builds/${encodeURIComponent(buildId)}/control`,
   };
+}
+
+function buildStreamSessionId(buildId: string): string {
+  return `stream_${buildId}`;
+}
+
+function buildResumeToken(buildId: string): string {
+  return `resume_${buildId}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getBinaryStreamGatewayUrl(): string {
+  return String(process.env.BINARY_STREAM_GATEWAY_URL || "").trim().replace(/\/+$/, "");
+}
+
+async function registerBinaryStreamSession(input: {
+  buildId: string;
+  streamSessionId: string;
+  resumeToken: string;
+}): Promise<void> {
+  const gatewayUrl = getBinaryStreamGatewayUrl();
+  if (!gatewayUrl) return;
+
+  await fetch(`${gatewayUrl}/sessions`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      stream_session_id: input.streamSessionId,
+      build_id: input.buildId,
+      resume_token: input.resumeToken,
+    }),
+    cache: "no-store",
+  }).catch(() => null);
+}
+
+async function publishBinaryStreamGatewayEvent(event: BinaryBuildEvent): Promise<void> {
+  const gatewayUrl = getBinaryStreamGatewayUrl();
+  if (!gatewayUrl) return;
+
+  const streamSessionId = event.type === "build.created"
+    ? event.data.build.stream?.streamSessionId
+    : (await getBinaryBuildRecord(event.buildId))?.stream?.streamSessionId;
+  if (!streamSessionId) return;
+
+  await fetch(`${gatewayUrl}/sessions/${encodeURIComponent(streamSessionId)}/events`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      event,
+    }),
+    cache: "no-store",
+  }).catch(() => null);
+}
+
+async function publishBinaryStreamGatewayControl(input: {
+  buildId: string;
+  action: string;
+  payload?: Record<string, unknown>;
+}): Promise<void> {
+  const gatewayUrl = getBinaryStreamGatewayUrl();
+  if (!gatewayUrl) return;
+
+  const streamSessionId = (await getBinaryBuildRecord(input.buildId))?.stream?.streamSessionId;
+  if (!streamSessionId) return;
+
+  await fetch(`${gatewayUrl}/sessions/${encodeURIComponent(streamSessionId)}/control`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      action: input.action,
+      payload: input.payload || {},
+    }),
+    cache: "no-store",
+  }).catch(() => null);
+}
+
+async function branchBinaryStreamSession(input: {
+  sourceBuildId: string;
+  sourceStreamSessionId?: string | null;
+  newBuildId: string;
+  newStreamSessionId: string;
+  resumeToken: string;
+  snapshotId?: string | null;
+}): Promise<void> {
+  const gatewayUrl = getBinaryStreamGatewayUrl();
+  const sourceStreamSessionId = String(input.sourceStreamSessionId || "").trim();
+  if (!gatewayUrl || !sourceStreamSessionId) return;
+
+  await fetch(`${gatewayUrl}/sessions/${encodeURIComponent(sourceStreamSessionId)}/branch`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      new_stream_session_id: input.newStreamSessionId,
+      new_build_id: input.newBuildId,
+      resume_token: input.resumeToken,
+      snapshot_id: input.snapshotId || undefined,
+      source_build_id: input.sourceBuildId,
+    }),
+    cache: "no-store",
+  }).catch(() => null);
+}
+
+async function rewindBinaryStreamSession(input: {
+  buildId: string;
+  streamSessionId?: string | null;
+  snapshotId: string;
+}): Promise<void> {
+  const gatewayUrl = getBinaryStreamGatewayUrl();
+  const streamSessionId = String(input.streamSessionId || "").trim();
+  if (!gatewayUrl || !streamSessionId) return;
+
+  await fetch(`${gatewayUrl}/sessions/${encodeURIComponent(streamSessionId)}/rewind`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      snapshot_id: input.snapshotId,
+      build_id: input.buildId,
+    }),
+    cache: "no-store",
+  }).catch(() => null);
+}
+
+function toGatewayWebSocketPath(streamSessionId: string): string | undefined {
+  const gatewayUrl = getBinaryStreamGatewayUrl();
+  if (!gatewayUrl) return undefined;
+  try {
+    const url = new URL(gatewayUrl);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    url.pathname = `${url.pathname.replace(/\/+$/, "")}/ws/${encodeURIComponent(streamSessionId)}`;
+    url.search = "";
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function preferredBinaryTransport(): "websocket" | "sse" {
+  return getBinaryStreamGatewayUrl() ? "websocket" : "sse";
 }
 
 function emptyPreview(): BinaryBuildPreview {
@@ -199,6 +359,31 @@ function summarizeCheckpoint(checkpoint: BinaryBuildCheckpoint) {
   };
 }
 
+function buildCompatibilityAstState(sourceGraph: BinarySourceGraph | null | undefined, current?: BinaryAstState | null): BinaryAstState | null {
+  return current || buildBinaryAstStateFromSourceGraph(sourceGraph);
+}
+
+function buildCompatibilityRuntimeState(
+  execution: BinaryExecutionState | null | undefined,
+  current?: BinaryRuntimeState | null,
+  patches?: BinaryRuntimePatch[] | null
+): BinaryRuntimeState | null {
+  return current || buildBinaryRuntimeState({ execution, patches });
+}
+
+function buildCompatibilityLiveReliability(
+  report: BinaryValidationReport | null | undefined,
+  current?: BinaryLiveReliabilityState | null,
+  previous?: BinaryLiveReliabilityState | null
+): BinaryLiveReliabilityState | null {
+  if (current) return current;
+  if (!report) return null;
+  return buildBinaryLiveReliabilityState({
+    report,
+    previous,
+  });
+}
+
 function queueBinaryControlAction(buildId: string, action: BinaryStreamingControlAction): boolean {
   const active = activeBuildJobs.get(buildId);
   if (!active) return false;
@@ -222,6 +407,7 @@ async function emitBuildEvent<T extends BinaryBuildEvent["type"]>(input: {
   const active = activeBuildJobs.get(input.buildId);
   if (active) active.lastEventAt = Date.now();
   await appendBinaryBuildEvent(event);
+  void publishBinaryStreamGatewayEvent(event);
   return event;
 }
 
@@ -258,6 +444,18 @@ async function emitPlanUpdate(buildId: string, plan: BinaryPlanPreview): Promise
 }
 
 async function emitGenerationDelta(buildId: string, delta: BinaryGenerationDelta): Promise<void> {
+  await emitBuildEvent({
+    buildId,
+    type: "token.delta",
+    data: {
+      path: delta.path,
+      language: delta.language,
+      text: String(delta.content || "").slice(-4_000),
+      cursor: delta.order,
+      updatedAt: nowIso(),
+      source: "compat",
+    },
+  });
   await emitBuildEvent({
     buildId,
     type: "generation.delta",
@@ -299,36 +497,73 @@ async function emitReliabilityDelta(
   buildId: string,
   input: { kind: "prebuild" | "full"; report: BinaryValidationReport }
 ): Promise<void> {
+  const current = await getBinaryBuildRecord(buildId);
+  const liveReliability = buildCompatibilityLiveReliability(input.report, undefined, current?.liveReliability || null);
   await updateBinaryBuildRecord(buildId, {
     reliability: input.report,
+    liveReliability,
   });
   await emitBuildEvent({
     buildId,
     type: "reliability.delta",
     data: input,
   });
+  if (liveReliability) {
+    await emitBuildEvent({
+      buildId,
+      type: "reliability.stream",
+      data: { reliability: liveReliability },
+    });
+  }
 }
 
 async function emitGraphUpdated(buildId: string, sourceGraph: BinarySourceGraph): Promise<void> {
+  const astState = buildCompatibilityAstState(sourceGraph);
   await updateBinaryBuildRecord(buildId, {
     sourceGraph,
+    astState,
   });
   await emitBuildEvent({
     buildId,
     type: "graph.updated",
     data: { sourceGraph },
   });
+  if (astState) {
+    const delta = buildBinaryAstDeltaFromState(astState);
+    if (delta) {
+      await emitBuildEvent({
+        buildId,
+        type: "ast.delta",
+        data: { delta },
+      });
+    }
+    await emitBuildEvent({
+      buildId,
+      type: "ast.state",
+      data: { astState },
+    });
+  }
 }
 
 async function emitExecutionUpdated(buildId: string, execution: BinaryExecutionState): Promise<void> {
+  const current = await getBinaryBuildRecord(buildId);
+  const runtimeState = buildCompatibilityRuntimeState(execution, current?.runtimeState || null);
   await updateBinaryBuildRecord(buildId, {
     execution,
+    runtimeState,
   });
   await emitBuildEvent({
     buildId,
     type: "execution.updated",
     data: { execution },
   });
+  if (runtimeState) {
+    await emitBuildEvent({
+      buildId,
+      type: "runtime.state",
+      data: { runtime: runtimeState },
+    });
+  }
 }
 
 async function emitArtifactDelta(buildId: string, artifactState: BinaryArtifactState): Promise<void> {
@@ -347,21 +582,41 @@ async function emitArtifactDelta(buildId: string, artifactState: BinaryArtifactS
 async function emitCheckpoint(buildId: string, checkpoint: BinaryBuildCheckpoint): Promise<void> {
   await writeBinaryBuildCheckpoint(checkpoint);
   const record = await getBinaryBuildRecord(buildId);
+  const snapshot =
+    checkpoint.snapshot ||
+    buildBinarySnapshotSummary({
+      checkpoint,
+      parentSnapshotId: record?.snapshots?.[0]?.id || null,
+    });
   const nextCheckpoints = [
     summarizeCheckpoint(checkpoint),
     ...((record?.checkpoints || []).filter((item) => item.id !== checkpoint.id)),
   ].slice(0, 200);
+  const nextSnapshots = [snapshot, ...((record?.snapshots || []).filter((item) => item.id !== snapshot.id))].slice(0, 400);
   await updateBinaryBuildRecord(buildId, {
     preview: buildPreviewWithCheckpoint(record?.preview, checkpoint),
+    manifest: checkpoint.manifest || record?.manifest || null,
+    reliability: checkpoint.reliability || record?.reliability || null,
+    liveReliability: checkpoint.liveReliability || record?.liveReliability || null,
+    artifactState: checkpoint.artifactState || record?.artifactState || null,
     sourceGraph: checkpoint.sourceGraph || record?.sourceGraph || null,
+    astState: checkpoint.astState || record?.astState || null,
     execution: checkpoint.execution || record?.execution || null,
+    runtimeState: checkpoint.runtimeState || record?.runtimeState || null,
     checkpointId: checkpoint.id,
     checkpoints: nextCheckpoints,
+    snapshots: nextSnapshots,
+    artifact: checkpoint.artifact || record?.artifact || null,
   });
   await emitBuildEvent({
     buildId,
     type: "checkpoint.saved",
     data: { checkpoint },
+  });
+  await emitBuildEvent({
+    buildId,
+    type: "snapshot.saved",
+    data: { snapshot },
   });
 }
 
@@ -547,11 +802,15 @@ async function finalizeQueuedBinaryBuild(input: {
     logs: mergeLogs((await getBinaryBuildRecord(input.buildId))?.logs, result.logs),
     manifest: result.manifest,
     reliability: result.reliability,
+    liveReliability: result.liveReliability,
     artifactState: result.artifactState,
     sourceGraph: result.sourceGraph,
+    astState: result.astState,
     execution: result.execution,
+    runtimeState: result.runtimeState,
     checkpointId: result.checkpointId,
     checkpoints: result.checkpoints.map((checkpoint) => summarizeCheckpoint(checkpoint)),
+    snapshots: result.snapshots,
     artifact: result.artifact,
     errorMessage: result.errorMessage,
     cancelable: false,
@@ -673,6 +932,8 @@ export async function createBinaryBuild(input: {
   await ensureBinaryArtifactStorageAccessible();
 
   const buildId = createBuildId();
+  const streamSessionId = buildStreamSessionId(buildId);
+  const resumeToken = buildResumeToken(buildId);
   const createdAt = nowIso();
   const sessionId = await ensureBinarySession({
     userId: input.userId,
@@ -713,18 +974,25 @@ export async function createBinaryBuild(input: {
     logs: ["Queued Binary IDE portable package bundle build."],
     stream: {
       enabled: isBinaryStreamingEnabled(),
-      transport: "sse",
+      transport: preferredBinaryTransport(),
       ...buildStreamPaths(buildId),
+      ...(toGatewayWebSocketPath(streamSessionId) ? { wsPath: toGatewayWebSocketPath(streamSessionId) } : {}),
+      resumeToken,
+      streamSessionId,
       lastEventId: null,
     },
     preview: emptyPreview(),
     cancelable: true,
     manifest: null,
     reliability: null,
+    liveReliability: null,
     sourceGraph: null,
+    astState: null,
     execution: null,
+    runtimeState: null,
     checkpointId: null,
     checkpoints: [],
+    snapshots: [],
     parentBuildId: null,
     pendingRefinement: null,
     artifact: null,
@@ -736,6 +1004,11 @@ export async function createBinaryBuild(input: {
   };
 
   await createBinaryBuildRecord(initial);
+  await registerBinaryStreamSession({
+    buildId,
+    streamSessionId,
+    resumeToken,
+  });
   await emitBuildEvent({
     buildId,
     type: "build.created",
@@ -783,6 +1056,10 @@ export async function cancelBinaryBuild(input: {
   if (active && !active.abortController.signal.aborted) {
     active.abortController.abort();
     queueBinaryControlAction(input.buildId, { action: "cancel" });
+    void publishBinaryStreamGatewayControl({
+      buildId: input.buildId,
+      action: "cancel",
+    });
     await emitInterruptAccepted(input.buildId, {
       action: "cancel",
       message: "Cancellation requested.",
@@ -817,6 +1094,13 @@ export async function refineBinaryBuild(input: {
     intent: input.intent,
   });
   if (!queued) return null;
+  void publishBinaryStreamGatewayControl({
+    buildId: input.buildId,
+    action: "refine",
+    payload: {
+      intent: input.intent,
+    },
+  });
 
   await emitInterruptAccepted(input.buildId, {
     action: "refine",
@@ -850,8 +1134,11 @@ export async function branchBinaryBuild(input: {
   if (!snapshot) return null;
 
   const newBuildId = createBuildId();
+  const streamSessionId = buildStreamSessionId(newBuildId);
+  const resumeToken = buildResumeToken(newBuildId);
   const createdAt = nowIso();
   const logs = mergeLogs(source.logs, [`Branched from ${source.id} at checkpoint ${targetCheckpointId}.`]);
+  const branchWsPath = toGatewayWebSocketPath(streamSessionId);
   const initial: BinaryBuildRecord = {
     ...source,
     id: newBuildId,
@@ -863,22 +1150,32 @@ export async function branchBinaryBuild(input: {
     logs,
     stream: {
       enabled: isBinaryStreamingEnabled(),
-      transport: "sse",
+      transport: preferredBinaryTransport(),
       ...buildStreamPaths(newBuildId),
+      ...(branchWsPath ? { wsPath: branchWsPath } : {}),
+      resumeToken,
+      streamSessionId,
       lastEventId: null,
     },
     preview: snapshot.preview || source.preview || emptyPreview(),
     cancelable: Boolean(input.intent),
     manifest: snapshot.manifest || source.manifest || null,
     reliability: snapshot.reliability || source.reliability || null,
+    liveReliability: snapshot.liveReliability || source.liveReliability || null,
     sourceGraph: snapshot.sourceGraph || source.sourceGraph || null,
+    astState: snapshot.astState || source.astState || null,
     execution: snapshot.execution || source.execution || null,
+    runtimeState: snapshot.runtimeState || source.runtimeState || null,
     artifactState: snapshot.artifactState || source.artifactState || null,
     checkpointId: targetCheckpointId,
     checkpoints:
       source.checkpoints?.filter((checkpoint) => checkpoint.id === targetCheckpointId).length
         ? source.checkpoints.filter((checkpoint) => checkpoint.id === targetCheckpointId)
         : source.checkpoints || [],
+    snapshots:
+      source.snapshots?.filter((entry) => entry.id === targetCheckpointId || entry.checkpointId === targetCheckpointId).length
+        ? source.snapshots.filter((entry) => entry.id === targetCheckpointId || entry.checkpointId === targetCheckpointId)
+        : source.snapshots || [],
     parentBuildId: source.id,
     pendingRefinement: input.intent
       ? {
@@ -894,6 +1191,19 @@ export async function branchBinaryBuild(input: {
   };
 
   await createBinaryBuildRecord(initial);
+  await registerBinaryStreamSession({
+    buildId: newBuildId,
+    streamSessionId,
+    resumeToken,
+  });
+  await branchBinaryStreamSession({
+    sourceBuildId: source.id,
+    sourceStreamSessionId: source.stream?.streamSessionId,
+    newBuildId,
+    newStreamSessionId: streamSessionId,
+    resumeToken,
+    snapshotId: targetCheckpointId,
+  });
   await fs.rm(getBinaryBuildWorkspaceDir(newBuildId), { recursive: true, force: true }).catch(() => null);
   await fs.mkdir(getBinaryBuildWorkspaceDir(newBuildId), { recursive: true });
   for (const [relativePath, content] of Object.entries(snapshot.draftFiles)) {
@@ -966,11 +1276,15 @@ export async function rewindBinaryBuild(input: {
     preview: snapshot.preview || emptyPreview(),
     manifest: snapshot.manifest || null,
     reliability: snapshot.reliability || null,
+    liveReliability: snapshot.liveReliability || null,
     sourceGraph: snapshot.sourceGraph || null,
+    astState: snapshot.astState || null,
     execution: snapshot.execution || null,
+    runtimeState: snapshot.runtimeState || null,
     artifactState: snapshot.artifactState || null,
     checkpointId: input.checkpointId,
     checkpoints,
+    snapshots: record.snapshots || [],
     artifact: null,
     publish: null,
     pendingRefinement: null,
@@ -979,6 +1293,11 @@ export async function rewindBinaryBuild(input: {
     errorMessage: null,
   });
   if (updated) {
+    await rewindBinaryStreamSession({
+      buildId: record.id,
+      streamSessionId: record.stream?.streamSessionId,
+      snapshotId: input.checkpointId,
+    }).catch(() => null);
     await emitRewindCompleted(record.id, {
       checkpointId: input.checkpointId,
       build: updated,
@@ -1016,6 +1335,10 @@ export async function executeBinaryBuild(input: {
     entryPoint: input.request.entryPoint,
     args: input.request.args,
   });
+  await updateBinaryBuildRecord(record.id, {
+    execution: nextExecution,
+    runtimeState: buildCompatibilityRuntimeState(nextExecution, undefined, snapshot.runtimePatches),
+  }).catch(() => null);
   await emitExecutionUpdated(record.id, nextExecution).catch(() => null);
   return getBinaryBuildForUser({ userId: input.userId, buildId: input.buildId });
 }

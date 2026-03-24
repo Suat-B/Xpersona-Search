@@ -192,6 +192,25 @@ export const zPendingToolCall = z.object({
   createdAt: z.string().datetime(),
 });
 
+export const zProgressState = z.object({
+  status: z.enum(["running", "stalled", "repairing", "completed", "failed"]),
+  lastMeaningfulProgressAtStep: z.number().int().min(0).max(1000),
+  lastMeaningfulProgressSummary: z.string().min(1).max(20_000),
+  stallCount: z.number().int().min(0).max(1000),
+  stallReason: z.string().max(20_000).optional(),
+  nextDeterministicAction: z.string().max(20_000).optional(),
+  pendingToolCallSignature: z.string().max(4000).optional(),
+});
+
+export const zObjectiveState = z.object({
+  status: z.enum(["in_progress", "satisfied", "blocked"]),
+  goalType: z.enum(["code_edit", "command_run", "plan", "unknown"]),
+  targetPath: z.string().min(1).max(4096).optional(),
+  requiredProof: z.array(z.string().min(1).max(240)).max(20),
+  observedProof: z.array(z.string().min(1).max(240)).max(20),
+  missingProof: z.array(z.string().min(1).max(240)).max(20),
+});
+
 export const zRunContinueRequest = z.object({
   toolResult: zToolResult,
 });
@@ -404,5 +423,7 @@ export type ToolResultContract = z.infer<typeof zToolResult>;
 export type ToolTraceEntryContract = z.infer<typeof zToolTraceEntry>;
 export type LoopStateContract = z.infer<typeof zLoopState>;
 export type PendingToolCallContract = z.infer<typeof zPendingToolCall>;
+export type ProgressStateContract = z.infer<typeof zProgressState>;
+export type ObjectiveStateContract = z.infer<typeof zObjectiveState>;
 export type ExecuteRequestContract = z.infer<typeof zExecuteRequest>;
 export type DesktopSnapshotUploadRequestContract = z.infer<typeof zDesktopSnapshotUploadRequest>;

@@ -12,6 +12,7 @@ interface SearchTopControlsBarProps {
   setQuery: (q: string) => void;
   onSearch: (overrideQuery?: string) => void;
   loading: boolean;
+  isRefreshing?: boolean;
   vertical: "all" | "agents" | "skills" | "artifacts";
   onVerticalChange: (v: "all" | "agents" | "skills" | "artifacts") => void;
   sort: string;
@@ -27,6 +28,7 @@ export function SearchTopControlsBar({
   setQuery,
   onSearch,
   loading,
+  isRefreshing = false,
   vertical,
   onVerticalChange,
   sort,
@@ -113,7 +115,7 @@ export function SearchTopControlsBar({
 
   return (
     <div
-      className={`sticky top-0 z-20 border-b border-[var(--border)] bg-black/95 backdrop-blur-sm transition-[max-height,transform,opacity,border-color] duration-300 ${
+      className={`sticky top-0 z-20 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur-sm [--bg-deep:#ffffff] [--bg-elevated:#f8fafc] [--border:rgba(148,163,184,0.35)] [--border-strong:rgba(100,116,139,0.7)] [--text-primary:#0f172a] [--text-secondary:#334155] [--text-tertiary:#64748b] transition-[max-height,transform,opacity,border-color] duration-300 ${
         headerHidden
           ? "overflow-hidden max-h-0 -translate-y-2 opacity-0 pointer-events-none border-transparent"
           : "overflow-visible max-h-[24rem] translate-y-0 opacity-100"
@@ -134,6 +136,11 @@ export function SearchTopControlsBar({
             <p className="mt-1 text-sm text-[var(--text-tertiary)]">
               {totalLabel ? `About ${totalLabel}` : "Search results"}
             </p>
+            {isRefreshing ? (
+              <p className="mt-1 text-xs font-medium text-[var(--accent-heart)]" aria-live="polite">
+                Updating results...
+              </p>
+            ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
               {(["all", "agents", "skills", "artifacts"] as const).map((v) => (
                 <button
@@ -162,10 +169,10 @@ export function SearchTopControlsBar({
             <form onSubmit={handleSubmit} className="flex w-full items-stretch gap-2 sm:w-auto">
               <div
                 ref={searchAnchorRef}
-                className={`relative flex w-full items-center rounded-full border transition-all duration-200 sm:w-64 ${
+                className={`relative flex w-full items-center rounded-full border bg-white transition-all duration-200 sm:w-64 ${
                   isFocused
                     ? "border-[var(--accent-heart)]/50 ring-2 ring-[var(--accent-heart)]/20"
-                    : "border-white/[0.1] hover:border-white/[0.15]"
+                    : "border-slate-200 hover:border-slate-300"
                 }`}
               >
                 <div className="absolute left-3 w-4 h-4 text-[var(--text-tertiary)] pointer-events-none" aria-hidden>
@@ -228,7 +235,7 @@ export function SearchTopControlsBar({
               value={sort}
               onChange={(e) => onSortChange(e.target.value)}
               aria-label="Sort results by"
-              className="px-3 py-2.5 min-h-[40px] rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]/50 text-[var(--text-primary)] text-sm focus:border-[var(--accent-heart)]/60 focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/20"
+              className="px-3 py-2.5 min-h-[40px] rounded-full border border-slate-200 bg-white text-slate-900 text-sm focus:border-[var(--accent-heart)]/60 focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/20"
             >
               <option value="rank">Most relevant</option>
               <option value="safety">Safest</option>

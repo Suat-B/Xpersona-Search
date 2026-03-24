@@ -13,7 +13,12 @@ import {
   streamBinaryBuildEvents as requestBinaryStreamEvents,
   validateBinaryBuild as requestBinaryValidate,
 } from "./binary-api-client";
-import type { BinaryBuildEvent, BinaryBuildRecord } from "./binary-types";
+import type {
+  BinaryBuildEvent,
+  BinaryBuildRecord,
+  BinarySnapshotSummary,
+} from "./binary-types";
+import { getBinaryIdeChatRuntime } from "./config";
 import { CutieAuthManager } from "./auth";
 import { nowIso, randomId } from "./cutie-policy";
 import { CutieSessionStore } from "./cutie-session-store";
@@ -78,7 +83,7 @@ export class CutieBinaryBundleController {
       getActiveSession: () => CutieSessionRecord | null;
       setActiveSession: (session: CutieSessionRecord | null) => void;
       emitState: () => void | Promise<void>;
-      gatherBinaryContext: () => Promise<GatheredBinaryContext>;
+      gatherBinaryContext: (intent: string) => Promise<GatheredBinaryContext>;
       showView: () => Promise<void>;
     }
   ) {}
@@ -87,13 +92,14 @@ export class CutieBinaryBundleController {
     return this.liveBubble;
   }
 
-  /** Stop SSE and clear ephemeral live row; call when switching sessions or new chat. */
+  /** Stop the active stream and clear the ephemeral live row; call when switching sessions or new chat. */
   stopStreamsAndLiveBubble(): void {
     this.stopBinaryStream();
     this.liveBubble = null;
   }
 
   async resumeBinaryBuildIfNeeded(): Promise<void> {
+    if (getBinaryIdeChatRuntime() !== "playgroundApi") return;
     const buildId = this.context.workspaceState.get<string>(BINARY_ACTIVE_BUILD_KEY);
     if (!buildId) return;
     if (this.binaryStreamBuildId === buildId && this.binaryStreamAbort) return;
@@ -119,13 +125,13 @@ export class CutieBinaryBundleController {
       [
         { label: "Set Xpersona API key", detail: "Save or clear your API key (shared with Cutie).", action: "apiKey" as const },
         {
-          label: "Open portable bundle settings",
+          label: "Open app builder settings",
           detail: "VS Code settings filtered to cutie-product.binary.",
           action: "settings" as const,
         },
         { label: "Browser sign in", detail: "Authenticate in the browser.", action: "signIn" as const },
       ],
-      { title: "Configure portable bundle (Binary API)", ignoreFocusOut: true }
+      { title: "Configure app builder", ignoreFocusOut: true }
     );
     if (!selection) return;
 
@@ -137,7 +143,7 @@ export class CutieBinaryBundleController {
         break;
       case "settings":
         await vscode.commands.executeCommand("workbench.action.openSettings", "cutie-product.binary");
-        message = "Opened portable bundle settings.";
+        message = "Opened app builder settings.";
         break;
       case "signIn":
         await this.auth.signInWithBrowser();
@@ -155,8 +161,8 @@ export class CutieBinaryBundleController {
     const nextIntent =
       String(intent || "").trim() ||
       (await vscode.window.showInputBox({
-        title: "Generate portable starter bundle",
-        prompt: "Describe the portable package bundle you want to generate.",
+        title: "Generate app from prompt",
+        prompt: "Describe the app, workflow, or tool you want Cutie to spin up.",
         ignoreFocusOut: true,
       })) ||
       "";
@@ -188,14 +194,14 @@ export class CutieBinaryBundleController {
   async generateBinaryBuild(rawIntent: string): Promise<void> {
     const intent = rawIntent.trim();
     if (!intent) {
-      await this.appendSessionMessage("system", "Add an intent in the composer before generating a portable starter bundle.");
+      await this.appendSessionMessage("system", "Add an intent in the composer before spinning up an app build.");
       await this.deps.emitState();
       return;
     }
     if (this.binary.busy || isBinaryBuildPending(this.binary.activeBuild)) {
       await this.appendSessionMessage(
         "system",
-        "Wait for the current portable starter bundle build to finish before starting another one."
+        "Wait for the current app build to finish before starting another one."
       );
       await this.deps.emitState();
       return;
@@ -205,7 +211,7 @@ export class CutieBinaryBundleController {
     if (!auth) {
       await this.appendSessionMessage(
         "system",
-        "Authenticate with an Xpersona API key or browser sign-in before generating a portable starter bundle."
+        "Authenticate with an Xpersona API key or browser sign-in before spinning up an app build."
       );
       await this.deps.emitState();
       return;
@@ -213,7 +219,7 @@ export class CutieBinaryBundleController {
 
     this.binary.busy = true;
     this.binary.lastAction = "generate";
-    this.pushActivity("Creating portable starter bundle");
+    this.pushActivity("Spinning up app build");
     this.applyBinaryLiveEvent({
       type: "accepted",
       transport: "binary",
@@ -222,13 +228,13 @@ export class CutieBinaryBundleController {
     });
     this.applyBinaryLiveEvent({
       type: "activity",
-      activity: "Creating portable starter bundle",
+      activity: "Spinning up app build",
       phase: "planning",
     });
     await this.deps.emitState();
 
     try {
-      const { context, retrievalHints } = await this.deps.gatherBinaryContext();
+      const { context, retrievalHints } = await this.deps.gatherBinaryContext(intent);
       const session = this.deps.getActiveSession();
 
       const createInput = {
@@ -254,10 +260,14 @@ export class CutieBinaryBundleController {
       this.binary.previewFiles = [];
       this.binary.recentLogs = [];
       this.binary.reliability = null;
+      this.binary.liveReliability = null;
       this.binary.artifactState = null;
       this.binary.sourceGraph = null;
+      this.binary.astState = null;
       this.binary.execution = null;
+      this.binary.runtimeState = null;
       this.binary.checkpoints = [];
+      this.binary.snapshots = [];
       this.binary.pendingRefinement = null;
       this.binary.canCancel = false;
       await this.deps.emitState();
@@ -312,14 +322,14 @@ export class CutieBinaryBundleController {
   async cancelBinaryBuild(): Promise<void> {
     const build = this.binary.activeBuild;
     if (!build || !isBinaryBuildPending(build)) {
-      await this.appendSessionMessage("system", "There is no active portable starter bundle build to cancel.");
+      await this.appendSessionMessage("system", "There is no active app build to cancel.");
       await this.deps.emitState();
       return;
     }
 
     const auth = await this.auth.getRequestAuth();
     if (!auth) {
-      await this.appendSessionMessage("system", "Authenticate before canceling the current portable starter bundle.");
+      await this.appendSessionMessage("system", "Authenticate before canceling the current app build.");
       await this.deps.emitState();
       return;
     }
@@ -371,13 +381,13 @@ export class CutieBinaryBundleController {
     }
 
     this.binary.lastAction = "refine";
-    this.pushActivity("Queueing refinement for the active binary build");
+    this.pushActivity("Queueing refinement for the live app build");
     await this.deps.emitState();
 
     try {
       const updated = await requestBinaryRefine({ auth, buildId: build.id, intent });
       this.setActiveBinaryBuild(updated);
-      await this.appendSessionMessage("system", `Queued refinement for build ${updated.id}.`);
+      await this.appendSessionMessage("system", `Queued refinement for app build ${updated.id}.`);
       if (!this.binaryStreamAbort && isBinaryBuildPending(updated)) {
         void this.followBinaryBuildStream({ auth, buildId: updated.id }).catch(() => undefined);
       }
@@ -394,7 +404,7 @@ export class CutieBinaryBundleController {
   async branchBinaryBuild(rawIntent: string, rawCheckpointId = ""): Promise<void> {
     const build = this.binary.activeBuild;
     if (!build) {
-      await this.appendSessionMessage("system", "Generate a build before creating a branch.");
+      await this.appendSessionMessage("system", "Generate an app build before creating a branch.");
       await this.deps.emitState();
       return;
     }
@@ -404,21 +414,21 @@ export class CutieBinaryBundleController {
       String(build.checkpointId || "").trim() ||
       String(build.checkpoints?.[0]?.id || "").trim();
     if (!checkpointId) {
-      await this.appendSessionMessage("system", "Create at least one checkpoint before branching this build.");
+      await this.appendSessionMessage("system", "Create at least one save point before branching this build.");
       await this.deps.emitState();
       return;
     }
 
     const auth = await this.auth.getRequestAuth();
     if (!auth) {
-      await this.appendSessionMessage("system", "Authenticate before branching the current build.");
+      await this.appendSessionMessage("system", "Authenticate before branching the current app build.");
       await this.deps.emitState();
       return;
     }
 
     this.binary.busy = true;
     this.binary.lastAction = "branch";
-    this.pushActivity("Creating a branch from the current checkpoint");
+    this.pushActivity("Forking from the current save point");
     await this.deps.emitState();
 
     try {
@@ -431,7 +441,7 @@ export class CutieBinaryBundleController {
       this.stopBinaryStream();
       this.clearBinaryEventTracking();
       this.setActiveBinaryBuild(updated);
-      await this.appendSessionMessage("assistant", `Created branch build ${updated.id} from checkpoint ${checkpointId}.`);
+      await this.appendSessionMessage("assistant", `Created forked build ${updated.id} from save point ${checkpointId}.`);
       if (isBinaryBuildPending(updated)) {
         void this.followBinaryBuildStream({ auth, buildId: updated.id }).catch(() => undefined);
       }
@@ -449,12 +459,12 @@ export class CutieBinaryBundleController {
   async rewindBinaryBuild(rawCheckpointId = ""): Promise<void> {
     const build = this.binary.activeBuild;
     if (!build) {
-      await this.appendSessionMessage("system", "Generate a build before rewinding it.");
+      await this.appendSessionMessage("system", "Generate an app build before rewinding it.");
       await this.deps.emitState();
       return;
     }
     if (isBinaryBuildPending(build)) {
-      await this.appendSessionMessage("system", "Wait for the current build to stop streaming before rewinding it.");
+      await this.appendSessionMessage("system", "Wait for the current app build to stop streaming before rewinding it.");
       await this.deps.emitState();
       return;
     }
@@ -464,27 +474,27 @@ export class CutieBinaryBundleController {
       String(build.checkpointId || "").trim() ||
       String(build.checkpoints?.[0]?.id || "").trim();
     if (!checkpointId) {
-      await this.appendSessionMessage("system", "No checkpoint is available to rewind this build.");
+      await this.appendSessionMessage("system", "No save point is available to rewind this build.");
       await this.deps.emitState();
       return;
     }
 
     const auth = await this.auth.getRequestAuth();
     if (!auth) {
-      await this.appendSessionMessage("system", "Authenticate before rewinding the current build.");
+      await this.appendSessionMessage("system", "Authenticate before rewinding the current app build.");
       await this.deps.emitState();
       return;
     }
 
     this.binary.busy = true;
     this.binary.lastAction = "rewind";
-    this.pushActivity("Rewinding build");
+    this.pushActivity("Rewinding app build");
     await this.deps.emitState();
 
     try {
       const updated = await requestBinaryRewind({ auth, buildId: build.id, checkpointId });
       this.setActiveBinaryBuild(updated);
-      await this.appendSessionMessage("system", `Rewound build ${updated.id} to checkpoint ${checkpointId}.`);
+      await this.appendSessionMessage("system", `Rewound build ${updated.id} to save point ${checkpointId}.`);
     } catch (error) {
       await this.appendSessionMessage(
         "system",
@@ -499,28 +509,28 @@ export class CutieBinaryBundleController {
   async executeBinaryBuild(entryPoint: string): Promise<void> {
     const build = this.binary.activeBuild;
     if (!build) {
-      await this.appendSessionMessage("system", "Generate a build before running partial execution.");
+      await this.appendSessionMessage("system", "Generate an app build before running live execution.");
       await this.deps.emitState();
       return;
     }
 
     const normalizedEntryPoint = entryPoint.trim();
     if (!normalizedEntryPoint) {
-      await this.appendSessionMessage("system", "Choose a callable entry point before running the partial runtime.");
+      await this.appendSessionMessage("system", "Choose a callable entry point before running the live preview runtime.");
       await this.deps.emitState();
       return;
     }
 
     const auth = await this.auth.getRequestAuth();
     if (!auth) {
-      await this.appendSessionMessage("system", "Authenticate before running the partial runtime.");
+      await this.appendSessionMessage("system", "Authenticate before running the live preview runtime.");
       await this.deps.emitState();
       return;
     }
 
     this.binary.busy = true;
     this.binary.lastAction = "execute";
-    this.pushActivity(`Running ${normalizedEntryPoint} in the partial runtime`);
+    this.pushActivity(`Running ${normalizedEntryPoint} in the live preview runtime`);
     await this.deps.emitState();
 
     try {
@@ -551,7 +561,7 @@ export class CutieBinaryBundleController {
   async validateBinaryBuild(): Promise<void> {
     const build = this.binary.activeBuild;
     if (!build) {
-      await this.appendSessionMessage("system", "Generate a portable starter bundle before running validation.");
+      await this.appendSessionMessage("system", "Generate an app build before running validation.");
       await this.deps.emitState();
       return;
     }
@@ -561,21 +571,21 @@ export class CutieBinaryBundleController {
       return;
     }
     if (build.status !== "completed") {
-      await this.appendSessionMessage("system", "Only completed portable starter bundles can be validated.");
+      await this.appendSessionMessage("system", "Only completed app builds can be validated.");
       await this.deps.emitState();
       return;
     }
 
     const auth = await this.auth.getRequestAuth();
     if (!auth) {
-      await this.appendSessionMessage("system", "Authenticate before validating the current portable starter bundle.");
+      await this.appendSessionMessage("system", "Authenticate before validating the current app build.");
       await this.deps.emitState();
       return;
     }
 
     this.binary.busy = true;
     this.binary.lastAction = "validate";
-    this.pushActivity("Validating portable starter bundle");
+    this.pushActivity("Confidence-checking app build");
     await this.deps.emitState();
 
     try {
@@ -600,7 +610,7 @@ export class CutieBinaryBundleController {
   async publishBinaryBuild(): Promise<void> {
     const build = this.binary.activeBuild;
     if (!build) {
-      await this.appendSessionMessage("system", "Generate a portable starter bundle before publishing it.");
+      await this.appendSessionMessage("system", "Generate an app build before publishing it.");
       await this.deps.emitState();
       return;
     }
@@ -610,21 +620,21 @@ export class CutieBinaryBundleController {
       return;
     }
     if (build.status !== "completed") {
-      await this.appendSessionMessage("system", "Only completed portable starter bundles can be published.");
+      await this.appendSessionMessage("system", "Only completed app builds can be published.");
       await this.deps.emitState();
       return;
     }
 
     const auth = await this.auth.getRequestAuth();
     if (!auth) {
-      await this.appendSessionMessage("system", "Authenticate before publishing the current portable starter bundle.");
+      await this.appendSessionMessage("system", "Authenticate before publishing the current app build.");
       await this.deps.emitState();
       return;
     }
 
     this.binary.busy = true;
     this.binary.lastAction = "deploy";
-    this.pushActivity("Publishing portable starter bundle");
+    this.pushActivity("Publishing app build");
     await this.deps.emitState();
 
     try {
@@ -657,7 +667,7 @@ export class CutieBinaryBundleController {
   ): Promise<void> {
     let session = this.deps.getActiveSession();
     if (!session) {
-      session = await this.sessionStore.createSession(this.deps.getWorkspaceHash(), "Portable bundle");
+      session = await this.sessionStore.createSession(this.deps.getWorkspaceHash(), "App build");
       this.deps.setActiveSession(session);
     }
     const next = await this.sessionStore.appendMessage(session, { role, content, ...extra });
@@ -709,6 +719,16 @@ export class CutieBinaryBundleController {
     await this.context.workspaceState.update(BINARY_STREAM_CURSOR_KEY, next);
   }
 
+  private appendBinaryCheckpointSnapshot(snapshot: BinarySnapshotSummary): void {
+    const build = this.binary.activeBuild;
+    if (!build) return;
+    const snapshots = [snapshot, ...(build.snapshots || []).filter((item) => item.id !== snapshot.id)].slice(0, 80);
+    this.setActiveBinaryBuild({
+      ...build,
+      snapshots,
+    });
+  }
+
   private syncBinaryPanelFromBuild(build: BinaryBuildRecord | null): void {
     this.binary.activeBuild = build;
     this.binary.phase = deriveBinaryPhase(build);
@@ -716,10 +736,14 @@ export class CutieBinaryBundleController {
     this.binary.previewFiles = build?.preview?.files || [];
     this.binary.recentLogs = build?.preview?.recentLogs || [];
     this.binary.reliability = build?.reliability || null;
+    this.binary.liveReliability = build?.liveReliability || null;
     this.binary.artifactState = build?.artifactState || null;
     this.binary.sourceGraph = build?.sourceGraph || null;
+    this.binary.astState = build?.astState || null;
     this.binary.execution = build?.execution || null;
+    this.binary.runtimeState = build?.runtimeState || null;
     this.binary.checkpoints = build?.checkpoints || [];
+    this.binary.snapshots = build?.snapshots || [];
     this.binary.pendingRefinement = build?.pendingRefinement || null;
     this.binary.canCancel = Boolean(build?.cancelable && isBinaryBuildPending(build));
     if (build?.targetEnvironment) {
@@ -1008,6 +1032,15 @@ export class CutieBinaryBundleController {
           });
         }
         break;
+      case "token.delta":
+        this.applyBinaryLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "planning",
+          progress: current?.progress,
+          latestLog: event.data.text,
+        });
+        break;
       case "file.updated":
         this.applyBinaryLiveEvent({
           type: "build_event",
@@ -1063,6 +1096,20 @@ export class CutieBinaryBundleController {
           });
         }
         break;
+      case "reliability.stream":
+        this.applyBinaryLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "validating",
+          progress: current?.progress,
+        });
+        if (current) {
+          this.setActiveBinaryBuild({
+            ...current,
+            liveReliability: event.data.reliability,
+          });
+        }
+        break;
       case "graph.updated":
         this.applyBinaryLiveEvent({
           type: "build_event",
@@ -1075,6 +1122,50 @@ export class CutieBinaryBundleController {
           this.setActiveBinaryBuild({
             ...current,
             sourceGraph: event.data.sourceGraph,
+          });
+        }
+        break;
+      case "ast.delta":
+        this.applyBinaryLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "materializing",
+          progress: current?.progress,
+          latestFile: event.data.delta.modulesTouched[0],
+        });
+        if (current) {
+          this.setActiveBinaryBuild({
+            ...current,
+            astState: {
+              ...(current.astState || {
+                coverage: event.data.delta.coverage,
+                moduleCount: 0,
+                modules: [],
+                nodes: [],
+                updatedAt: event.timestamp,
+                source: event.data.delta.source,
+              }),
+              coverage: event.data.delta.coverage,
+              updatedAt: event.data.delta.updatedAt,
+              source: event.data.delta.source,
+              nodes: event.data.delta.nodes,
+              modules: current.astState?.modules || [],
+            },
+          });
+        }
+        break;
+      case "ast.state":
+        this.applyBinaryLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "materializing",
+          progress: current?.progress,
+          latestFile: event.data.astState.modules[0]?.path,
+        });
+        if (current) {
+          this.setActiveBinaryBuild({
+            ...current,
+            astState: event.data.astState,
           });
         }
         break;
@@ -1098,6 +1189,36 @@ export class CutieBinaryBundleController {
               files: current.preview?.files || [],
               recentLogs,
             },
+          });
+        }
+        break;
+      case "runtime.state":
+        this.applyBinaryLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "validating",
+          progress: current?.progress,
+          latestLog: event.data.runtime.availableFunctions.slice(-1)[0]?.name,
+        });
+        if (current) {
+          this.setActiveBinaryBuild({
+            ...current,
+            runtimeState: event.data.runtime,
+          });
+        }
+        break;
+      case "patch.applied":
+        this.applyBinaryLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "validating",
+          progress: current?.progress,
+          latestLog: event.data.patch.description,
+        });
+        if (current) {
+          this.setActiveBinaryBuild({
+            ...current,
+            runtimeState: event.data.runtime,
           });
         }
         break;
@@ -1138,14 +1259,30 @@ export class CutieBinaryBundleController {
             preview: event.data.checkpoint.preview || current.preview || null,
             manifest: event.data.checkpoint.manifest || current.manifest || null,
             reliability: event.data.checkpoint.reliability || current.reliability || null,
+            liveReliability: event.data.checkpoint.liveReliability || current.liveReliability || null,
             artifactState: event.data.checkpoint.artifactState || current.artifactState || null,
             sourceGraph: event.data.checkpoint.sourceGraph || current.sourceGraph || null,
             execution: event.data.checkpoint.execution || current.execution || null,
+            astState: event.data.checkpoint.astState || current.astState || null,
+            runtimeState: event.data.checkpoint.runtimeState || current.runtimeState || null,
             checkpointId: event.data.checkpoint.id,
             checkpoints,
+            snapshots: event.data.checkpoint.snapshot
+              ? [event.data.checkpoint.snapshot, ...(current.snapshots || []).filter((item) => item.id !== event.data.checkpoint.snapshot?.id)].slice(0, 80)
+              : current.snapshots || [],
             artifact: event.data.checkpoint.artifact || current.artifact || null,
           });
         }
+        break;
+      case "snapshot.saved":
+        this.applyBinaryLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: event.data.snapshot.phase,
+          progress: current?.progress,
+          latestFile: event.data.snapshot.checkpointId,
+        });
+        this.appendBinaryCheckpointSnapshot(event.data.snapshot);
         break;
       case "interrupt.accepted":
         this.applyBinaryLiveEvent({

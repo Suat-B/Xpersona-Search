@@ -5,6 +5,13 @@ type CutieStructuredToolCall = {
   summary?: string;
 };
 
+type CutieArtifactExtractionShape =
+  | "tool_call_wrapper"
+  | "tool_calls_wrapper"
+  | "top_level_tool_name"
+  | "top_level_name"
+  | "top_level_tool";
+
 export type CutieStructuredTurnResult =
   | {
       response: {
@@ -12,6 +19,9 @@ export type CutieStructuredTurnResult =
         toolCalls: CutieStructuredToolCall[];
       };
       assistantText: string;
+      normalizationSource: "upstream_tool_calls" | "streamed_tool_calls" | "text_tool_artifact";
+      artifactExtractionShape?: CutieArtifactExtractionShape;
+      batchCollapsedToSingleAction?: boolean;
     }
   | {
       response: {
@@ -19,6 +29,9 @@ export type CutieStructuredTurnResult =
         text: string;
       };
       assistantText: string;
+      normalizationSource: "plain_final";
+      artifactExtractionShape?: CutieArtifactExtractionShape;
+      batchCollapsedToSingleAction?: boolean;
     };
 
 export type StreamingToolCallAccumulator = {
@@ -72,7 +85,7 @@ function normalizeToolCallCandidate(
     };
   }
 
-  const name = String(source.name || source.tool || "").trim();
+  const name = String(source.name || source.toolName || source.tool || "").trim();
   if (!name) return null;
   if (allowedToolNames.size && !allowedToolNames.has(name)) return null;
 
@@ -85,19 +98,40 @@ function normalizeToolCallCandidate(
   };
 }
 
-function extractToolPayloadsFromText(text: string): unknown[] {
-  const payloads: unknown[] = [];
+function detectArtifactExtractionShape(value: unknown): CutieArtifactExtractionShape | null {
+  const record = asRecord(value);
+  if (Array.isArray(record.tool_calls)) return "tool_calls_wrapper";
+  if (record.tool_call && typeof record.tool_call === "object") return "tool_call_wrapper";
+  if (typeof record.toolName === "string" && record.toolName.trim()) return "top_level_tool_name";
+  if (typeof record.name === "string" && record.name.trim()) return "top_level_name";
+  if (typeof record.tool === "string" && record.tool.trim()) return "top_level_tool";
+  if (record.function && typeof record.function === "object") return "tool_call_wrapper";
+  return null;
+}
+
+function extractToolPayloadsFromText(text: string): Array<{ payload: unknown; artifactExtractionShape?: CutieArtifactExtractionShape }> {
+  const payloads: Array<{ payload: unknown; artifactExtractionShape?: CutieArtifactExtractionShape }> = [];
   const matches = [...String(text || "").matchAll(/\[TOOL_CALL\]([\s\S]*?)\[\/TOOL_CALL\]/gi)];
   for (const match of matches) {
     const parsed = tryParseJson(String(match[1] || "").trim());
-    if (parsed) payloads.push(parsed);
+    if (parsed) {
+      payloads.push({
+        payload: parsed,
+        artifactExtractionShape: detectArtifactExtractionShape(parsed) || "tool_call_wrapper",
+      });
+    }
   }
   if (payloads.length) return payloads;
 
   const trimmed = String(text || "").trim();
   if (!trimmed) return payloads;
   const parsed = tryParseJson(trimmed);
-  if (parsed) payloads.push(parsed);
+  if (parsed) {
+    payloads.push({
+      payload: parsed,
+      ...(detectArtifactExtractionShape(parsed) ? { artifactExtractionShape: detectArtifactExtractionShape(parsed) || undefined } : {}),
+    });
+  }
   return payloads;
 }
 
@@ -106,7 +140,13 @@ export function stripCutieToolArtifactText(text: string): string {
   if (!withoutBlocks) return "";
   const parsed = tryParseJson(withoutBlocks);
   const record = asRecord(parsed);
-  if (record.tool_call || Array.isArray(record.tool_calls)) {
+  if (
+    record.tool_call ||
+    Array.isArray(record.tool_calls) ||
+    (typeof record.toolName === "string" && record.toolName.trim()) ||
+    (typeof record.name === "string" && record.name.trim()) ||
+    (typeof record.tool === "string" && record.tool.trim())
+  ) {
     return "";
   }
   return withoutBlocks;
@@ -116,25 +156,29 @@ export function extractCutieToolCallsFromText(
   text: string,
   allowedToolNames: Iterable<string>,
   maxToolsPerBatch = 1
-): CutieStructuredToolCall[] {
+): { toolCalls: CutieStructuredToolCall[]; artifactExtractionShape?: CutieArtifactExtractionShape } {
   const allowed = new Set(Array.from(allowedToolNames));
   const calls: CutieStructuredToolCall[] = [];
+  let artifactExtractionShape: CutieArtifactExtractionShape | undefined;
   const payloads = extractToolPayloadsFromText(text);
   for (const payload of payloads) {
-    const record = asRecord(payload);
+    const record = asRecord(payload.payload);
     const items = Array.isArray(record.tool_calls)
       ? record.tool_calls
       : record.tool_call
         ? [record.tool_call]
-        : [payload];
+        : [payload.payload];
     for (const item of items) {
       const normalized = normalizeToolCallCandidate(item, calls.length, allowed);
       if (!normalized) continue;
+      artifactExtractionShape = artifactExtractionShape || payload.artifactExtractionShape || detectArtifactExtractionShape(payload.payload) || undefined;
       calls.push(normalized);
-      if (calls.length >= maxToolsPerBatch) return calls;
+      if (calls.length >= maxToolsPerBatch) {
+        return { toolCalls: calls, ...(artifactExtractionShape ? { artifactExtractionShape } : {}) };
+      }
     }
   }
-  return calls;
+  return { toolCalls: calls, ...(artifactExtractionShape ? { artifactExtractionShape } : {}) };
 }
 
 export function extractCutieToolCallsFromUpstream(
@@ -214,29 +258,39 @@ export function normalizeStructuredCutieTurnResult(input: {
   upstreamToolCalls?: unknown;
   allowedToolNames: Iterable<string>;
   maxToolsPerBatch?: number;
+  streamedToolCalls?: boolean;
 }): CutieStructuredTurnResult {
   const maxToolsPerBatch = Math.max(1, input.maxToolsPerBatch ?? 1);
   const allowed = new Set(Array.from(input.allowedToolNames));
   const assistantText = stripCutieToolArtifactText(input.assistantText);
   const upstreamCalls = extractCutieToolCallsFromUpstream(input.upstreamToolCalls, allowed, maxToolsPerBatch);
   if (upstreamCalls.length) {
+    const canonicalCalls = upstreamCalls.slice(0, 1);
     return {
       response: {
         type: "tool_batch",
-        toolCalls: upstreamCalls,
+        toolCalls: canonicalCalls,
       },
       assistantText,
+      normalizationSource: input.streamedToolCalls ? "streamed_tool_calls" : "upstream_tool_calls",
+      batchCollapsedToSingleAction: upstreamCalls.length > canonicalCalls.length,
     };
   }
 
-  const textCalls = extractCutieToolCallsFromText(input.assistantText, allowed, maxToolsPerBatch);
-  if (textCalls.length) {
+  const textExtraction = extractCutieToolCallsFromText(input.assistantText, allowed, maxToolsPerBatch);
+  if (textExtraction.toolCalls.length) {
+    const canonicalCalls = textExtraction.toolCalls.slice(0, 1);
     return {
       response: {
         type: "tool_batch",
-        toolCalls: textCalls,
+        toolCalls: canonicalCalls,
       },
       assistantText,
+      normalizationSource: "text_tool_artifact",
+      batchCollapsedToSingleAction: textExtraction.toolCalls.length > canonicalCalls.length,
+      ...(textExtraction.artifactExtractionShape
+        ? { artifactExtractionShape: textExtraction.artifactExtractionShape }
+        : {}),
     };
   }
 
@@ -246,5 +300,6 @@ export function normalizeStructuredCutieTurnResult(input: {
       text: assistantText,
     },
     assistantText,
+    normalizationSource: "plain_final",
   };
 }

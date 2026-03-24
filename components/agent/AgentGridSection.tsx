@@ -1,3 +1,4 @@
+import React from "react";
 import Link from "next/link";
 import { AgentMiniCard } from "@/components/agent/AgentMiniCard";
 import type { HubAgent } from "@/lib/agents/hub-data";
@@ -41,4 +42,3 @@ export function AgentGridSection({ id, title, description, href, agents }: Agent
     </section>
   );
 }
-

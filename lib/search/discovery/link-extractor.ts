@@ -22,7 +22,7 @@ const BLOCK_DOMAINS = new Set([
   "travis-ci.org", "circleci.com", "codecov.io",
   "coveralls.io", "david-dm.org", "gitter.im",
   "twitter.com", "x.com", "facebook.com",
-  "linkedin.com", "youtube.com", "medium.com",
+  "linkedin.com", "medium.com",
   "stackoverflow.com", "reddit.com",
 ]);
 
@@ -53,6 +53,20 @@ function priorityForType(type: ExtractedLink["type"]): number {
   }
 }
 
+function bonusPriorityForUrl(url: string, context: string): number {
+  const haystack = `${url} ${context}`.toLowerCase();
+  let bonus = 0;
+  if (/docs|documentation|reference|api-reference/.test(haystack)) bonus += 3;
+  if (/openapi|swagger|schema|manifest|model-card/.test(haystack)) bonus += 4;
+  if (/changelog|release|releases|release-notes/.test(haystack)) bonus += 3;
+  if (/pricing|plans|billing/.test(haystack)) bonus += 2;
+  if (/status|uptime/.test(haystack)) bonus += 2;
+  if (/security|privacy|terms/.test(haystack)) bonus += 2;
+  if (/benchmark|leaderboard/.test(haystack)) bonus += 2;
+  if (/tutorial|guide|case-study|walkthrough|demo|video|youtube|vimeo|loom/.test(haystack)) bonus += 1;
+  return bonus;
+}
+
 export function extractLinksFromReadme(content: string): ExtractedLink[] {
   const links: ExtractedLink[] = [];
   const seen = new Set<string>();
@@ -67,7 +81,7 @@ export function extractLinksFromReadme(content: string): ExtractedLink[] {
     links.push({
       url: normalized,
       type,
-      priority: priorityForType(type) + bonusPriority,
+      priority: priorityForType(type) + bonusPriority + bonusPriorityForUrl(normalized, context),
       context,
     });
   };
@@ -95,7 +109,7 @@ export function extractLinksFromReadme(content: string): ExtractedLink[] {
 
   const mdRe = new RegExp(MARKDOWN_LINK_RE.source, "g");
   while ((m = mdRe.exec(content)) !== null) {
-    addUrl(m[2], "readme-markdown-link");
+    addUrl(m[2], `readme-markdown-link:${(m[1] ?? "").toLowerCase()}`);
   }
 
   return links;
@@ -150,7 +164,7 @@ export function extractLinksFromAgentCard(
           links.push({
             url: val.replace(/\/$/, ""),
             type,
-            priority: priorityForType(type) + 1,
+            priority: priorityForType(type) + 1 + bonusPriorityForUrl(val, key),
             context: `agent-card-${key}`,
           });
         }

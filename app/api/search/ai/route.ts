@@ -3,6 +3,7 @@ import { z } from "zod";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 import { recordApiResponse } from "@/lib/metrics/record";
 import { fetchWithTimeout } from "@/lib/api/fetch-timeout";
+import { withSponsoredRecommendationsIfBot } from "@/lib/ads/api-sponsor";
 
 const SearchAiSchema = z.object({
   q: z.string().trim().min(2).max(500),
@@ -133,12 +134,19 @@ export async function GET(req: NextRequest) {
         ? `Found ${topAgents.length} high-signal agent${topAgents.length === 1 ? "" : "s"} for "${params.q}".`
         : `No direct matches for "${params.q}".`;
 
-    const response = NextResponse.json({
-      summary,
-      topAgents,
-      didYouMean: successBody.didYouMean ?? null,
-      query: params.q,
-    });
+    const ua = req.headers.get("user-agent");
+    const response = NextResponse.json(
+      withSponsoredRecommendationsIfBot(
+        {
+          summary,
+          topAgents,
+          didYouMean: successBody.didYouMean ?? null,
+          query: params.q,
+        },
+        ua,
+        3
+      )
+    );
     applyRequestIdHeader(response, req);
     recordApiResponse("/api/search/ai", req, response, startedAt);
     return response;

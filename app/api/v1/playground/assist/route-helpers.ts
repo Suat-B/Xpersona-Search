@@ -39,11 +39,16 @@ export function buildAssistResponsePayload(input: {
     contextSelection: result.contextSelection,
     completionStatus: result.completionStatus,
     missingRequirements: result.missingRequirements,
+    progressState: result.progressState,
+    objectiveState: result.objectiveState,
     ...(result.runId ? { runId: result.runId } : {}),
     ...(result.orchestrationProtocol ? { orchestrationProtocol: result.orchestrationProtocol } : {}),
     ...(result.adapter ? { adapter: result.adapter } : {}),
     ...(result.loopState ? { loopState: result.loopState } : {}),
     ...(result.pendingToolCall ? { pendingToolCall: result.pendingToolCall } : {}),
     ...(result.toolTrace?.length ? { toolTrace: result.toolTrace } : {}),
+    ...(result.receipt ? { receipt: result.receipt } : {}),
+    ...(result.checkpoint ? { checkpoint: result.checkpoint } : {}),
+    ...(result.reviewState ? { reviewState: result.reviewState } : {}),
   };
 }

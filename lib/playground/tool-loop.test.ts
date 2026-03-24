@@ -206,7 +206,7 @@ describe("playground tool loop", () => {
     expect(completed.toolTrace?.some((entry) => entry.toolCall?.name === "create_checkpoint")).toBe(true);
   });
 
-  it("fails after exceeding the repair limit for a blocked tool result", async () => {
+  it("keeps repairing blocked tool results until the longer repair budget is exhausted", async () => {
     mockedRequestToolLoopTurn
       .mockResolvedValueOnce({
         adapter: "text_actions",
@@ -238,11 +238,37 @@ describe("playground tool loop", () => {
         adapter: "text_actions",
         final: "",
         toolCall: {
-          id: "call_command_retry",
+          id: "call_command_retry_1",
           name: "run_command",
           arguments: { command: "npm test", category: "implementation" },
           kind: "command",
           summary: "Retry the implementation command",
+        },
+        logs: ["adapter=text_actions"],
+        modelSelection: {} as any,
+      })
+      .mockResolvedValueOnce({
+        adapter: "text_actions",
+        final: "",
+        toolCall: {
+          id: "call_command_retry_2",
+          name: "run_command",
+          arguments: { command: "npm test", category: "implementation" },
+          kind: "command",
+          summary: "Retry the implementation command again",
+        },
+        logs: ["adapter=text_actions"],
+        modelSelection: {} as any,
+      })
+      .mockResolvedValueOnce({
+        adapter: "text_actions",
+        final: "",
+        toolCall: {
+          id: "call_command_retry_3",
+          name: "run_command",
+          arguments: { command: "npm test", category: "implementation" },
+          kind: "command",
+          summary: "Retry the implementation command a third time",
         },
         logs: ["adapter=text_actions"],
         modelSelection: {} as any,
@@ -296,7 +322,7 @@ describe("playground tool loop", () => {
 
     expect(repaired.pendingToolCall?.toolCall.name).toBe("run_command");
 
-    const failed = await continueAssistToolLoop({
+    const repairedAgain = await continueAssistToolLoop({
       userId: "user-2",
       traceId: "trace-9",
       runId: started.runId!,
@@ -306,6 +332,36 @@ describe("playground tool loop", () => {
         ok: false,
         blocked: true,
         summary: "Command blocked again by policy.",
+      },
+    });
+
+    expect(repairedAgain.pendingToolCall?.toolCall.name).toBe("run_command");
+
+    const repairedThird = await continueAssistToolLoop({
+      userId: "user-2",
+      traceId: "trace-10",
+      runId: started.runId!,
+      toolResult: {
+        toolCallId: repairedAgain.pendingToolCall!.toolCall.id,
+        name: "run_command",
+        ok: false,
+        blocked: true,
+        summary: "Command blocked a third time by policy.",
+      },
+    });
+
+    expect(repairedThird.pendingToolCall?.toolCall.name).toBe("run_command");
+
+    const failed = await continueAssistToolLoop({
+      userId: "user-2",
+      traceId: "trace-11",
+      runId: started.runId!,
+      toolResult: {
+        toolCallId: repairedThird.pendingToolCall!.toolCall.id,
+        name: "run_command",
+        ok: false,
+        blocked: true,
+        summary: "Command blocked a fourth time by policy.",
       },
     });
 
@@ -352,5 +408,328 @@ describe("playground tool loop", () => {
 
     expect(started.pendingToolCall?.toolCall.name).toBe("edit");
     expect(started.pendingToolCall?.availableTools).toEqual(["edit"]);
+  });
+
+  it("fails early when the hosted loop cannot produce a usable next action", async () => {
+    mockedRequestToolLoopTurn.mockResolvedValueOnce({
+      adapter: "text_actions",
+      final: "I read the request but have no concrete next step.",
+      logs: ["adapter=text_actions"],
+      modelSelection: {} as any,
+    });
+
+    const result = await startAssistToolLoop({
+      userId: "user-4",
+      sessionId: "session-4",
+      traceId: "trace-11",
+      request: {
+        mode: "auto",
+        task: "Add a trailing stop to hello.py",
+        orchestrationProtocol: "tool_loop_v1",
+        clientCapabilities: {
+          toolLoop: true,
+          supportedTools: ["read_file", "edit"],
+          autoExecute: true,
+        },
+        context: {
+          activeFile: { path: "hello.py", content: "print('hi')\n" },
+        },
+      },
+    });
+
+    expect(result.loopState?.status).toBe("failed");
+    expect(result.completionStatus).toBe("incomplete");
+    expect(result.missingRequirements).toContain("no_usable_next_action");
+    expect(result.objectiveState.status).toBe("blocked");
+  });
+
+  it("blocks a change run when it inspects the target and still cannot produce a mutation", async () => {
+    mockedRequestToolLoopTurn
+      .mockResolvedValueOnce({
+        adapter: "text_actions",
+        final: "",
+        toolCall: {
+          id: "call_read_target",
+          name: "read_file",
+          arguments: { path: "hello.py" },
+          kind: "observe",
+          summary: "Inspect hello.py",
+        },
+        logs: ["adapter=text_actions"],
+        modelSelection: {} as any,
+      })
+      .mockResolvedValueOnce({
+        adapter: "text_actions",
+        final: "I inspected hello.py but I am still thinking.",
+        logs: ["adapter=text_actions"],
+        modelSelection: {} as any,
+      })
+      .mockResolvedValueOnce({
+        adapter: "text_actions",
+        final: "I still do not have a concrete mutation.",
+        logs: ["adapter=text_actions", "repair_attempt=true"],
+        modelSelection: {} as any,
+      });
+
+    const started = await startAssistToolLoop({
+      userId: "user-5",
+      sessionId: "session-5",
+      traceId: "trace-12",
+      request: {
+        mode: "auto",
+        task: "Add a trailing stop to hello.py",
+        orchestrationProtocol: "tool_loop_v1",
+        clientCapabilities: {
+          toolLoop: true,
+          supportedTools: ["read_file", "edit", "create_checkpoint"],
+          autoExecute: true,
+        },
+        context: {
+          activeFile: { path: "hello.py", content: "print('hi')\n" },
+        },
+      },
+    });
+
+    const failed = await continueAssistToolLoop({
+      userId: "user-5",
+      traceId: "trace-13",
+      runId: started.runId!,
+      toolResult: {
+        toolCallId: started.pendingToolCall!.toolCall.id,
+        name: "read_file",
+        ok: true,
+        summary: "Read hello.py.",
+        data: { path: "hello.py", content: "print('hi')\n" },
+      },
+    });
+
+    expect(failed.pendingToolCall).toBeNull();
+    expect(failed.completionStatus).toBe("incomplete");
+    expect(failed.missingRequirements).toContain("mutation_required_after_inspection");
+    expect(failed.progressState.status).toBe("failed");
+    expect(failed.objectiveState.status).toBe("blocked");
+  });
+
+  it("escalates repeated pending tool signatures through repair before blocking", async () => {
+    mockedRequestToolLoopTurn
+      .mockResolvedValueOnce({
+        adapter: "text_actions",
+        final: "",
+        toolCall: {
+          id: "call_read_repeat",
+          name: "read_file",
+          arguments: { path: "hello.py" },
+          kind: "observe",
+          summary: "Inspect hello.py",
+        },
+        logs: ["adapter=text_actions"],
+        modelSelection: {} as any,
+      })
+      .mockResolvedValueOnce({
+        adapter: "text_actions",
+        final: "",
+        toolCall: {
+          id: "call_command_repeat_1",
+          name: "run_command",
+          arguments: { command: "npm test", category: "implementation" },
+          kind: "command",
+          summary: "Run npm test",
+        },
+        logs: ["adapter=text_actions"],
+        modelSelection: {} as any,
+      })
+      .mockResolvedValueOnce({
+        adapter: "text_actions",
+        final: "Still thinking about the same command.",
+        toolCall: {
+          id: "call_command_repeat_2",
+          name: "run_command",
+          arguments: { command: "npm test", category: "implementation" },
+          kind: "command",
+          summary: "Run npm test",
+        },
+        logs: ["adapter=text_actions"],
+        modelSelection: {} as any,
+      })
+      .mockResolvedValueOnce({
+        adapter: "text_actions",
+        final: "",
+        toolCall: {
+          id: "call_edit_after_repeat",
+          name: "edit",
+          arguments: {
+            path: "hello.py",
+            patch: "@@ -1,1 +1,1 @@\n-print('hi')\n+print('hello')",
+          },
+          kind: "mutate",
+          summary: "Patch hello.py instead",
+        },
+        logs: ["adapter=text_actions", "repair_attempt=true"],
+        modelSelection: {} as any,
+      });
+
+    const started = await startAssistToolLoop({
+      userId: "user-6",
+      sessionId: "session-6",
+      traceId: "trace-14",
+      request: {
+        mode: "auto",
+        task: "Update hello.py",
+        orchestrationProtocol: "tool_loop_v1",
+        clientCapabilities: {
+          toolLoop: true,
+          supportedTools: ["read_file", "run_command", "edit"],
+          autoExecute: true,
+        },
+        context: {
+          activeFile: { path: "hello.py", content: "print('hi')\n" },
+        },
+      },
+    });
+
+    const afterRead = await continueAssistToolLoop({
+      userId: "user-6",
+      traceId: "trace-15",
+      runId: started.runId!,
+      toolResult: {
+        toolCallId: started.pendingToolCall!.toolCall.id,
+        name: "read_file",
+        ok: true,
+        summary: "Read hello.py.",
+        data: { path: "hello.py", content: "print('hi')\n" },
+      },
+    });
+
+    const repaired = await continueAssistToolLoop({
+      userId: "user-6",
+      traceId: "trace-16",
+      runId: started.runId!,
+      toolResult: {
+        toolCallId: afterRead.pendingToolCall!.toolCall.id,
+        name: "run_command",
+        ok: true,
+        summary: "npm test completed without edits.",
+      },
+    });
+
+    expect(mockedRequestToolLoopTurn).toHaveBeenCalledTimes(4);
+    expect(mockedRequestToolLoopTurn.mock.calls[3]?.[0]?.repairDirective?.stage).toBe("target_path_repair");
+    expect(repaired.loopState?.repairCount).toBe(1);
+    expect(repaired.pendingToolCall?.toolCall.name).toBe("edit");
+    expect(repaired.progressState.status).toBe("repairing");
+  });
+
+  it("reaches pine specialization before terminal failure on repeated no-content mutations", async () => {
+    mockedRequestToolLoopTurn
+      .mockResolvedValueOnce({
+        adapter: "text_actions",
+        final: "",
+        toolCall: {
+          id: "call_edit_pine_initial",
+          name: "edit",
+          arguments: {
+            path: "strategies/CMMI_Strategy_6.pine",
+            patch: "@@ -1,1 +1,1 @@\n-//@version=6\n+//@version=6\n",
+          },
+          kind: "mutate",
+          summary: "Patch the Pine strategy",
+        },
+        logs: ["adapter=text_actions"],
+        modelSelection: {} as any,
+      })
+      .mockResolvedValueOnce({
+        adapter: "text_actions",
+        final: "",
+        toolCall: {
+          id: "call_write_file_rewrite",
+          name: "write_file",
+          arguments: {
+            path: "strategies/CMMI_Strategy_6.pine",
+            content: "// rewritten pine content",
+          },
+          kind: "mutate",
+          summary: "Rewrite the Pine strategy",
+        },
+        logs: ["adapter=text_actions", "repair_attempt=single_file_rewrite"],
+        modelSelection: {} as any,
+      })
+      .mockResolvedValueOnce({
+        adapter: "text_actions",
+        final: "",
+        toolCall: {
+          id: "call_write_file_pine_specialized",
+          name: "write_file",
+          arguments: {
+            path: "strategies/CMMI_Strategy_6.pine",
+            content: "// pine specialized rewrite",
+          },
+          kind: "mutate",
+          summary: "Rewrite the Pine strategy with Pine-specific structure",
+        },
+        logs: ["adapter=text_actions", "repair_attempt=pine_specialization"],
+        modelSelection: {} as any,
+      });
+
+    const started = await startAssistToolLoop({
+      userId: "user-7",
+      sessionId: "session-7",
+      traceId: "trace-17",
+      request: {
+        mode: "auto",
+        task: "Add a trailing stop to strategies/CMMI_Strategy_6.pine",
+        orchestrationProtocol: "tool_loop_v1",
+        clientCapabilities: {
+          toolLoop: true,
+          supportedTools: ["edit", "write_file"],
+          autoExecute: true,
+        },
+        context: {
+          activeFile: { path: "strategies/CMMI_Strategy_6.pine", content: "//@version=6\nstrategy('CMMI')\n" },
+        },
+      },
+    });
+
+    const afterFirstFailure = await continueAssistToolLoop({
+      userId: "user-7",
+      traceId: "trace-18",
+      runId: started.runId!,
+      toolResult: {
+        toolCallId: started.pendingToolCall!.toolCall.id,
+        name: "edit",
+        ok: false,
+        summary: "Patch produced no content change.",
+      },
+    });
+
+    const afterSecondFailure = await continueAssistToolLoop({
+      userId: "user-7",
+      traceId: "trace-19",
+      runId: started.runId!,
+      toolResult: {
+        toolCallId: afterFirstFailure.pendingToolCall!.toolCall.id,
+        name: "write_file",
+        ok: false,
+        summary: "Patch produced no content change.",
+      },
+    });
+
+    const failed = await continueAssistToolLoop({
+      userId: "user-7",
+      traceId: "trace-20",
+      runId: started.runId!,
+      toolResult: {
+        toolCallId: afterSecondFailure.pendingToolCall!.toolCall.id,
+        name: "write_file",
+        ok: false,
+        summary: "Patch produced no content change.",
+      },
+    });
+
+    expect(mockedRequestToolLoopTurn.mock.calls[1]?.[0]?.repairDirective?.stage).toBe("single_file_rewrite");
+    expect(mockedRequestToolLoopTurn.mock.calls[2]?.[0]?.repairDirective?.stage).toBe("pine_specialization");
+    expect(failed.pendingToolCall).toBeNull();
+    expect(failed.loopState?.status).toBe("failed");
+    expect(failed.missingRequirements).toContain("tool_result_failed");
+    expect(failed.missingRequirements).toContain("no_content_delta");
   });
 });

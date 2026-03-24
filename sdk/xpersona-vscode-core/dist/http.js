@@ -105,7 +105,33 @@ async function streamJsonEvents(method, url, auth, body, onEvent, options) {
             reject(new Error("Request aborted"));
             return;
         }
-        const req = transport.request(target, {
+        let settled = false;
+        const finish = (err) => {
+            if (settled)
+                return;
+            settled = true;
+            if (err)
+                reject(err);
+            else
+                resolve();
+        };
+        let incoming = null;
+        let req;
+        const abortInFlight = () => {
+            try {
+                incoming?.destroy();
+            }
+            catch {
+                /* ignore */
+            }
+            try {
+                req.destroy(new Error("Request aborted"));
+            }
+            catch {
+                /* ignore */
+            }
+        };
+        req = transport.request(target, {
             method,
             headers: {
                 ...buildHeaders(auth, true),
@@ -113,6 +139,7 @@ async function streamJsonEvents(method, url, auth, body, onEvent, options) {
                 "Cache-Control": "no-cache",
             },
         }, (res) => {
+            incoming = res;
             if ((res.statusCode || 500) >= 400) {
                 const chunks = [];
                 res.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
@@ -122,7 +149,13 @@ async function streamJsonEvents(method, url, auth, body, onEvent, options) {
                 return;
             }
             let buffer = "";
+            /** One in-flight parse chain so concurrent `data` events cannot race on `buffer`. */
+            let parseChain = Promise.resolve();
             const flushChunk = async (rawChunk) => {
+                if (options?.signal?.aborted) {
+                    abortInFlight();
+                    throw new Error("Request aborted");
+                }
                 const lines = rawChunk
                     .split(/\r?\n/)
                     .filter((line) => line.startsWith("data:"))
@@ -148,36 +181,93 @@ async function streamJsonEvents(method, url, auth, body, onEvent, options) {
                 }
                 await onEvent("message", parsed);
             };
-            res.on("data", (chunk) => {
-                buffer += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
-                const process = async () => {
-                    let boundary = buffer.indexOf("\n\n");
-                    while (boundary >= 0) {
-                        const rawChunk = buffer.slice(0, boundary);
-                        buffer = buffer.slice(boundary + 2);
-                        await flushChunk(rawChunk);
-                        boundary = buffer.indexOf("\n\n");
+            const drainBuffer = async () => {
+                let boundary = buffer.indexOf("\n\n");
+                while (boundary >= 0) {
+                    const rawChunk = buffer.slice(0, boundary);
+                    buffer = buffer.slice(boundary + 2);
+                    await flushChunk(rawChunk);
+                    if (options?.signal?.aborted) {
+                        abortInFlight();
+                        throw new Error("Request aborted");
                     }
-                };
-                void process().catch(reject);
+                    boundary = buffer.indexOf("\n\n");
+                }
+            };
+            res.on("data", (chunk) => {
+                if (settled)
+                    return;
+                if (options?.signal?.aborted) {
+                    abortInFlight();
+                    finish(new Error("Request aborted"));
+                    return;
+                }
+                buffer += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+                parseChain = parseChain
+                    .then(() => drainBuffer())
+                    .catch((e) => {
+                    if (settled)
+                        return;
+                    const err = e instanceof Error ? e : new Error(String(e));
+                    if (err.message === "Request aborted" || options?.signal?.aborted) {
+                        finish(new Error("Request aborted"));
+                    }
+                    else {
+                        finish(err);
+                    }
+                });
             });
             res.on("end", () => {
-                const finalize = async () => {
+                if (settled)
+                    return;
+                if (options?.signal?.aborted) {
+                    finish(new Error("Request aborted"));
+                    return;
+                }
+                parseChain = parseChain
+                    .then(async () => {
+                    if (options?.signal?.aborted) {
+                        throw new Error("Request aborted");
+                    }
                     if (buffer.trim())
                         await flushChunk(buffer);
-                    resolve();
-                };
-                void finalize().catch(reject);
+                })
+                    .then(() => {
+                    if (settled)
+                        return;
+                    if (options?.signal?.aborted) {
+                        finish(new Error("Request aborted"));
+                    }
+                    else {
+                        finish();
+                    }
+                })
+                    .catch((e) => {
+                    if (settled)
+                        return;
+                    const err = e instanceof Error ? e : new Error(String(e));
+                    finish(err);
+                });
             });
         });
-        req.on("error", reject);
         if (options?.signal) {
             const onAbort = () => {
-                req.destroy(new Error("Request aborted"));
+                if (settled)
+                    return;
+                abortInFlight();
+                finish(new Error("Request aborted"));
             };
+            if (options.signal.aborted) {
+                onAbort();
+                return;
+            }
             options.signal.addEventListener("abort", onAbort, { once: true });
             req.on("close", () => options.signal?.removeEventListener("abort", onAbort));
         }
+        req.on("error", (e) => {
+            if (!settled)
+                finish(e instanceof Error ? e : new Error(String(e)));
+        });
         req.write(payload);
         req.end();
     });

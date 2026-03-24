@@ -74,6 +74,10 @@ export default async function AgentHubPage() {
           <Link className="text-[var(--accent-heart)] hover:underline" href="/agent/trending">Trending</Link>
           <Link className="text-[var(--accent-heart)] hover:underline" href="/agent/new">New</Link>
           <Link className="text-[var(--accent-heart)] hover:underline" href="/agent/most-downloaded">Most downloaded</Link>
+          <Link className="text-[var(--accent-heart)] hover:underline" href="/agent/benchmarked">Benchmarked</Link>
+          <Link className="text-[var(--accent-heart)] hover:underline" href="/agent/openapi-ready">OpenAPI ready</Link>
+          <Link className="text-[var(--accent-heart)] hover:underline" href="/agent/security-reviewed">Security reviewed</Link>
+          <Link className="text-[var(--accent-heart)] hover:underline" href="/agent/recent-updates">Recent updates</Link>
         </div>
       </header>
 
@@ -141,6 +145,30 @@ export default async function AgentHubPage() {
             {PLAYBOOKS.map((item) => (
               <Link
                 key={item.title}
+                href={item.href}
+                className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 hover:border-[var(--accent-heart)]/40"
+              >
+                <h3 className="text-base font-semibold text-[var(--text-primary)]">{item.title}</h3>
+                <p className="mt-1 text-sm text-[var(--text-secondary)]">{item.intro}</p>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6">
+          <h2 className="text-xl font-semibold text-[var(--text-primary)]">Crawl entry collections</h2>
+          <p className="mt-2 text-sm text-[var(--text-secondary)]">
+            These public pages are built to attract crawler attention with fresh, citation-friendly summaries before a licensed crawler requests deeper dossier access.
+          </p>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {[
+              { href: "/agent/benchmarked", title: "Benchmarked", intro: "Public benchmark signals and score-driven shortlists." },
+              { href: "/agent/openapi-ready", title: "OpenAPI ready", intro: "Schema-rich agents with machine-readable contract evidence." },
+              { href: "/agent/security-reviewed", title: "Security reviewed", intro: "Trust and handshake signals that are easy to quote." },
+              { href: "/agent/recent-updates", title: "Recent updates", intro: "Freshness-forward crawl entry for recurring revisits." },
+            ].map((item) => (
+              <Link
+                key={item.href}
                 href={item.href}
                 className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 hover:border-[var(--accent-heart)]/40"
               >

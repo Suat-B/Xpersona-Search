@@ -1,13 +1,14 @@
 import { requestJson, streamJsonEvents, type RequestAuth } from "@xpersona/vscode-core";
 import { getBaseApiUrl, getModelHint } from "./config";
 import { humanizeCutieHostHttpError } from "./cutie-host-http-error";
+import { limitCutieModelMessages } from "./cutie-policy";
 import {
   CutieStructuredProtocolError,
   normalizeProtocolResponsePayload,
   parseStructuredStreamEvent,
 } from "./cutie-model-protocol";
 import { extractVisibleAssistantText, looksLikeCutieToolArtifactText } from "./cutie-native-autonomy";
-import type { CutieModelMessage, CutieModelTurnResult, CutieProtocolToolDefinition } from "./types";
+import type { CutieModelMessage, CutieModelTurnResult, CutieProtocolMode, CutieProtocolToolDefinition } from "./types";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -24,6 +25,7 @@ type StructuredTurnInput = {
   messages: CutieModelMessage[];
   tools: CutieProtocolToolDefinition[];
   maxToolsPerBatch: number;
+  protocolMode?: CutieProtocolMode;
   signal?: AbortSignal;
   onDelta?: (delta: string, accumulated: string) => void | Promise<void>;
 };
@@ -32,8 +34,9 @@ function buildStructuredRequestBody(input: StructuredTurnInput, stream: boolean)
   return {
     model: getModelHint(),
     protocol: "cutie_tools_v2",
+    protocolMode: input.protocolMode || "native_tools",
     stream,
-    messages: input.messages,
+    messages: limitCutieModelMessages(input.messages),
     tools: input.tools,
     maxToolsPerBatch: input.maxToolsPerBatch,
   };
@@ -60,7 +63,7 @@ export class CutieModelClient {
         {
           model: getModelHint(),
           stream: false,
-          messages: input.messages,
+          messages: limitCutieModelMessages(input.messages),
           ...(typeof input.temperature === "number" ? { temperature: input.temperature } : {}),
           ...(typeof input.maxTokens === "number" ? { maxTokens: input.maxTokens } : {}),
         },
@@ -112,6 +115,17 @@ export class CutieModelClient {
       assistantText?: unknown;
       model?: string;
       usage?: Record<string, unknown> | null;
+      modelAdapter?: unknown;
+      modelCapabilities?: unknown;
+      protocolMode?: unknown;
+      orchestratorContractVersion?: unknown;
+      portabilityMode?: unknown;
+      transportModeUsed?: unknown;
+      normalizationSource?: unknown;
+      normalizationTier?: unknown;
+      artifactExtractionShape?: unknown;
+      fallbackModeUsed?: unknown;
+      batchCollapsedToSingleAction?: unknown;
       type?: unknown;
       text?: unknown;
       toolCalls?: unknown;
@@ -137,6 +151,38 @@ export class CutieModelClient {
       assistantText: typeof response.assistantText === "string" ? response.assistantText : "",
       usage: response.usage && typeof response.usage === "object" ? response.usage : null,
       model: typeof response.model === "string" && response.model.trim() ? response.model.trim() : undefined,
+      ...(typeof response.modelAdapter === "string" ? { modelAdapter: response.modelAdapter as CutieModelTurnResult["modelAdapter"] } : {}),
+      ...(response.modelCapabilities && typeof response.modelCapabilities === "object"
+        ? { modelCapabilities: response.modelCapabilities as CutieModelTurnResult["modelCapabilities"] }
+        : {}),
+      ...(typeof response.protocolMode === "string" ? { protocolMode: response.protocolMode as CutieProtocolMode } : {}),
+      ...(typeof response.orchestratorContractVersion === "string"
+        ? {
+            orchestratorContractVersion:
+              response.orchestratorContractVersion as CutieModelTurnResult["orchestratorContractVersion"],
+          }
+        : {}),
+      ...(typeof response.portabilityMode === "string"
+        ? { portabilityMode: response.portabilityMode as CutieModelTurnResult["portabilityMode"] }
+        : {}),
+      ...(typeof response.transportModeUsed === "string"
+        ? { transportModeUsed: response.transportModeUsed as CutieModelTurnResult["transportModeUsed"] }
+        : {}),
+      ...(typeof response.normalizationSource === "string"
+        ? { normalizationSource: response.normalizationSource as CutieModelTurnResult["normalizationSource"] }
+        : {}),
+      ...(typeof response.normalizationTier === "string"
+        ? { normalizationTier: response.normalizationTier as CutieModelTurnResult["normalizationTier"] }
+        : {}),
+      ...(typeof response.artifactExtractionShape === "string"
+        ? { artifactExtractionShape: response.artifactExtractionShape as CutieModelTurnResult["artifactExtractionShape"] }
+        : {}),
+      ...(typeof response.fallbackModeUsed === "string"
+        ? { fallbackModeUsed: response.fallbackModeUsed as CutieModelTurnResult["fallbackModeUsed"] }
+        : {}),
+      ...(typeof response.batchCollapsedToSingleAction === "boolean"
+        ? { batchCollapsedToSingleAction: response.batchCollapsedToSingleAction }
+        : {}),
     };
   }
 
@@ -147,6 +193,17 @@ export class CutieModelClient {
     let usage: Record<string, unknown> | null = null;
     let resolvedModel: string | undefined;
     let responsePayload: CutieModelTurnResult["response"] | null = null;
+    let modelAdapter: CutieModelTurnResult["modelAdapter"];
+    let modelCapabilities: CutieModelTurnResult["modelCapabilities"];
+    let protocolMode: CutieModelTurnResult["protocolMode"];
+    let orchestratorContractVersion: CutieModelTurnResult["orchestratorContractVersion"];
+    let portabilityMode: CutieModelTurnResult["portabilityMode"];
+    let transportModeUsed: CutieModelTurnResult["transportModeUsed"];
+    let normalizationSource: CutieModelTurnResult["normalizationSource"];
+    let normalizationTier: CutieModelTurnResult["normalizationTier"];
+    let artifactExtractionShape: CutieModelTurnResult["artifactExtractionShape"];
+    let fallbackModeUsed: CutieModelTurnResult["fallbackModeUsed"];
+    let batchCollapsedToSingleAction: CutieModelTurnResult["batchCollapsedToSingleAction"];
 
     try {
       await streamJsonEvents(
@@ -155,6 +212,9 @@ export class CutieModelClient {
         input.auth,
         buildStructuredRequestBody(input, true),
         async (event, data) => {
+          if (input.signal?.aborted) {
+            throw new Error("Request aborted");
+          }
           const parsed = parseStructuredStreamEvent(event, data);
           if (parsed.type === "assistant_delta") {
             rawAssistantText += parsed.text;
@@ -179,6 +239,20 @@ export class CutieModelClient {
             if (parsed.model) {
               resolvedModel = parsed.model;
             }
+            modelAdapter = parsed.modelAdapter || modelAdapter;
+            modelCapabilities = parsed.modelCapabilities || modelCapabilities;
+            protocolMode = parsed.protocolMode || protocolMode;
+            orchestratorContractVersion = parsed.orchestratorContractVersion || orchestratorContractVersion;
+            portabilityMode = parsed.portabilityMode || portabilityMode;
+            transportModeUsed = parsed.transportModeUsed || transportModeUsed;
+            normalizationSource = parsed.normalizationSource || normalizationSource;
+            normalizationTier = parsed.normalizationTier || normalizationTier;
+            artifactExtractionShape = parsed.artifactExtractionShape || artifactExtractionShape;
+            fallbackModeUsed = parsed.fallbackModeUsed || fallbackModeUsed;
+            batchCollapsedToSingleAction =
+              parsed.batchCollapsedToSingleAction !== undefined
+                ? parsed.batchCollapsedToSingleAction
+                : batchCollapsedToSingleAction;
             return;
           }
           if (parsed.type === "error") {
@@ -204,6 +278,17 @@ export class CutieModelClient {
       ...(suppressedAssistantArtifact ? { suppressedAssistantArtifact } : {}),
       usage,
       model: resolvedModel,
+      ...(modelAdapter ? { modelAdapter } : {}),
+      ...(modelCapabilities ? { modelCapabilities } : {}),
+      ...(protocolMode ? { protocolMode } : {}),
+      ...(orchestratorContractVersion ? { orchestratorContractVersion } : {}),
+      ...(portabilityMode ? { portabilityMode } : {}),
+      ...(transportModeUsed ? { transportModeUsed } : {}),
+      ...(normalizationSource ? { normalizationSource } : {}),
+      ...(normalizationTier ? { normalizationTier } : {}),
+      ...(artifactExtractionShape ? { artifactExtractionShape } : {}),
+      ...(fallbackModeUsed ? { fallbackModeUsed } : {}),
+      ...(batchCollapsedToSingleAction !== undefined ? { batchCollapsedToSingleAction } : {}),
     };
   }
 }

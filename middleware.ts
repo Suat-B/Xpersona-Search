@@ -3,6 +3,22 @@ import type { NextRequest } from "next/server";
 import { getPathForService, getServiceBaseUrl, getServiceFromHost, isAllowedRoute, type Service } from "@/lib/subdomain";
 import { getCrawlerName } from "@/lib/bot-detect";
 import { trackBotPageViewAll } from "@/lib/server-analytics";
+import {
+  classifyBotPageType,
+  parseAgentDetailSlugFromPath,
+} from "@/lib/agents/route-patterns";
+import {
+  createCrawlLicenseRequiredResponse,
+  CRAWL_CUSTOMER_ID_HEADER,
+  CRAWL_KEY_PREFIX_HEADER,
+  CRAWL_TOKEN_VERIFIED_HEADER,
+  INTERNAL_CRAWL_RENDER_HEADER,
+  getCrawlTokenFromRequest,
+  hasCrawlLicenseSecretConfigured,
+  isPayPerCrawlEnabled,
+  requiresCrawlLicense,
+  verifyCrawlLicenseToken,
+} from "@/lib/crawl-license";
 
 const X_SERVICE_HEADER = "x-service";
 const X_IS_BOT = "x-is-bot";
@@ -65,6 +81,8 @@ export async function middleware(req: NextRequest) {
   const url = req.nextUrl.clone();
   const hostname = host.split(":")[0]?.toLowerCase() ?? "";
   const requestId = req.headers.get(X_REQUEST_ID_HEADER)?.trim() || crypto.randomUUID();
+  const ua = req.headers.get("user-agent") ?? "";
+  const isInternalCrawlRender = req.headers.get(INTERNAL_CRAWL_RENDER_HEADER) === "1";
   const hasBearer = (() => {
     const authHeader = req.headers.get("authorization") ?? "";
     if (!authHeader.toLowerCase().startsWith("bearer ")) return false;
@@ -114,6 +132,8 @@ export async function middleware(req: NextRequest) {
   const hostService = getServiceFromHost(host, url.searchParams);
   const pathService = getServiceForPathname(url.pathname);
   const serviceForHeader = hostService === "hub" && pathService ? pathService : hostService;
+  const requestHeadersForCrawl = new Headers(req.headers);
+  let crawlRewriteUrl: URL | null = null;
 
   if (hostService !== "hub") {
     if (pathService && pathService !== hostService) {
@@ -133,10 +153,32 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(target);
   }
 
-  const requestHeaders = new Headers(req.headers);
+  if (
+    isPayPerCrawlEnabled() &&
+    hasCrawlLicenseSecretConfigured() &&
+    getCrawlerName(ua) &&
+    requiresCrawlLicense(url.pathname)
+  ) {
+    const token = getCrawlTokenFromRequest(req);
+    const payload = await verifyCrawlLicenseToken(token);
+    if (!payload) {
+      return createCrawlLicenseRequiredResponse(req, req.nextUrl.origin);
+    }
+    requestHeadersForCrawl.set(CRAWL_CUSTOMER_ID_HEADER, payload.sub);
+    requestHeadersForCrawl.set(CRAWL_KEY_PREFIX_HEADER, payload.kid);
+    requestHeadersForCrawl.set(CRAWL_TOKEN_VERIFIED_HEADER, "1");
+    if (!isInternalCrawlRender && wantsHtml(req) && url.pathname.startsWith("/agent/")) {
+      const slug = parseAgentDetailSlugFromPath(url.pathname);
+      if (slug) {
+        crawlRewriteUrl = req.nextUrl.clone();
+        crawlRewriteUrl.pathname = `/api/v1/crawl-license/render-agent/${slug}`;
+      }
+    }
+  }
+
+  const requestHeaders = requestHeadersForCrawl;
   requestHeaders.set(X_SERVICE_HEADER, serviceForHeader);
 
-  const ua = req.headers.get("user-agent") ?? "";
   const botName = getCrawlerName(ua);
   if (botName && wantsHtml(req)) {
     requestHeaders.set(X_IS_BOT, "1");
@@ -144,33 +186,53 @@ export async function middleware(req: NextRequest) {
     requestHeaders.set(X_BOT_PATH, `${url.pathname}${url.search}`);
     requestHeaders.set(X_BOT_PAGEVIEW_SENT, "1");
 
-    const forwardedHost = req.headers.get("x-forwarded-host") ?? host;
-    const proto =
-      req.headers.get("x-forwarded-proto") ??
-      (hostname === "localhost" || hostname.startsWith("127.") ? "http" : "https");
-    const pageUrl = `${proto}://${forwardedHost}${url.pathname}${url.search}`;
-    const xff = req.headers.get("x-forwarded-for") ?? "";
-    const cookie = req.headers.get("cookie") ?? "";
-    const referer = req.headers.get("referer") ?? "";
-
-    after(() =>
-      trackBotPageViewAll({
-        pageUrl,
-        path: `${url.pathname}${url.search}`,
-        botName,
-        userAgent: ua,
-        xForwardedFor: xff,
-        cookie,
-        referrer: referer || undefined,
-      })
-    );
+    if (!isInternalCrawlRender) {
+      const forwardedHost = req.headers.get("x-forwarded-host") ?? host;
+      const proto =
+        req.headers.get("x-forwarded-proto") ??
+        (hostname === "localhost" || hostname.startsWith("127.") ? "http" : "https");
+      const pageUrl = `${proto}://${forwardedHost}${url.pathname}${url.search}`;
+      const xff = req.headers.get("x-forwarded-for") ?? "";
+      const cookie = req.headers.get("cookie") ?? "";
+      const referer = req.headers.get("referer") ?? "";
+      const agentSlug = parseAgentDetailSlugFromPath(url.pathname);
+      const pageType = classifyBotPageType(url.pathname);
+      try {
+        after(() =>
+          trackBotPageViewAll({
+            pageUrl,
+            path: `${url.pathname}${url.search}`,
+            botName,
+            userAgent: ua,
+            xForwardedFor: xff,
+            cookie,
+            referrer: referer || undefined,
+            gamDimensions: agentSlug
+              ? {
+                  agent_slug: agentSlug,
+                  page_type: pageType,
+                  gam_ad_unit: "agent_page",
+                }
+              : {
+                  page_type: pageType,
+                },
+          })
+        );
+      } catch {
+        // Test environments and non-request contexts do not expose Next's request-scoped after().
+      }
+    }
   }
 
-  const res = NextResponse.next({
-    request: { headers: requestHeaders },
-  });
+  const res = crawlRewriteUrl
+    ? NextResponse.rewrite(crawlRewriteUrl, {
+        request: { headers: requestHeaders },
+      })
+    : NextResponse.next({
+        request: { headers: requestHeaders },
+      });
 
-  if (botName && wantsHtml(req)) {
+  if (botName && wantsHtml(req) && !isInternalCrawlRender) {
     res.headers.set("x-bot-tracked", "1");
   }
 

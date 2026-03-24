@@ -6,7 +6,7 @@
 		"type": "git",
 		"url": "https://github.com/cutie/product"
 	},
-	"version": "1.0.55",
+  "version": "1.0.77",
 	"publisher": "cutie-product",
 	"engines": {
 		"vscode": "^1.85.0"
@@ -76,32 +76,45 @@
 				"title": "CUTIE: Stop Automation"
 			},
 			{
+				"command": "cutie-product.undoLastPlaygroundChanges",
+				"title": "CUTIE: Undo Last Playground Batch",
+				"category": "CUTIE PRODUCT"
+			},
+			{
 				"command": "cutie-product.binary.generate",
-				"title": "CUTIE: Generate Portable Starter Bundle",
+				"title": "CUTIE: Generate App From Prompt",
 				"category": "CUTIE PRODUCT"
 			},
 			{
 				"command": "cutie-product.binary.validate",
-				"title": "CUTIE: Validate Portable Bundle",
+				"title": "CUTIE: Validate App Build",
 				"category": "CUTIE PRODUCT"
 			},
 			{
 				"command": "cutie-product.binary.deploy",
-				"title": "CUTIE: Publish Portable Bundle",
+				"title": "CUTIE: Publish App Build",
 				"category": "CUTIE PRODUCT"
 			},
 			{
 				"command": "cutie-product.binary.configure",
-				"title": "CUTIE: Configure Portable Bundle API",
+				"title": "CUTIE: Configure App Builder",
 				"category": "CUTIE PRODUCT"
 			}
 		],
 		"menus": {
 			"commandPalette": [
-				{ "command": "cutie-product.binary.generate" },
-				{ "command": "cutie-product.binary.validate" },
-				{ "command": "cutie-product.binary.deploy" },
-				{ "command": "cutie-product.binary.configure" }
+				{
+					"command": "cutie-product.binary.generate"
+				},
+				{
+					"command": "cutie-product.binary.validate"
+				},
+				{
+					"command": "cutie-product.binary.deploy"
+				},
+				{
+					"command": "cutie-product.binary.configure"
+				}
 			],
 			"editor/context": [
 				{
@@ -126,12 +139,58 @@
 				"cutie-product.binary.baseApiUrl": {
 					"type": "string",
 					"default": "",
-					"description": "Optional separate base URL for portable bundle (binary) API endpoints. When empty, uses cutie-product.baseApiUrl."
+					"description": "Optional separate base URL for Cutie's prompt-to-app API endpoints. When empty, uses cutie-product.baseApiUrl."
+				},
+				"cutie-product.binary.runtime": {
+					"type": "string",
+					"enum": [
+						"cutie",
+						"playgroundApi",
+						"qwenCode"
+					],
+					"default": "cutie",
+					"description": "Chat composer backend: Cutie agent (default), hosted Xpersona app-builder runtime, or local Qwen Code."
+				},
+				"cutie-product.binary.qwen.model": {
+					"type": "string",
+					"default": "Qwen/Qwen3-Next-80B-A3B-Thinking:fastest",
+					"description": "Model name for Qwen Code when binary.runtime is qwenCode."
+				},
+				"cutie-product.binary.qwen.baseUrl": {
+					"type": "string",
+					"default": "",
+					"description": "OpenAI-compatible base URL for Qwen. When empty, defaults to {baseApiUrl}/api/v1/hf."
+				},
+				"cutie-product.binary.qwen.executable": {
+					"type": "string",
+					"default": "",
+					"description": "Optional path to Qwen CLI. Leave empty to use the SDK-bundled CLI."
+				},
+				"cutie-product.binary.qwen.cliWrapper": {
+					"type": "boolean",
+					"default": false,
+					"description": "Use CLI wrapper to reduce path leak into model context (experimental)."
 				},
 				"cutie-product.model": {
 					"type": "string",
 					"default": "openai/gpt-oss-120b:fastest",
 					"description": "Model id for the Cutie proxy. Use a \"fastest\" or small variant if your host exposes one—planning runs once per agent step, so a faster model noticeably shortens waits."
+				},
+				"cutie-product.reasoningLevel": {
+					"type": "string",
+					"default": "Medium",
+					"enum": [
+						"Low",
+						"Medium",
+						"High",
+						"Extra High"
+					],
+					"description": "Reasoning depth for Cutie chat (stored for the workspace; API wiring may follow in later builds)."
+				},
+				"cutie-product.promptMarkdownPath": {
+					"type": "string",
+					"default": "docs/cutie-agent-operating-prompt.md",
+					"description": "Optional workspace-relative or absolute markdown file that defines Cutie's observable operating style. When it cannot be loaded, Cutie falls back to the built-in runtime prompt."
 				},
 				"cutie-product.experimentalDesktopAdapters": {
 					"type": "boolean",
@@ -227,7 +286,7 @@
 		"vendor:vscode-core": "node scripts/vendor-xpersona-core.cjs",
 		"package": "vsce package",
 		"test:binary-sse": "npm run compile && node --test tests/binary-sse.test.cjs",
-		"test:cutie-native": "npm run compile && node --test tests/binary-sse.test.cjs tests/cutie-file-patch.test.cjs tests/cutie-model-protocol.test.cjs tests/cutie-native-autonomy.test.cjs tests/cutie-autonomy-controller.test.cjs"
+		"test:cutie-native": "npm run compile && node --test tests/binary-sse.test.cjs tests/cutie-file-patch.test.cjs tests/cutie-model-protocol.test.cjs tests/cutie-model-capabilities.test.cjs tests/cutie-operating-prompt.test.cjs tests/cutie-native-autonomy.test.cjs tests/cutie-autonomy-controller.test.cjs tests/cutie-code-intelligence.test.cjs tests/cutie-edit-synthesis.test.cjs tests/cutie-runtime-mutation.test.cjs"
 	},
 	"devDependencies": {
 		"@types/node": "^20.10.0",
@@ -236,6 +295,7 @@
 		"typescript": "^5.3.0"
 	},
 	"dependencies": {
+		"@qwen-code/sdk": "^0.1.5",
 		"@xpersona/vscode-core": "file:vendor/xpersona-vscode-core-0.1.0.tgz",
 		"diff": "^8.0.3",
 		"screenshot-desktop": "^1.15.0"

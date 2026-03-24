@@ -67,6 +67,9 @@ function normalizeToolCall(value, index) {
         ...(summary ? { summary } : {}),
     };
 }
+function collapseToolCallsToCanonicalAction(toolCalls) {
+    return toolCalls[0];
+}
 class CutieStructuredProtocolError extends Error {
     constructor(message) {
         super(message);
@@ -92,15 +95,26 @@ function normalizeProtocolResponsePayload(payload) {
             throw new CutieStructuredProtocolError("cutie_tools_v2 tool_batch payload is missing toolCalls.");
         }
         const normalized = toolCalls.map((item, index) => normalizeToolCall(item, index));
-        if (normalized.length === 1) {
-            return {
-                type: "tool_call",
-                tool_call: normalized[0],
-            };
+        return {
+            type: "tool_call",
+            tool_call: collapseToolCallsToCanonicalAction(normalized),
+        };
+    }
+    if (type === "tool_call") {
+        const toolCall = row.tool_call && typeof row.tool_call === "object" ? row.tool_call : row;
+        return {
+            type: "tool_call",
+            tool_call: normalizeToolCall(toolCall, 0),
+        };
+    }
+    if (type === "tool_calls") {
+        const toolCalls = Array.isArray(row.tool_calls) ? row.tool_calls : [];
+        if (!toolCalls.length) {
+            throw new CutieStructuredProtocolError("cutie_tools_v2 tool_calls payload is missing tool_calls.");
         }
         return {
-            type: "tool_calls",
-            tool_calls: normalized,
+            type: "tool_call",
+            tool_call: collapseToolCallsToCanonicalAction(toolCalls.map((item, index) => normalizeToolCall(item, index))),
         };
     }
     throw new CutieStructuredProtocolError(`Unknown cutie_tools_v2 response type "${type || "missing"}".`);
@@ -129,6 +143,41 @@ function parseStructuredStreamEvent(event, data) {
             type: "meta",
             ...(payload.usage && typeof payload.usage === "object" ? { usage: payload.usage } : {}),
             ...(typeof payload.model === "string" && payload.model.trim() ? { model: payload.model.trim() } : {}),
+            ...(typeof payload.modelAdapter === "string"
+                ? { modelAdapter: payload.modelAdapter.trim() }
+                : {}),
+            ...(payload.modelCapabilities && typeof payload.modelCapabilities === "object"
+                ? { modelCapabilities: payload.modelCapabilities }
+                : {}),
+            ...(typeof payload.protocolMode === "string"
+                ? { protocolMode: payload.protocolMode.trim() }
+                : {}),
+            ...(typeof payload.orchestratorContractVersion === "string"
+                ? {
+                    orchestratorContractVersion: payload.orchestratorContractVersion.trim(),
+                }
+                : {}),
+            ...(typeof payload.portabilityMode === "string"
+                ? { portabilityMode: payload.portabilityMode.trim() }
+                : {}),
+            ...(typeof payload.transportModeUsed === "string"
+                ? { transportModeUsed: payload.transportModeUsed.trim() }
+                : {}),
+            ...(typeof payload.normalizationSource === "string"
+                ? { normalizationSource: payload.normalizationSource.trim() }
+                : {}),
+            ...(typeof payload.normalizationTier === "string"
+                ? { normalizationTier: payload.normalizationTier.trim() }
+                : {}),
+            ...(typeof payload.artifactExtractionShape === "string"
+                ? { artifactExtractionShape: payload.artifactExtractionShape.trim() }
+                : {}),
+            ...(typeof payload.fallbackModeUsed === "string"
+                ? { fallbackModeUsed: payload.fallbackModeUsed.trim() }
+                : {}),
+            ...(typeof payload.batchCollapsedToSingleAction === "boolean"
+                ? { batchCollapsedToSingleAction: payload.batchCollapsedToSingleAction }
+                : {}),
         };
     }
     if (normalizedEvent === "final" || normalizedEvent === "tool_batch") {

@@ -250,6 +250,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         contextSelection: result.contextSelection,
         completionStatus: result.completionStatus,
         missingRequirements: result.missingRequirements,
+        progressState: result.progressState,
+        objectiveState: result.objectiveState,
         sessionId: session.id,
         traceId,
         runId: result.runId,
@@ -258,6 +260,9 @@ export async function POST(request: NextRequest): Promise<Response> {
         loopState: result.loopState,
         pendingToolCall: result.pendingToolCall,
         toolTrace: result.toolTrace ?? [],
+        receipt: result.receipt,
+        checkpoint: result.checkpoint,
+        reviewState: result.reviewState,
       });
       for (const partial of buildPartialPrefixes(result.final)) {
         await emit("partial", partial);

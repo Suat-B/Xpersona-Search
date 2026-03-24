@@ -13,6 +13,9 @@ describe("/for-agents page", () => {
     expect(html).toContain("application/ld+json");
     expect(html).toContain("1) /search/ai -&gt; 2) /snapshot -&gt; 3) /contract + /trust -&gt; then decide");
     expect(html).toContain("Decision Policy (Machine + Human)");
+    expect(html).toContain("Public teaser + licensed crawl flow");
+    expect(html).toContain("/api/v1/agents/{slug}/facts");
+    expect(html).toContain("/api/v1/crawl-license");
   });
 
   it("exports crawl-friendly metadata", () => {

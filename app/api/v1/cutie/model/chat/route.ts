@@ -3,6 +3,12 @@ import { z } from "zod";
 import { authenticatePlaygroundRequest } from "@/lib/playground/auth";
 import { unauthorized } from "@/lib/playground/http";
 import {
+  resolveServerMaxToolsPerBatch,
+  resolveServerModelCapabilities,
+  resolveServerProtocolMode,
+  type CutieServerProtocolMode,
+} from "./capabilities";
+import {
   finalizeStreamingToolCalls,
   mergeStreamingToolCalls,
   normalizeStructuredCutieTurnResult,
@@ -11,6 +17,8 @@ import {
 } from "./structured";
 
 const CUTIE_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
+const CUTIE_ORCHESTRATOR_CONTRACT_VERSION = "canonical_portability_v1";
+const CUTIE_PORTABILITY_MODE = "canonical_default";
 
 const zCutieMessage = z.object({
   role: z.enum(["system", "user", "assistant"]),
@@ -28,6 +36,7 @@ const zCutieToolDefinition = z.object({
 const zCutieChatRequest = z.object({
   model: z.string().min(1).max(240).default("openai/gpt-oss-120b:fastest"),
   protocol: z.enum(["cutie_tools_v2"]).optional(),
+  protocolMode: z.enum(["native_tools", "text_extraction", "final_only"]).optional(),
   messages: z.array(zCutieMessage).min(1).max(80),
   tools: z.array(zCutieToolDefinition).max(64).optional().default([]),
   maxToolsPerBatch: z.number().int().min(1).max(8).optional().default(1),
@@ -73,6 +82,14 @@ function sse(event: string, data: unknown): string {
   return `data: ${JSON.stringify({ event, data })}\n\n`;
 }
 
+function resolveNormalizationTier(input: {
+  normalizationSource: "upstream_tool_calls" | "streamed_tool_calls" | "text_tool_artifact" | "plain_final";
+}): "transport_normalized" | "artifact_rescue" | "plain_final" {
+  if (input.normalizationSource === "text_tool_artifact") return "artifact_rescue";
+  if (input.normalizationSource === "plain_final") return "plain_final";
+  return "transport_normalized";
+}
+
 async function readRawBody(request: NextRequest): Promise<unknown> {
   try {
     return (await request.json()) as unknown;
@@ -113,6 +130,15 @@ function mapCutieToolsForUpstream(tools: z.infer<typeof zCutieToolDefinition>[])
 }
 
 function buildUpstreamRequestBody(input: { body: z.infer<typeof zCutieChatRequest> }): Record<string, unknown> {
+  const capabilities = resolveServerModelCapabilities(input.body.model);
+  const resolvedMode = resolveServerProtocolMode({
+    requestedMode: input.body.protocolMode as CutieServerProtocolMode | undefined,
+    capabilities,
+  });
+  const maxToolsPerBatch = resolveServerMaxToolsPerBatch({
+    requested: input.body.maxToolsPerBatch ?? 1,
+    capabilities,
+  });
   const payload: Record<string, unknown> = {
     model: input.body.model,
     messages: input.body.messages,
@@ -120,10 +146,15 @@ function buildUpstreamRequestBody(input: { body: z.infer<typeof zCutieChatReques
     temperature: input.body.temperature ?? 0.2,
     max_tokens: input.body.maxTokens ?? 1200,
   };
-  if (input.body.protocol === "cutie_tools_v2" && input.body.tools.length) {
+  if (
+    input.body.protocol === "cutie_tools_v2" &&
+    resolvedMode === "native_tools" &&
+    capabilities.nativeTools !== "none" &&
+    input.body.tools.length
+  ) {
     payload.tools = mapCutieToolsForUpstream(input.body.tools);
     payload.tool_choice = "auto";
-    if (input.body.maxToolsPerBatch > 1) {
+    if (maxToolsPerBatch > 1) {
       payload.parallel_tool_calls = true;
     }
   }
@@ -147,8 +178,16 @@ async function streamHfRouterResponse(input: {
   }
 
   const protocolActive = input.body.protocol === "cutie_tools_v2";
+  const capabilities = resolveServerModelCapabilities(input.body.model);
   const allowedToolNames = buildAllowedToolNames(input.body);
-  const maxToolsPerBatch = Math.max(1, input.body.maxToolsPerBatch ?? 1);
+  const resolvedMode = resolveServerProtocolMode({
+    requestedMode: input.body.protocolMode as CutieServerProtocolMode | undefined,
+    capabilities,
+  });
+  const maxToolsPerBatch = resolveServerMaxToolsPerBatch({
+    requested: input.body.maxToolsPerBatch ?? 1,
+    capabilities,
+  });
 
   const upstream = await fetch(`${CUTIE_ROUTER_BASE_URL}/chat/completions`, {
     method: "POST",
@@ -191,13 +230,21 @@ async function streamHfRouterResponse(input: {
     const emitTerminalEvent = async () => {
       if (terminalEventSent) return;
       terminalEventSent = true;
+      let normalizationSource: "upstream_tool_calls" | "streamed_tool_calls" | "text_tool_artifact" | "plain_final" =
+        "plain_final";
+      let artifactExtractionShape: string | undefined;
+      let batchCollapsedToSingleAction: boolean | undefined;
       if (protocolActive) {
         const normalized = normalizeStructuredCutieTurnResult({
           assistantText: rawAssistantText,
           upstreamToolCalls: finalizeStreamingToolCalls(streamedToolCalls, allowedToolNames, maxToolsPerBatch),
           allowedToolNames,
           maxToolsPerBatch,
+          streamedToolCalls: true,
         });
+        normalizationSource = normalized.normalizationSource;
+        artifactExtractionShape = normalized.artifactExtractionShape;
+        batchCollapsedToSingleAction = normalized.batchCollapsedToSingleAction;
         if (normalized.response.type === "tool_batch") {
           await writer.write(encoder.encode(sse("tool_batch", { toolCalls: normalized.response.toolCalls })));
         } else {
@@ -211,6 +258,22 @@ async function streamHfRouterResponse(input: {
           sse("meta", {
             model: resolvedModel,
             usage,
+            modelAdapter: CUTIE_ORCHESTRATOR_CONTRACT_VERSION,
+            modelCapabilities: capabilities,
+            protocolMode: resolvedMode,
+            orchestratorContractVersion: CUTIE_ORCHESTRATOR_CONTRACT_VERSION,
+            portabilityMode: CUTIE_PORTABILITY_MODE,
+            transportModeUsed: resolvedMode,
+            normalizationSource,
+            normalizationTier: resolveNormalizationTier({ normalizationSource }),
+            ...(artifactExtractionShape ? { artifactExtractionShape } : {}),
+            ...(batchCollapsedToSingleAction !== undefined
+              ? { batchCollapsedToSingleAction }
+              : {}),
+            fallbackModeUsed:
+              resolvedMode === "text_extraction" || normalizationSource === "text_tool_artifact"
+                ? "text_extraction"
+                : "none",
           })
         )
       );
@@ -340,8 +403,16 @@ async function requestHfRouterResponse(input: {
   }
 
   const protocolActive = input.body.protocol === "cutie_tools_v2";
+  const capabilities = resolveServerModelCapabilities(input.body.model);
   const allowedToolNames = buildAllowedToolNames(input.body);
-  const maxToolsPerBatch = Math.max(1, input.body.maxToolsPerBatch ?? 1);
+  const resolvedMode = resolveServerProtocolMode({
+    requestedMode: input.body.protocolMode as CutieServerProtocolMode | undefined,
+    capabilities,
+  });
+  const maxToolsPerBatch = resolveServerMaxToolsPerBatch({
+    requested: input.body.maxToolsPerBatch ?? 1,
+    capabilities,
+  });
 
   const upstream = await fetch(`${CUTIE_ROUTER_BASE_URL}/chat/completions`, {
     method: "POST",
@@ -380,6 +451,22 @@ async function requestHfRouterResponse(input: {
       assistantText: normalized.assistantText,
       model: data.model || input.body.model,
       usage: data.usage || null,
+      modelAdapter: CUTIE_ORCHESTRATOR_CONTRACT_VERSION,
+      modelCapabilities: capabilities,
+      protocolMode: resolvedMode,
+      orchestratorContractVersion: CUTIE_ORCHESTRATOR_CONTRACT_VERSION,
+      portabilityMode: CUTIE_PORTABILITY_MODE,
+      transportModeUsed: resolvedMode,
+      normalizationSource: normalized.normalizationSource,
+      normalizationTier: resolveNormalizationTier({ normalizationSource: normalized.normalizationSource }),
+      ...(normalized.artifactExtractionShape ? { artifactExtractionShape: normalized.artifactExtractionShape } : {}),
+      ...(normalized.batchCollapsedToSingleAction !== undefined
+        ? { batchCollapsedToSingleAction: normalized.batchCollapsedToSingleAction }
+        : {}),
+      fallbackModeUsed:
+        resolvedMode === "text_extraction" || normalized.normalizationSource === "text_tool_artifact"
+          ? "text_extraction"
+          : "none",
     });
   }
 

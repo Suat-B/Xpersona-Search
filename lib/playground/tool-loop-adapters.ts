@@ -44,6 +44,15 @@ export type ToolLoopTurnInput = {
   loopSummary: { stepCount: number; mutationCount: number; repairCount: number };
   availableTools: PlaygroundToolName[];
   latestToolResult?: ToolResultContract | null;
+  repairDirective?: {
+    stage:
+      | "post_inspection_mutation_required"
+      | "target_path_repair"
+      | "patch_repair"
+      | "single_file_rewrite"
+      | "pine_specialization";
+    reason: string;
+  } | null;
 };
 
 export type ToolLoopTurnOutput = {
@@ -141,6 +150,13 @@ function buildToolLoopUserPrompt(input: ToolLoopTurnInput, tools: PlaygroundTool
         .filter(Boolean)
         .join("\n")
     : "Latest tool result: none.";
+  const repairSection = input.repairDirective
+    ? [
+        "Repair directive:",
+        `- stage: ${input.repairDirective.stage}`,
+        `- reason: ${input.repairDirective.reason.slice(0, 3_000)}`,
+      ].join("\n")
+    : "Repair directive: none.";
 
   return [
     `Mode: ${input.request.mode}`,
@@ -154,8 +170,11 @@ function buildToolLoopUserPrompt(input: ToolLoopTurnInput, tools: PlaygroundTool
     buildContextPrompt(input.request.context),
     `Recent tool trace:\n${traceLines}`,
     resultSection,
+    repairSection,
     `Plan objective: ${input.fallbackPlan.objective}`,
     "Return either one toolCall or a final answer. Do not return an actions array in tool_loop_v1.",
+    "If a repair directive is present, follow it strictly and choose the narrowest next tool that can prove progress.",
+    "After inspecting the trusted target on a code edit request, do not choose another observation tool unless the latest tool result explicitly blocked mutation or the repair directive requires a path check.",
     `Task:\n${input.request.task}`,
   ].join("\n\n");
 }

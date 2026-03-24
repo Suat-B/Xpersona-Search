@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import React from "react";
 
 const mockGetAgentDossier = vi.hoisted(() => vi.fn());
+const mockGetPublicAgentEvidencePack = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/agents/agent-dossier", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/agents/agent-dossier")>();
@@ -11,6 +12,10 @@ vi.mock("@/lib/agents/agent-dossier", async (importOriginal) => {
     getAgentDossier: mockGetAgentDossier,
   };
 });
+
+vi.mock("@/lib/agents/public-facts", () => ({
+  getPublicAgentEvidencePack: mockGetPublicAgentEvidencePack,
+}));
 
 vi.mock("@/lib/auth", () => ({
   auth: vi.fn().mockResolvedValue(null),
@@ -42,6 +47,43 @@ vi.mock("@/components/agent/SkillMarkdown", () => ({
 
 vi.mock("@/components/agent/AgentMiniCard", () => ({
   AgentMiniCard: ({ agent }: { agent: { name: string } }) => <div data-testid="agent-mini-card">{agent.name}</div>,
+}));
+
+vi.mock("@/components/agent/AgentTechnicalDossier", () => ({
+  AgentTechnicalDossier: () => (
+    <section data-testid="agent-technical-dossier">
+      <h1>Agent Profile</h1>
+      <h2>Execution Readiness</h2>
+      <h2>Reliability &amp; Benchmarks</h2>
+      <h2>Machine Appendix</h2>
+      <h2>Custom technical brief</h2>
+      <h2>Quick Facts</h2>
+      <h2>Release &amp; Crawl Timeline</h2>
+      <a href="https://github.com/demo/demo-agent">View Source</a>
+    </section>
+  ),
+}));
+
+vi.mock("@/components/ads/BotAdBanner", () => ({
+  BotAdBanner: () => <div data-testid="bot-ad-banner">Bot ads</div>,
+}));
+
+vi.mock("@/components/ads/AgentPageAds", () => ({
+  AgentPageAds: () => <div data-testid="agent-page-ads">Agent page ads</div>,
+}));
+
+vi.mock("next/link", () => ({
+  default: ({ href, children, ...props }: Record<string, unknown>) => (
+    <a href={String(href ?? "#")} {...props}>
+      {children as React.ReactNode}
+    </a>
+  ),
+}));
+
+vi.mock("next/image", () => ({
+  default: ({ unoptimized: _unoptimized, ...props }: Record<string, unknown>) => (
+    <img {...props} alt={String(props.alt ?? "")} />
+  ),
 }));
 
 const mockNotFound = vi.hoisted(() => vi.fn(() => {
@@ -364,6 +406,54 @@ describe("Agent page dossier SSR", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetAgentDossier.mockResolvedValue(dossierFixture);
+    mockGetPublicAgentEvidencePack.mockResolvedValue({
+      card: {
+        highlights: ["Schema refs published", "Trust evidence available"],
+        stats: [
+          { label: "Trust score", value: "0.91" },
+          { label: "Compatibility", value: "MCP, OpenClaw" },
+        ],
+      },
+      facts: [
+        {
+          factKey: "vendor",
+          label: "Vendor",
+          value: "Demo",
+          category: "vendor",
+          href: "https://github.com/demo/demo-agent",
+          sourceUrl: "https://github.com/demo/demo-agent",
+          sourceType: "profile",
+          confidence: "medium",
+          observedAt: "2026-03-13T17:00:00.000Z",
+          isPublic: true,
+        },
+        {
+          factKey: "schema_refs",
+          label: "Machine-readable schemas",
+          value: "OpenAPI or schema references published",
+          category: "artifact",
+          href: "https://example.com/input.json",
+          sourceUrl: "https://xpersona.co/api/v1/agents/demo-agent/contract",
+          sourceType: "contract",
+          confidence: "high",
+          observedAt: "2026-03-13T17:00:00.000Z",
+          isPublic: true,
+        },
+      ],
+      changeEvents: [
+        {
+          eventType: "release",
+          title: "Release 1.4.0",
+          description: "Reliability improvements",
+          href: "https://github.com/demo/demo-agent",
+          sourceUrl: "https://github.com/demo/demo-agent",
+          sourceType: "release",
+          confidence: "medium",
+          observedAt: "2026-03-10T00:00:00.000Z",
+          isPublic: true,
+        },
+      ],
+    });
   });
 
   it("renders the new dossier sections and removes the old nested shell", async () => {
@@ -378,6 +468,8 @@ describe("Agent page dossier SSR", () => {
     expect(html).toContain("Reliability &amp; Benchmarks");
     expect(html).toContain("Machine Appendix");
     expect(html).toContain("Custom technical brief");
+    expect(html).toContain("Quick Facts");
+    expect(html).toContain("Release &amp; Crawl Timeline");
     expect(html).not.toContain("Agent Experience");
   });
 
@@ -402,6 +494,9 @@ describe("Agent page dossier SSR", () => {
     expect(html).toContain("application/ld+json");
     expect(html).toContain("rel=\"alternate\"");
     expect(html).toContain("/api/v1/agents/demo-agent/dossier");
+    expect(html).toContain("/api/v1/agents/demo-agent/facts");
+    expect(html).toContain("FAQPage");
+    expect(html).toContain("Dataset");
   });
 
   it("generateMetadata uses dossier SEO copy and indexing rules", async () => {

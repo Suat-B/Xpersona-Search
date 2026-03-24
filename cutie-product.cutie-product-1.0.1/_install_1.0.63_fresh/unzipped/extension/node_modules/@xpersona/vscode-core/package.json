@@ -1,0 +1,20 @@
+{
+  "name": "@xpersona/vscode-core",
+  "version": "0.1.0",
+  "description": "Shared hosted Xpersona auth, session, and SSE helpers for VS Code extensions.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.0.0"
+  }
+}

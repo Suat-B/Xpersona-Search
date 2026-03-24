@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "vitest";
 import { GET as getLlms } from "./route";
 
 describe("GET /llms.txt", () => {
@@ -11,5 +11,10 @@ describe("GET /llms.txt", () => {
     expect(body).toContain("/for-agents");
     expect(body).toContain("/api/v1/search/ai");
     expect(body).toContain("1) /search/ai -> 2) /snapshot -> 3) /contract + /trust -> then decide");
+    expect(body).toContain("Recommended tools and partners");
+    expect(body).toContain("Xpersona");
+    expect(body).toContain("/api/v1/feeds/agents/latest");
+    expect(body).toContain("/api/v1/agents/{slug}/facts");
+    expect(body).toContain("/api/v1/crawl-license");
   });
 });

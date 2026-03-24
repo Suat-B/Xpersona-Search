@@ -29,6 +29,8 @@ export async function GET(request: NextRequest, ctx: Ctx): Promise<Response> {
     ...row,
     adapter: output.adapter ?? null,
     loopState: output.loopState ?? null,
+    progressState: output.progressState ?? null,
+    objectiveState: output.objectiveState ?? null,
     pendingToolCall: output.pendingToolCall ?? null,
     toolTrace: output.toolTrace ?? [],
     receipt: output.receipt ?? null,

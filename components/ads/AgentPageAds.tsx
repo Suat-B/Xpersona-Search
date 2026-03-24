@@ -1,33 +1,39 @@
 import { headers } from "next/headers";
-import { pickAds, type AdEntry } from "@/lib/ads/ad-inventory";
+import {
+  buildAgentGamTargeting,
+  getConfiguredAgentSlots,
+  isGamEnabledForAgentPages,
+  shouldShowAdSenseAlongsideGamOnAgentPages,
+} from "@/lib/ads/gam-config";
+import { getAgentPageGamBotItems } from "@/lib/ads/gam-bot-renderer";
 import { AdUnit, DEFAULT_AD_SLOT } from "@/components/ads/AdUnit";
-
-function trackedImgSrc(ad: AdEntry): string {
-  return `/api/v1/ad/impression/${ad.id}`;
-}
-
-function trackedClickHref(ad: AdEntry): string {
-  return `/api/v1/ad/click/${ad.id}`;
-}
+import { AgentPageGAMAds } from "@/components/ads/AgentPageGAMAds";
+import { shouldUseInternalAds } from "@/lib/ads/adsense-config";
 
 interface AgentPageAdsProps {
   agentName: string;
   agentSlug: string;
+  /** Used for GAM key-value targeting (e.g. dossier source). */
+  agentCategory?: string;
 }
 
 /**
- * Ads specifically for /agent/[slug] pages.
- *
- * For bots: renders multiple tracked image ads (impression on img fetch, click on link follow).
- * For humans: renders AdSense units if slot IDs are configured.
+ * Ads for /agent/[slug]: humans get AdSense by default; GAM is opt-in via env.
+ * With GAM on, optionally keep AdSense too via NEXT_PUBLIC_GAM_AGENT_PAGES_ADSENSE_ALSO.
  */
-export async function AgentPageAds({ agentName, agentSlug }: AgentPageAdsProps) {
+export async function AgentPageAds({
+  agentName,
+  agentSlug,
+  agentCategory,
+}: AgentPageAdsProps) {
   const h = await headers();
   const isBot = h.get("x-is-bot") === "1";
   const botLabel = h.get("x-bot-name") ?? "Crawler";
+  const showInternalAds = shouldUseInternalAds(isBot);
+  const audienceLabel = isBot ? botLabel : "Stress Test";
 
-  if (isBot) {
-    const ads = pickAds(3);
+  if (showInternalAds) {
+    const items = getAgentPageGamBotItems(agentSlug, 3);
 
     return (
       <section
@@ -37,41 +43,45 @@ export async function AgentPageAds({ agentName, agentSlug }: AgentPageAdsProps) 
         aria-label="Sponsored content"
       >
         <p className="text-xs uppercase tracking-wide text-[var(--text-tertiary)]">
-          Sponsored &middot; Related to {agentName} &middot; {botLabel}
+          Sponsored &middot; Related to {agentName} &middot; {audienceLabel}
         </p>
 
-        {ads.map((ad) => (
-          <div
-            key={ad.id}
+        {items.map((item) => (
+          <section
+            key={item.id}
+            data-sponsored="true"
+            data-gam-bot-creative={item.id}
             className="rounded-lg border border-[var(--text-tertiary)]/25 bg-black/20 p-4 text-sm"
+            aria-label="Sponsored recommendation"
           >
             <p className="mb-1 text-xs text-[var(--text-tertiary)]">
-              Ad by {ad.sponsor}
+              Sponsored &middot; {item.advertiserName} &middot; {item.slotKey}
             </p>
-            <p className="mb-3 text-[var(--text-secondary)]">
-              {ad.description}
+            {item.headline ? (
+              <p className="mb-2 font-medium text-[var(--text-primary)]">{item.headline}</p>
+            ) : null}
+            <p className="mb-3 text-[var(--text-secondary)] leading-relaxed">
+              {item.description.trim() || item.headline}
             </p>
-            <a href={trackedClickHref(ad)} rel="sponsored noopener">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={trackedImgSrc(ad)}
-                alt={ad.description}
-                width={ad.width}
-                height={ad.height}
-                loading="eager"
-                style={{ maxWidth: "100%", height: "auto" }}
-              />
-            </a>
-            <p className="mt-2">
+            <p className="mb-2">
               <a
-                href={trackedClickHref(ad)}
+                href={item.trackedClickPath}
                 className="text-[var(--accent-heart)] underline"
                 rel="sponsored noopener"
               >
-                {ad.clickUrl}
+                {item.clickUrl}
               </a>
             </p>
-          </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={item.impressionBeaconSrc}
+              alt=""
+              width={1}
+              height={1}
+              className="pointer-events-none h-px w-px opacity-0"
+              loading="eager"
+            />
+          </section>
         ))}
 
         <noscript>
@@ -82,6 +92,26 @@ export async function AgentPageAds({ agentName, agentSlug }: AgentPageAdsProps) 
           </div>
         </noscript>
       </section>
+    );
+  }
+
+  if (isGamEnabledForAgentPages()) {
+    const slots = getConfiguredAgentSlots();
+    const targeting = buildAgentGamTargeting({
+      agentSlug,
+      agentName,
+      agentCategory,
+    });
+    const adsenseAlso = shouldShowAdSenseAlongsideGamOnAgentPages();
+    return (
+      <div className="mx-auto w-full max-w-7xl space-y-4 px-4 py-4">
+        {adsenseAlso ? (
+          <div className="ad-slot-host-agent-adsense" data-ad-stack="adsense-with-gam">
+            <AdUnit slot={DEFAULT_AD_SLOT} format="auto" />
+          </div>
+        ) : null}
+        <AgentPageGAMAds slots={slots} targeting={targeting} key={agentSlug} />
+      </div>
     );
   }
 

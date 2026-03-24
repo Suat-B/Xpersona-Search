@@ -39,17 +39,26 @@ const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
 const auth_1 = require("./auth");
 const cutie_binary_controller_1 = require("./cutie-binary-controller");
+const cutie_autonomy_controller_1 = require("./cutie-autonomy-controller");
+const cutie_code_intelligence_1 = require("./cutie-code-intelligence");
+const cutie_model_adapter_1 = require("./cutie-model-adapter");
 const config_1 = require("./config");
 const cutie_desktop_adapter_1 = require("./cutie-desktop-adapter");
 const cutie_model_client_1 = require("./cutie-model-client");
+const cutie_operating_prompt_1 = require("./cutie-operating-prompt");
 const cutie_native_autonomy_1 = require("./cutie-native-autonomy");
 const cutie_runtime_1 = require("./cutie-runtime");
 const cutie_session_store_1 = require("./cutie-session-store");
+const cutie_transcript_1 = require("./cutie-transcript");
 const cutie_tool_registry_1 = require("./cutie-tool-registry");
 const cutie_workspace_adapter_1 = require("./cutie-workspace-adapter");
 const diff_1 = require("diff");
 const cutie_diff_1 = require("./cutie-diff");
 const webview_html_1 = require("./webview-html");
+const cutie_policy_1 = require("./cutie-policy");
+const binary_portable_context_1 = require("./binary-portable-context");
+const selection_prefill_1 = require("./selection-prefill");
+const cutie_playground_chat_bridge_1 = require("./cutie-playground-chat-bridge");
 function goalLabel(goal) {
     switch (goal) {
         case "code_change":
@@ -102,20 +111,80 @@ function pursuitLabel(run) {
 function buildProgressViewModel(run) {
     if (!run)
         return null;
+    const taskFrameSummary = (0, cutie_code_intelligence_1.summarizeTaskFrame)(run.taskFrame);
+    const targetSummary = (0, cutie_code_intelligence_1.summarizeTargetCandidates)(run.targetCandidates, run.preferredTargetPath);
     return {
         goal: run.goal,
         goalLabel: goalLabel(run.goal),
         phaseLabel: phaseLabel(run),
         pursuingLabel: pursuitLabel(run),
         ...(run.lastMeaningfulProgressSummary ? { lastMeaningfulProgressSummary: run.lastMeaningfulProgressSummary } : {}),
+        ...(run.lastActionSummary ? { lastActionSummary: run.lastActionSummary } : {}),
+        ...(taskFrameSummary ? { taskFrameSummary } : {}),
+        ...(targetSummary ? { targetSummary } : {}),
         ...(run.repairAttemptCount > 0 ? { repairLabel: `Repair stage ${run.repairAttemptCount}` } : {}),
+        ...(run.objectiveRepairCount && run.objectiveRepairCount > 0
+            ? { objectiveRepairLabel: `Objective repair ${run.objectiveRepairCount}` }
+            : {}),
+        ...(run.currentRepairTactic ? { repairTacticLabel: run.currentRepairTactic.replace(/_/g, " ") } : {}),
+        ...(run.stallLevel && run.stallLevel !== "none" ? { stallLabel: (0, cutie_autonomy_controller_1.getStallLabel)(run) } : {}),
+        ...(run.stallReason ? { stallReason: run.stallReason } : {}),
+        ...(run.stallNextAction ? { stallNextAction: run.stallNextAction } : {}),
+        ...(run.lastNewEvidence ? { lastNewEvidence: run.lastNewEvidence } : {}),
+        ...(run.noOpConclusion ? { noOpConclusion: run.noOpConclusion } : {}),
+        ...(run.modelAdapter ||
+            run.protocolMode ||
+            run.normalizationSource ||
+            run.artifactExtractionShape ||
+            run.fallbackModeUsed ||
+            run.simpleTaskFastPath ||
+            run.objectiveSuspendedForDirectRecovery ||
+            run.promptSource
+            ? {
+                modelStrategySummary: [
+                    run.modelAdapter ? `adapter ${run.modelAdapter}` : "",
+                    run.protocolMode ? `mode ${run.protocolMode}` : "",
+                    run.normalizationSource ? `source ${run.normalizationSource}` : "",
+                    run.artifactExtractionShape ? `artifact ${run.artifactExtractionShape}` : "",
+                    run.fallbackModeUsed && run.fallbackModeUsed !== "none" ? `fallback ${run.fallbackModeUsed}` : "",
+                    run.simpleTaskFastPath ? "fast-path" : "",
+                    run.objectiveSuspendedForDirectRecovery ? "objectives suspended" : "",
+                    run.suppressedToolRescued ? `rescued ${run.suppressedToolName || "artifact"}` : "",
+                    run.patchDisabledForRun ? "patch disabled" : "",
+                    run.mutationCoercionMode ? `coercion ${run.mutationCoercionMode}` : "",
+                    run.promptSource ? `prompt ${run.promptSource}` : "",
+                    run.promptSource === "external_fallback" && run.promptLoadError ? "prompt fallback" : "",
+                ]
+                    .filter(Boolean)
+                    .join(" • "),
+            }
+            : {}),
+        ...((0, cutie_autonomy_controller_1.getCurrentStrategyLabel)(run) ? { currentStrategyLabel: (0, cutie_autonomy_controller_1.getCurrentStrategyLabel)(run) } : {}),
         ...(run.stuckReason ? { escalationMessage: run.stuckReason } : {}),
-        ...(run.suggestedNextAction ? { suggestedNextAction: run.suggestedNextAction } : {}),
+        ...(run.suggestedNextAction || run.nextDeterministicAction
+            ? { suggestedNextAction: run.suggestedNextAction || run.nextDeterministicAction }
+            : {}),
         goalSatisfied: run.goalSatisfied,
         escalationState: run.escalationState,
         ...(run.objectives?.length ? { objectives: run.objectives } : {}),
         ...(run.objectivesPhase ? { objectivesPhase: run.objectivesPhase } : {}),
     };
+}
+function isBusySubmitState(submitState) {
+    return submitState === "submitting" || submitState === "starting" || submitState === "running" || submitState === "stopping";
+}
+function settledStatusForRun(run) {
+    if (!run)
+        return "Ready for your next message.";
+    if (run.status === "completed")
+        return "Cutie completed the run.";
+    if (run.status === "needs_guidance")
+        return "Cutie needs guidance to keep making real progress.";
+    if (run.status === "canceled")
+        return "Cutie run cancelled.";
+    if (run.error)
+        return `Cutie stopped: ${run.error}`;
+    return "Cutie stopped early.";
 }
 function buildDefaultDesktopState() {
     return {
@@ -290,6 +359,7 @@ class CutieSidebarProvider {
         this.activeSessionId = null;
         this.activeSession = null;
         this.status = "Ready for a local Cutie run.";
+        this.submitState = "idle";
         this.webviewReady = false;
         this.webviewReadyTimeout = null;
         this.webviewBootNonce = 0;
@@ -301,13 +371,34 @@ class CutieSidebarProvider {
         this.suppressedAssistantArtifactText = "";
         this.liveActionLog = [];
         this.liveActionLogRunId = null;
+        this.liveTranscript = [];
+        this.liveTranscriptRunId = null;
         this.liveActionSeenReceiptIds = new Set();
         this.liveActionLastStatus = "";
+        this.liveActionLogByRunId = new Map();
+        this.liveTranscriptByRunId = new Map();
+        this.liveActionSeenReceiptIdsByRunId = new Map();
+        this.liveActionLastStatusByRunId = new Map();
+        this.liveActionTranscriptPersistedRunIds = new Set();
         this.desktopState = buildDefaultDesktopState();
         this.desktopStateFetchedAt = 0;
         this.gitStatusFetchedAt = 0;
         this.gitStatusPromise = null;
         this.fastStartWarmupPromise = null;
+        this.warmStartSnapshot = null;
+        this.warmStartWarming = false;
+        this.hostProbePromise = null;
+        this.hostReady = null;
+        this.hostReadyCheckedAt = 0;
+        this.cachedRequestAuth = null;
+        this.operatingPromptLoadPromise = null;
+        this.operatingPromptState = {
+            promptSource: "builtin_only",
+            promptMarkdownPath: (0, config_1.getPromptMarkdownPath)(),
+            promptLoaded: false,
+        };
+        this.operatingPromptWatcher = null;
+        this.warmRefreshDebounce = null;
         this.authState = {
             kind: "none",
             label: "Not signed in",
@@ -318,12 +409,17 @@ class CutieSidebarProvider {
         this.workspaceMentionIndexPromise = null;
         /** Inline chat diff cards keyed by session id (not persisted to disk). */
         this.chatDiffsBySessionId = new Map();
+        /** Recent workspace paths mutated by Cutie (portable bundle retrievalHints). */
+        this.recentPortableBundleTouchedPaths = [];
         this.desktop = new cutie_desktop_adapter_1.CutieDesktopAdapter();
         this.workspaceAdapter = new cutie_workspace_adapter_1.CutieWorkspaceAdapter();
         this.modelClient = new cutie_model_client_1.CutieModelClient();
+        this.modelAdapter = new cutie_model_adapter_1.CutieModelAdapter(this.modelClient);
+        this.ideRuntimeValues = new Set(["cutie", "playgroundApi", "qwenCode"]);
         this.sessionStore = new cutie_session_store_1.CutieSessionStore(context);
+        this.playgroundChatBridge = new cutie_playground_chat_bridge_1.CutiePlaygroundChatBridge(context, auth);
         this.toolRegistry = new cutie_tool_registry_1.CutieToolRegistry(new cutie_workspace_adapter_1.CutieWorkspaceAdapter(), this.desktop);
-        this.runtime = new cutie_runtime_1.CutieRuntime(this.sessionStore, this.modelClient, this.toolRegistry, async () => this.gatherContext());
+        this.runtime = new cutie_runtime_1.CutieRuntime(this.sessionStore, this.modelAdapter, this.toolRegistry, async () => this.gatherContext());
         this.binaryController = new cutie_binary_controller_1.CutieBinaryBundleController(this.context, this.auth, this.sessionStore, {
             getWorkspaceHash: () => (0, config_1.getWorkspaceHash)(),
             getActiveSession: () => this.activeSession,
@@ -332,34 +428,199 @@ class CutieSidebarProvider {
                 this.activeSessionId = session?.id ?? null;
             },
             emitState: () => this.emitState(),
-            gatherBinaryContext: () => this.gatherBinaryContextForApi(),
+            gatherBinaryContext: (intent) => this.gatherBinaryContextForPortableBundle(intent),
             showView: () => this.show(),
         });
         this.auth.onDidChange(() => {
+            this.invalidateRequestAuthCache();
+            this.hostReady = null;
+            this.hostReadyCheckedAt = 0;
+            this.hostFailureSummary = undefined;
             void this.refreshAuthState().finally(() => {
+                void this.prewarmFastStartState();
                 void this.emitState();
             });
         });
         this.context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => {
             this.invalidateWorkspaceMentionIndex();
+            this.scheduleWarmStartRefresh(true);
+        }), vscode.window.onDidChangeActiveTextEditor(() => {
+            this.scheduleWarmStartRefresh();
+        }), vscode.window.onDidChangeVisibleTextEditors(() => {
+            this.scheduleWarmStartRefresh();
+        }), vscode.languages.onDidChangeDiagnostics(() => {
+            this.scheduleWarmStartRefresh();
         }), vscode.workspace.onDidChangeConfiguration((event) => {
-            if (event.affectsConfiguration("cutie-product.baseApiUrl") || event.affectsConfiguration("cutie-product.binary")) {
+            if (event.affectsConfiguration("cutie-product.baseApiUrl") ||
+                event.affectsConfiguration("cutie-product.binary") ||
+                event.affectsConfiguration("cutie-product.model") ||
+                event.affectsConfiguration("cutie-product.reasoningLevel") ||
+                event.affectsConfiguration("cutie-product.contextPreviewChars") ||
+                event.affectsConfiguration("cutie-product.openFilePreviewLines") ||
+                event.affectsConfiguration("cutie-product.maxOpenFilesInContext") ||
+                event.affectsConfiguration("cutie-product.maxToolsPerBatch") ||
+                event.affectsConfiguration("cutie-product.contextReceiptWindow") ||
+                event.affectsConfiguration("cutie-product.investigationPreflight") ||
+                event.affectsConfiguration("cutie-product.objectiveBasedRuns") ||
+                event.affectsConfiguration("cutie-product.objectiveBasedInvestigation") ||
+                event.affectsConfiguration("cutie-product.maxToolSteps") ||
+                event.affectsConfiguration("cutie-product.maxWorkspaceMutations") ||
+                event.affectsConfiguration("cutie-product.unlimitedAutonomy")) {
+                if (event.affectsConfiguration("cutie-product.baseApiUrl")) {
+                    this.hostReady = null;
+                    this.hostReadyCheckedAt = 0;
+                    this.hostFailureSummary = undefined;
+                    this.invalidateRequestAuthCache();
+                }
+                this.scheduleWarmStartRefresh(event.affectsConfiguration("cutie-product.baseApiUrl"));
                 void this.emitState();
             }
         }));
-        this.context.subscriptions.push({ dispose: () => this.clearWebviewReadyTimeout() });
+        this.context.subscriptions.push({
+            dispose: () => {
+                this.clearWebviewReadyTimeout();
+                if (this.warmRefreshDebounce) {
+                    clearTimeout(this.warmRefreshDebounce);
+                    this.warmRefreshDebounce = null;
+                }
+            },
+        });
     }
     resetLiveActionLog(runId = null) {
         this.liveActionLog = [];
         this.liveActionLogRunId = runId;
+        this.liveTranscript = [];
+        this.liveTranscriptRunId = runId;
         this.liveActionSeenReceiptIds = new Set();
         this.liveActionLastStatus = "";
+        if (runId) {
+            this.liveActionLogByRunId.set(runId, []);
+            this.liveTranscriptByRunId.set(runId, []);
+            this.liveActionSeenReceiptIdsByRunId.set(runId, []);
+            this.liveActionLastStatusByRunId.set(runId, "");
+        }
     }
     ensureLiveActionLogForRun(run) {
         const runId = run?.id || null;
         if (runId !== this.liveActionLogRunId) {
-            this.resetLiveActionLog(runId);
+            const carryOverTranscript = !this.liveTranscriptRunId && this.liveTranscript.length ? [...this.liveTranscript] : [];
+            this.liveActionLogRunId = runId;
+            this.liveActionLog = runId ? [...(this.liveActionLogByRunId.get(runId) || [])] : [];
+            this.liveTranscriptRunId = runId;
+            this.liveTranscript = runId ? [...(this.liveTranscriptByRunId.get(runId) || []), ...carryOverTranscript] : carryOverTranscript;
+            this.liveActionSeenReceiptIds = new Set(runId ? this.liveActionSeenReceiptIdsByRunId.get(runId) || [] : []);
+            this.liveActionLastStatus = runId ? this.liveActionLastStatusByRunId.get(runId) || "" : "";
+            this.persistLiveActionStateForCurrentRun();
         }
+    }
+    persistLiveActionStateForCurrentRun() {
+        const runId = this.liveActionLogRunId;
+        if (!runId)
+            return;
+        this.liveActionLogByRunId.set(runId, [...this.liveActionLog]);
+        this.liveTranscriptByRunId.set(runId, this.liveTranscript.map((event) => ({ ...event })));
+        this.liveActionSeenReceiptIdsByRunId.set(runId, Array.from(this.liveActionSeenReceiptIds));
+        this.liveActionLastStatusByRunId.set(runId, this.liveActionLastStatus);
+    }
+    getLiveActionLogForRun(run) {
+        const runId = run?.id || null;
+        if (!runId)
+            return [];
+        if (runId === this.liveActionLogRunId)
+            return [...this.liveActionLog];
+        return [...(this.liveActionLogByRunId.get(runId) || [])];
+    }
+    getLiveTranscriptForRun(run) {
+        const runId = run?.id || null;
+        if (!runId)
+            return this.liveTranscript.map((event) => ({ ...event }));
+        if (runId === this.liveTranscriptRunId)
+            return this.liveTranscript.map((event) => ({ ...event }));
+        return (this.liveTranscriptByRunId.get(runId) || []).map((event) => ({ ...event }));
+    }
+    upsertLiveTranscriptEvent(input) {
+        const text = String(input.text || "").trim();
+        if (!text)
+            return;
+        if (input.run) {
+            this.ensureLiveActionLogForRun(input.run);
+        }
+        const slot = String(input.slot || "").trim();
+        const dedupeKey = String(input.dedupeKey || "").trim();
+        if (slot) {
+            const existingIndex = this.liveTranscript.findIndex((event) => event.slot === slot);
+            if (existingIndex >= 0) {
+                this.liveTranscript[existingIndex] = {
+                    ...this.liveTranscript[existingIndex],
+                    kind: input.kind,
+                    text,
+                    ...(input.run?.id ? { runId: input.run.id } : {}),
+                    ...(dedupeKey ? { dedupeKey } : {}),
+                };
+                this.persistLiveActionStateForCurrentRun();
+                return;
+            }
+        }
+        const last = this.liveTranscript[this.liveTranscript.length - 1];
+        if (last &&
+            last.kind === input.kind &&
+            last.text === text &&
+            ((!dedupeKey && !last.dedupeKey) || (dedupeKey && last.dedupeKey === dedupeKey))) {
+            return;
+        }
+        this.liveTranscript.push({
+            id: (0, cutie_policy_1.randomId)("cutie_tx"),
+            kind: input.kind,
+            text,
+            createdAt: input.createdAt || new Date().toISOString(),
+            ...(input.run?.id ? { runId: input.run.id } : {}),
+            ...(slot ? { slot } : {}),
+            ...(dedupeKey ? { dedupeKey } : {}),
+        });
+        this.persistLiveActionStateForCurrentRun();
+    }
+    async persistUnifiedRunTranscript(run) {
+        if (!run)
+            return;
+        const runId = String(run.id || "").trim();
+        if (!runId || this.liveActionTranscriptPersistedRunIds.has(runId))
+            return;
+        const events = this.getLiveTranscriptForRun(run);
+        const transcriptText = (0, cutie_transcript_1.buildOperationalTranscriptText)(events, run.goal);
+        if (!transcriptText || !(0, cutie_transcript_1.hasVisibleOperationalTranscript)(events, run.goal))
+            return;
+        const sourceSession = this.activeSession;
+        if (!sourceSession)
+            return;
+        const messages = [...sourceSession.messages];
+        let updated = false;
+        for (let index = messages.length - 1; index >= 0; index -= 1) {
+            const message = messages[index];
+            if (message.role !== "assistant" || message.runId !== runId)
+                continue;
+            messages[index] = {
+                ...message,
+                content: (0, cutie_transcript_1.mergeTranscriptIntoAssistantContent)({
+                    events,
+                    assistantContent: message.content,
+                    goal: run.goal,
+                }),
+                presentation: "run_transcript",
+            };
+            updated = true;
+            break;
+        }
+        const nextSession = updated
+            ? await this.sessionStore.replaceMessages(sourceSession, messages)
+            : await this.sessionStore.appendMessage(sourceSession, {
+                role: "assistant",
+                content: transcriptText,
+                runId,
+                presentation: "run_transcript",
+            });
+        this.liveActionTranscriptPersistedRunIds.add(runId);
+        this.activeSession = nextSession;
+        this.activeSessionId = nextSession.id;
     }
     appendLiveActionLine(rawLine) {
         const line = String(rawLine || "").trim();
@@ -371,6 +632,7 @@ class CutieSidebarProvider {
         if (this.liveActionLog.length > CutieSidebarProvider.MAX_LIVE_ACTION_LINES) {
             this.liveActionLog = this.liveActionLog.slice(-CutieSidebarProvider.MAX_LIVE_ACTION_LINES);
         }
+        this.persistLiveActionStateForCurrentRun();
     }
     formatLiveActionReceiptLine(receipt) {
         const step = typeof receipt.step === "number" && receipt.step > 0 ? `Step ${receipt.step}: ` : "";
@@ -395,7 +657,16 @@ class CutieSidebarProvider {
             if (this.liveActionSeenReceiptIds.has(seenKey))
                 continue;
             this.liveActionSeenReceiptIds.add(seenKey);
-            this.appendLiveActionLine(this.formatLiveActionReceiptLine(receipt));
+            const line = this.formatLiveActionReceiptLine(receipt);
+            this.appendLiveActionLine(line);
+            this.upsertLiveTranscriptEvent({
+                kind: "tool_result",
+                text: line,
+                run,
+                createdAt: receipt.finishedAt || receipt.startedAt,
+                slot: receiptId ? `receipt:${receiptId}` : undefined,
+                dedupeKey: seenKey,
+            });
         }
     }
     noteLiveActionStatus(status, run) {
@@ -407,60 +678,19 @@ class CutieSidebarProvider {
             return;
         this.liveActionLastStatus = line;
         this.appendLiveActionLine(line);
+        this.upsertLiveTranscriptEvent({
+            kind: "status",
+            text: line,
+            run,
+            dedupeKey: `status:${line}`,
+        });
+        this.persistLiveActionStateForCurrentRun();
     }
-    async gatherBinaryContextForApi() {
-        const excerptMax = 8000;
-        const openExcerptMax = 2000;
-        const activeEditor = vscode.window.activeTextEditor;
-        const activeFile = activeEditor
-            ? {
-                path: (0, config_1.toWorkspaceRelativePath)(activeEditor.document.uri) || undefined,
-                language: activeEditor.document.languageId,
-                ...(activeEditor.selection.isEmpty
-                    ? { content: activeEditor.document.getText().slice(0, excerptMax) }
-                    : {
-                        selection: activeEditor.document.getText(activeEditor.selection).slice(0, excerptMax),
-                    }),
-            }
-            : undefined;
-        const openFiles = vscode.window.visibleTextEditors
-            .map((editor) => {
-            const relativePath = (0, config_1.toWorkspaceRelativePath)(editor.document.uri);
-            if (!relativePath)
-                return null;
-            return {
-                path: relativePath,
-                language: editor.document.languageId,
-                excerpt: editor.document.getText().slice(0, openExcerptMax),
-            };
-        })
-            .filter((row) => Boolean(row));
-        const candidateErrors = [];
-        for (const [uri, diags] of vscode.languages.getDiagnostics()) {
-            const rel = (0, config_1.toWorkspaceRelativePath)(uri);
-            for (const d of diags.slice(0, 2)) {
-                candidateErrors.push(`${rel || "?"}: ${d.message}`);
-                if (candidateErrors.length >= 24)
-                    break;
-            }
-            if (candidateErrors.length >= 24)
-                break;
-        }
-        const context = {};
-        if (activeFile?.path) {
-            context.activeFile = activeFile;
-        }
-        if (openFiles.length) {
-            context.openFiles = openFiles;
-        }
-        return {
-            context,
-            retrievalHints: {
-                mentionedPaths: [],
-                candidateSymbols: [],
-                candidateErrors,
-            },
-        };
+    async gatherBinaryContextForPortableBundle(intent) {
+        return (0, binary_portable_context_1.gatherPortableBundleContext)({
+            intentText: intent,
+            recentTouchedPaths: [...this.recentPortableBundleTouchedPaths],
+        });
     }
     invalidateWorkspaceMentionIndex() {
         this.workspaceMentionPaths = null;
@@ -552,6 +782,7 @@ class CutieSidebarProvider {
         this.activeSessionId = null;
         this.activeSession = null;
         this.activeRun = null;
+        this.submitState = "idle";
         this.streamingAssistantText = "";
         this.suppressedAssistantArtifactText = "";
         this.resetLiveActionLog();
@@ -561,17 +792,456 @@ class CutieSidebarProvider {
         await this.refreshDesktopState();
         await this.emitState();
     }
-    prewarmFastStartState() {
-        if (this.fastStartWarmupPromise)
+    startBackgroundWarmup() {
+        void this.prewarmFastStartState();
+    }
+    invalidateRequestAuthCache() {
+        this.cachedRequestAuth = null;
+    }
+    isWarmSnapshotFresh(snapshot = this.warmStartSnapshot) {
+        if (!snapshot)
+            return false;
+        if (snapshot.workspaceHash !== (0, config_1.getWorkspaceHash)())
+            return false;
+        const capturedAt = Date.parse(snapshot.capturedAt);
+        if (!Number.isFinite(capturedAt))
+            return false;
+        return Date.now() - capturedAt < CutieSidebarProvider.WARM_START_TTL_MS;
+    }
+    scheduleWarmStartRefresh(force = false) {
+        if (this.warmRefreshDebounce) {
+            clearTimeout(this.warmRefreshDebounce);
+            this.warmRefreshDebounce = null;
+        }
+        this.warmRefreshDebounce = setTimeout(() => {
+            this.warmRefreshDebounce = null;
+            void this.refreshWarmStartSnapshot(force);
+        }, CutieSidebarProvider.WARM_REFRESH_DEBOUNCE_MS);
+    }
+    async getCachedRequestAuth(force = false) {
+        const now = Date.now();
+        if (!force &&
+            this.cachedRequestAuth &&
+            now - this.cachedRequestAuth.fetchedAt < CutieSidebarProvider.REQUEST_AUTH_CACHE_TTL_MS) {
+            return this.cachedRequestAuth.auth;
+        }
+        const auth = await this.auth.getRequestAuth().catch(() => null);
+        if (!auth) {
+            this.cachedRequestAuth = null;
+            return null;
+        }
+        this.cachedRequestAuth = {
+            auth,
+            fetchedAt: now,
+        };
+        return auth;
+    }
+    getPromptStateForView() {
+        return {
+            promptSource: this.operatingPromptState.promptSource,
+            ...(this.operatingPromptState.promptMarkdownPath
+                ? { promptMarkdownPath: this.operatingPromptState.promptMarkdownPath }
+                : {}),
+            promptLoaded: this.operatingPromptState.promptLoaded,
+            ...(this.operatingPromptState.promptLoadError
+                ? { promptLoadError: this.operatingPromptState.promptLoadError }
+                : {}),
+            ...(this.operatingPromptState.promptLastLoadedAt
+                ? { promptLastLoadedAt: this.operatingPromptState.promptLastLoadedAt }
+                : {}),
+        };
+    }
+    disposeOperatingPromptWatcher() {
+        this.operatingPromptWatcher?.dispose();
+        this.operatingPromptWatcher = null;
+    }
+    refreshOperatingPromptWatcher(resolvedPath) {
+        const nextPath = String(resolvedPath || "").trim();
+        const currentPath = String(this.operatingPromptState.promptResolvedPath || "").trim();
+        if (nextPath === currentPath && this.operatingPromptWatcher)
             return;
-        this.fastStartWarmupPromise = (async () => {
-            await Promise.allSettled([this.refreshAuthState(), this.refreshDesktopState(), this.getGitStatusSummary()]);
+        this.disposeOperatingPromptWatcher();
+        if (!nextPath) {
+            delete this.operatingPromptState.promptResolvedPath;
+            return;
+        }
+        this.operatingPromptState = {
+            ...this.operatingPromptState,
+            promptResolvedPath: nextPath,
+        };
+        const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(path.dirname(nextPath), path.basename(nextPath)));
+        const refresh = () => {
+            void this.refreshOperatingPromptState(true).then(() => this.emitState());
+        };
+        watcher.onDidChange(refresh);
+        watcher.onDidCreate(refresh);
+        watcher.onDidDelete(refresh);
+        this.context.subscriptions.push(watcher);
+        this.operatingPromptWatcher = watcher;
+    }
+    async refreshOperatingPromptState(force = false) {
+        if (!force && this.operatingPromptLoadPromise) {
+            await this.operatingPromptLoadPromise;
+            return;
+        }
+        const configuredPath = (0, config_1.getPromptMarkdownPath)();
+        const resolved = (0, cutie_operating_prompt_1.resolveOperatingPromptMarkdownPath)(configuredPath, (0, config_1.getWorkspaceRootPath)());
+        if (!force &&
+            String(this.operatingPromptState.promptMarkdownPath || "") === configuredPath &&
+            String(this.operatingPromptState.promptResolvedPath || "") === String(resolved.resolvedPath || "") &&
+            (this.operatingPromptState.promptSource === "builtin_only" ||
+                this.operatingPromptState.promptSource === "external_markdown" ||
+                this.operatingPromptState.promptSource === "bundled_markdown" ||
+                this.operatingPromptState.promptSource === "external_fallback")) {
+            return;
+        }
+        this.operatingPromptLoadPromise = (async () => {
+            const bundledResolvedPath = (0, cutie_operating_prompt_1.resolveBundledOperatingPromptMarkdownPath)();
+            this.refreshOperatingPromptWatcher(resolved.resolvedPath || undefined);
+            if (!configuredPath) {
+                this.operatingPromptState = {
+                    promptSource: "builtin_only",
+                    promptLoaded: false,
+                };
+                return;
+            }
+            if (!resolved.resolvedPath) {
+                if (bundledResolvedPath) {
+                    const bundledRaw = await vscode.workspace.fs.readFile(vscode.Uri.file(bundledResolvedPath));
+                    const bundledMarkdown = (0, cutie_operating_prompt_1.normalizeOperatingPromptMarkdown)(Buffer.from(bundledRaw).toString("utf8"));
+                    if (bundledMarkdown) {
+                        this.operatingPromptState = {
+                            promptSource: "bundled_markdown",
+                            promptMarkdownPath: configuredPath,
+                            promptResolvedPath: bundledResolvedPath,
+                            promptLoaded: true,
+                            promptLastLoadedAt: new Date().toISOString(),
+                            promptContent: bundledMarkdown,
+                        };
+                        return;
+                    }
+                }
+                this.operatingPromptState = {
+                    promptSource: "external_fallback",
+                    promptMarkdownPath: configuredPath,
+                    promptLoaded: false,
+                    ...(resolved.error ? { promptLoadError: resolved.error } : {}),
+                };
+                return;
+            }
+            try {
+                const raw = await vscode.workspace.fs.readFile(vscode.Uri.file(resolved.resolvedPath));
+                const markdown = (0, cutie_operating_prompt_1.normalizeOperatingPromptMarkdown)(Buffer.from(raw).toString("utf8"));
+                if (!markdown) {
+                    throw new Error("Prompt markdown file is empty.");
+                }
+                this.operatingPromptState = {
+                    promptSource: "external_markdown",
+                    promptMarkdownPath: configuredPath,
+                    promptResolvedPath: resolved.resolvedPath,
+                    promptLoaded: true,
+                    promptLastLoadedAt: new Date().toISOString(),
+                    promptContent: markdown,
+                };
+            }
+            catch (error) {
+                if (bundledResolvedPath && bundledResolvedPath !== resolved.resolvedPath) {
+                    try {
+                        const bundledRaw = await vscode.workspace.fs.readFile(vscode.Uri.file(bundledResolvedPath));
+                        const bundledMarkdown = (0, cutie_operating_prompt_1.normalizeOperatingPromptMarkdown)(Buffer.from(bundledRaw).toString("utf8"));
+                        if (bundledMarkdown) {
+                            this.operatingPromptState = {
+                                promptSource: "bundled_markdown",
+                                promptMarkdownPath: configuredPath,
+                                promptResolvedPath: bundledResolvedPath,
+                                promptLoaded: true,
+                                promptLastLoadedAt: new Date().toISOString(),
+                                promptContent: bundledMarkdown,
+                            };
+                            return;
+                        }
+                    }
+                    catch {
+                        // Fall through to the normal external fallback state below.
+                    }
+                }
+                this.operatingPromptState = {
+                    promptSource: "external_fallback",
+                    promptMarkdownPath: configuredPath,
+                    promptResolvedPath: resolved.resolvedPath,
+                    promptLoaded: false,
+                    promptLoadError: error instanceof Error ? error.message : String(error),
+                };
+            }
         })().finally(() => {
+            this.operatingPromptLoadPromise = null;
+        });
+        await this.operatingPromptLoadPromise;
+    }
+    buildDynamicSettings() {
+        const cfg = vscode.workspace.getConfiguration("cutie-product");
+        return {
+            contextPreviewChars: Math.max(1024, Math.min(24000, cfg.get("contextPreviewChars", 6000))),
+            openFilePreviewLines: Math.max(0, Math.min(120, cfg.get("openFilePreviewLines", 25))),
+            maxOpenFilesInContext: Math.max(4, Math.min(24, cfg.get("maxOpenFilesInContext", 12))),
+            maxToolsPerBatch: Math.max(1, Math.min(8, cfg.get("maxToolsPerBatch", 4))),
+            contextReceiptWindow: Math.max(4, Math.min(32, cfg.get("contextReceiptWindow", 14))),
+            investigationPreflight: cfg.get("investigationPreflight", false),
+            objectiveBasedRuns: cfg.get("objectiveBasedRuns", true),
+            objectiveBasedInvestigation: cfg.get("objectiveBasedInvestigation", false),
+            maxToolSteps: Math.max(8, Math.min(128, cfg.get("maxToolSteps", 48))),
+            maxWorkspaceMutations: Math.max(2, Math.min(64, cfg.get("maxWorkspaceMutations", 24))),
+            unlimitedAutonomy: cfg.get("unlimitedAutonomy", false),
+        };
+    }
+    captureEditorContextSnapshot(settings) {
+        const activeEditor = vscode.window.activeTextEditor;
+        const activeFile = activeEditor
+            ? {
+                path: (0, config_1.toWorkspaceRelativePath)(activeEditor.document.uri) || undefined,
+                language: activeEditor.document.languageId,
+                lineCount: activeEditor.document.lineCount,
+                ...(activeEditor.selection.isEmpty
+                    ? { preview: activeEditor.document.getText().slice(0, settings.contextPreviewChars) }
+                    : {
+                        selection: activeEditor.document.getText(activeEditor.selection).slice(0, settings.contextPreviewChars),
+                        selectionRange: {
+                            startLine: activeEditor.selection.start.line + 1,
+                            endLine: activeEditor.selection.end.line + 1,
+                        },
+                    }),
+            }
+            : undefined;
+        const openFiles = vscode.window.visibleTextEditors
+            .map((editor) => {
+            const relativePath = (0, config_1.toWorkspaceRelativePath)(editor.document.uri);
+            if (!relativePath)
+                return null;
+            const row = {
+                path: relativePath,
+                language: editor.document.languageId,
+                lineCount: editor.document.lineCount,
+            };
+            if (settings.openFilePreviewLines > 0) {
+                const lines = editor.document.getText().split(/\r?\n/);
+                const joined = lines.slice(0, settings.openFilePreviewLines).join("\n");
+                row.preview =
+                    joined.length > settings.contextPreviewChars
+                        ? `${joined.slice(0, settings.contextPreviewChars)}\n...[truncated]`
+                        : joined;
+            }
+            return row;
+        })
+            .filter((value) => Boolean(value))
+            .slice(0, settings.maxOpenFilesInContext);
+        const diagnostics = vscode.languages
+            .getDiagnostics()
+            .flatMap(([uri, entries]) => entries.map((entry) => ({
+            file: (0, config_1.toWorkspaceRelativePath)(uri) || undefined,
+            severity: entry.severity,
+            message: entry.message,
+            line: entry.range.start.line + 1,
+        })))
+            .slice(0, 80);
+        return {
+            ...(activeFile ? { activeFile } : {}),
+            openFiles,
+            diagnostics,
+        };
+    }
+    async refreshHostReadiness(force = false) {
+        const now = Date.now();
+        if (!force &&
+            this.hostProbePromise) {
+            return this.hostProbePromise;
+        }
+        if (!force &&
+            this.hostReadyCheckedAt &&
+            now - this.hostReadyCheckedAt < CutieSidebarProvider.HOST_PROBE_TTL_MS) {
+            return;
+        }
+        this.hostProbePromise = (async () => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), CutieSidebarProvider.HOST_PROBE_TIMEOUT_MS);
+            try {
+                const response = await fetch(`${(0, config_1.getBaseApiUrl)()}/api/health`, {
+                    method: "GET",
+                    signal: controller.signal,
+                });
+                this.hostReady = response.ok;
+                this.hostFailureSummary = response.ok ? undefined : `Host probe returned HTTP ${response.status}.`;
+            }
+            catch (error) {
+                this.hostReady = false;
+                this.hostFailureSummary = error instanceof Error ? error.message : String(error);
+            }
+            finally {
+                clearTimeout(timer);
+                this.hostReadyCheckedAt = Date.now();
+                if (this.warmStartSnapshot) {
+                    this.warmStartSnapshot = {
+                        ...this.warmStartSnapshot,
+                        hostReady: this.hostReady,
+                        ...(this.hostFailureSummary ? { warmFailureSummary: this.hostFailureSummary } : {}),
+                        subsystemReady: {
+                            ...(this.warmStartSnapshot.subsystemReady || {
+                                authState: false,
+                                requestAuth: false,
+                                desktop: false,
+                                gitStatus: false,
+                                mentionIndex: false,
+                                editorContext: false,
+                                diagnostics: false,
+                                settings: false,
+                                hostProbe: false,
+                            }),
+                            hostProbe: this.hostReady === true,
+                        },
+                    };
+                }
+                this.hostProbePromise = null;
+                if (this.view && this.webviewReady) {
+                    await this.emitState();
+                }
+            }
+        })();
+        return this.hostProbePromise;
+    }
+    getWarmStartStateForView() {
+        const snapshot = this.warmStartSnapshot;
+        if (!snapshot) {
+            return {
+                localReady: false,
+                hostReady: this.hostReady,
+                warming: this.warmStartWarming,
+                ...(this.hostFailureSummary ? { warmFailureSummary: this.hostFailureSummary } : {}),
+            };
+        }
+        return {
+            localReady: snapshot.localReady,
+            hostReady: snapshot.hostReady,
+            warming: this.warmStartWarming,
+            lastWarmAt: snapshot.capturedAt,
+            requestAuthReady: snapshot.requestAuthReady,
+            ...(snapshot.warmFailureSummary ? { warmFailureSummary: snapshot.warmFailureSummary } : {}),
+            ...(snapshot.subsystemReady ? { subsystemReady: snapshot.subsystemReady } : {}),
+        };
+    }
+    async refreshWarmStartSnapshot(force = false) {
+        if (!force && this.fastStartWarmupPromise) {
+            await this.fastStartWarmupPromise;
+            return;
+        }
+        if (!force && this.isWarmSnapshotFresh()) {
+            void this.refreshHostReadiness(false);
+            return;
+        }
+        this.warmStartWarming = true;
+        this.fastStartWarmupPromise = (async () => {
+            await this.refreshOperatingPromptState(force).catch(() => undefined);
+            const settings = this.buildDynamicSettings();
+            const subsystemReady = {
+                authState: false,
+                requestAuth: false,
+                desktop: false,
+                gitStatus: false,
+                mentionIndex: false,
+                editorContext: false,
+                diagnostics: false,
+                settings: true,
+                hostProbe: this.hostReady === true,
+            };
+            let warmFailureSummary;
+            const authStateResult = await this.refreshAuthState()
+                .then(() => {
+                subsystemReady.authState = true;
+                return this.authState;
+            })
+                .catch((error) => {
+                warmFailureSummary = warmFailureSummary || (error instanceof Error ? error.message : String(error));
+                return this.authState;
+            });
+            const requestAuthResult = await this.getCachedRequestAuth(force)
+                .then((value) => {
+                subsystemReady.requestAuth = Boolean(value);
+                return value;
+            })
+                .catch((error) => {
+                warmFailureSummary = warmFailureSummary || (error instanceof Error ? error.message : String(error));
+                return null;
+            });
+            const desktopResult = await this.getDesktopContextForPrompt()
+                .then((value) => {
+                subsystemReady.desktop = true;
+                return value;
+            })
+                .catch((error) => {
+                warmFailureSummary = warmFailureSummary || (error instanceof Error ? error.message : String(error));
+                return this.desktopState;
+            });
+            const gitStatusResult = await this.getGitStatusSummary(force)
+                .then((value) => {
+                subsystemReady.gitStatus = true;
+                return value;
+            })
+                .catch((error) => {
+                warmFailureSummary = warmFailureSummary || (error instanceof Error ? error.message : String(error));
+                return this.gitStatusSummary;
+            });
+            const mentionPathsResult = await this.ensureWorkspaceMentionIndex()
+                .then((value) => {
+                subsystemReady.mentionIndex = true;
+                return value;
+            })
+                .catch((error) => {
+                warmFailureSummary = warmFailureSummary || (error instanceof Error ? error.message : String(error));
+                return this.workspaceMentionPaths || [];
+            });
+            const editorSnapshot = (() => {
+                try {
+                    const snapshot = this.captureEditorContextSnapshot(settings);
+                    subsystemReady.editorContext = true;
+                    subsystemReady.diagnostics = true;
+                    return snapshot;
+                }
+                catch (error) {
+                    warmFailureSummary = warmFailureSummary || (error instanceof Error ? error.message : String(error));
+                    return { openFiles: [], diagnostics: [] };
+                }
+            })();
+            this.warmStartSnapshot = {
+                capturedAt: new Date().toISOString(),
+                workspaceHash: (0, config_1.getWorkspaceHash)(),
+                workspaceRootPath: (0, config_1.getWorkspaceRootPath)(),
+                extensionVersion: (0, config_1.getExtensionVersion)(this.context),
+                authState: authStateResult,
+                requestAuthReady: Boolean(requestAuthResult),
+                desktopState: desktopResult,
+                ...(gitStatusResult ? { gitStatusSummary: gitStatusResult } : {}),
+                workspaceMentionPaths: mentionPathsResult,
+                ...(editorSnapshot.activeFile ? { activeFile: editorSnapshot.activeFile } : {}),
+                openFiles: editorSnapshot.openFiles,
+                diagnostics: editorSnapshot.diagnostics,
+                cutieDynamicSettings: settings,
+                localReady: subsystemReady.authState && subsystemReady.desktop && subsystemReady.settings,
+                hostReady: this.hostReady,
+                ...(warmFailureSummary || this.hostFailureSummary
+                    ? { warmFailureSummary: warmFailureSummary || this.hostFailureSummary }
+                    : {}),
+                subsystemReady,
+            };
+            void this.refreshHostReadiness(force);
+        })().finally(() => {
+            this.warmStartWarming = false;
             this.fastStartWarmupPromise = null;
             if (this.view && this.webviewReady) {
                 void this.emitState();
             }
         });
+        await this.fastStartWarmupPromise;
+    }
+    prewarmFastStartState() {
+        void this.refreshWarmStartSnapshot(false);
     }
     async captureScreen() {
         const session = await this.ensureSession("Desktop snapshot");
@@ -590,10 +1260,14 @@ class CutieSidebarProvider {
     async stopAutomation() {
         if (!this.currentAbortController) {
             this.status = "No Cutie run is active.";
+            this.submitState = "settled";
             await this.emitState();
             return;
         }
         this.status = "Stopping the active Cutie run...";
+        this.submitState = "stopping";
+        this.streamingAssistantText = "";
+        this.suppressedAssistantArtifactText = "";
         this.currentAbortController.abort();
         await this.emitState();
     }
@@ -611,6 +1285,13 @@ class CutieSidebarProvider {
             .replace(/\\/g, "/");
         if (!trimmed)
             return;
+        const touchList = this.recentPortableBundleTouchedPaths;
+        const idx = touchList.indexOf(trimmed);
+        if (idx >= 0)
+            touchList.splice(idx, 1);
+        touchList.unshift(trimmed);
+        while (touchList.length > 32)
+            touchList.pop();
         const root = (0, config_1.getWorkspaceRootPath)();
         const hasNextContent = typeof info.nextContent === "string";
         let hasAfterContent = hasNextContent;
@@ -775,6 +1456,193 @@ class CutieSidebarProvider {
         if (message.type === "binarySetTarget") {
             return this.binaryController.setBinaryTargetRuntime(String(message.runtime || "node18"));
         }
+        if (message.type === "setComposerModel") {
+            return this.setComposerModelFromWebview(String(message.model || "").trim());
+        }
+        if (message.type === "setComposerReasoningLevel") {
+            return this.setComposerReasoningLevelFromWebview(String(message.level || "").trim());
+        }
+        if (message.type === "setIdeRuntime") {
+            return this.setIdeRuntimeFromWebview(String(message.runtime || "").trim());
+        }
+        if (message.type === "undoPlaygroundBatch") {
+            return this.undoLastPlaygroundBatchCommand();
+        }
+    }
+    composerConfigurationTarget() {
+        return vscode.workspace.workspaceFolders?.length
+            ? vscode.ConfigurationTarget.Workspace
+            : vscode.ConfigurationTarget.Global;
+    }
+    async setComposerModelFromWebview(model) {
+        if (!model)
+            return;
+        await vscode.workspace
+            .getConfiguration(config_1.EXTENSION_NAMESPACE)
+            .update("model", model, this.composerConfigurationTarget());
+        await this.emitState();
+    }
+    async setComposerReasoningLevelFromWebview(level) {
+        if (!config_1.CUTIE_REASONING_LEVELS.includes(level))
+            return;
+        await vscode.workspace
+            .getConfiguration(config_1.EXTENSION_NAMESPACE)
+            .update("reasoningLevel", level, this.composerConfigurationTarget());
+        await this.emitState();
+    }
+    async setIdeRuntimeFromWebview(runtime) {
+        if (!this.ideRuntimeValues.has(runtime))
+            return;
+        await vscode.workspace
+            .getConfiguration(config_1.EXTENSION_NAMESPACE)
+            .update("binary.runtime", runtime, this.composerConfigurationTarget());
+        await this.emitState();
+    }
+    async undoLastPlaygroundBatchCommand() {
+        if ((0, config_1.getBinaryIdeChatRuntime)() !== "playgroundApi")
+            return;
+        try {
+            const msg = await this.playgroundChatBridge.undoLastPlaygroundBatch();
+            this.status = msg;
+            void vscode.window.showInformationMessage(msg);
+        }
+        catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            this.status = `Undo failed: ${message}`;
+            void vscode.window.showErrorMessage(this.status);
+        }
+        await this.emitState();
+    }
+    appendMentionsToPrompt(base, mentions) {
+        if (!mentions.length)
+            return base;
+        const prefix = mentions
+            .map((m) => String(m.insertText || m.label || "").trim())
+            .filter(Boolean)
+            .join("\n");
+        return prefix ? `${prefix}\n\n${base}` : base;
+    }
+    sessionMessagesToIdeHistory(messages) {
+        return messages
+            .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
+            .map((m) => ({ role: m.role, content: m.content }));
+    }
+    async runIdeRuntimePrompt(trimmedPrompt, mentions) {
+        const runtime = (0, config_1.getBinaryIdeChatRuntime)();
+        const task = this.appendMentionsToPrompt(trimmedPrompt, mentions);
+        if (!this.isWarmSnapshotFresh()) {
+            void this.prewarmFastStartState();
+        }
+        this.status =
+            runtime === "qwenCode"
+                ? "Running Qwen Code…"
+                : runtime === "playgroundApi"
+                    ? "Running hosted playground assist…"
+                    : "Running…";
+        this.submitState = "submitting";
+        await this.emitState();
+        try {
+            if (runtime === "qwenCode") {
+                const auth = await this.getCachedRequestAuth();
+                if (!auth?.apiKey) {
+                    this.submitState = "idle";
+                    this.status = "Qwen Code needs an Xpersona API key. Use “Set Xpersona API key” in Cutie settings.";
+                    void vscode.window.showWarningMessage(this.status);
+                    await this.emitState();
+                    return;
+                }
+            }
+            else if (runtime === "playgroundApi") {
+                const auth = await this.requireAuth();
+                if (!auth) {
+                    this.submitState = "idle";
+                    await this.emitState();
+                    return;
+                }
+            }
+            let session = await this.ensureSession(trimmedPrompt);
+            session = await this.sessionStore.appendMessage(session, { role: "user", content: task });
+            this.activeSession = session;
+            this.activeSessionId = session.id;
+            this.activeRun = null;
+            const runRequestVersion = ++this.runRequestVersion;
+            this.currentAbortController?.abort();
+            const abortController = new AbortController();
+            this.currentAbortController = abortController;
+            this.streamingAssistantText = "";
+            this.suppressedAssistantArtifactText = "";
+            this.resetLiveActionLog();
+            this.submitState = "running";
+            await this.emitState();
+            const history = this.sessionMessagesToIdeHistory(session.messages.slice(0, -1));
+            try {
+                let assistantText;
+                if (runtime === "qwenCode") {
+                    assistantText = await this.playgroundChatBridge.runQwenTurn({
+                        task,
+                        history,
+                        signal: abortController.signal,
+                        onPartial: (text) => {
+                            if (runRequestVersion !== this.runRequestVersion)
+                                return;
+                            if (abortController.signal.aborted)
+                                return;
+                            this.streamingAssistantText = text;
+                            void this.emitState();
+                        },
+                    });
+                }
+                else {
+                    assistantText = await this.playgroundChatBridge.runPlaygroundApiTurn({
+                        task,
+                        mode: "auto",
+                        historySessionId: session.id,
+                        history,
+                        signal: abortController.signal,
+                    });
+                }
+                if (runRequestVersion !== this.runRequestVersion)
+                    return;
+                session = await this.sessionStore.appendMessage(session, { role: "assistant", content: assistantText });
+                this.activeSession = session;
+                this.activeSessionId = session.id;
+                this.streamingAssistantText = "";
+                this.submitState = "settled";
+                this.status = "Done.";
+            }
+            catch (error) {
+                if (runRequestVersion !== this.runRequestVersion)
+                    return;
+                const message = error instanceof Error ? error.message : String(error);
+                const isCancel = /aborted|abort|cancelled|canceled/i.test(message);
+                this.streamingAssistantText = "";
+                this.status = isCancel ? "Run cancelled." : `Failed: ${message}`;
+                this.submitState = "settled";
+                if (!isCancel)
+                    void vscode.window.showErrorMessage(this.status);
+            }
+            finally {
+                if (this.currentAbortController === abortController) {
+                    this.currentAbortController = null;
+                }
+                if (runRequestVersion === this.runRequestVersion) {
+                    this.streamingAssistantText = "";
+                    this.submitState = "settled";
+                }
+                await this.refreshDesktopState();
+                void this.prewarmFastStartState();
+                await this.emitState();
+            }
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.status = `Failed: ${message}`;
+            this.submitState = "settled";
+            void vscode.window.showErrorMessage(this.status);
+            await this.refreshDesktopState();
+            void this.prewarmFastStartState();
+            await this.emitState();
+        }
     }
     async openWorkspaceRelativePath(relativePath, options) {
         const trimmed = String(relativePath || "").trim().replace(/\\/g, "/");
@@ -853,7 +1721,7 @@ class CutieSidebarProvider {
         }, { preserveFocus: false, preview: true });
     }
     async requireAuth() {
-        const auth = await this.auth.getRequestAuth();
+        const auth = await this.getCachedRequestAuth();
         if (!auth) {
             this.status = "Sign in to Xpersona or set an API key before running Cutie.";
             await this.emitState();
@@ -879,6 +1747,7 @@ class CutieSidebarProvider {
         this.activeSession = session;
         this.activeSessionId = session.id;
         this.activeRun = this.sessionStore.getLatestRun(session);
+        this.submitState = "idle";
         this.streamingAssistantText = "";
         this.suppressedAssistantArtifactText = "";
         this.resetLiveActionLog();
@@ -898,85 +1767,49 @@ class CutieSidebarProvider {
         return session;
     }
     async gatherContext() {
-        const cfg = vscode.workspace.getConfiguration("cutie-product");
-        const contextPreviewChars = Math.max(1024, Math.min(24000, cfg.get("contextPreviewChars", 6000)));
-        const openFilePreviewLines = Math.max(0, Math.min(120, cfg.get("openFilePreviewLines", 25)));
-        const maxOpenFilesInContext = Math.max(4, Math.min(24, cfg.get("maxOpenFilesInContext", 12)));
-        const maxToolsPerBatch = Math.max(1, Math.min(8, cfg.get("maxToolsPerBatch", 4)));
-        const contextReceiptWindow = Math.max(4, Math.min(32, cfg.get("contextReceiptWindow", 14)));
-        const investigationPreflight = cfg.get("investigationPreflight", false);
-        const objectiveBasedRuns = cfg.get("objectiveBasedRuns", true);
-        const objectiveBasedInvestigation = cfg.get("objectiveBasedInvestigation", false);
-        const maxToolSteps = Math.max(8, Math.min(128, cfg.get("maxToolSteps", 48)));
-        const maxWorkspaceMutations = Math.max(2, Math.min(64, cfg.get("maxWorkspaceMutations", 24)));
-        const unlimitedAutonomy = cfg.get("unlimitedAutonomy", false);
-        const activeEditor = vscode.window.activeTextEditor;
-        const activeFile = activeEditor
+        await this.refreshOperatingPromptState(false);
+        const settings = this.buildDynamicSettings();
+        const snapshot = this.isWarmSnapshotFresh() ? this.warmStartSnapshot : null;
+        const editorSnapshot = snapshot
             ? {
-                path: (0, config_1.toWorkspaceRelativePath)(activeEditor.document.uri) || undefined,
-                language: activeEditor.document.languageId,
-                lineCount: activeEditor.document.lineCount,
-                ...(activeEditor.selection.isEmpty
-                    ? { preview: activeEditor.document.getText().slice(0, contextPreviewChars) }
-                    : {
-                        selection: activeEditor.document.getText(activeEditor.selection).slice(0, contextPreviewChars),
-                        selectionRange: {
-                            startLine: activeEditor.selection.start.line + 1,
-                            endLine: activeEditor.selection.end.line + 1,
-                        },
-                    }),
+                ...(snapshot.activeFile ? { activeFile: snapshot.activeFile } : {}),
+                openFiles: snapshot.openFiles,
+                diagnostics: snapshot.diagnostics,
             }
-            : undefined;
-        const openFiles = vscode.window.visibleTextEditors
-            .map((editor) => {
-            const relativePath = (0, config_1.toWorkspaceRelativePath)(editor.document.uri);
-            if (!relativePath)
-                return null;
-            const row = {
-                path: relativePath,
-                language: editor.document.languageId,
-                lineCount: editor.document.lineCount,
-            };
-            if (openFilePreviewLines > 0) {
-                const lines = editor.document.getText().split(/\r?\n/);
-                const joined = lines.slice(0, openFilePreviewLines).join("\n");
-                row.preview =
-                    joined.length > contextPreviewChars ? `${joined.slice(0, contextPreviewChars)}\n...[truncated]` : joined;
-            }
-            return row;
-        })
-            .filter((value) => Boolean(value))
-            .slice(0, maxOpenFilesInContext);
-        const diagnostics = vscode.languages
-            .getDiagnostics()
-            .flatMap(([uri, entries]) => entries.map((entry) => ({
-            file: (0, config_1.toWorkspaceRelativePath)(uri) || undefined,
-            severity: entry.severity,
-            message: entry.message,
-            line: entry.range.start.line + 1,
-        })))
-            .slice(0, 80);
-        const desktop = await this.getDesktopContextForPrompt().catch(() => this.desktopState);
-        const gitStatusSummary = await this.getGitStatusSummary().catch(() => this.gitStatusSummary);
+            : this.captureEditorContextSnapshot(settings);
+        const desktop = snapshot?.desktopState || (await this.getDesktopContextForPrompt().catch(() => this.desktopState));
+        const gitStatusSummary = snapshot?.gitStatusSummary || (await this.getGitStatusSummary().catch(() => this.gitStatusSummary));
         return {
             workspaceHash: (0, config_1.getWorkspaceHash)(),
             workspaceRootPath: (0, config_1.getWorkspaceRootPath)(),
             extensionVersion: (0, config_1.getExtensionVersion)(this.context),
-            ...(activeFile ? { activeFile } : {}),
-            ...(openFiles.length ? { openFiles } : {}),
-            ...(diagnostics.length ? { diagnostics } : {}),
+            ...(editorSnapshot.activeFile ? { activeFile: editorSnapshot.activeFile } : {}),
+            ...(editorSnapshot.openFiles.length ? { openFiles: editorSnapshot.openFiles } : {}),
+            ...(editorSnapshot.diagnostics.length ? { diagnostics: editorSnapshot.diagnostics } : {}),
             desktop,
             latestSnapshot: this.activeSession?.snapshots?.[0] || null,
             cutieDynamicSettings: {
-                maxToolsPerBatch,
-                contextReceiptWindow,
-                investigationPreflight,
-                objectiveBasedRuns,
-                objectiveBasedInvestigation,
-                maxToolSteps,
-                maxWorkspaceMutations,
-                unlimitedAutonomy,
+                maxToolsPerBatch: settings.maxToolsPerBatch,
+                contextReceiptWindow: settings.contextReceiptWindow,
+                investigationPreflight: settings.investigationPreflight,
+                objectiveBasedRuns: settings.objectiveBasedRuns,
+                objectiveBasedInvestigation: settings.objectiveBasedInvestigation,
+                maxToolSteps: settings.maxToolSteps,
+                maxWorkspaceMutations: settings.maxWorkspaceMutations,
+                unlimitedAutonomy: settings.unlimitedAutonomy,
             },
+            promptSource: this.operatingPromptState.promptSource,
+            promptMarkdownPath: this.operatingPromptState.promptMarkdownPath,
+            promptLoaded: this.operatingPromptState.promptLoaded,
+            ...(this.operatingPromptState.promptLoadError
+                ? { promptLoadError: this.operatingPromptState.promptLoadError }
+                : {}),
+            ...(this.operatingPromptState.promptLastLoadedAt
+                ? { promptLastLoadedAt: this.operatingPromptState.promptLastLoadedAt }
+                : {}),
+            ...(this.operatingPromptState.promptContent
+                ? { externalOperatingPrompt: this.operatingPromptState.promptContent }
+                : {}),
             ...(gitStatusSummary ? { gitStatusSummary } : {}),
         };
     }
@@ -1084,21 +1917,40 @@ class CutieSidebarProvider {
             await this.emitState();
             return;
         }
-        this.status = "Preparing your Cutie run...";
+        if ((0, config_1.getBinaryIdeChatRuntime)() !== "cutie") {
+            return this.runIdeRuntimePrompt(trimmedPrompt, mentions);
+        }
+        if (!this.isWarmSnapshotFresh()) {
+            void this.prewarmFastStartState();
+        }
+        this.status = this.warmStartSnapshot?.localReady
+            ? this.warmStartSnapshot.hostReady === false
+                ? "Starting your Cutie run from warm local context..."
+                : "Starting your Cutie run from warm context..."
+            : "Preparing your Cutie run...";
+        this.submitState = "submitting";
         await this.emitState();
         try {
             const auth = await this.requireAuth();
-            if (!auth)
+            if (!auth) {
+                this.submitState = "idle";
+                this.status = "Sign in or set an API key to start Cutie.";
+                await this.emitState();
                 return;
+            }
             const session = await this.ensureSession(trimmedPrompt);
             const runRequestVersion = ++this.runRequestVersion;
             this.currentAbortController?.abort();
             const abortController = new AbortController();
             this.currentAbortController = abortController;
+            this.activeRun = null;
             this.streamingAssistantText = "";
             this.suppressedAssistantArtifactText = "";
             this.resetLiveActionLog();
-            this.status = "Starting local Cutie runtime...";
+            this.status = this.warmStartSnapshot?.localReady
+                ? "Starting local Cutie runtime from warm context..."
+                : "Starting local Cutie runtime...";
+            this.submitState = "starting";
             await this.emitState();
             try {
                 const result = await this.runtime.runPrompt({
@@ -1108,12 +1960,13 @@ class CutieSidebarProvider {
                     mentions,
                     signal: abortController.signal,
                     callbacks: {
-                        onSessionChanged: async (nextSession) => {
+                        onSessionChanged: async (nextSession, maybeRun) => {
                             if (runRequestVersion !== this.runRequestVersion)
                                 return;
                             this.activeSession = nextSession;
                             this.activeSessionId = nextSession.id;
-                            this.activeRun = this.sessionStore.getLatestRun(nextSession);
+                            this.activeRun =
+                                maybeRun === undefined ? this.sessionStore.getLatestRun(nextSession) : maybeRun;
                             this.syncLiveActionReceipts(this.activeRun);
                             await this.emitState();
                             void this.refreshDesktopState().then(() => this.emitState());
@@ -1123,9 +1976,17 @@ class CutieSidebarProvider {
                                 return;
                             this.status = status;
                             this.activeRun = run;
+                            if (this.submitState !== "stopping") {
+                                this.submitState =
+                                    run?.status === "running"
+                                        ? "running"
+                                        : this.currentAbortController
+                                            ? "starting"
+                                            : "settled";
+                            }
                             this.noteLiveActionStatus(status, run);
                             this.syncLiveActionReceipts(run);
-                            if (!run || run.status !== "running") {
+                            if (abortController.signal.aborted || !run || run.status !== "running") {
                                 this.streamingAssistantText = "";
                             }
                             await this.emitState();
@@ -1134,20 +1995,57 @@ class CutieSidebarProvider {
                         onAssistantDelta: async (_delta, accumulated) => {
                             if (runRequestVersion !== this.runRequestVersion)
                                 return;
+                            if (abortController.signal.aborted)
+                                return;
+                            if (this.submitState === "stopping")
+                                return;
                             if ((0, cutie_native_autonomy_1.looksLikeCutieToolArtifactText)(accumulated)) {
                                 this.suppressedAssistantArtifactText = accumulated;
                                 this.streamingAssistantText = "";
+                                this.upsertLiveTranscriptEvent({
+                                    kind: "artifact_rescue",
+                                    text: (0, cutie_transcript_1.humanizeSuppressedAssistantArtifact)(accumulated),
+                                    run: this.activeRun,
+                                    slot: "suppressed_artifact",
+                                });
+                                this.submitState = "running";
                                 await this.emitState();
+                                if (abortController.signal.aborted)
+                                    return;
                                 return;
                             }
+                            this.submitState = "running";
                             this.streamingAssistantText = accumulated;
+                            this.upsertLiveTranscriptEvent({
+                                kind: "assistant_text",
+                                text: accumulated,
+                                run: this.activeRun,
+                                slot: "assistant_stream",
+                            });
                             await this.emitState();
+                            if (abortController.signal.aborted) {
+                                this.streamingAssistantText = "";
+                            }
                         },
                         onSuppressedAssistantArtifact: async (artifact) => {
                             if (runRequestVersion !== this.runRequestVersion)
                                 return;
+                            if (abortController.signal.aborted)
+                                return;
+                            if (this.submitState === "stopping")
+                                return;
                             this.suppressedAssistantArtifactText = artifact;
+                            this.upsertLiveTranscriptEvent({
+                                kind: "artifact_rescue",
+                                text: (0, cutie_transcript_1.humanizeSuppressedAssistantArtifact)(artifact),
+                                run: this.activeRun,
+                                slot: "suppressed_artifact",
+                            });
+                            this.submitState = "running";
                             await this.emitState();
+                            if (abortController.signal.aborted) {
+                                this.suppressedAssistantArtifactText = "";
+                            }
                         },
                         onWorkspaceFileMutated: async (info) => {
                             if (runRequestVersion !== this.runRequestVersion)
@@ -1174,24 +2072,22 @@ class CutieSidebarProvider {
                 this.activeSessionId = result.session.id;
                 this.activeRun = result.run;
                 this.syncLiveActionReceipts(result.run);
+                await this.persistUnifiedRunTranscript(result.run);
                 this.streamingAssistantText = "";
-                this.status =
-                    result.run.status === "completed"
-                        ? "Cutie completed the run."
-                        : result.run.status === "needs_guidance"
-                            ? "Cutie needs guidance to keep making real progress."
-                            : result.run.status === "canceled"
-                                ? "Cutie run cancelled."
-                                : result.run.error
-                                    ? `Cutie stopped: ${result.run.error}`
-                                    : "Cutie stopped early.";
+                this.submitState = "settled";
+                this.status = settledStatusForRun(result.run);
             }
             catch (error) {
                 if (runRequestVersion !== this.runRequestVersion)
                     return;
                 const message = error instanceof Error ? error.message : String(error);
-                this.status = `Cutie failed: ${message}`;
-                void vscode.window.showErrorMessage(this.status);
+                const isCancel = /aborted|abort|cancelled|canceled/i.test(message);
+                this.streamingAssistantText = "";
+                this.suppressedAssistantArtifactText = "";
+                this.status = isCancel ? "Cutie run cancelled." : `Cutie failed: ${message}`;
+                this.submitState = "settled";
+                if (!isCancel)
+                    void vscode.window.showErrorMessage(this.status);
             }
             finally {
                 if (this.currentAbortController === abortController) {
@@ -1199,15 +2095,19 @@ class CutieSidebarProvider {
                 }
                 if (runRequestVersion !== this.runRequestVersion)
                     return;
+                this.submitState = "settled";
                 await this.refreshDesktopState();
+                void this.prewarmFastStartState();
                 await this.emitState();
             }
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             this.status = `Cutie failed: ${message}`;
+            this.submitState = "settled";
             void vscode.window.showErrorMessage(this.status);
             await this.refreshDesktopState();
+            void this.prewarmFastStartState();
             await this.emitState();
         }
     }
@@ -1219,8 +2119,10 @@ class CutieSidebarProvider {
             exportedAt: new Date().toISOString(),
             extensionVersion: (0, config_1.getExtensionVersion)(this.context),
             workspaceHash: (0, config_1.getWorkspaceHash)(),
+            submitState: this.submitState,
             status: this.status,
-            liveActionLogPreview: this.liveActionLog.slice(-40),
+            liveActionLogPreview: this.getLiveActionLogForRun(run).slice(-40),
+            liveTranscriptPreview: this.getLiveTranscriptForRun(run).slice(-40),
             suppressedAssistantArtifactPreview: this.suppressedAssistantArtifactText
                 ? this.suppressedAssistantArtifactText.slice(0, 4000)
                 : null,
@@ -1228,6 +2130,8 @@ class CutieSidebarProvider {
                 kind: this.authState.kind,
                 label: this.authState.label,
             },
+            warmStartState: this.getWarmStartStateForView(),
+            promptState: this.getPromptStateForView(),
             session: session
                 ? {
                     id: session.id,
@@ -1250,13 +2154,54 @@ class CutieSidebarProvider {
                     repeatedCallCount: run.repeatedCallCount,
                     goal: run.goal,
                     autonomyMode: run.autonomyMode || null,
+                    preferredTargetPath: run.preferredTargetPath || null,
+                    targetConfidence: run.targetConfidence || null,
+                    targetSource: run.targetSource || null,
+                    taskFrame: run.taskFrame || null,
+                    targetCandidates: run.targetCandidates || [],
+                    targetAcquisitionPhase: run.targetAcquisitionPhase || null,
+                    currentRepairTactic: run.currentRepairTactic || null,
+                    lastNewEvidence: run.lastNewEvidence || null,
+                    noOpConclusion: run.noOpConclusion || null,
+                    modelAdapter: run.modelAdapter || null,
+                    modelCapabilities: run.modelCapabilities || null,
+                    protocolMode: run.protocolMode || null,
+                    normalizationSource: run.normalizationSource || null,
+                    artifactExtractionShape: run.artifactExtractionShape || null,
+                    fallbackModeUsed: run.fallbackModeUsed || null,
+                    simpleTaskFastPath: Boolean(run.simpleTaskFastPath),
+                    objectiveSuspendedForDirectRecovery: Boolean(run.objectiveSuspendedForDirectRecovery),
+                    nextDeterministicAction: run.nextDeterministicAction || null,
+                    suppressedToolRescued: Boolean(run.suppressedToolRescued),
+                    suppressedToolName: run.suppressedToolName || null,
+                    suppressedToolRejectedReason: run.suppressedToolRejectedReason || null,
+                    lastMutationValidationError: run.lastMutationValidationError || null,
+                    patchDisabledForRun: Boolean(run.patchDisabledForRun),
+                    mutationCoercionMode: run.mutationCoercionMode || null,
+                    executedRecoveredArtifact: Boolean(run.executedRecoveredArtifact),
+                    promptSource: run.promptSource || null,
+                    promptMarkdownPath: run.promptMarkdownPath || null,
+                    promptLoaded: Boolean(run.promptLoaded),
+                    promptLoadError: run.promptLoadError || null,
+                    promptLastLoadedAt: run.promptLastLoadedAt || null,
                     goalSatisfied: run.goalSatisfied,
                     lastMeaningfulProgressAtStep: run.lastMeaningfulProgressAtStep ?? null,
                     lastMeaningfulProgressSummary: run.lastMeaningfulProgressSummary || null,
+                    lastActionAtStep: run.lastActionAtStep ?? null,
+                    lastActionSummary: run.lastActionSummary || null,
+                    lastStrategyShiftAtStep: run.lastStrategyShiftAtStep ?? null,
+                    noProgressTurns: run.noProgressTurns ?? 0,
+                    stallSinceStep: run.stallSinceStep ?? null,
+                    stallSinceSummary: run.stallSinceSummary || null,
+                    stallLevel: run.stallLevel || null,
+                    stallReason: run.stallReason || null,
+                    stallNextAction: run.stallNextAction || null,
                     repairAttemptCount: run.repairAttemptCount,
+                    objectiveRepairCount: run.objectiveRepairCount ?? 0,
                     escalationState: run.escalationState,
                     stuckReason: run.stuckReason || null,
                     suggestedNextAction: run.suggestedNextAction || null,
+                    currentStrategyLabel: (0, cutie_autonomy_controller_1.getCurrentStrategyLabel)(run),
                     lastToolName: run.lastToolName || null,
                     error: run.error || null,
                     startedAt: run.startedAt,
@@ -1284,24 +2229,17 @@ class CutieSidebarProvider {
         void vscode.window.showInformationMessage("Cutie debug report copied to your clipboard.");
     }
     getVisibleMessages() {
-        const messages = this.activeSession?.messages || [];
-        const withStream = this.streamingAssistantText.trim() === ""
-            ? messages
-            : [
-                ...messages,
-                {
-                    id: "__streaming__",
-                    role: "assistant",
-                    content: this.streamingAssistantText,
-                    createdAt: new Date().toISOString(),
-                    ...(this.activeRun ? { runId: this.activeRun.id } : {}),
-                },
-            ];
+        const activeRunId = String(this.activeRun?.id || "").trim();
+        const messages = (this.activeSession?.messages || []).filter((message) => {
+            if (!activeRunId || !isBusySubmitState(this.submitState))
+                return true;
+            return !(message.role === "assistant" && message.runId === activeRunId);
+        });
         const bubble = this.binaryController.getLiveBubble();
         if (!bubble)
-            return withStream;
+            return messages;
         return [
-            ...withStream,
+            ...messages,
             {
                 id: bubble.messageId,
                 role: "assistant",
@@ -1365,7 +2303,12 @@ class CutieSidebarProvider {
         }));
     }
     async refreshViewState() {
-        await Promise.allSettled([this.refreshAuthState(), this.refreshDesktopState()]);
+        await Promise.allSettled([
+            this.refreshAuthState(),
+            this.refreshDesktopState(),
+            this.refreshOperatingPromptState(false),
+            this.refreshWarmStartSnapshot(false),
+        ]);
         await this.emitState();
     }
     async emitState() {
@@ -1378,15 +2321,26 @@ class CutieSidebarProvider {
             activeSessionId: this.activeSessionId,
             messages: this.getVisibleMessages(),
             chatDiffs: this.getChatDiffsForActiveSession(),
-            liveActionLog: this.activeRun?.status === "running" ? this.liveActionLog : [],
+            liveActionLog: this.getLiveActionLogForRun(this.activeRun),
+            liveTranscript: this.getLiveTranscriptForRun(this.activeRun),
             status: this.status,
-            running: this.activeRun?.status === "running",
+            submitState: this.submitState,
+            running: isBusySubmitState(this.submitState),
             activeRun: this.activeRun,
             desktop: this.desktopState,
             progress: buildProgressViewModel(this.activeRun),
             binary: this.binaryController.binary,
             binaryActivity: this.binaryController.binaryActivity,
             binaryLiveBubble: this.binaryController.getLiveBubble(),
+            composerPrefs: {
+                selectedModel: (0, config_1.getModelHint)(),
+                modelOptions: (0, config_1.getModelPickerOptions)(),
+                reasoningLevel: (0, config_1.getReasoningLevel)(),
+            },
+            warmStartState: this.getWarmStartStateForView(),
+            promptState: this.getPromptStateForView(),
+            canUndoPlayground: this.playgroundChatBridge.canUndoPlaygroundBatch(),
+            ideRuntime: (0, config_1.getBinaryIdeChatRuntime)(),
         };
         this.view.webview.postMessage({ type: "state", state });
     }
@@ -1399,11 +2353,17 @@ CutieSidebarProvider.WEBVIEW_READY_TIMEOUT_MS = 10000;
 CutieSidebarProvider.MAX_LIVE_ACTION_LINES = 120;
 CutieSidebarProvider.DESKTOP_CONTEXT_CACHE_TTL_MS = 8000;
 CutieSidebarProvider.GIT_STATUS_CACHE_TTL_MS = 15000;
+CutieSidebarProvider.WARM_START_TTL_MS = 15000;
+CutieSidebarProvider.WARM_REFRESH_DEBOUNCE_MS = 220;
+CutieSidebarProvider.REQUEST_AUTH_CACHE_TTL_MS = 60000;
+CutieSidebarProvider.HOST_PROBE_TTL_MS = 30000;
+CutieSidebarProvider.HOST_PROBE_TIMEOUT_MS = 1500;
 function activate(context) {
     try {
         (0, cutie_diff_1.registerCutieDiffBeforeProvider)(context);
         const auth = new auth_1.CutieAuthManager(context);
         const provider = new CutieSidebarProvider(context, auth);
+        provider.startBackgroundWarmup();
         context.subscriptions.push(vscode.window.registerWebviewViewProvider(config_1.VIEW_ID, provider), vscode.window.registerUriHandler(auth), vscode.commands.registerCommand("cutie-product.startChat", async () => provider.show()), vscode.commands.registerCommand("cutie-product.captureScreen", async () => provider.captureScreen()), vscode.commands.registerCommand("cutie-product.setApiKey", async () => auth.setApiKeyInteractive()), vscode.commands.registerCommand("cutie-product.signIn", async () => auth.signInWithBrowser()), vscode.commands.registerCommand("cutie-product.signOut", async () => {
             await auth.signOut();
             provider.stopBinaryStreamsForSignOut();
@@ -1412,12 +2372,21 @@ function activate(context) {
             const editor = vscode.window.activeTextEditor;
             let prefill;
             if (editor) {
-                const selected = editor.selection.isEmpty
+                const rel = (0, config_1.toWorkspaceRelativePath)(editor.document.uri);
+                const line = editor.selection.active.line + 1;
+                const selectedText = editor.selection.isEmpty
                     ? editor.document.lineAt(editor.selection.active.line).text
                     : editor.document.getText(editor.selection);
-                prefill = selected.trim() || undefined;
+                const fromSelection = (0, selection_prefill_1.buildSelectionPrefill)({
+                    path: rel || undefined,
+                    line,
+                    selectedText,
+                });
+                prefill = fromSelection.trim() || selectedText.trim() || undefined;
             }
             await provider.runBinaryGenerateFromEditor(prefill);
+        }), vscode.commands.registerCommand("cutie-product.undoLastPlaygroundChanges", async () => {
+            await provider.undoLastPlaygroundBatchCommand();
         }), vscode.commands.registerCommand("cutie-product.binary.validate", async () => provider.runBinaryValidateCommand()), vscode.commands.registerCommand("cutie-product.binary.deploy", async () => provider.runBinaryDeployCommand()), vscode.commands.registerCommand("cutie-product.binary.configure", async () => provider.openBinaryConfigureCommand()));
     }
     catch (error) {

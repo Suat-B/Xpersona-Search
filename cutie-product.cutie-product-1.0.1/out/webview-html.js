@@ -246,6 +246,9 @@ function buildWebviewHtml(webview) {
       opacity: 0.55;
       cursor: default;
     }
+    .settings-menu button.is-hidden {
+      display: none;
+    }
     .menu-button {
       display: flex;
       align-items: center;
@@ -298,7 +301,6 @@ function buildWebviewHtml(webview) {
       transform: translateX(-104%);
       opacity: 0;
       pointer-events: none;
-      transition: transform 0.2s ease, opacity 0.2s ease;
     }
     .workspace-shell[data-history-open="true"] .history-drawer {
       transform: translateX(0);
@@ -322,7 +324,6 @@ function buildWebviewHtml(webview) {
       transform: translateX(104%);
       opacity: 0;
       pointer-events: none;
-      transition: transform 0.2s ease, opacity 0.2s ease;
     }
     .workspace-shell[data-artifacts-open="true"] .artifacts-drawer {
       transform: translateX(0);
@@ -1065,6 +1066,9 @@ function buildWebviewHtml(webview) {
       background: color-mix(in srgb, var(--panel-elevated) 92%, var(--canvas) 8%);
       overflow: hidden;
     }
+    .cutie-files-summary.in-drawer {
+      margin: 2px 0 10px;
+    }
     .cutie-files-summary-head {
       display: flex;
       flex-wrap: wrap;
@@ -1431,6 +1435,35 @@ function buildWebviewHtml(webview) {
       align-items: center;
       padding: 4px 8px 5px;
     }
+    .composer-footer {
+      display: flex;
+      flex-direction: row;
+      flex-wrap: nowrap;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 4px 2px;
+      margin-top: 2px;
+      min-width: 0;
+    }
+    .composer-footer-select {
+      flex: 1 1 0;
+      min-width: 0;
+      max-width: none;
+      padding: 5px 8px;
+      border-radius: 8px;
+      border: none;
+      background: var(--panel-soft);
+      color: var(--text);
+      font-size: 11px;
+      line-height: 1.35;
+      cursor: pointer;
+      outline: none;
+      box-shadow: none;
+    }
+    .composer-footer-select:hover,
+    .composer-footer-select:focus-visible {
+      background: color-mix(in srgb, var(--panel-soft) 70%, var(--accent) 8%);
+    }
     .chips {
       display: flex;
       gap: 8px;
@@ -1738,6 +1771,51 @@ function buildWebviewHtml(webview) {
     .live-actions-line.is-step {
       color: color-mix(in srgb, var(--text) 88%, var(--accent) 12%);
     }
+    .bubble.assistant.transcript-message {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 0 0 10px;
+      white-space: normal;
+    }
+    .transcript-line {
+      display: block;
+      min-width: 0;
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.62;
+      text-align: left;
+    }
+    .transcript-line.is-chat {
+      color: var(--text);
+      font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+      font-size: 13px;
+    }
+    .transcript-line.is-section {
+      margin-top: 6px;
+      color: color-mix(in srgb, var(--text) 88%, var(--accent) 12%);
+      font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .transcript-line.is-ops {
+      padding-left: 12px;
+      border-left: 2px solid color-mix(in srgb, var(--line) 78%, transparent);
+      color: color-mix(in srgb, var(--text) 84%, var(--muted) 16%);
+      font-family: var(--vscode-editor-font-family, ui-monospace, "Cascadia Code", Consolas, monospace);
+      font-size: 11.5px;
+      letter-spacing: 0.01em;
+    }
+    .transcript-line.is-ops.is-strong {
+      border-left-color: color-mix(in srgb, var(--accent) 36%, var(--line) 64%);
+      color: var(--text);
+    }
+    .transcript-gap {
+      height: 8px;
+    }
     @media (max-width: 1080px) {
       .workspace-main {
         grid-template-columns: 200px minmax(0, 1fr);
@@ -1818,10 +1896,11 @@ function buildWebviewHtml(webview) {
           <div class="settings-menu is-hidden" id="settingsMenu" role="menu" aria-label="Cutie Product settings">
             <button type="button" id="settingsSetKey" role="menuitem">Set Xpersona API key</button>
             <button type="button" id="settingsSignIn" role="menuitem">Browser sign in</button>
+            <button type="button" id="settingsUndoPlayground" role="menuitem">Undo last playground batch</button>
             <button type="button" id="settingsSignOut" role="menuitem">Sign out</button>
             <button type="button" id="settingsCopyDebug" role="menuitem">Copy debug report</button>
             <button type="button" id="settingsCapture" role="menuitem">Capture desktop</button>
-            <button type="button" id="settingsBinaryConfigure" role="menuitem">Portable bundle API…</button>
+            <button type="button" id="settingsBinaryConfigure" role="menuitem">App builder…</button>
           </div>
         </div>
       </div>
@@ -1893,6 +1972,10 @@ function buildWebviewHtml(webview) {
             </div>
             <div class="status-line" id="runtimeLine"></div>
           </div>
+          <footer class="composer-footer" aria-label="Model and reasoning">
+            <select class="composer-footer-select" id="composerModelSelect" aria-label="Model"></select>
+            <select class="composer-footer-select" id="composerReasoningSelect" aria-label="Reasoning level"></select>
+          </footer>
         </div>
       </main>
     </div>
@@ -1973,6 +2056,8 @@ function buildWebviewHtml(webview) {
     const settingsToggle = document.getElementById('settingsToggle');
     const settingsMenu = document.getElementById('settingsMenu');
     const sendBtn = document.getElementById('sendBtn');
+    const composerModelSelect = document.getElementById('composerModelSelect');
+    const composerReasoningSelect = document.getElementById('composerReasoningSelect');
     const objectivesPanel = document.getElementById('objectivesPanel');
     const binaryPanel = document.getElementById('binaryPanel');
     const binaryPanelToggle = document.getElementById('binaryPanelToggle');
@@ -2000,7 +2085,9 @@ function buildWebviewHtml(webview) {
       messages: [],
       chatDiffs: [],
       liveActionLog: [],
+      liveTranscript: [],
       activeSessionId: null,
+      submitState: 'idle',
       running: false,
       status: 'Ready',
       activeRun: null,
@@ -2008,9 +2095,16 @@ function buildWebviewHtml(webview) {
       binary: null,
       binaryActivity: [],
       binaryLiveBubble: null,
+      composerPrefs: { selectedModel: '', modelOptions: [], reasoningLevel: 'Medium' },
+      warmStartState: null,
+      promptState: null,
+      authState: { kind: 'none', label: 'Not signed in' },
+      ideRuntime: 'cutie',
+      canUndoPlayground: false,
     };
     let pendingSubmission = null;
     let isSubmitting = false;
+    let selectedArtifactsRunId = '';
     let queuedPrompts = [];
     let recentSubmissionGuard = {
       prompt: '',
@@ -2024,12 +2118,27 @@ function buildWebviewHtml(webview) {
       loading: false,
     };
     let mentionDebounceTimer = null;
+    let mentionQueryRaf = 0;
+    let cachedEmptyMentionItems = [];
     let allowNextLineBreak = false;
     let lastInputValue = input ? String(input.value || '') : '';
     let composerWatchTimer = null;
     let lastBareEnterIntentAt = 0;
 
     if (composerForm) composerForm.addEventListener('submit', postSendOrStop, true);
+    if (composerModelSelect) {
+      composerModelSelect.addEventListener('change', function () {
+        vscode.postMessage({ type: 'setComposerModel', model: String(composerModelSelect.value || '').trim() });
+      });
+    }
+    if (composerReasoningSelect) {
+      composerReasoningSelect.addEventListener('change', function () {
+        vscode.postMessage({
+          type: 'setComposerReasoningLevel',
+          level: String(composerReasoningSelect.value || '').trim(),
+        });
+      });
+    }
     if (sendBtn) {
       sendBtn.addEventListener('click', postSendOrStop, true);
       sendBtn.addEventListener('pointerup', postSendOrStop, true);
@@ -2178,12 +2287,21 @@ function buildWebviewHtml(webview) {
       input.style.height = Math.min(Math.max(input.scrollHeight, 40), 88) + 'px';
     }
 
+    function submitStateValue() {
+      return String(state.submitState || (state.running ? 'running' : 'idle'));
+    }
+
+    function isBusySubmitState() {
+      const value = submitStateValue();
+      return value === 'submitting' || value === 'starting' || value === 'running' || value === 'stopping';
+    }
+
     function updateComposerPrimaryButton() {
-      if (state.running) {
+      if (isBusySubmitState()) {
         sendBtn.innerHTML = ICON_STOP;
         sendBtn.classList.add('is-stop');
-        sendBtn.classList.remove('is-busy');
-        sendBtn.disabled = false;
+        sendBtn.classList.toggle('is-busy', submitStateValue() === 'stopping');
+        sendBtn.disabled = submitStateValue() === 'stopping';
         sendBtn.setAttribute('aria-label', 'Stop run');
         return;
       }
@@ -2192,6 +2310,42 @@ function buildWebviewHtml(webview) {
       sendBtn.disabled = isSubmitting;
       sendBtn.classList.toggle('is-busy', isSubmitting);
       sendBtn.setAttribute('aria-label', 'Submit');
+    }
+
+    const REASONING_LEVELS = ['Low', 'Medium', 'High', 'Extra High'];
+
+    function renderComposerFooter() {
+      if (!composerModelSelect || !composerReasoningSelect) return;
+      const prefs = state.composerPrefs || {};
+      const models =
+        Array.isArray(prefs.modelOptions) && prefs.modelOptions.length > 0
+          ? prefs.modelOptions
+          : prefs.selectedModel
+            ? [prefs.selectedModel]
+            : [];
+      const currentModel = String(prefs.selectedModel || '').trim();
+      const level = String(prefs.reasoningLevel || 'Medium').trim();
+
+      composerModelSelect.innerHTML = '';
+      for (let mi = 0; mi < models.length; mi += 1) {
+        const m = models[mi];
+        const mOpt = document.createElement('option');
+        mOpt.value = m;
+        mOpt.textContent = m;
+        composerModelSelect.appendChild(mOpt);
+      }
+      if (currentModel && models.indexOf(currentModel) !== -1) composerModelSelect.value = currentModel;
+      else if (models.length) composerModelSelect.selectedIndex = 0;
+
+      composerReasoningSelect.innerHTML = '';
+      for (let ri = 0; ri < REASONING_LEVELS.length; ri += 1) {
+        const r = REASONING_LEVELS[ri];
+        const rOpt = document.createElement('option');
+        rOpt.value = r;
+        rOpt.textContent = r;
+        composerReasoningSelect.appendChild(rOpt);
+      }
+      composerReasoningSelect.value = REASONING_LEVELS.indexOf(level) !== -1 ? level : 'Medium';
     }
 
     function setComposerSubmitting(nextSubmitting) {
@@ -2245,6 +2399,10 @@ function buildWebviewHtml(webview) {
       if (mentionDebounceTimer) {
         clearTimeout(mentionDebounceTimer);
         mentionDebounceTimer = null;
+      }
+      if (mentionQueryRaf) {
+        cancelAnimationFrame(mentionQueryRaf);
+        mentionQueryRaf = 0;
       }
       mentionState.range = null;
       mentionState.items = [];
@@ -2341,21 +2499,35 @@ function buildWebviewHtml(webview) {
         clearTimeout(mentionDebounceTimer);
         mentionDebounceTimer = null;
       }
-      const delay = range.query.length === 0 ? 0 : 80;
+      if (mentionQueryRaf) {
+        cancelAnimationFrame(mentionQueryRaf);
+        mentionQueryRaf = 0;
+      }
+      const delay = range.query.length === 0 ? 0 : 24;
+      const canReuseEmptySuggestions = range.query.length === 0 && cachedEmptyMentionItems.length > 0;
       const sendQuery = () => {
         mentionDebounceTimer = null;
+        mentionQueryRaf = 0;
         const live = getMentionRange();
         if (!live || !mentionState.range) return;
         if (live.start !== mentionState.range.start || live.query !== mentionState.range.query) return;
         mentionState.loading = true;
-        mentionState.items = [];
-        mentionState.activeIndex = 0;
+        if (!(live.query.length === 0 && mentionState.items.length)) {
+          mentionState.items = [];
+          mentionState.activeIndex = 0;
+        }
         renderMentions();
         const requestId = mentionState.requestId + 1;
         mentionState.requestId = requestId;
         vscode.postMessage({ type: 'mentionsQuery', query: live.query, requestId });
       };
       if (delay === 0) {
+        if (canReuseEmptySuggestions) {
+          mentionState.loading = true;
+          mentionState.items = cachedEmptyMentionItems.slice();
+          mentionState.activeIndex = 0;
+          renderMentions();
+        }
         sendQuery();
       } else {
         mentionState.loading = true;
@@ -2366,10 +2538,21 @@ function buildWebviewHtml(webview) {
       }
     }
 
+    function scheduleMentionRequestSoon() {
+      if (mentionQueryRaf) cancelAnimationFrame(mentionQueryRaf);
+      mentionQueryRaf = requestAnimationFrame(() => {
+        mentionQueryRaf = 0;
+        requestMentions();
+      });
+    }
+
     function applyMentionsResponse(requestId, items) {
       if (requestId !== mentionState.requestId || !mentionState.range) return;
       mentionState.loading = false;
       mentionState.items = Array.isArray(items) ? items : [];
+      if (mentionState.range.query === '') {
+        cachedEmptyMentionItems = mentionState.items.slice();
+      }
       mentionState.activeIndex = 0;
       renderMentions();
     }
@@ -2426,10 +2609,152 @@ function buildWebviewHtml(webview) {
       }
     }
 
+    function latestRunIdWithDiffs(chatDiffs) {
+      const list = Array.isArray(chatDiffs) ? chatDiffs : [];
+      for (let i = list.length - 1; i >= 0; i -= 1) {
+        const diff = list[i];
+        const runId = String(diff && diff.runId ? diff.runId : '').trim();
+        if (runId) return runId;
+      }
+      return '';
+    }
+
+    function resolveArtifactsRunId(chatDiffs) {
+      const preferred = String(selectedArtifactsRunId || '').trim();
+      if (preferred && aggregateFileStatsForRun(preferred, chatDiffs).length) {
+        return preferred;
+      }
+      const activeRunId = String(state.activeRun && state.activeRun.id ? state.activeRun.id : '').trim();
+      if (activeRunId && aggregateFileStatsForRun(activeRunId, chatDiffs).length) {
+        return activeRunId;
+      }
+      return latestRunIdWithDiffs(chatDiffs);
+    }
+
+    function openArtifactsForRun(runId) {
+      const resolved = String(runId || '').trim() || latestRunIdWithDiffs(state.chatDiffs);
+      if (resolved) {
+        selectedArtifactsRunId = resolved;
+      }
+      closeSettingsMenu();
+      setHistoryOpen(false);
+      setArtifactsOpen(true);
+      renderArtifactsList();
+    }
+
+    function buildRunFilesSummaryCard(runId, chatDiffs, options) {
+      const rows = aggregateFileStatsForRun(runId, chatDiffs);
+      if (!rows.length) return null;
+
+      const opts = options || {};
+      let totalAdd = 0;
+      let totalDel = 0;
+      for (let r = 0; r < rows.length; r += 1) {
+        totalAdd += rows[r].added;
+        totalDel += rows[r].removed;
+      }
+
+      const wrap = document.createElement('div');
+      wrap.className = 'cutie-files-summary' + (opts.inDrawer ? ' in-drawer' : '');
+      wrap.setAttribute('role', 'region');
+      wrap.setAttribute('aria-label', 'Files changed this run');
+
+      const head = document.createElement('div');
+      head.className = 'cutie-files-summary-head';
+
+      const title = document.createElement('div');
+      title.className = 'cutie-files-summary-title';
+      const n = rows.length;
+      title.textContent =
+        n +
+        ' file' +
+        (n === 1 ? '' : 's') +
+        ' changed +' +
+        totalAdd +
+        ' -' +
+        totalDel;
+
+      const actions = document.createElement('div');
+      actions.className = 'cutie-files-summary-actions';
+
+      const undoBtn = document.createElement('button');
+      undoBtn.type = 'button';
+      undoBtn.className = 'cutie-files-summary-btn';
+      undoBtn.textContent = 'Undo';
+      undoBtn.title = 'Open Source Control to review or revert changes';
+      undoBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        vscode.postMessage({ type: 'openScm' });
+      });
+
+      const reviewBtn = document.createElement('button');
+      reviewBtn.type = 'button';
+      reviewBtn.className = 'cutie-files-summary-btn cutie-files-summary-btn-primary';
+      reviewBtn.textContent = 'Review';
+      reviewBtn.title = opts.inDrawer ? 'Open Source Control review' : 'Open file changes panel';
+      reviewBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (opts.inDrawer) {
+          vscode.postMessage({ type: 'openScm' });
+          return;
+        }
+        openArtifactsForRun(runId);
+      });
+
+      actions.appendChild(undoBtn);
+      actions.appendChild(reviewBtn);
+      head.appendChild(title);
+      head.appendChild(actions);
+
+      const list = document.createElement('div');
+      list.className = 'cutie-files-summary-list';
+
+      for (let i = 0; i < rows.length; i += 1) {
+        const row = rows[i];
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'cutie-files-summary-row';
+        const pathEl = document.createElement('span');
+        pathEl.className = 'cutie-files-summary-path';
+        pathEl.textContent = row.path;
+        const stats = document.createElement('span');
+        stats.className = 'cutie-files-summary-stats';
+        const addPill = document.createElement('span');
+        addPill.className = 'cutie-files-stat add';
+        addPill.textContent = '+' + row.added;
+        const delPill = document.createElement('span');
+        delPill.className = 'cutie-files-stat del';
+        delPill.textContent = '-' + row.removed;
+        stats.appendChild(addPill);
+        stats.appendChild(delPill);
+        btn.appendChild(pathEl);
+        btn.appendChild(stats);
+        btn.addEventListener('click', function () {
+          closeSettingsMenu();
+          closeAllDrawers();
+          vscode.postMessage({ type: 'diffWorkspaceFile', path: row.path });
+        });
+        list.appendChild(btn);
+      }
+
+      wrap.appendChild(head);
+      wrap.appendChild(list);
+      return wrap;
+    }
+
     function renderArtifactsList() {
       artifactsList.innerHTML = '';
       const diffs = Array.isArray(state.chatDiffs) ? state.chatDiffs : [];
-      artifactsCount.textContent = String(diffs.length);
+      const focusedRunId = resolveArtifactsRunId(diffs);
+      const focusedRows = focusedRunId ? aggregateFileStatsForRun(focusedRunId, diffs) : [];
+      artifactsCount.textContent = String(focusedRows.length || diffs.length);
+      if (focusedRows.length) {
+        const summary = buildRunFilesSummaryCard(focusedRunId, diffs, { inDrawer: true });
+        if (summary) {
+          artifactsList.appendChild(summary);
+        }
+        return;
+      }
       if (!diffs.length) {
         const empty = document.createElement('div');
         empty.className = 'task-empty';
@@ -2527,98 +2852,8 @@ function buildWebviewHtml(webview) {
     }
 
     function appendRunFilesSummaryCard(runId, chatDiffs) {
-      const rows = aggregateFileStatsForRun(runId, chatDiffs);
-      if (!rows.length) return;
-
-      let totalAdd = 0;
-      let totalDel = 0;
-      for (let r = 0; r < rows.length; r += 1) {
-        totalAdd += rows[r].added;
-        totalDel += rows[r].removed;
-      }
-
-      const wrap = document.createElement('div');
-      wrap.className = 'cutie-files-summary';
-      wrap.setAttribute('role', 'region');
-      wrap.setAttribute('aria-label', 'Files changed this run');
-
-      const head = document.createElement('div');
-      head.className = 'cutie-files-summary-head';
-
-      const title = document.createElement('div');
-      title.className = 'cutie-files-summary-title';
-      const n = rows.length;
-      title.textContent =
-        n +
-        ' file' +
-        (n === 1 ? '' : 's') +
-        ' changed +' +
-        totalAdd +
-        ' -' +
-        totalDel;
-
-      const actions = document.createElement('div');
-      actions.className = 'cutie-files-summary-actions';
-
-      const undoBtn = document.createElement('button');
-      undoBtn.type = 'button';
-      undoBtn.className = 'cutie-files-summary-btn';
-      undoBtn.textContent = 'Undo';
-      undoBtn.title = 'Open Source Control to review or revert changes';
-      undoBtn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        vscode.postMessage({ type: 'openScm' });
-      });
-
-      const reviewBtn = document.createElement('button');
-      reviewBtn.type = 'button';
-      reviewBtn.className = 'cutie-files-summary-btn cutie-files-summary-btn-primary';
-      reviewBtn.textContent = 'Review';
-      reviewBtn.title = 'Open file changes list';
-      reviewBtn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        closeSettingsMenu();
-        setArtifactsOpen(true);
-      });
-
-      actions.appendChild(undoBtn);
-      actions.appendChild(reviewBtn);
-      head.appendChild(title);
-      head.appendChild(actions);
-
-      const list = document.createElement('div');
-      list.className = 'cutie-files-summary-list';
-
-      for (let i = 0; i < rows.length; i += 1) {
-        const row = rows[i];
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'cutie-files-summary-row';
-        const pathEl = document.createElement('span');
-        pathEl.className = 'cutie-files-summary-path';
-        pathEl.textContent = row.path;
-        const stats = document.createElement('span');
-        stats.className = 'cutie-files-summary-stats';
-        const addPill = document.createElement('span');
-        addPill.className = 'cutie-files-stat add';
-        addPill.textContent = '+' + row.added;
-        const delPill = document.createElement('span');
-        delPill.className = 'cutie-files-stat del';
-        delPill.textContent = '-' + row.removed;
-        stats.appendChild(addPill);
-        stats.appendChild(delPill);
-        btn.appendChild(pathEl);
-        btn.appendChild(stats);
-        btn.addEventListener('click', function () {
-          closeSettingsMenu();
-          closeAllDrawers();
-          vscode.postMessage({ type: 'diffWorkspaceFile', path: row.path });
-        });
-        list.appendChild(btn);
-      }
-
-      wrap.appendChild(head);
-      wrap.appendChild(list);
+      const wrap = buildRunFilesSummaryCard(runId, chatDiffs, { inDrawer: false });
+      if (!wrap) return;
       chat.appendChild(wrap);
     }
 
@@ -2994,6 +3229,8 @@ function buildWebviewHtml(webview) {
       body.appendChild(status);
 
       const summaryText =
+        (progress && progress.stallReason) ||
+        (progress && progress.lastActionSummary) ||
         (progress && progress.lastMeaningfulProgressSummary) ||
         (progress && progress.pursuingLabel) ||
         (progress && progress.suggestedNextAction) ||
@@ -3045,6 +3282,91 @@ function buildWebviewHtml(webview) {
         .join('\\n');
     }
 
+    function isLowSignalConversationStatus(text) {
+      return /^(Cutie is replying|Cutie is finishing the response|Cutie completed the run)\.?$/i.test(
+        String(text || '').trim()
+      );
+    }
+
+    function isTranscriptEventVisible(event, goal) {
+      if (!event || typeof event !== 'object') return false;
+      const text = String(event.text || '').trim();
+      if (!text) return false;
+      if (goal === 'conversation' && event.kind === 'status' && isLowSignalConversationStatus(text)) return false;
+      return true;
+    }
+
+    function buildTranscriptSections(events, goal) {
+      const rows = Array.isArray(events) ? events.slice(-96) : [];
+      const operational = [];
+      const assistant = [];
+      for (let index = 0; index < rows.length; index += 1) {
+        const event = rows[index];
+        if (!isTranscriptEventVisible(event, goal)) continue;
+        const text = String(event.text || '').trim();
+        if (!text) continue;
+        if (event.kind === 'assistant_text' || event.kind === 'final') {
+          assistant.push(text);
+        } else {
+          operational.push(text);
+        }
+      }
+      return {
+        operational: operational,
+        assistant: assistant.length ? String(assistant[assistant.length - 1] || '').trim() : '',
+      };
+    }
+
+    function formatLiveTranscriptText(events, goal) {
+      const sections = buildTranscriptSections(events, goal);
+      if (!sections.operational.length && !sections.assistant) return '';
+      const parts = [];
+      if (sections.operational.length) {
+        parts.push('Cutie action log:');
+        parts.push(sections.operational.join('\\n\\n'));
+      }
+      if (sections.assistant) {
+        parts.push('Cutie response:');
+        parts.push(sections.assistant);
+      }
+      return parts.join('\\n\\n');
+    }
+
+    function classifyTranscriptLine(text) {
+      const trimmed = String(text || '').trim();
+      if (!trimmed) return 'gap';
+      if (/^Cutie action log:$/i.test(trimmed) || /^Cutie response:$/i.test(trimmed)) return 'section';
+      if (/^(Cutie\\b|Step\\s+\\d+:|Recovered\\s+\`|Created checkpoint\\b)/i.test(trimmed)) return 'ops';
+      return 'chat';
+    }
+
+    function appendTranscriptBubble(container, text) {
+      const wrap = document.createElement('div');
+      wrap.className = 'bubble assistant transcript-message';
+      const lines = String(text || '').split('\\n');
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = String(lines[index] || '');
+        const trimmed = line.trim();
+        if (!trimmed) {
+          const gap = document.createElement('div');
+          gap.className = 'transcript-gap';
+          wrap.appendChild(gap);
+          continue;
+        }
+        const row = document.createElement('div');
+        const kind = classifyTranscriptLine(trimmed);
+        row.className =
+          'transcript-line ' +
+          (kind === 'ops' ? 'is-ops' : kind === 'section' ? 'is-section' : 'is-chat');
+        if (/^(Step\\s+\\d+:|Recovered\\s+\`)/i.test(trimmed) || kind === 'section') {
+          row.className += ' is-strong';
+        }
+        row.textContent = trimmed;
+        wrap.appendChild(row);
+      }
+      container.appendChild(wrap);
+    }
+
     function renderBinaryPanel() {
       if (!binaryPanel || !binaryStatusChip || !binaryProgressFill || !binaryMeta || !binaryActivityLog) return;
       const b = state.binary;
@@ -3057,7 +3379,8 @@ function buildWebviewHtml(webview) {
       }
       const ab = b.activeBuild;
       const phase = b.phase || (ab && ab.phase) || 'idle';
-      const streamNote = b.streamConnected ? ' · SSE' : '';
+      const streamTransport = ab && ab.stream ? (ab.stream.transport === 'websocket' ? 'WS' : 'SSE') : '';
+      const streamNote = b.streamConnected && streamTransport ? ' · ' + streamTransport : '';
       const statusPart = ab ? ab.status : 'none';
       binaryStatusChip.textContent = statusPart + ' · ' + phase + streamNote;
       const p = typeof b.progress === 'number' ? Math.max(0, Math.min(100, b.progress)) : 0;
@@ -3097,20 +3420,33 @@ function buildWebviewHtml(webview) {
         visibleMessages.push(pendingSubmission);
       }
 
-      let streamingMessage = null;
-      const timelineMessages = [];
-      for (let mi = 0; mi < visibleMessages.length; mi += 1) {
-        const message = visibleMessages[mi];
-        if (message.id === '__streaming__') {
-          streamingMessage = message;
-        } else {
-          timelineMessages.push(message);
-        }
-      }
-
       const chatDiffs = Array.isArray(state.chatDiffs) ? state.chatDiffs : [];
       const liveActionLog = Array.isArray(state.liveActionLog) ? state.liveActionLog : [];
+      const liveTranscript = Array.isArray(state.liveTranscript) ? state.liveTranscript : [];
       const liveActionText = state.running ? formatLiveActionLogText(liveActionLog) : '';
+      const liveTranscriptText = state.running
+        ? formatLiveTranscriptText(liveTranscript, state.activeRun ? state.activeRun.goal : '')
+        : '';
+      const transcriptRunIds = new Set();
+      for (let mi = 0; mi < visibleMessages.length; mi += 1) {
+        const message = visibleMessages[mi];
+        if (message && message.presentation === 'run_transcript' && message.runId) {
+          transcriptRunIds.add(String(message.runId));
+        }
+      }
+      const activeTranscriptRunId =
+        state.running && state.activeRun && liveTranscriptText ? String(state.activeRun.id || '') : '';
+      if (activeTranscriptRunId) transcriptRunIds.add(activeTranscriptRunId);
+      const timelineMessages = visibleMessages.filter(function (message) {
+        const runId = String(message && message.runId ? message.runId : '');
+        if (activeTranscriptRunId && runId === activeTranscriptRunId && message.role === 'assistant') {
+          return false;
+        }
+        if (runId && transcriptRunIds.has(runId) && message.role === 'system') {
+          return false;
+        }
+        return true;
+      });
       const displayedDiffIds = new Set();
       const merged = [];
       let mergeSeq = 0;
@@ -3119,7 +3455,7 @@ function buildWebviewHtml(webview) {
         merged.push({ kind: 'msg', sort: message.createdAt || '', seq: mergeSeq++, message: message });
       }
       const runReceipts = receiptsForActiveRunTimeline();
-      if (!state.running) {
+      if (!state.running && state.activeRun && !transcriptRunIds.has(String(state.activeRun.id || ''))) {
         for (let r = 0; r < runReceipts.length; r += 1) {
           const receipt = runReceipts[r];
           merged.push({
@@ -3143,7 +3479,7 @@ function buildWebviewHtml(webview) {
         return a.seq - b.seq;
       });
 
-      if (!merged.length && !streamingMessage) {
+      if (!merged.length && !liveTranscriptText) {
         const empty = document.createElement('div');
         empty.className = 'empty empty-minimal';
         empty.textContent = 'Cutie is ready. Ask in this workspace or use @ for files and windows.';
@@ -3161,7 +3497,7 @@ function buildWebviewHtml(webview) {
             meta.className = 'live-binary-meta';
             const lv = entry.message.live;
             const parts = [];
-            if (lv.transport === 'binary') parts.push('Portable bundle');
+            if (lv.transport === 'binary') parts.push('App build');
             if (lv.phase) parts.push(lv.phase);
             if (typeof lv.progress === 'number') parts.push(Math.round(lv.progress) + '%');
             meta.textContent = parts.join(' · ');
@@ -3171,6 +3507,8 @@ function buildWebviewHtml(webview) {
             wrap.appendChild(meta);
             wrap.appendChild(body);
             chat.appendChild(wrap);
+          } else if (entry.message.presentation === 'run_transcript') {
+            appendTranscriptBubble(chat, entry.message.content || '');
           } else {
             const div = document.createElement('div');
             div.className = 'bubble ' + entry.message.role;
@@ -3197,32 +3535,25 @@ function buildWebviewHtml(webview) {
         }
       }
 
-      if (streamingMessage) {
-        const div = document.createElement('div');
-        div.className = 'bubble assistant';
-        div.textContent = liveActionText
-          ? [String(streamingMessage.content || '').trim(), liveActionText].filter(Boolean).join('\\n\\n')
-          : streamingMessage.content;
-        chat.appendChild(div);
+      if (liveTranscriptText) {
+        appendTranscriptBubble(chat, liveTranscriptText);
       } else if (liveActionText) {
-        const div = document.createElement('div');
-        div.className = 'bubble assistant';
-        div.textContent = liveActionText;
-        chat.appendChild(div);
+        appendTranscriptBubble(chat, liveActionText);
       } else {
         const progressText = buildLiveAssistantNarrationText(state.activeRun || null, state.progress || null, runReceipts);
-        const pendingStartupText = buildPendingAssistantStartupText();
-        const fallbackAssistantText = progressText || pendingStartupText;
-        if (fallbackAssistantText) {
+        if (progressText) {
           const div = document.createElement('div');
           div.className = 'bubble assistant';
-          div.textContent = fallbackAssistantText;
+          div.textContent = progressText;
           chat.appendChild(div);
         }
       }
 
       if (state.running && state.activeRun) {
         const activeRunDiffs = chatDiffsForRun(state.activeRun.id, chatDiffs);
+        if (activeRunDiffs.length) {
+          appendRunFilesSummaryCard(state.activeRun.id, chatDiffs);
+        }
         for (let d = 0; d < activeRunDiffs.length; d += 1) {
           const diff = activeRunDiffs[d];
           if (diff && diff.id && displayedDiffIds.has(diff.id)) continue;
@@ -3326,19 +3657,67 @@ function buildWebviewHtml(webview) {
         lines.push('Current phase: ' + ensureSentence(progress.phaseLabel));
       }
 
+      if (progress && progress.taskFrameSummary) {
+        lines.push('Task frame: ' + ensureSentence(progress.taskFrameSummary));
+      }
+
+      if (progress && progress.targetSummary) {
+        lines.push('Targeting: ' + ensureSentence(progress.targetSummary));
+      }
+
       if (progress && progress.repairLabel) {
         lines.push('Repair status: ' + ensureSentence(progress.repairLabel));
+      }
+
+      if (progress && progress.objectiveRepairLabel) {
+        lines.push('Objective repair: ' + ensureSentence(progress.objectiveRepairLabel));
+      }
+
+      if (progress && progress.repairTacticLabel) {
+        lines.push('Repair tactic: ' + ensureSentence(progress.repairTacticLabel));
+      }
+
+      if (progress && progress.currentStrategyLabel) {
+        lines.push('');
+        lines.push('Current strategy: ' + ensureSentence(progress.currentStrategyLabel));
+      }
+
+      if (progress && progress.modelStrategySummary) {
+        lines.push('Model path: ' + ensureSentence(progress.modelStrategySummary));
+      }
+
+      if (progress && progress.stallLabel) {
+        lines.push('');
+        lines.push(ensureSentence(progress.stallLabel));
       }
 
       const latestReceipt = Array.isArray(receipts) && receipts.length ? receipts[receipts.length - 1] : null;
       if (latestReceipt) {
         lines.push('');
         lines.push('Latest action: ' + formatRanLineFromReceipt(latestReceipt));
+      } else if (progress && progress.lastActionSummary) {
+        lines.push('');
+        lines.push('Latest action: ' + ensureSentence(progress.lastActionSummary));
       }
 
       if (progress && progress.lastMeaningfulProgressSummary) {
         lines.push('');
-        lines.push(ensureSentence(progress.lastMeaningfulProgressSummary));
+        lines.push('Last real progress: ' + ensureSentence(progress.lastMeaningfulProgressSummary));
+      }
+
+      if (progress && progress.lastNewEvidence) {
+        lines.push('');
+        lines.push('Latest evidence: ' + ensureSentence(progress.lastNewEvidence));
+      }
+
+      if (progress && progress.stallReason) {
+        lines.push('');
+        lines.push(ensureSentence(progress.stallReason));
+      }
+
+      if (progress && progress.stallNextAction) {
+        lines.push('');
+        lines.push('Next tactic: ' + ensureSentence(progress.stallNextAction));
       } else if (!objectiveText && progress && progress.suggestedNextAction) {
         lines.push('');
         lines.push('Next up: ' + ensureSentence(progress.suggestedNextAction));
@@ -3347,6 +3726,11 @@ function buildWebviewHtml(webview) {
       if (progress && progress.escalationMessage) {
         lines.push('');
         lines.push(ensureSentence(progress.escalationMessage));
+      }
+
+      if (progress && progress.noOpConclusion) {
+        lines.push('');
+        lines.push(ensureSentence(progress.noOpConclusion));
       }
 
       return lines.join('\\n').trim();
@@ -3358,11 +3742,46 @@ function buildWebviewHtml(webview) {
       if (status && !/^ready\\b/i.test(status)) {
         return ensureSentence(status);
       }
-      return 'Iâ€™m picking this up now.';
+      return '';
     }
 
     function refreshComposerStatusLine() {
       if (!runtimeLine) return;
+      if (state.running || isSubmitting) {
+        runtimeLine.textContent = '';
+        return;
+      }
+      const warm = state.warmStartState || null;
+      const promptState = state.promptState || null;
+      if (!warm) {
+        runtimeLine.textContent = '';
+        return;
+      }
+      if (warm.warming && !warm.localReady) {
+        runtimeLine.textContent = 'Cutie is warming up.';
+        return;
+      }
+      if (promptState && promptState.promptSource === 'external_fallback' && promptState.promptLoadError) {
+        runtimeLine.textContent = 'Cutie is ready with the built-in prompt; the workspace markdown prompt could not be loaded.';
+        return;
+      }
+      if (warm.localReady && warm.hostReady === false) {
+        runtimeLine.textContent = 'Cutie is locally ready; host not yet confirmed.';
+        return;
+      }
+      if (warm.localReady) {
+        runtimeLine.textContent =
+          promptState && promptState.promptSource === 'external_markdown'
+            ? 'Cutie is ready with the workspace operating prompt.'
+            : promptState && promptState.promptSource === 'bundled_markdown'
+              ? 'Cutie is ready with the bundled operating prompt.'
+            : 'Cutie is ready.';
+        return;
+      }
+      if (warm.warmFailureSummary) {
+        runtimeLine.textContent = 'Cutie warmup is still in progress.';
+        return;
+      }
       runtimeLine.textContent = '';
     }
 
@@ -3452,6 +3871,19 @@ function buildWebviewHtml(webview) {
       settingsToggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
     }
 
+    function syncIdeRuntimeUi() {
+      const rt = state.ideRuntime || 'cutie';
+      const signInEl = document.getElementById('settingsSignIn');
+      if (signInEl) {
+        signInEl.classList.toggle('is-hidden', rt === 'qwenCode');
+      }
+      const undoEl = document.getElementById('settingsUndoPlayground');
+      if (undoEl) {
+        undoEl.classList.toggle('is-hidden', rt !== 'playgroundApi');
+        undoEl.disabled = rt !== 'playgroundApi' || !state.canUndoPlayground;
+      }
+    }
+
     function applyState(next) {
       try {
         applyStateInner(next);
@@ -3484,11 +3916,13 @@ function buildWebviewHtml(webview) {
       }
       if (switchedConversation) {
         clearEphemeralConversationState();
+        selectedArtifactsRunId = '';
       }
 
       state = next;
       isSubmitting = false;
       updateComposerPrimaryButton();
+      renderComposerFooter();
 
       const authState = next.authState || { kind: 'none', label: 'Not signed in' };
       authLabel.textContent = authState.label || 'Not signed in';
@@ -3514,6 +3948,7 @@ function buildWebviewHtml(webview) {
       renderSessions();
       renderArtifactsList();
       renderMessages();
+      syncIdeRuntimeUi();
 
       const settingsSignOutEl = document.getElementById('settingsSignOut');
       if (settingsSignOutEl) settingsSignOutEl.disabled = authState.kind === 'none';
@@ -3627,6 +4062,13 @@ function buildWebviewHtml(webview) {
         closeSettingsMenu();
         vscode.postMessage({ type: 'signIn' });
       });
+      const settingsUndoPlayground = document.getElementById('settingsUndoPlayground');
+      if (settingsUndoPlayground) {
+        settingsUndoPlayground.addEventListener('click', () => {
+          closeSettingsMenu();
+          vscode.postMessage({ type: 'undoPlaygroundBatch' });
+        });
+      }
       document.getElementById('settingsSignOut').addEventListener('click', () => {
         closeSettingsMenu();
         vscode.postMessage({ type: 'signOut' });
@@ -3723,7 +4165,7 @@ function buildWebviewHtml(webview) {
             event.stopImmediatePropagation();
           }
         }
-        if (state.running) {
+        if (isBusySubmitState()) {
           closeSettingsMenu();
           vscode.postMessage({ type: 'stopAutomation' });
           return;
@@ -3865,6 +4307,10 @@ function buildWebviewHtml(webview) {
         closeSettingsMenu();
         closeAllDrawers();
         return;
+      }
+
+      if (event.key === '@' && !event.ctrlKey && !event.metaKey) {
+        scheduleMentionRequestSoon();
       }
 
       if (!isEnterKey(event)) return;

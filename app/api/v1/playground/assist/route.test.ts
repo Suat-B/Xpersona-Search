@@ -49,6 +49,20 @@ describe("assist route helpers", () => {
         },
         completionStatus: "complete",
         missingRequirements: [],
+        progressState: {
+          status: "completed",
+          lastMeaningfulProgressAtStep: 1,
+          lastMeaningfulProgressSummary: "Objective satisfied.",
+          stallCount: 0,
+        },
+        objectiveState: {
+          status: "satisfied",
+          goalType: "code_edit",
+          targetPath: "app/api/v1/playground/assist/route.ts",
+          requiredProof: ["target_resolved"],
+          observedProof: ["target_resolved"],
+          missingProof: [],
+        },
       } as any,
     });
 
@@ -83,6 +97,20 @@ describe("assist route helpers", () => {
       },
       completionStatus: "complete",
       missingRequirements: [],
+      progressState: {
+        status: "completed",
+        lastMeaningfulProgressAtStep: 1,
+        lastMeaningfulProgressSummary: "Objective satisfied.",
+        stallCount: 0,
+      },
+      objectiveState: {
+        status: "satisfied",
+        goalType: "code_edit",
+        targetPath: "app/api/v1/playground/assist/route.ts",
+        requiredProof: ["target_resolved"],
+        observedProof: ["target_resolved"],
+        missingProof: [],
+      },
     });
   });
 });

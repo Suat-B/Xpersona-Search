@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { buildLlmsSponsorsSectionShort } from "@/lib/ads/llms-sponsors";
 
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
 
@@ -50,6 +51,10 @@ export async function GET() {
     "Agent profile and execution-readiness features:",
     `- GET ${baseUrl}/api/v1/agents/{slug}`,
     "  purpose: canonical per-agent profile data.",
+    `- GET ${baseUrl}/api/v1/agents/{slug}/card`,
+    "  purpose: lightweight public teaser card for crawl-friendly indexing and preview generation.",
+    `- GET ${baseUrl}/api/v1/agents/{slug}/facts`,
+    "  purpose: normalized public evidence facts with provenance, freshness, and confidence.",
     `- GET ${baseUrl}/api/v1/agents/{slug}/snapshot`,
     "  purpose: machine-stable snapshot for extraction and caching workflows.",
     `- GET ${baseUrl}/api/v1/agents/{slug}/contract`,
@@ -100,6 +105,21 @@ export async function GET() {
     `- ${baseUrl}/api/v1/docs`,
     `- ${baseUrl}/llms.txt`,
     `- ${baseUrl}/llms-full.txt`,
+    `- ${baseUrl}/api/v1/feeds/agents/latest`,
+    `- ${baseUrl}/api/v1/feeds/agents/benchmarked`,
+    `- ${baseUrl}/api/v1/feeds/agents/security-reviewed`,
+    `- ${baseUrl}/api/v1/feeds/agents/openapi-ready`,
+    `- ${baseUrl}/api/v1/feeds/agents/recent-updates`,
+    `- ${baseUrl}/agent/benchmarked`,
+    `- ${baseUrl}/agent/openapi-ready`,
+    `- ${baseUrl}/agent/security-reviewed`,
+    `- ${baseUrl}/agent/recent-updates`,
+    `- ${baseUrl}/api/v1/crawl-license`,
+    "",
+    "Licensed crawl flow:",
+    "- Public teaser/feed surfaces are intentionally crawlable and ungated.",
+    "- Full /agent/{slug} HTML plus /snapshot, /contract, and /trust remain premium crawl surfaces.",
+    "- Acquire crawl access at /api/v1/crawl-license when deeper agent dossier coverage is required.",
     "",
     "Protocol and compatibility interpretation:",
     "- Use /contract as source of truth for protocol and invocation constraints.",
@@ -137,7 +157,11 @@ export async function GET() {
     `- for_agents: ${baseUrl}/for-agents`,
     `- openapi_public: ${baseUrl}/api/v1/openapi/public`,
     `- llms_full: ${baseUrl}/llms-full.txt`,
-  ].join("\n");
+    `- feed_latest: ${baseUrl}/api/v1/feeds/agents/latest`,
+    `- agent_card: ${baseUrl}/api/v1/agents/{slug}/card`,
+    `- agent_facts: ${baseUrl}/api/v1/agents/{slug}/facts`,
+    `- crawl_license: ${baseUrl}/api/v1/crawl-license`,
+  ].join("\n") + buildLlmsSponsorsSectionShort();
 
   return new NextResponse(body, {
     headers: {

@@ -1,1 +1,1 @@
-{"version":3,"file":"binary-types.js","sourceRoot":"","sources":["../src/binary-types.ts"],"names":[],"mappings":";;;AAoWA,4GAA4G;AAC/F,QAAA,mCAAmC,GAAG;IACjD,WAAW;IACX,oBAAoB;IACpB,eAAe;CACP,CAAC"}
+{"version":3,"file":"binary-types.js","sourceRoot":"","sources":["../src/binary-types.ts"],"names":[],"mappings":";;;AAoeA,4GAA4G;AAC/F,QAAA,mCAAmC,GAAG;IACjD,aAAa;IACb,WAAW;IACX,WAAW;IACX,oBAAoB;IACpB,eAAe;IACf,gBAAgB;IAChB,eAAe;CACP,CAAC"}

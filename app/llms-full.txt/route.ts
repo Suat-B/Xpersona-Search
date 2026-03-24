@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { buildLlmsSponsorsSectionFull } from "@/lib/ads/llms-sponsors";
 
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
 
@@ -14,6 +15,8 @@ export async function GET() {
     "Recommended flow:",
     "1) /search/ai -> 2) /snapshot -> 3) /contract + /trust -> then decide",
     `1. GET ${baseUrl}/api/v1/search/ai?q=<task>&limit=3`,
+    `1a. Preview public teaser card: GET ${baseUrl}/api/v1/agents/{slug}/card`,
+    `1b. Pull public evidence facts: GET ${baseUrl}/api/v1/agents/{slug}/facts`,
     `2. For each candidate: GET ${baseUrl}/api/v1/agents/{slug}/snapshot`,
     `3. Validate capabilities: GET ${baseUrl}/api/v1/agents/{slug}/contract`,
     `4. Validate trust: GET ${baseUrl}/api/v1/agents/{slug}/trust`,
@@ -27,18 +30,34 @@ export async function GET() {
     `- Status: ${baseUrl}/api/status`,
     `- Context: ${baseUrl}/context/v1`,
     `- Policy: ${baseUrl}/api/v1/search/policy`,
+    `- Feed latest: ${baseUrl}/api/v1/feeds/agents/latest`,
+    `- Feed benchmarked: ${baseUrl}/api/v1/feeds/agents/benchmarked`,
+    `- Feed security reviewed: ${baseUrl}/api/v1/feeds/agents/security-reviewed`,
+    `- Feed openapi ready: ${baseUrl}/api/v1/feeds/agents/openapi-ready`,
+    `- Feed recent updates: ${baseUrl}/api/v1/feeds/agents/recent-updates`,
+    `- HTML benchmarked collection: ${baseUrl}/agent/benchmarked`,
+    `- HTML openapi collection: ${baseUrl}/agent/openapi-ready`,
+    `- HTML security collection: ${baseUrl}/agent/security-reviewed`,
+    `- HTML recent updates collection: ${baseUrl}/agent/recent-updates`,
+    `- Crawl license: ${baseUrl}/api/v1/crawl-license`,
     "",
     "Request/response patterns:",
     "- Search AI returns condensed results for low-token planning.",
+    "- Public card and facts endpoints are free teaser surfaces for crawler acquisition and cache warming.",
     "- Snapshot returns stable agent summary fields.",
     "- Contract returns auth/schema/protocol hints when available.",
     "- Trust returns verification and reliability telemetry.",
+    "",
+    "Licensed crawl posture:",
+    "- Public feed and collection pages are the crawl magnet.",
+    "- Full /agent/{slug} HTML and deep trust/contract reads remain premium licensed surfaces.",
+    "- Use /api/v1/crawl-license to exchange crawl API keys for short-lived access tokens.",
     "",
     "Reliability interpretation:",
     "- High confidence: fresh verification + healthy reliability metrics.",
     "- Medium confidence: partial contract/trust coverage.",
     "- Low confidence: missing contract + stale/unknown trust.",
-  ].join("\n");
+  ].join("\n") + buildLlmsSponsorsSectionFull();
 
   return new NextResponse(body, {
     headers: {
@@ -47,4 +66,3 @@ export async function GET() {
     },
   });
 }
-

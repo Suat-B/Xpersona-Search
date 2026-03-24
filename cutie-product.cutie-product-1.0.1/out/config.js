@@ -33,10 +33,23 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PENDING_PKCE_KEY = exports.REFRESH_TOKEN_SECRET = exports.API_KEY_SECRET = exports.VIEW_ID = exports.EXTENSION_NAMESPACE = void 0;
+exports.CUTIE_REASONING_LEVELS = exports.PENDING_PKCE_KEY = exports.REFRESH_TOKEN_SECRET = exports.API_KEY_SECRET = exports.VIEW_ID = exports.EXTENSION_NAMESPACE = void 0;
 exports.getBaseApiUrl = getBaseApiUrl;
 exports.getBinaryApiBaseUrl = getBinaryApiBaseUrl;
+exports.getBinaryStreamGatewayUrl = getBinaryStreamGatewayUrl;
+exports.getBinaryIdeChatRuntime = getBinaryIdeChatRuntime;
+exports.getQwenModel = getQwenModel;
+exports.getQwenOpenAiBaseUrl = getQwenOpenAiBaseUrl;
+exports.getQwenExecutablePath = getQwenExecutablePath;
+exports.getQwenCliWrapperEnabled = getQwenCliWrapperEnabled;
+exports.getQwenCliWrapperPath = getQwenCliWrapperPath;
+exports.normalizeWorkspaceRelativePath = normalizeWorkspaceRelativePath;
+exports.toAbsoluteWorkspacePath = toAbsoluteWorkspacePath;
+exports.getProjectKey = getProjectKey;
 exports.getModelHint = getModelHint;
+exports.getPromptMarkdownPath = getPromptMarkdownPath;
+exports.getModelPickerOptions = getModelPickerOptions;
+exports.getReasoningLevel = getReasoningLevel;
 exports.getExperimentalDesktopAdaptersEnabled = getExperimentalDesktopAdaptersEnabled;
 exports.getWorkspaceFolder = getWorkspaceFolder;
 exports.getWorkspaceRootPath = getWorkspaceRootPath;
@@ -46,6 +59,7 @@ exports.getExtensionVersion = getExtensionVersion;
 const vscode = __importStar(require("vscode"));
 const crypto_1 = require("crypto");
 const path = __importStar(require("path"));
+const fs_1 = require("fs");
 exports.EXTENSION_NAMESPACE = "cutie-product";
 exports.VIEW_ID = "cutie-product.chat";
 exports.API_KEY_SECRET = "cutie-product.apiKey";
@@ -65,11 +79,99 @@ function getBinaryApiBaseUrl() {
     const trimmed = String(configured || "").trim().replace(/\/+$/, "");
     return trimmed || getBaseApiUrl();
 }
+function getBinaryStreamGatewayUrl() {
+    const configured = vscode.workspace
+        .getConfiguration(exports.EXTENSION_NAMESPACE)
+        .get("binary.streamGatewayUrl", "");
+    return String(configured || "").trim().replace(/\/+$/, "");
+}
+function getBinaryIdeChatRuntime() {
+    const raw = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("binary.runtime", "cutie");
+    if (raw === "playgroundApi")
+        return "playgroundApi";
+    if (raw === "qwenCode")
+        return "qwenCode";
+    return "cutie";
+}
+function getQwenModel() {
+    const configured = vscode.workspace
+        .getConfiguration(exports.EXTENSION_NAMESPACE)
+        .get("binary.qwen.model", "Qwen/Qwen3-Next-80B-A3B-Thinking:fastest");
+    return String(configured || "Qwen/Qwen3-Next-80B-A3B-Thinking:fastest").trim();
+}
+function getQwenOpenAiBaseUrl() {
+    const configured = vscode.workspace
+        .getConfiguration(exports.EXTENSION_NAMESPACE)
+        .get("binary.qwen.baseUrl", `${getBaseApiUrl()}/api/v1/hf`);
+    const value = String(configured || `${getBaseApiUrl()}/api/v1/hf`).trim();
+    return value.replace(/\/+$/, "");
+}
+function getQwenExecutablePath() {
+    const configured = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("binary.qwen.executable", "");
+    const value = String(configured || "").trim();
+    if (!value)
+        return undefined;
+    const lower = value.toLowerCase();
+    if (lower.includes(".trae/extensions/") ||
+        lower.includes("cutie-product.cutie-product-") ||
+        lower.includes("@qwen-code/sdk/dist/cli/cli.js")) {
+        return undefined;
+    }
+    return value;
+}
+function getQwenCliWrapperEnabled() {
+    return vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("binary.qwen.cliWrapper", false) === true;
+}
+function getQwenCliWrapperPath() {
+    const wrapperPath = path.join(__dirname, "..", "scripts", "qwen-cli-wrapper.js");
+    return (0, fs_1.existsSync)(wrapperPath) ? path.resolve(wrapperPath) : undefined;
+}
+function normalizeWorkspaceRelativePath(input) {
+    const normalized = String(input || "")
+        .trim()
+        .replace(/\\/g, "/")
+        .replace(/^@+/, "")
+        .replace(/^\.\/+/, "")
+        .replace(/^\/+/, "");
+    if (!normalized || normalized.includes("..") || /^[a-z]:\//i.test(normalized))
+        return null;
+    return normalized;
+}
+function toAbsoluteWorkspacePath(relativePath) {
+    const root = getWorkspaceRootPath();
+    const normalized = normalizeWorkspaceRelativePath(relativePath);
+    if (!root || !normalized)
+        return null;
+    return path.join(root, normalized);
+}
+function getProjectKey() {
+    const folder = getWorkspaceFolder();
+    if (!folder)
+        return null;
+    return `${folder.name}:${getWorkspaceHash()}`;
+}
 function getModelHint() {
     const configured = vscode.workspace
         .getConfiguration(exports.EXTENSION_NAMESPACE)
         .get("model", "openai/gpt-oss-120b:fastest");
     return String(configured || "openai/gpt-oss-120b:fastest").trim();
+}
+function getPromptMarkdownPath() {
+    const configured = vscode.workspace
+        .getConfiguration(exports.EXTENSION_NAMESPACE)
+        .get("promptMarkdownPath", "docs/cutie-agent-operating-prompt.md");
+    return String(configured || "").trim();
+}
+/** Presets for the chat model dropdown; the configured workspace model is always included. Add ids here as you ship more. */
+const MODEL_PICKER_PRESETS = ["openai/gpt-oss-120b:fastest"];
+function getModelPickerOptions() {
+    return Array.from(new Set([getModelHint(), ...MODEL_PICKER_PRESETS])).sort((a, b) => a.localeCompare(b));
+}
+exports.CUTIE_REASONING_LEVELS = ["Low", "Medium", "High", "Extra High"];
+function getReasoningLevel() {
+    const raw = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("reasoningLevel", "Medium");
+    const s = String(raw || "").trim();
+    return exports.CUTIE_REASONING_LEVELS.includes(s) ? s : "Medium";
 }
 function getExperimentalDesktopAdaptersEnabled() {
     return vscode.workspace

@@ -5,6 +5,10 @@
       "schedule": "0 6 * * *"
     },
     {
+      "path": "/api/v1/cron/agent-facts",
+      "schedule": "20 6 * * *"
+    },
+    {
       "path": "/api/v1/cron/gpg-stats",
       "schedule": "0 7 * * *"
     },

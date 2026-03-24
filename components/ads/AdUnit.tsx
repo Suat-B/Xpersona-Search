@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { isAdSenseEnabled, isAdStressModeEnabled } from "@/lib/ads/adsense-config";
 
 declare global {
   interface Window {
@@ -29,17 +30,19 @@ export function AdUnit({
   style,
   fullWidthResponsive = true,
 }: AdUnitProps) {
+  const adsenseEnabled = isAdSenseEnabled() && !isAdStressModeEnabled();
   const client = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID?.trim() || DEFAULT_CLIENT;
 
   useEffect(() => {
+    if (!adsenseEnabled) return;
     try {
       (window.adsbygoogle = window.adsbygoogle || []).push({});
     } catch {
       /* AdSense may be blocked or not loaded */
     }
-  }, [slot]);
+  }, [adsenseEnabled, slot]);
 
-  if (!slot.trim()) return null;
+  if (!adsenseEnabled || !slot.trim()) return null;
 
   return (
     <div className={`ad-slot-host w-full ${className}`.trim()}>

@@ -1,8 +1,10 @@
 import type {
   LoopStateContract,
+  ObjectiveStateContract,
   PendingToolCallContract,
   PlaygroundAdapter,
   PlaygroundToolName,
+  ProgressStateContract,
   ToolCallContract,
   ToolResultContract,
   ToolTraceEntryContract,
@@ -26,19 +28,29 @@ import {
   buildContextSelection,
   buildDecision,
   buildDecoratedAssistResult,
+  buildObjectiveState,
+  buildProgressState,
   buildPlan,
   buildTargetInference,
   buildValidationPlan,
   inferRisk,
+  inferIntent,
 } from "@/lib/playground/orchestration";
 import { attachAssistArtifactIdentifiers } from "@/lib/playground/agent-os";
-import { requestToolLoopTurn, selectToolLoopAdapter } from "@/lib/playground/tool-loop-adapters";
+import { requestToolLoopTurn, selectToolLoopAdapter, type ToolLoopTurnInput } from "@/lib/playground/tool-loop-adapters";
 import type { ExecuteAction } from "@/lib/playground/policy";
 
 const MAX_TOOL_STEPS = 12;
 const MAX_MUTATING_STEPS = 4;
-const MAX_REPAIR_ROUNDS = 1;
+const MAX_REPAIR_ROUNDS = 3;
 const MAX_IDENTICAL_CALLS = 2;
+
+type ToolLoopRepairStage =
+  | "post_inspection_mutation_required"
+  | "target_path_repair"
+  | "patch_repair"
+  | "single_file_rewrite"
+  | "pine_specialization";
 
 type PersistedToolLoopState = {
   protocol: "tool_loop_v1";
@@ -52,6 +64,10 @@ type PersistedToolLoopState = {
   checkpointCreated: boolean;
   deferredToolCall?: ToolCallContract | null;
   availableTools: PlaygroundToolName[];
+  progressState: ProgressStateContract;
+  objectiveState: ObjectiveStateContract;
+  lastProgressFingerprint?: string | null;
+  repairHistory: ToolLoopRepairStage[];
 };
 
 type StartToolLoopInput = {
@@ -119,6 +135,206 @@ function buildToolCallKey(toolCall: ToolCallContract): string {
   return JSON.stringify({
     name: toolCall.name,
     arguments: toolCall.arguments,
+  });
+}
+
+function normalizeRelativePath(value: string | undefined | null): string {
+  return String(value || "")
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\.\/+/, "")
+    .replace(/^\/+/, "");
+}
+
+function pendingToolCallSignature(value: PendingToolCallContract | ToolCallContract | null | undefined): string {
+  if (!value) return "";
+  const toolCall = "toolCall" in value ? value.toolCall : value;
+  return JSON.stringify({
+    name: toolCall.name,
+    arguments: toolCall.arguments,
+  });
+}
+
+function extractChangedFiles(toolResult: ToolResultContract | null | undefined): string[] {
+  const data = toolResult?.data;
+  if (!data || typeof data !== "object") return [];
+  const record = data as Record<string, unknown>;
+  if (!Array.isArray(record.changedFiles)) return [];
+  return record.changedFiles
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => normalizeRelativePath(value))
+    .filter(Boolean);
+}
+
+function traceHasGrounding(targetPath: string | undefined, toolTrace: ToolTraceEntryContract[]): boolean {
+  const normalizedTarget = normalizeRelativePath(targetPath);
+  if (!normalizedTarget) return false;
+  return toolTrace.some((entry) => {
+    if (entry.status !== "completed" || !entry.toolCall) return false;
+    if (entry.toolCall.name === "read_file") {
+      return normalizeRelativePath(String(entry.toolCall.arguments.path || "")) === normalizedTarget;
+    }
+    if (entry.toolCall.name === "search_workspace") return true;
+    return false;
+  });
+}
+
+function traceHasMutation(targetPath: string | undefined, toolTrace: ToolTraceEntryContract[]): boolean {
+  const normalizedTarget = normalizeRelativePath(targetPath);
+  return toolTrace.some((entry) => {
+    if (entry.status !== "completed" || !entry.toolCall) return false;
+    if (entry.toolCall.name !== "edit" && entry.toolCall.name !== "write_file" && entry.toolCall.name !== "mkdir") {
+      return false;
+    }
+    const toolPath = normalizeRelativePath(String(entry.toolCall.arguments.path || ""));
+    const changedFiles = extractChangedFiles(entry.toolResult);
+    if (!normalizedTarget) {
+      return Boolean(toolPath || changedFiles.length);
+    }
+    return toolPath === normalizedTarget || changedFiles.includes(normalizedTarget);
+  });
+}
+
+function classifyToolFailure(
+  toolResult: ToolResultContract,
+  pendingToolCall: PendingToolCallContract
+): "no_content_delta" | "invalid_patch" | "target_missing" | "tool_result_failed" {
+  const normalized = `${toolResult.summary || ""} ${toolResult.error || ""}`.toLowerCase();
+  if (
+    normalized.includes("no content delta") ||
+    normalized.includes("no content change") ||
+    normalized.includes("no local changes were applied") ||
+    normalized.includes("patch produced no content change")
+  ) {
+    return "no_content_delta";
+  }
+  if (
+    normalized.includes("invalid patch") ||
+    normalized.includes("unsupported patch") ||
+    normalized.includes("patch failed")
+  ) {
+    return "invalid_patch";
+  }
+  if (
+    normalized.includes("missing file") ||
+    normalized.includes("target file did not exist") ||
+    normalized.includes("invalid workspace-relative path")
+  ) {
+    return "target_missing";
+  }
+  if (
+    pendingToolCall.toolCall.name === "edit" &&
+    normalizeRelativePath(String(pendingToolCall.toolCall.arguments.path || "")).endsWith(".pine") &&
+    normalized.includes("missing")
+  ) {
+    return "target_missing";
+  }
+  return "tool_result_failed";
+}
+
+function nextRepairStage(input: {
+  targetPath?: string;
+  repairHistory: ToolLoopRepairStage[];
+  failureCategory?: "no_content_delta" | "invalid_patch" | "target_missing" | "tool_result_failed";
+  latestToolResult?: ToolResultContract | null;
+  pendingToolCall?: PendingToolCallContract | null;
+}): ToolLoopRepairStage | null {
+  const normalizedTarget = normalizeRelativePath(input.targetPath);
+  const isPine = normalizedTarget.endsWith(".pine");
+  if (input.latestToolResult?.ok && input.pendingToolCall?.toolCall.name === "read_file") {
+    return input.repairHistory.includes("post_inspection_mutation_required")
+      ? null
+      : "post_inspection_mutation_required";
+  }
+
+  const ordered: ToolLoopRepairStage[] =
+    input.failureCategory === "no_content_delta"
+      ? [
+          "single_file_rewrite",
+          ...(isPine ? (["pine_specialization"] as ToolLoopRepairStage[]) : []),
+        ]
+      : [
+          "target_path_repair",
+          "patch_repair",
+          "single_file_rewrite",
+          ...(isPine ? (["pine_specialization"] as ToolLoopRepairStage[]) : []),
+        ];
+
+  for (const stage of ordered) {
+    if (!input.repairHistory.includes(stage)) return stage;
+  }
+  return null;
+}
+
+function buildRepairGuidance(input: {
+  stage: ToolLoopRepairStage;
+  targetPath?: string;
+  toolResult?: ToolResultContract | null;
+  failureCategory?: "no_content_delta" | "invalid_patch" | "target_missing" | "tool_result_failed";
+}): { reason: string; nextDeterministicAction: string } {
+  const target = normalizeRelativePath(input.targetPath) || "the resolved target file";
+  const reason =
+    compactReason(input.toolResult?.summary) ||
+    compactReason(input.toolResult?.error) ||
+    input.failureCategory ||
+    "the prior tool turn did not prove the objective";
+
+  if (input.stage === "post_inspection_mutation_required") {
+    return {
+      reason: `Inspected ${target} but did not produce a concrete mutation or blocker.`,
+      nextDeterministicAction: `Choose one concrete mutation tool for ${target}, or return a blocked terminal state.`,
+    };
+  }
+  if (input.stage === "target_path_repair") {
+    return {
+      reason,
+      nextDeterministicAction: `Bind the next mutation exactly to ${target}. Do not invent alternate paths.`,
+    };
+  }
+  if (input.stage === "patch_repair") {
+    return {
+      reason,
+      nextDeterministicAction: `Return one corrected mutation for ${target} with a patch that applies cleanly.`,
+    };
+  }
+  if (input.stage === "single_file_rewrite") {
+    return {
+      reason,
+      nextDeterministicAction: `Return one write_file mutation for ${target} with the full updated contents and a real semantic delta.`,
+    };
+  }
+  return {
+    reason,
+    nextDeterministicAction: `Return one write_file mutation for ${target} specialized for Pine strategy structure with a real semantic delta.`,
+  };
+}
+
+function compactReason(value: string | undefined): string {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, 280);
+}
+
+function buildProgressFingerprint(input: {
+  pendingSignature?: string;
+  loopState: LoopStateContract;
+  objectiveState: ObjectiveStateContract;
+  missingRequirements: string[];
+  latestToolResult?: ToolResultContract | null;
+}): string {
+  return JSON.stringify({
+    pendingSignature: input.pendingSignature || "",
+    mutationCount: input.loopState.mutationCount,
+    repairCount: input.loopState.repairCount,
+    objectiveStatus: input.objectiveState.status,
+    observedProof: input.objectiveState.observedProof,
+    missingRequirements: [...input.missingRequirements].sort(),
+    latestTool: input.latestToolResult
+      ? {
+          name: input.latestToolResult.name,
+          ok: input.latestToolResult.ok,
+          blocked: input.latestToolResult.blocked === true,
+          changedFiles: extractChangedFiles(input.latestToolResult),
+        }
+      : null,
   });
 }
 
@@ -325,6 +541,222 @@ function traceHasFailure(toolTrace: ToolTraceEntryContract[]): boolean {
   return false;
 }
 
+function normalizeWorkspacePath(value: string | undefined): string {
+  return String(value || "")
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\.\/+/, "")
+    .replace(/^\/+/, "")
+    .toLowerCase();
+}
+
+function summarizeAction(action: ExecuteAction | undefined): string {
+  if (!action) return "Choose the next concrete tool action.";
+  if ("path" in action && action.path) {
+    return `${action.type} ${action.path}`;
+  }
+  if (action.type === "command") {
+    return `run ${action.command}`;
+  }
+  return `continue with ${action.type}`;
+}
+
+function completedEntries(toolTrace: ToolTraceEntryContract[]): ToolTraceEntryContract[] {
+  return toolTrace.filter((entry) => entry.status === "completed");
+}
+
+function getLatestMeaningfulEntry(toolTrace: ToolTraceEntryContract[]): ToolTraceEntryContract | null {
+  for (let index = toolTrace.length - 1; index >= 0; index -= 1) {
+    const entry = toolTrace[index];
+    if (entry.status === "completed" || entry.status === "failed" || entry.status === "blocked") {
+      return entry;
+    }
+  }
+  return null;
+}
+
+function didInspectTarget(toolTrace: ToolTraceEntryContract[], targetPath: string | undefined): boolean {
+  const normalizedTarget = normalizeWorkspacePath(targetPath);
+  if (!normalizedTarget) return false;
+  return toolTrace.some((entry) => {
+    if (entry.status !== "completed" || entry.toolCall?.name !== "read_file") return false;
+    const pathValue =
+      typeof entry.toolCall.arguments?.path === "string"
+        ? String(entry.toolCall.arguments.path)
+        : typeof entry.toolResult?.data?.path === "string"
+          ? String(entry.toolResult.data.path)
+          : "";
+    return normalizeWorkspacePath(pathValue) === normalizedTarget;
+  });
+}
+
+function didMutateTarget(
+  toolTrace: ToolTraceEntryContract[],
+  targetPath: string | undefined,
+  deterministicActions: ExecuteAction[]
+): boolean {
+  const normalizedTarget = normalizeWorkspacePath(targetPath);
+  const actionTargets = deterministicActions
+    .filter(
+      (action): action is Extract<ExecuteAction, { type: "edit" | "write_file" | "mkdir" }> =>
+        action.type === "edit" || action.type === "write_file" || action.type === "mkdir"
+    )
+    .map((action) => normalizeWorkspacePath(action.path));
+  if (normalizedTarget && actionTargets.includes(normalizedTarget)) return true;
+
+  return toolTrace.some((entry) => {
+    if (entry.status !== "completed" || !entry.toolCall) return false;
+    if (
+      entry.toolCall.name !== "edit" &&
+      entry.toolCall.name !== "write_file" &&
+      entry.toolCall.name !== "mkdir"
+    ) {
+      return false;
+    }
+    const directPath =
+      typeof entry.toolCall.arguments?.path === "string"
+        ? normalizeWorkspacePath(String(entry.toolCall.arguments.path))
+        : "";
+    if (normalizedTarget && directPath === normalizedTarget) return true;
+    const changedFiles = Array.isArray(entry.toolResult?.data?.changedFiles)
+      ? (entry.toolResult?.data?.changedFiles as unknown[])
+      : [];
+    return normalizedTarget
+      ? changedFiles.some((item) => normalizeWorkspacePath(String(item || "")) === normalizedTarget)
+      : Boolean(directPath || changedFiles.length);
+  });
+}
+
+function buildToolLoopObjectiveState(input: {
+  request: AssistRuntimeInput;
+  targetInference: AssistTargetInference;
+  contextSelection: AssistContextSelection;
+  fallbackPlan: AssistPlan;
+  toolTrace: ToolTraceEntryContract[];
+  actions: ExecuteAction[];
+  missingRequirements: string[];
+  loopState: LoopStateContract;
+  final: string;
+}): ObjectiveStateContract {
+  const intent = inferIntent({
+    mode: input.request.mode,
+    task: input.request.task,
+    targetInference: input.targetInference,
+  });
+  const observedProof: string[] = [];
+  if (input.targetInference.path) observedProof.push("target_resolved");
+  if (
+    didInspectTarget(input.toolTrace, input.targetInference.path) ||
+    (input.targetInference.path &&
+      input.contextSelection.files.some(
+        (file) => normalizeWorkspacePath(file.path) === normalizeWorkspacePath(input.targetInference.path)
+      ))
+  ) {
+    observedProof.push("target_grounded");
+  }
+  if (didMutateTarget(input.toolTrace, input.targetInference.path, input.actions)) {
+    observedProof.push("workspace_change_prepared");
+  }
+  if (completedEntries(input.toolTrace).some((entry) => entry.toolCall?.name === "run_command")) {
+    observedProof.push("command_prepared");
+  }
+  return buildObjectiveState({
+    request: input.request,
+    intent,
+    targetInference: input.targetInference,
+    contextSelection: input.contextSelection,
+    actions: input.actions,
+    missingRequirements: input.missingRequirements,
+    plan: input.request.mode === "plan" ? input.fallbackPlan : null,
+    final: input.final,
+    observedProof,
+    blocked:
+      input.loopState.status === "failed" ||
+      (input.missingRequirements.length > 0 && input.loopState.status === "completed"),
+  });
+}
+
+function buildToolLoopProgressState(input: {
+  request: AssistRuntimeInput;
+  loopState: LoopStateContract;
+  objectiveState: ObjectiveStateContract;
+  pendingToolCall: PendingToolCallContract | null;
+  toolTrace: ToolTraceEntryContract[];
+  previousProgressState?: ProgressStateContract | null;
+  previousFingerprint?: string | null;
+  missingRequirements: string[];
+  final: string;
+}): { progressState: ProgressStateContract; fingerprint: string } {
+  const pendingToolCallSignature = input.pendingToolCall
+    ? buildToolCallKey(input.pendingToolCall.toolCall)
+    : undefined;
+  const fingerprint = buildProgressFingerprint({
+    pendingSignature: pendingToolCallSignature,
+    loopState: input.loopState,
+    objectiveState: input.objectiveState,
+    missingRequirements: input.missingRequirements,
+    latestToolResult: null,
+  });
+  const latestMeaningful = getLatestMeaningfulEntry(input.toolTrace);
+  const lastMeaningfulProgressAtStep =
+    fingerprint === input.previousFingerprint && input.previousProgressState
+      ? input.previousProgressState.lastMeaningfulProgressAtStep
+      : latestMeaningful?.step ?? input.loopState.stepCount;
+  const lastMeaningfulProgressSummary =
+    fingerprint === input.previousFingerprint && input.previousProgressState
+      ? input.previousProgressState.lastMeaningfulProgressSummary
+      : latestMeaningful?.summary ||
+        (input.objectiveState.status === "satisfied"
+          ? "Objective satisfied."
+          : input.pendingToolCall
+            ? `Step ${input.pendingToolCall.step}: ${input.pendingToolCall.toolCall.name}`
+            : input.final || "Run initialized.");
+  const stallReason =
+    input.missingRequirements.find((item) =>
+      /no_usable_next_action|tool_repeat_guard_triggered|mutation_required_after_target_inspection|tool_result_failed/.test(
+        item
+      )
+    ) ||
+    (input.loopState.repeatedCallCount > 1 && pendingToolCallSignature === input.previousProgressState?.pendingToolCallSignature
+      ? "The orchestrator repeated the same next tool without proving progress."
+      : undefined);
+  const repairing = input.loopState.repairCount > 0 && input.objectiveState.status !== "satisfied" && Boolean(input.pendingToolCall);
+  const stallCount =
+    stallReason
+      ? Math.max(
+          input.previousProgressState?.stallCount || 0,
+          input.loopState.repeatedCallCount > 1 ? input.loopState.repeatedCallCount - 1 : 1
+        )
+      : 0;
+  const nextDeterministicAction =
+    input.pendingToolCall?.toolCall.summary ||
+    summarizeAction(
+      input.pendingToolCall
+        ? undefined
+        : (actionsFromToolTrace(input.toolTrace).slice(-1)[0] as ExecuteAction | undefined)
+    );
+
+  return {
+    progressState: buildProgressState({
+      completionStatus:
+        input.objectiveState.status === "satisfied" && input.missingRequirements.length === 0
+          ? "complete"
+          : "incomplete",
+      objectiveState: input.objectiveState,
+      loopState: input.loopState,
+      lastMeaningfulProgressAtStep,
+      lastMeaningfulProgressSummary,
+      stallCount,
+      stallReason,
+      nextDeterministicAction,
+      pendingToolCallSignature,
+      failed: input.loopState.status === "failed",
+      repairing,
+    }),
+    fingerprint,
+  };
+}
+
 function hydratePersistedState(record: AgentRunRecord): PersistedToolLoopState | null {
   const output = asRecord(record.output);
   const loopState = output.loopState as LoopStateContract | undefined;
@@ -335,6 +767,8 @@ function hydratePersistedState(record: AgentRunRecord): PersistedToolLoopState |
   const fallbackPlan = output.fallbackPlan as AssistPlan | undefined;
   const availableTools = (Array.isArray(output.availableTools) ? output.availableTools : []) as PlaygroundToolName[];
   const adapter = (output.adapter as PlaygroundAdapter | undefined) || "text_actions";
+  const progressState = output.progressState as ProgressStateContract | undefined;
+  const objectiveState = output.objectiveState as ObjectiveStateContract | undefined;
   if (!loopState || !targetInference || !contextSelection || !fallbackPlan) return null;
   return {
     protocol: "tool_loop_v1",
@@ -348,6 +782,29 @@ function hydratePersistedState(record: AgentRunRecord): PersistedToolLoopState |
     checkpointCreated: output.checkpointCreated === true,
     deferredToolCall: (output.deferredToolCall as ToolCallContract | null | undefined) ?? null,
     availableTools: availableTools.length > 0 ? availableTools : PLAYGROUND_TOOL_LOOP_TOOLS,
+    progressState:
+      progressState ||
+      buildProgressState({
+        completionStatus: "incomplete",
+        objectiveState:
+          objectiveState || {
+            status: "in_progress",
+            goalType: "unknown",
+            requiredProof: [],
+            observedProof: [],
+            missingProof: [],
+          },
+      }),
+    objectiveState:
+      objectiveState || {
+        status: "in_progress",
+        goalType: "unknown",
+        requiredProof: [],
+        observedProof: [],
+        missingProof: [],
+      },
+    lastProgressFingerprint: typeof output.lastProgressFingerprint === "string" ? output.lastProgressFingerprint : null,
+    repairHistory: (Array.isArray(output.repairHistory) ? output.repairHistory : []) as ToolLoopRepairStage[],
   };
 }
 
@@ -367,6 +824,10 @@ function buildPersistedOutput(input: {
     checkpointCreated: input.state.checkpointCreated,
     deferredToolCall: input.state.deferredToolCall ?? null,
     availableTools: input.state.availableTools,
+    progressState: input.result.progressState,
+    objectiveState: input.result.objectiveState,
+    lastProgressFingerprint: input.state.lastProgressFingerprint ?? null,
+    repairHistory: input.state.repairHistory,
     decision: input.result.decision,
     validationPlan: input.result.validationPlan,
     completionStatus: input.result.completionStatus,
@@ -415,7 +876,32 @@ function buildToolLoopResult(input: {
   final: string;
   actions: ExecuteAction[];
   missingRequirements?: string[];
+  previousProgressState?: ProgressStateContract | null;
+  previousFingerprint?: string | null;
 }): AssistResult {
+  const missingRequirements = input.missingRequirements || [];
+  const objectiveState = buildToolLoopObjectiveState({
+    request: input.request,
+    targetInference: input.targetInference,
+    contextSelection: input.contextSelection,
+    fallbackPlan: input.fallbackPlan,
+    toolTrace: input.toolTrace,
+    actions: input.actions,
+    missingRequirements,
+    loopState: input.loopState,
+    final: input.final,
+  });
+  const { progressState } = buildToolLoopProgressState({
+    request: input.request,
+    loopState: input.loopState,
+    objectiveState,
+    pendingToolCall: input.pendingToolCall,
+    toolTrace: input.toolTrace,
+    previousProgressState: input.previousProgressState,
+    previousFingerprint: input.previousFingerprint,
+    missingRequirements,
+    final: input.final,
+  });
   const base = buildDecoratedAssistResult({
     request: {
       ...input.request,
@@ -428,8 +914,10 @@ function buildToolLoopResult(input: {
     validationPlan: buildValidationPlan({ actions: input.actions }),
     targetInference: input.targetInference,
     contextSelection: input.contextSelection,
-    missingRequirements: input.missingRequirements || [],
+    missingRequirements,
     logs: [...input.logs, `adapter=${input.adapter}`, `tool_trace=${input.toolTrace.length}`],
+    objectiveState,
+    progressState,
   });
 
   const artifacts = attachAssistArtifactIdentifiers(
@@ -518,7 +1006,7 @@ function enforceLoopSafeguards(input: {
 
   const key = buildToolCallKey(candidate);
   const repeatedCallCount = loopState.lastToolCallKey === key ? loopState.repeatedCallCount + 1 : 1;
-  if (repeatedCallCount > MAX_IDENTICAL_CALLS) {
+  if (repeatedCallCount > MAX_IDENTICAL_CALLS && input.state.repairHistory.length === 0) {
     return {
       final: "The tool loop stopped after repeating the same tool call too many times.",
       missingRequirements: ["tool_repeat_guard_triggered"],
@@ -602,6 +1090,16 @@ async function advanceWithCandidate(input: {
   logs: string[];
 }): Promise<AssistResult> {
   if (!input.candidate) {
+    const finalActions = input.actions || actionsFromToolTrace(input.state.toolTrace);
+    const finalIntent = inferIntent({
+      mode: input.request.mode,
+      task: input.request.task,
+      targetInference: input.state.targetInference,
+    });
+    const terminalMissingRequirements =
+      finalIntent.type === "code_edit" && finalActions.length === 0
+        ? ["no_usable_next_action", "mutation_required_for_code_edit"]
+        : [];
     const finalResult = buildToolLoopResult({
       request: input.request,
       runId: input.record.id,
@@ -612,13 +1110,22 @@ async function advanceWithCandidate(input: {
       fallbackPlan: input.state.fallbackPlan,
       loopState: {
         ...input.state.loopState,
-        status: "completed",
+        status: terminalMissingRequirements.length > 0 ? "failed" : "completed",
       },
       pendingToolCall: null,
       toolTrace: input.state.toolTrace,
       logs: input.logs,
       final: input.final || "The tool loop completed.",
-      actions: input.actions || actionsFromToolTrace(input.state.toolTrace),
+      actions: finalActions,
+      missingRequirements: terminalMissingRequirements,
+      previousProgressState: input.state.progressState,
+      previousFingerprint: input.state.lastProgressFingerprint,
+    });
+    const nextFingerprint = buildProgressFingerprint({
+      pendingSignature: "",
+      loopState: finalResult.loopState || input.state.loopState,
+      objectiveState: finalResult.objectiveState,
+      missingRequirements: finalResult.missingRequirements,
     });
     return persistAndReturn({
       record: input.record,
@@ -627,10 +1134,13 @@ async function advanceWithCandidate(input: {
         adapter: input.adapter,
         loopState: finalResult.loopState || input.state.loopState,
         pendingToolCall: null,
+        progressState: finalResult.progressState,
+        objectiveState: finalResult.objectiveState,
+        lastProgressFingerprint: nextFingerprint,
       },
       result: finalResult,
-      status: "completed",
-      errorMessage: null,
+      status: finalResult.completionStatus === "complete" ? "completed" : "failed",
+      errorMessage: finalResult.completionStatus === "complete" ? null : finalResult.final,
     });
   }
 
@@ -658,6 +1168,14 @@ async function advanceWithCandidate(input: {
       final: safeguarded.final || "The tool loop stopped before it could issue the next tool call.",
       actions: actionsFromToolTrace(input.state.toolTrace),
       missingRequirements: safeguarded.missingRequirements || ["tool_loop_failed"],
+      previousProgressState: input.state.progressState,
+      previousFingerprint: input.state.lastProgressFingerprint,
+    });
+    const nextFingerprint = buildProgressFingerprint({
+      pendingSignature: "",
+      loopState: failedResult.loopState || input.state.loopState,
+      objectiveState: failedResult.objectiveState,
+      missingRequirements: failedResult.missingRequirements,
     });
     return persistAndReturn({
       record: input.record,
@@ -666,6 +1184,9 @@ async function advanceWithCandidate(input: {
         adapter: input.adapter,
         loopState: failedResult.loopState || input.state.loopState,
         pendingToolCall: null,
+        progressState: failedResult.progressState,
+        objectiveState: failedResult.objectiveState,
+        lastProgressFingerprint: nextFingerprint,
       },
       result: failedResult,
       status: "failed",
@@ -706,6 +1227,14 @@ async function advanceWithCandidate(input: {
       input.final ||
       `Step ${pendingToolCall.step} ready: ${pendingToolCall.toolCall.name}${typeof pendingToolCall.toolCall.arguments.path === "string" ? ` ${pendingToolCall.toolCall.arguments.path}` : ""}.`,
     actions: actionsFromToolTrace(pendingTrace),
+    previousProgressState: safeguarded.state.progressState,
+    previousFingerprint: safeguarded.state.lastProgressFingerprint,
+  });
+  const nextFingerprint = buildProgressFingerprint({
+    pendingSignature: pendingToolCallSignature(pendingToolCall),
+    loopState: pendingResult.loopState || safeguarded.state.loopState,
+    objectiveState: pendingResult.objectiveState,
+    missingRequirements: pendingResult.missingRequirements,
   });
 
   return persistAndReturn({
@@ -715,6 +1244,9 @@ async function advanceWithCandidate(input: {
       adapter: input.adapter,
       pendingToolCall,
       toolTrace: pendingTrace,
+      progressState: pendingResult.progressState,
+      objectiveState: pendingResult.objectiveState,
+      lastProgressFingerprint: nextFingerprint,
     },
     result: pendingResult,
     status: "running",
@@ -738,11 +1270,38 @@ export async function startAssistToolLoop(input: StartToolLoopInput): Promise<As
     targetInference,
     contextSelection,
   });
+  const initialLoopState = buildInitialLoopState();
+  const initialObjectiveState = buildToolLoopObjectiveState({
+    request: {
+      ...input.request,
+      orchestrationProtocol: "tool_loop_v1",
+    },
+    targetInference,
+    contextSelection,
+    fallbackPlan,
+    toolTrace: [],
+    actions: [],
+    missingRequirements: [],
+    loopState: initialLoopState,
+    final: "",
+  });
+  const { progressState: initialProgressState, fingerprint: initialFingerprint } = buildToolLoopProgressState({
+    request: {
+      ...input.request,
+      orchestrationProtocol: "tool_loop_v1",
+    },
+    loopState: initialLoopState,
+    objectiveState: initialObjectiveState,
+    pendingToolCall: null,
+    toolTrace: [],
+    missingRequirements: [],
+    final: "",
+  });
   const { adapter } = selectToolLoopAdapter(input.request.model);
   const initialState: PersistedToolLoopState = {
     protocol: "tool_loop_v1",
     adapter,
-    loopState: buildInitialLoopState(),
+    loopState: initialLoopState,
     pendingToolCall: null,
     toolTrace: [],
     targetInference,
@@ -751,6 +1310,10 @@ export async function startAssistToolLoop(input: StartToolLoopInput): Promise<As
     checkpointCreated: false,
     deferredToolCall: null,
     availableTools: buildAvailableTools(input.request),
+    progressState: initialProgressState,
+    objectiveState: initialObjectiveState,
+    lastProgressFingerprint: initialFingerprint,
+    repairHistory: [],
   };
 
   const risk = inferRisk(input.request.mode, input.request.task, []);
@@ -851,45 +1414,116 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
       persisted.checkpointCreated ||
       (input.toolResult.name === "create_checkpoint" && input.toolResult.ok),
   };
+  let repairDirective: ToolLoopTurnInput["repairDirective"] = null;
+  const buildBlockedResult = (params: {
+    final: string;
+    missingRequirements: string[];
+    logs: string[];
+    stallReason?: string;
+    nextDeterministicAction?: string;
+  }) =>
+    buildToolLoopResult({
+      request,
+      runId: record.id,
+      traceId: input.traceId,
+      adapter: persisted.adapter,
+      targetInference: persisted.targetInference,
+      contextSelection: persisted.contextSelection,
+      fallbackPlan: persisted.fallbackPlan,
+      loopState: {
+        ...nextState.loopState,
+        status: "failed",
+      },
+      pendingToolCall: null,
+      toolTrace,
+      logs: params.logs,
+      final:
+        params.stallReason || params.nextDeterministicAction
+          ? [
+              params.final,
+              params.stallReason ? `Stall reason: ${params.stallReason}` : "",
+              params.nextDeterministicAction ? `Next deterministic action: ${params.nextDeterministicAction}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n\n")
+          : params.final,
+      actions: actionsFromToolTrace(toolTrace),
+      missingRequirements: params.missingRequirements,
+      previousProgressState: {
+        ...nextState.progressState,
+        stallCount: nextState.progressState.stallCount + 1,
+        ...(params.stallReason ? { stallReason: params.stallReason } : {}),
+        ...(params.nextDeterministicAction
+          ? { nextDeterministicAction: params.nextDeterministicAction }
+          : {}),
+      },
+      previousFingerprint: nextState.lastProgressFingerprint,
+    });
 
   if (!input.toolResult.ok || input.toolResult.blocked) {
-    if (nextState.loopState.repairCount >= MAX_REPAIR_ROUNDS) {
-      const failedResult = buildToolLoopResult({
-        request,
-        runId: record.id,
-        traceId: input.traceId,
-        adapter: persisted.adapter,
-        targetInference: persisted.targetInference,
-        contextSelection: persisted.contextSelection,
-        fallbackPlan: persisted.fallbackPlan,
-        loopState: {
-          ...nextState.loopState,
-          status: "failed",
-        },
-        pendingToolCall: null,
-        toolTrace,
-        logs: ["repair_limit_exceeded"],
+    const failureCategory = classifyToolFailure(input.toolResult, pendingToolCall);
+    const repairStage = nextRepairStage({
+      targetPath: nextState.targetInference.path,
+      repairHistory: nextState.repairHistory,
+      failureCategory,
+      latestToolResult: input.toolResult,
+      pendingToolCall,
+    });
+    if (nextState.loopState.repairCount >= MAX_REPAIR_ROUNDS || !repairStage) {
+      const failedResult = buildBlockedResult({
         final: input.toolResult.summary,
-        actions: actionsFromToolTrace(toolTrace),
-        missingRequirements: ["tool_result_failed"],
+        missingRequirements: ["tool_result_failed", failureCategory],
+        logs: ["repair_limit_exceeded", `failure_category=${failureCategory}`],
+        stallReason: input.toolResult.summary,
+        nextDeterministicAction: "Return a blocked terminal result with exact missing proof.",
+      });
+      const nextFingerprint = buildProgressFingerprint({
+        pendingSignature: "",
+        loopState: failedResult.loopState || nextState.loopState,
+        objectiveState: failedResult.objectiveState,
+        missingRequirements: failedResult.missingRequirements,
+        latestToolResult: input.toolResult,
       });
       return persistAndReturn({
         record,
         state: {
           ...nextState,
           loopState: failedResult.loopState || nextState.loopState,
+          progressState: failedResult.progressState,
+          objectiveState: failedResult.objectiveState,
+          lastProgressFingerprint: nextFingerprint,
         },
         result: failedResult,
         status: "failed",
         errorMessage: input.toolResult.summary,
       });
     }
+    const guidance = buildRepairGuidance({
+      stage: repairStage,
+      targetPath: nextState.targetInference.path,
+      toolResult: input.toolResult,
+      failureCategory,
+    });
+    repairDirective = {
+      stage: repairStage,
+      reason: `${guidance.reason} Next: ${guidance.nextDeterministicAction}`,
+    };
     nextState = {
       ...nextState,
       loopState: {
         ...nextState.loopState,
         repairCount: nextState.loopState.repairCount + 1,
         status: "running",
+      },
+      repairHistory: [...nextState.repairHistory, repairStage],
+      progressState: {
+        ...nextState.progressState,
+        status: "repairing",
+        lastMeaningfulProgressAtStep: pendingToolCall.step,
+        lastMeaningfulProgressSummary: input.toolResult.summary,
+        stallCount: nextState.progressState.stallCount + 1,
+        stallReason: guidance.reason,
+        nextDeterministicAction: guidance.nextDeterministicAction,
       },
     };
   } else {
@@ -932,7 +1566,257 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
     },
     availableTools: nextState.availableTools,
     latestToolResult: input.toolResult,
+    repairDirective,
   });
+
+  const changeIntent = inferIntent({
+    mode: request.mode,
+    task: request.task,
+    targetInference: nextState.targetInference,
+  }).type === "code_edit";
+  const inspectedTrustedTarget =
+    input.toolResult.ok &&
+    pendingToolCall.toolCall.name === "read_file" &&
+    normalizeRelativePath(String(pendingToolCall.toolCall.arguments.path || "")) ===
+      normalizeRelativePath(nextState.targetInference.path);
+  const repeatedPendingSignature =
+    Boolean(turn.toolCall) &&
+    pendingToolCallSignature(turn.toolCall) === pendingToolCallSignature(pendingToolCall.toolCall);
+
+  if (changeIntent && inspectedTrustedTarget && (!turn.toolCall || !isMutatingTool(turn.toolCall.name))) {
+    const repairStage = nextRepairStage({
+      targetPath: nextState.targetInference.path,
+      repairHistory: nextState.repairHistory,
+      latestToolResult: input.toolResult,
+      pendingToolCall,
+    });
+    if (nextState.loopState.repairCount >= MAX_REPAIR_ROUNDS || !repairStage) {
+      const failedResult = buildBlockedResult({
+        final: turn.final || "The tool loop inspected the target file but did not produce a concrete mutation.",
+        missingRequirements: ["mutation_required_after_inspection"],
+        logs: [...turn.logs, "stall=post_inspection_without_mutation"],
+        stallReason: `Inspected ${nextState.targetInference.path || "the target file"} without selecting a mutation.`,
+        nextDeterministicAction: `Choose one concrete mutation for ${nextState.targetInference.path || "the target file"} or return a blocked terminal result.`,
+      });
+      const nextFingerprint = buildProgressFingerprint({
+        pendingSignature: "",
+        loopState: failedResult.loopState || nextState.loopState,
+        objectiveState: failedResult.objectiveState,
+        missingRequirements: failedResult.missingRequirements,
+        latestToolResult: input.toolResult,
+      });
+      return persistAndReturn({
+        record,
+        state: {
+          ...nextState,
+          loopState: failedResult.loopState || nextState.loopState,
+          progressState: failedResult.progressState,
+          objectiveState: failedResult.objectiveState,
+          lastProgressFingerprint: nextFingerprint,
+        },
+        result: failedResult,
+        status: "failed",
+        errorMessage: failedResult.final,
+      });
+    }
+    const guidance = buildRepairGuidance({
+      stage: repairStage,
+      targetPath: nextState.targetInference.path,
+      toolResult: input.toolResult,
+    });
+    const repairedTurn = await requestToolLoopTurn({
+      request,
+      targetInference: nextState.targetInference,
+      contextSelection: nextState.contextSelection,
+      fallbackPlan: nextState.fallbackPlan,
+      toolTrace,
+      loopSummary: {
+        stepCount: nextState.loopState.stepCount,
+        mutationCount: nextState.loopState.mutationCount,
+        repairCount: nextState.loopState.repairCount + 1,
+      },
+      availableTools: nextState.availableTools,
+      latestToolResult: input.toolResult,
+      repairDirective: {
+        stage: repairStage,
+        reason: `${guidance.reason} Next: ${guidance.nextDeterministicAction}`,
+      },
+    });
+    nextState = {
+      ...nextState,
+      loopState: {
+        ...nextState.loopState,
+        repairCount: nextState.loopState.repairCount + 1,
+      },
+      repairHistory: [...nextState.repairHistory, repairStage],
+    };
+    if (!repairedTurn.toolCall || !isMutatingTool(repairedTurn.toolCall.name)) {
+      const failedResult = buildBlockedResult({
+        final: repairedTurn.final || "The tool loop still did not produce a concrete mutation after repair.",
+        missingRequirements: ["mutation_required_after_inspection"],
+        logs: [...repairedTurn.logs, "stall=repair_exhausted_without_mutation"],
+        stallReason: guidance.reason,
+        nextDeterministicAction: guidance.nextDeterministicAction,
+      });
+      const nextFingerprint = buildProgressFingerprint({
+        pendingSignature: "",
+        loopState: failedResult.loopState || nextState.loopState,
+        objectiveState: failedResult.objectiveState,
+        missingRequirements: failedResult.missingRequirements,
+        latestToolResult: input.toolResult,
+      });
+      return persistAndReturn({
+        record,
+        state: {
+          ...nextState,
+          loopState: failedResult.loopState || nextState.loopState,
+          progressState: failedResult.progressState,
+          objectiveState: failedResult.objectiveState,
+          lastProgressFingerprint: nextFingerprint,
+        },
+        result: failedResult,
+        status: "failed",
+        errorMessage: failedResult.final,
+      });
+    }
+    return advanceWithCandidate({
+      record,
+      request,
+      state: {
+        ...nextState,
+        adapter: repairedTurn.adapter,
+      },
+      traceId: input.traceId,
+      candidate: repairedTurn.toolCall,
+      adapter: repairedTurn.adapter,
+      final: repairedTurn.final,
+      actions: repairedTurn.actions as ExecuteAction[] | undefined,
+      logs: repairedTurn.logs,
+    });
+  }
+
+  if (repeatedPendingSignature && input.toolResult.ok && !repairDirective) {
+    const repairStage = nextRepairStage({
+      targetPath: nextState.targetInference.path,
+      repairHistory: nextState.repairHistory,
+      latestToolResult: input.toolResult,
+      pendingToolCall,
+    });
+    if (nextState.loopState.repairCount >= MAX_REPAIR_ROUNDS || !repairStage) {
+      const failedResult = buildBlockedResult({
+        final: turn.final || "The tool loop repeated the same pending tool call without new proof.",
+        missingRequirements: ["tool_repeat_without_progress"],
+        logs: [...turn.logs, "stall=repeated_pending_tool_signature"],
+        stallReason: "The next hosted step repeated the same tool call signature without new proof.",
+        nextDeterministicAction: "Choose a different next tool, mutate the target, or return a blocked terminal result.",
+      });
+      const nextFingerprint = buildProgressFingerprint({
+        pendingSignature: "",
+        loopState: failedResult.loopState || nextState.loopState,
+        objectiveState: failedResult.objectiveState,
+        missingRequirements: failedResult.missingRequirements,
+        latestToolResult: input.toolResult,
+      });
+      return persistAndReturn({
+        record,
+        state: {
+          ...nextState,
+          loopState: failedResult.loopState || nextState.loopState,
+          progressState: failedResult.progressState,
+          objectiveState: failedResult.objectiveState,
+          lastProgressFingerprint: nextFingerprint,
+        },
+        result: failedResult,
+        status: "failed",
+        errorMessage: failedResult.final,
+      });
+    }
+    const guidance = buildRepairGuidance({
+      stage: repairStage,
+      targetPath: nextState.targetInference.path,
+      toolResult: input.toolResult,
+    });
+    const repairedTurn = await requestToolLoopTurn({
+      request,
+      targetInference: nextState.targetInference,
+      contextSelection: nextState.contextSelection,
+      fallbackPlan: nextState.fallbackPlan,
+      toolTrace,
+      loopSummary: {
+        stepCount: nextState.loopState.stepCount,
+        mutationCount: nextState.loopState.mutationCount,
+        repairCount: nextState.loopState.repairCount + 1,
+      },
+      availableTools: nextState.availableTools,
+      latestToolResult: input.toolResult,
+      repairDirective: {
+        stage: repairStage,
+        reason: `${guidance.reason} Next: ${guidance.nextDeterministicAction}`,
+      },
+    });
+    nextState = {
+      ...nextState,
+      loopState: {
+        ...nextState.loopState,
+        repairCount: nextState.loopState.repairCount + 1,
+        status: "running",
+      },
+      repairHistory: [...nextState.repairHistory, repairStage],
+      progressState: {
+        ...nextState.progressState,
+        status: "repairing",
+        stallCount: nextState.progressState.stallCount + 1,
+        stallReason: "The next hosted step repeated the same tool call signature without new proof.",
+        nextDeterministicAction: guidance.nextDeterministicAction,
+      },
+    };
+    if (
+      !repairedTurn.toolCall ||
+      pendingToolCallSignature(repairedTurn.toolCall) === pendingToolCallSignature(pendingToolCall.toolCall)
+    ) {
+      const failedResult = buildBlockedResult({
+        final: repairedTurn.final || "The tool loop repeated the same pending tool call even after repair.",
+        missingRequirements: ["tool_repeat_without_progress"],
+        logs: [...repairedTurn.logs, "stall=repeated_pending_tool_signature_after_repair"],
+        stallReason: guidance.reason,
+        nextDeterministicAction: guidance.nextDeterministicAction,
+      });
+      const nextFingerprint = buildProgressFingerprint({
+        pendingSignature: "",
+        loopState: failedResult.loopState || nextState.loopState,
+        objectiveState: failedResult.objectiveState,
+        missingRequirements: failedResult.missingRequirements,
+        latestToolResult: input.toolResult,
+      });
+      return persistAndReturn({
+        record,
+        state: {
+          ...nextState,
+          loopState: failedResult.loopState || nextState.loopState,
+          progressState: failedResult.progressState,
+          objectiveState: failedResult.objectiveState,
+          lastProgressFingerprint: nextFingerprint,
+        },
+        result: failedResult,
+        status: "failed",
+        errorMessage: failedResult.final,
+      });
+    }
+    return advanceWithCandidate({
+      record,
+      request,
+      state: {
+        ...nextState,
+        adapter: repairedTurn.adapter,
+      },
+      traceId: input.traceId,
+      candidate: repairedTurn.toolCall,
+      adapter: repairedTurn.adapter,
+      final: repairedTurn.final,
+      actions: repairedTurn.actions as ExecuteAction[] | undefined,
+      logs: repairedTurn.logs,
+    });
+  }
 
   return advanceWithCandidate({
     record,

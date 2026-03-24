@@ -4,6 +4,7 @@ exports.CutieModelClient = void 0;
 const vscode_core_1 = require("@xpersona/vscode-core");
 const config_1 = require("./config");
 const cutie_host_http_error_1 = require("./cutie-host-http-error");
+const cutie_policy_1 = require("./cutie-policy");
 const cutie_model_protocol_1 = require("./cutie-model-protocol");
 const cutie_native_autonomy_1 = require("./cutie-native-autonomy");
 function asRecord(value) {
@@ -19,8 +20,9 @@ function buildStructuredRequestBody(input, stream) {
     return {
         model: (0, config_1.getModelHint)(),
         protocol: "cutie_tools_v2",
+        protocolMode: input.protocolMode || "native_tools",
         stream,
-        messages: input.messages,
+        messages: (0, cutie_policy_1.limitCutieModelMessages)(input.messages),
         tools: input.tools,
         maxToolsPerBatch: input.maxToolsPerBatch,
     };
@@ -32,7 +34,7 @@ class CutieModelClient {
             response = await (0, vscode_core_1.requestJson)("POST", `${(0, config_1.getBaseApiUrl)()}/api/v1/cutie/model/chat`, input.auth, {
                 model: (0, config_1.getModelHint)(),
                 stream: false,
-                messages: input.messages,
+                messages: (0, cutie_policy_1.limitCutieModelMessages)(input.messages),
                 ...(typeof input.temperature === "number" ? { temperature: input.temperature } : {}),
                 ...(typeof input.maxTokens === "number" ? { maxTokens: input.maxTokens } : {}),
             }, {
@@ -90,6 +92,37 @@ class CutieModelClient {
             assistantText: typeof response.assistantText === "string" ? response.assistantText : "",
             usage: response.usage && typeof response.usage === "object" ? response.usage : null,
             model: typeof response.model === "string" && response.model.trim() ? response.model.trim() : undefined,
+            ...(typeof response.modelAdapter === "string" ? { modelAdapter: response.modelAdapter } : {}),
+            ...(response.modelCapabilities && typeof response.modelCapabilities === "object"
+                ? { modelCapabilities: response.modelCapabilities }
+                : {}),
+            ...(typeof response.protocolMode === "string" ? { protocolMode: response.protocolMode } : {}),
+            ...(typeof response.orchestratorContractVersion === "string"
+                ? {
+                    orchestratorContractVersion: response.orchestratorContractVersion,
+                }
+                : {}),
+            ...(typeof response.portabilityMode === "string"
+                ? { portabilityMode: response.portabilityMode }
+                : {}),
+            ...(typeof response.transportModeUsed === "string"
+                ? { transportModeUsed: response.transportModeUsed }
+                : {}),
+            ...(typeof response.normalizationSource === "string"
+                ? { normalizationSource: response.normalizationSource }
+                : {}),
+            ...(typeof response.normalizationTier === "string"
+                ? { normalizationTier: response.normalizationTier }
+                : {}),
+            ...(typeof response.artifactExtractionShape === "string"
+                ? { artifactExtractionShape: response.artifactExtractionShape }
+                : {}),
+            ...(typeof response.fallbackModeUsed === "string"
+                ? { fallbackModeUsed: response.fallbackModeUsed }
+                : {}),
+            ...(typeof response.batchCollapsedToSingleAction === "boolean"
+                ? { batchCollapsedToSingleAction: response.batchCollapsedToSingleAction }
+                : {}),
         };
     }
     async streamStructuredTurnOnce(input) {
@@ -99,8 +132,22 @@ class CutieModelClient {
         let usage = null;
         let resolvedModel;
         let responsePayload = null;
+        let modelAdapter;
+        let modelCapabilities;
+        let protocolMode;
+        let orchestratorContractVersion;
+        let portabilityMode;
+        let transportModeUsed;
+        let normalizationSource;
+        let normalizationTier;
+        let artifactExtractionShape;
+        let fallbackModeUsed;
+        let batchCollapsedToSingleAction;
         try {
             await (0, vscode_core_1.streamJsonEvents)("POST", `${(0, config_1.getBaseApiUrl)()}/api/v1/cutie/model/chat`, input.auth, buildStructuredRequestBody(input, true), async (event, data) => {
+                if (input.signal?.aborted) {
+                    throw new Error("Request aborted");
+                }
                 const parsed = (0, cutie_model_protocol_1.parseStructuredStreamEvent)(event, data);
                 if (parsed.type === "assistant_delta") {
                     rawAssistantText += parsed.text;
@@ -125,6 +172,20 @@ class CutieModelClient {
                     if (parsed.model) {
                         resolvedModel = parsed.model;
                     }
+                    modelAdapter = parsed.modelAdapter || modelAdapter;
+                    modelCapabilities = parsed.modelCapabilities || modelCapabilities;
+                    protocolMode = parsed.protocolMode || protocolMode;
+                    orchestratorContractVersion = parsed.orchestratorContractVersion || orchestratorContractVersion;
+                    portabilityMode = parsed.portabilityMode || portabilityMode;
+                    transportModeUsed = parsed.transportModeUsed || transportModeUsed;
+                    normalizationSource = parsed.normalizationSource || normalizationSource;
+                    normalizationTier = parsed.normalizationTier || normalizationTier;
+                    artifactExtractionShape = parsed.artifactExtractionShape || artifactExtractionShape;
+                    fallbackModeUsed = parsed.fallbackModeUsed || fallbackModeUsed;
+                    batchCollapsedToSingleAction =
+                        parsed.batchCollapsedToSingleAction !== undefined
+                            ? parsed.batchCollapsedToSingleAction
+                            : batchCollapsedToSingleAction;
                     return;
                 }
                 if (parsed.type === "error") {
@@ -147,6 +208,17 @@ class CutieModelClient {
             ...(suppressedAssistantArtifact ? { suppressedAssistantArtifact } : {}),
             usage,
             model: resolvedModel,
+            ...(modelAdapter ? { modelAdapter } : {}),
+            ...(modelCapabilities ? { modelCapabilities } : {}),
+            ...(protocolMode ? { protocolMode } : {}),
+            ...(orchestratorContractVersion ? { orchestratorContractVersion } : {}),
+            ...(portabilityMode ? { portabilityMode } : {}),
+            ...(transportModeUsed ? { transportModeUsed } : {}),
+            ...(normalizationSource ? { normalizationSource } : {}),
+            ...(normalizationTier ? { normalizationTier } : {}),
+            ...(artifactExtractionShape ? { artifactExtractionShape } : {}),
+            ...(fallbackModeUsed ? { fallbackModeUsed } : {}),
+            ...(batchCollapsedToSingleAction !== undefined ? { batchCollapsedToSingleAction } : {}),
         };
     }
 }

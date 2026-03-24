@@ -49,6 +49,7 @@ import {
 } from "./qwen-ux";
 import { createPendingQwenSessionId, isPendingQwenSessionId, QwenHistoryService } from "./qwen-history";
 import { QwenCodeRuntime, type QwenPromptResult, type QwenToolEvent } from "./qwen-code-runtime";
+import { isMutationToolName } from "./qwen-runtime-utils";
 import { ToolExecutor } from "./tool-executor";
 import { buildPlaygroundWebviewHtml } from "./webview-html";
 import { buildQwenPrompt } from "./qwen-prompt";
@@ -72,7 +73,11 @@ import type {
   BinaryBuildEvent,
   BinaryBuildPhase,
   BinaryBuildRecord,
+  BinaryAstState,
+  BinaryLiveReliabilityState,
   BinaryPanelState,
+  BinaryRuntimeState,
+  BinarySnapshotSummary,
   ChatLiveEvent,
   ChatMessage,
   ChatLiveState,
@@ -83,7 +88,9 @@ import type {
   IntentKind,
   LiveChatState,
   Mode,
+  ObjectiveState,
   PendingToolCall,
+  ProgressState,
   RequestAuth,
   RuntimeBackend,
   RuntimePhase,
@@ -144,6 +151,8 @@ type QwenDebugSnapshot = {
   attempts: QwenDebugAttempt[];
   runtimePhase: RuntimePhase;
   recentActivity: string[];
+  progressState?: ProgressState | null;
+  objectiveState?: ObjectiveState | null;
   model?: string;
   error?: string;
 };
@@ -163,6 +172,8 @@ type HostedDebugSnapshot = {
   runId?: string;
   adapter?: string;
   completionStatus?: string;
+  progressState?: ProgressState | null;
+  objectiveState?: ObjectiveState | null;
   toolCallsUsed: string[];
   assistantPreview?: string;
   error?: string;
@@ -219,10 +230,14 @@ function createDefaultBinaryPanelState(): BinaryPanelState {
     previewFiles: [],
     recentLogs: [],
     reliability: null,
+    liveReliability: null,
     artifactState: null,
     sourceGraph: null,
+    astState: null,
     execution: null,
+    runtimeState: null,
     checkpoints: [],
+    snapshots: [],
     pendingRefinement: null,
     canCancel: false,
     lastAction: null,
@@ -269,6 +284,11 @@ function formatBinaryBuildMessage(build: BinaryBuildRecord): string {
     lines.push(`Reliability: ${build.reliability.status.toUpperCase()} (${build.reliability.score}/100)`);
     lines.push(build.reliability.summary);
   }
+  if (build.liveReliability) {
+    lines.push(
+      `Live reliability: ${build.liveReliability.score}/100 (${build.liveReliability.trend}), ${build.liveReliability.blockers.length} blockers`
+    );
+  }
   if (build.artifactState) {
     lines.push(
       `Formation: ${build.artifactState.coverage}% formed, ${build.artifactState.runnable ? "runnable" : "not runnable yet"}`
@@ -288,6 +308,9 @@ function formatBinaryBuildMessage(build: BinaryBuildRecord): string {
       lines.push(`Diagnostics: ${build.sourceGraph.diagnostics.length}`);
     }
   }
+  if (build.astState) {
+    lines.push(`AST: ${build.astState.coverage}% covered across ${build.astState.moduleCount} modules`);
+  }
   if (build.execution) {
     lines.push(
       `Partial runtime: ${build.execution.mode}${build.execution.availableFunctions.length ? ` (${build.execution.availableFunctions.length} callable functions)` : ""}`
@@ -296,8 +319,16 @@ function formatBinaryBuildMessage(build: BinaryBuildRecord): string {
       lines.push(`Last run: ${build.execution.lastRun.entryPoint} -> ${build.execution.lastRun.status.toUpperCase()}`);
     }
   }
+  if (build.runtimeState) {
+    lines.push(
+      `Runtime state: ${build.runtimeState.engine}${build.runtimeState.availableFunctions.length ? ` (${build.runtimeState.availableFunctions.length} callable functions)` : ""}`
+    );
+  }
   if (build.checkpoints?.length) {
     lines.push(`Checkpoints: ${build.checkpoints.length}`);
+  }
+  if (build.snapshots?.length) {
+    lines.push(`Snapshots: ${build.snapshots.length}`);
   }
   if (build.pendingRefinement) {
     lines.push(`Pending refinement: ${build.pendingRefinement.intent}`);
@@ -343,6 +374,190 @@ function containsPseudoToolMarkupText(value: string): boolean {
     /<tool_call>[\s\S]*?<\/tool_call>/i.test(text) ||
     /<function=[^>]+>/i.test(text) ||
     /<parameter=[^>]+>/i.test(text)
+  );
+}
+
+function readRecordString(input: unknown, key: string): string | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const value = (input as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readRecordStatus(input: unknown): string | undefined {
+  return readRecordString(input, "status");
+}
+
+function readStringArray(input: unknown): string[] {
+  return Array.isArray(input)
+    ? input
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter(Boolean)
+    : [];
+}
+
+function readRecordStringArray(input: unknown, key: string): string[] {
+  if (!input || typeof input !== "object") return [];
+  return readStringArray((input as Record<string, unknown>)[key]);
+}
+
+function normalizeToolCallArguments(input: Record<string, unknown>): string {
+  const entries = Object.keys(input || {})
+    .sort()
+    .map((key) => [key, input[key]]);
+  return JSON.stringify(entries);
+}
+
+function buildToolCallSignature(toolCall?: PendingToolCall["toolCall"] | null): string {
+  if (!toolCall) return "";
+  return JSON.stringify({
+    name: String(toolCall.name || "").trim().toLowerCase(),
+    kind: String(toolCall.kind || "").trim().toLowerCase(),
+    arguments: normalizeToolCallArguments(toolCall.arguments || {}),
+  });
+}
+
+function getObjectiveGoalType(intent: IntentKind, mode: Mode): ObjectiveState["goalType"] {
+  if (mode === "plan") return "plan";
+  if (intent === "change") return "code_edit";
+  if (intent === "find") return "command_run";
+  return "unknown";
+}
+
+function hasMutationProofFromTools(toolCallsUsed: string[], envelope: AssistRunEnvelope): boolean {
+  if (toolCallsUsed.some((tool) => isMutationToolName(tool))) return true;
+  if (Array.isArray(envelope.actions) && envelope.actions.length > 0) return true;
+  if (
+    Array.isArray(envelope.toolTrace) &&
+    envelope.toolTrace.some(
+      (entry) =>
+        entry.status === "completed" &&
+        Boolean(entry.toolCall?.name) &&
+        isMutationToolName(entry.toolCall?.name || "")
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function getRecordStatus(value: unknown, fallback?: string): string {
+  return readRecordStatus(value) || fallback || "";
+}
+
+function buildHostedProgressFingerprint(input: {
+  envelope: AssistRunEnvelope;
+  toolCallsUsed: string[];
+  objectiveState?: ObjectiveState | null;
+  progressState?: ProgressState | null;
+}): string {
+  const loopState = input.envelope.loopState || null;
+  const pendingToolCall = input.envelope.pendingToolCall || null;
+  const missingRequirements = readStringArray(input.envelope.missingRequirements);
+  return JSON.stringify({
+    stepCount: loopState?.stepCount ?? null,
+    mutationCount: loopState?.mutationCount ?? null,
+    repairCount: loopState?.repairCount ?? null,
+    repeatedCallCount: loopState?.repeatedCallCount ?? null,
+    pendingToolCallSignature: buildToolCallSignature(pendingToolCall?.toolCall || null),
+    latestToolResult: input.toolCallsUsed.slice(-1)[0] || "",
+    missingRequirements,
+    objectiveStatus: input.objectiveState?.status || readRecordStatus(input.envelope.objectiveState) || "unknown",
+    progressStatus: input.progressState?.status || readRecordStatus(input.envelope.progressState) || "unknown",
+  });
+}
+
+function buildHostedTerminalMessage(input: {
+  task: string;
+  preview: { intent: IntentKind; activeFile?: string; resolvedFiles?: string[]; selectedFiles?: string[] };
+  envelope: AssistRunEnvelope;
+  progressState?: ProgressState | null;
+  objectiveState?: ObjectiveState | null;
+  toolCallsUsed: string[];
+  mutationProof: boolean;
+}): string {
+  const missingRequirements = readStringArray(input.envelope.missingRequirements);
+  const reviewStatus = getRecordStatus(input.envelope.reviewState, "ready");
+  const objectiveStatus = input.objectiveState?.status || readRecordStatus(input.envelope.objectiveState) || "in_progress";
+  const progressStatus = input.progressState?.status || readRecordStatus(input.envelope.progressState) || "running";
+  const targetPath =
+    input.objectiveState?.targetPath ||
+    readRecordString(input.envelope.objectiveState, "targetPath") ||
+    input.preview.activeFile ||
+    input.preview.resolvedFiles?.[0] ||
+    input.preview.selectedFiles?.[0] ||
+    "";
+  const stallReason =
+    input.progressState?.stallReason ||
+    readRecordString(input.envelope.progressState, "stallReason") ||
+    (missingRequirements.length ? missingRequirements[0] : "") ||
+    (input.preview.intent === "change" && !input.mutationProof
+      ? "The run inspected the target file but never proved a mutation."
+      : "");
+  const nextDeterministicAction =
+    input.progressState?.nextDeterministicAction ||
+    readRecordString(input.envelope.progressState, "nextDeterministicAction") ||
+    (input.preview.intent === "change"
+      ? targetPath
+        ? `Edit ${targetPath} directly.`
+        : "Edit the resolved target file directly."
+      : "Return a concrete next workspace action.");
+  const receiptStatus = getRecordStatus(input.envelope.receipt, "ready");
+  const lines = [
+    "The run stopped before proving the objective was complete.",
+    `Task: ${String(input.task || "").trim() || "(unknown)"}`,
+    `Completion status: ${String(input.envelope.completionStatus || "incomplete")}`,
+    `Objective status: ${objectiveStatus}`,
+    `Review status: ${reviewStatus}`,
+    `Progress status: ${progressStatus}`,
+  ];
+
+  if (missingRequirements.length) {
+    lines.push(`Missing requirements: ${missingRequirements.join(", ")}`);
+  }
+  if (stallReason) {
+    lines.push(`Stall reason: ${stallReason}`);
+  }
+  if (nextDeterministicAction) {
+    lines.push(`Next deterministic action: ${nextDeterministicAction}`);
+  }
+  if (targetPath) {
+    lines.push(`Target: ${targetPath}`);
+  }
+  lines.push(`Receipt status: ${receiptStatus}`);
+  if (input.mutationProof) {
+    lines.push(`Mutation proof: ${input.toolCallsUsed.filter((tool) => isMutationToolName(tool)).join(", ") || "(present)"}`);
+  } else if (input.toolCallsUsed.length) {
+    lines.push(`Tools used: ${input.toolCallsUsed.join(", ")}`);
+  }
+  return lines.join("\n");
+}
+
+function isHostedCompletionSuccessful(input: {
+  envelope: AssistRunEnvelope;
+  objectiveState?: ObjectiveState | null;
+  progressState?: ProgressState | null;
+  mutationProof: boolean;
+  mode: Mode;
+}): boolean {
+  const completionStatus = input.envelope.completionStatus === "complete";
+  const objectiveStatus = input.objectiveState?.status || readRecordStatus(input.envelope.objectiveState);
+  const reviewStatus = getRecordStatus(input.envelope.reviewState, "ready");
+  const missingRequirements = readStringArray(input.envelope.missingRequirements);
+  const terminalProgress = input.progressState?.status || readRecordStatus(input.envelope.progressState);
+  const objectSatisfied = objectiveStatus === "satisfied";
+  const reviewReady = reviewStatus !== "blocked";
+  const missingProof = input.objectiveState ? input.objectiveState.missingProof.length > 0 : false;
+  const mutationProofRequired = input.mode !== "plan";
+  const mutationProofOk = !mutationProofRequired || input.mutationProof;
+  const progressBlocked = terminalProgress === "failed" || terminalProgress === "stalled";
+  return (
+    completionStatus &&
+    objectSatisfied &&
+    reviewReady &&
+    missingRequirements.length === 0 &&
+    !missingProof &&
+    mutationProofOk &&
+    !progressBlocked
   );
 }
 
@@ -1536,14 +1751,53 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     this.state.binary.previewFiles = build?.preview?.files || [];
     this.state.binary.recentLogs = build?.preview?.recentLogs || [];
     this.state.binary.reliability = build?.reliability || null;
+    this.state.binary.liveReliability = build?.liveReliability || null;
     this.state.binary.artifactState = build?.artifactState || null;
     this.state.binary.sourceGraph = build?.sourceGraph || null;
+    this.state.binary.astState = build?.astState || null;
     this.state.binary.execution = build?.execution || null;
+    this.state.binary.runtimeState = build?.runtimeState || null;
     this.state.binary.checkpoints = build?.checkpoints || [];
+    this.state.binary.snapshots = build?.snapshots || [];
     this.state.binary.pendingRefinement = build?.pendingRefinement || null;
     this.state.binary.canCancel = Boolean(build?.cancelable && isBinaryBuildPending(build));
     if (build?.targetEnvironment) {
       this.state.binary.targetEnvironment = build.targetEnvironment;
+    }
+  }
+
+  private updateBinarySnapshots(snapshot: BinarySnapshotSummary): BinarySnapshotSummary[] {
+    const current = this.state.binary.snapshots || [];
+    return [snapshot, ...current.filter((item) => item.id !== snapshot.id)].slice(0, 80);
+  }
+
+  private updateBinaryAstState(astState: BinaryAstState): void {
+    this.state.binary.astState = astState;
+    if (this.state.binary.activeBuild) {
+      this.state.binary.activeBuild = {
+        ...this.state.binary.activeBuild,
+        astState,
+      };
+    }
+  }
+
+  private updateBinaryRuntimeState(runtimeState: BinaryRuntimeState): void {
+    this.state.binary.runtimeState = runtimeState;
+    if (this.state.binary.activeBuild) {
+      this.state.binary.activeBuild = {
+        ...this.state.binary.activeBuild,
+        runtimeState,
+      };
+    }
+  }
+
+  private updateBinaryLiveReliability(liveReliability: BinaryLiveReliabilityState): void {
+    this.state.binary.liveReliability = liveReliability;
+    if (this.state.binary.activeBuild) {
+      this.state.binary.activeBuild = {
+        ...this.state.binary.activeBuild,
+        liveReliability,
+      };
     }
   }
 
@@ -1716,6 +1970,15 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
           });
         }
         break;
+      case "reliability.stream":
+        this.applyChatLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "validating",
+          progress: current?.progress,
+        });
+        this.updateBinaryLiveReliability(event.data.reliability);
+        break;
       case "graph.updated":
         this.applyChatLiveEvent({
           type: "build_event",
@@ -1730,6 +1993,47 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
             sourceGraph: event.data.sourceGraph,
           });
         }
+        break;
+      case "token.delta":
+        this.applyChatLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "materializing",
+          progress: current?.progress,
+          latestLog: String(event.data.text || "").slice(-120),
+        });
+        if (current && event.data.text.trim()) {
+          this.setActiveBinaryBuild({
+            ...current,
+            logs: [...current.logs, event.data.text].slice(-500),
+          });
+        }
+        break;
+      case "ast.delta":
+        this.applyChatLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "materializing",
+          progress: current?.progress,
+          latestFile: event.data.delta.modulesTouched[0],
+        });
+        this.updateBinaryAstState({
+          coverage: event.data.delta.coverage,
+          moduleCount: current?.astState?.moduleCount || event.data.delta.modulesTouched.length || 0,
+          modules: current?.astState?.modules || [],
+          nodes: event.data.delta.nodes,
+          updatedAt: event.data.delta.updatedAt,
+          source: event.data.delta.source,
+        });
+        break;
+      case "ast.state":
+        this.applyChatLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "materializing",
+          progress: current?.progress,
+        });
+        this.updateBinaryAstState(event.data.astState);
         break;
       case "execution.updated":
         this.applyChatLiveEvent({
@@ -1753,6 +2057,29 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
             },
           });
         }
+        break;
+      case "runtime.state":
+        this.applyChatLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "validating",
+          progress: current?.progress,
+          latestLog: event.data.runtime.lastRun?.logs?.slice(-1)[0],
+        });
+        this.updateBinaryRuntimeState(event.data.runtime);
+        break;
+      case "patch.applied":
+        this.applyChatLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "materializing",
+          progress: current?.progress,
+          latestLog: `Patch applied: ${event.data.patch.modulePath}`,
+        });
+        this.updateBinaryRuntimeState({
+          ...event.data.runtime,
+          patches: [event.data.patch, ...(event.data.runtime.patches || []).filter((item) => item.id !== event.data.patch.id)],
+        });
         break;
       case "artifact.delta":
         this.applyChatLiveEvent({
@@ -1791,13 +2118,35 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
             preview: event.data.checkpoint.preview || current.preview || null,
             manifest: event.data.checkpoint.manifest || current.manifest || null,
             reliability: event.data.checkpoint.reliability || current.reliability || null,
+            liveReliability: event.data.checkpoint.liveReliability || current.liveReliability || null,
             artifactState: event.data.checkpoint.artifactState || current.artifactState || null,
             sourceGraph: event.data.checkpoint.sourceGraph || current.sourceGraph || null,
+            astState: event.data.checkpoint.astState || current.astState || null,
             execution: event.data.checkpoint.execution || current.execution || null,
+            runtimeState: event.data.checkpoint.runtimeState || current.runtimeState || null,
             checkpointId: event.data.checkpoint.id,
             checkpoints,
+            snapshots: event.data.checkpoint.snapshot
+              ? this.updateBinarySnapshots(event.data.checkpoint.snapshot)
+              : current.snapshots || [],
             artifact: event.data.checkpoint.artifact || current.artifact || null,
           });
+        }
+        break;
+      case "snapshot.saved":
+        this.applyChatLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "materializing",
+          progress: current?.progress,
+        });
+        if (current) {
+          this.setActiveBinaryBuild({
+            ...current,
+            snapshots: this.updateBinarySnapshots(event.data.snapshot),
+          });
+        } else {
+          this.state.binary.snapshots = this.updateBinarySnapshots(event.data.snapshot);
         }
         break;
       case "interrupt.accepted":
@@ -2058,10 +2407,14 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       this.state.binary.previewFiles = [];
       this.state.binary.recentLogs = [];
       this.state.binary.reliability = null;
+      this.state.binary.liveReliability = null;
       this.state.binary.artifactState = null;
       this.state.binary.sourceGraph = null;
+      this.state.binary.astState = null;
       this.state.binary.execution = null;
+      this.state.binary.runtimeState = null;
       this.state.binary.checkpoints = [];
+      this.state.binary.snapshots = [];
       this.state.binary.pendingRefinement = null;
       this.state.binary.canCancel = false;
       this.postState();
@@ -2643,6 +2996,10 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     const isLoopLikeClarification = containsGenericProjectClarification(result.assistantText || "");
     const editOrDiscoveryIntent =
       preview.intent === "change" || preview.intent === "find" || preview.intent === "explain";
+    const usedMutationTool = result.usedTools.some((toolName) => isMutationToolName(toolName));
+    const hasTrustedTarget =
+      Boolean(preview.activeFile || preview.resolvedFiles.length || preview.selectedFiles.length) &&
+      preview.confidence !== "low";
     const hasRuntimeNoise =
       !result.didMutate &&
       containsRuntimeNoiseForContext({
@@ -2662,17 +3019,52 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     if (isLoopLikeClarification && editOrDiscoveryIntent && !result.didMutate) {
       return true;
     }
-    if (result.usedTools.length > 0 || result.didMutate) return false;
+    if (usedMutationTool || result.didMutate) return false;
+    if (preview.intent === "change" && result.usedTools.length > 0 && hasTrustedTarget) {
+      return true;
+    }
+    if (result.usedTools.length > 0) {
+      return false;
+    }
     if (preview.intent !== "change" && preview.intent !== "find") return false;
-    if (
-      preview.confidence === "low" &&
-      !preview.resolvedFiles.length &&
-      !preview.selectedFiles.length &&
-      !preview.activeFile
-    ) {
+    if (preview.confidence === "low" && !hasTrustedTarget) {
       return false;
     }
     return true;
+  }
+
+  private buildQwenStallMessage(input: {
+    task: string;
+    preview: Awaited<ReturnType<ContextCollector["preview"]>>;
+    result: QwenPromptResult;
+    retriedWithToolDirective: boolean;
+  }): string {
+    const targetPath =
+      input.preview.activeFile ||
+      input.preview.resolvedFiles[0] ||
+      input.preview.selectedFiles[0] ||
+      "(unknown target)";
+    const missingMutation =
+      input.preview.intent === "change" && !input.result.didMutate
+        ? "The run inspected the target file but never produced a mutation."
+        : "The run did not produce a concrete workspace mutation.";
+    const toolsUsed = input.result.usedTools.length ? input.result.usedTools.join(", ") : "(none)";
+    const denials = input.result.permissionDenials.length ? input.result.permissionDenials.join(" | ") : "(none)";
+    return [
+      "The local Qwen run stalled before proving the change request was complete.",
+      `Task: ${String(input.task || "").trim() || "(unknown)"}`,
+      `Target: ${targetPath}`,
+      `Mutation proof: ${input.result.didMutate ? "present" : "missing"}`,
+      `Tools used: ${toolsUsed}`,
+      `Permission denials: ${denials}`,
+      input.retriedWithToolDirective ? "The run already retried with stricter tool instructions." : "",
+      missingMutation,
+      input.preview.intent === "change"
+        ? `Next deterministic action: edit ${targetPath} directly or write the full updated file contents.`
+        : "Next deterministic action: return one concrete workspace action.",
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   private async runQwenPrompt(input: {
@@ -3056,28 +3448,20 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       const resolvedSessionId = localSessionId;
       this.sessionId = resolvedSessionId;
       this.state.selectedSessionId = resolvedSessionId;
-      const exhaustedToolExecution =
-        !result.didMutate &&
-        result.usedTools.length === 0 &&
-        (fullPreview.intent === "change" || fullPreview.intent === "find") &&
-        this.shouldRetryQwenWithToolDirective(result, fullPreview, {
-          task: taskText,
-          workspaceRoot,
-          executablePath,
-          workspaceTargets,
-        });
-      if (exhaustedToolExecution) {
-        this.pushActivity("Model returned without real tool execution");
-      }
-      const finalAssistantText = exhaustedToolExecution
-        ? [
-            buildProjectLoopRecoveryMessage({
-              task: taskText,
-              workspaceTargets,
-              workspaceRoot,
-            }),
-            "The current model run did not execute workspace tools. Try again, or switch to Hosted runtime for stronger tool-call reliability.",
-          ].join("\n\n")
+      const trustedTargetPath =
+        fullPreview.activeFile || fullPreview.resolvedFiles[0] || fullPreview.selectedFiles[0] || "";
+      const qwenMutationProof = result.didMutate || result.usedTools.some((toolName) => isMutationToolName(toolName));
+      const qwenStalled =
+        fullPreview.intent === "change" &&
+        !qwenMutationProof &&
+        (result.usedTools.length > 0 || retriedWithToolDirective || Boolean(trustedTargetPath));
+      const finalAssistantText = qwenStalled
+        ? this.buildQwenStallMessage({
+            task: taskText,
+            preview: fullPreview,
+            result,
+            retriedWithToolDirective,
+          })
         : sanitizeQwenAssistantOutput({
             text: result.assistantText || "Qwen Code finished without a final message.",
             task: taskText,
@@ -3085,10 +3469,20 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
             executablePath,
             workspaceTargets,
           });
-      this.applyChatLiveEvent({
-        type: "final",
-        text: finalAssistantText,
-      });
+      if (qwenStalled) {
+        this.pushActivity("Model returned without real tool execution");
+        this.applyChatLiveEvent({
+          type: "failed",
+          text: finalAssistantText,
+          phase: "failed",
+        });
+        this.state.runtimePhase = "failed";
+      } else {
+        this.applyChatLiveEvent({
+          type: "final",
+          text: finalAssistantText,
+        });
+      }
       this.state.followUpActions = buildFollowUpActions({
         intent: fullPreview.intent,
         lastTask: taskText,
@@ -3104,15 +3498,17 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         this.pushActivity(denial);
       }
 
-      this.pushActivity("Saving session");
-      this.state.runtimePhase = "saving_session";
-      this.applyChatLiveEvent({
-        type: "phase",
-        phase: "saving_session",
-        status: "streaming",
-        progress: liveProgressForPhase("saving_session"),
-        latestActivity: "Saving session",
-      });
+      this.pushActivity(qwenStalled ? "Saving stalled run" : "Saving session");
+      if (!qwenStalled) {
+        this.state.runtimePhase = "saving_session";
+        this.applyChatLiveEvent({
+          type: "phase",
+          phase: "saving_session",
+          status: "streaming",
+          progress: liveProgressForPhase("saving_session"),
+          latestActivity: "Saving session",
+        });
+      }
       this.postState();
       await this.qwenHistoryService.saveConversation({
         sessionId: resolvedSessionId,
@@ -3126,8 +3522,8 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         throw new Error("Prompt aborted");
       }
       await this.refreshHistory();
-      this.pushActivity("Done");
-      this.state.runtimePhase = "done";
+      this.pushActivity(qwenStalled ? "Failed" : "Done");
+      this.state.runtimePhase = qwenStalled ? "failed" : "done";
       this.lastQwenDebugSnapshot = {
         timestamp: nowIso(),
         task: taskText,
@@ -3143,6 +3539,11 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         runtimePhase: this.state.runtimePhase,
         recentActivity: [...this.state.activity].slice(-12),
         model: getQwenModel(),
+        ...(qwenStalled
+          ? {
+              error: finalAssistantText,
+            }
+          : {}),
       };
     } catch (error) {
       if (this.isPromptAbortError(error)) {
@@ -3263,6 +3664,13 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       lines.push(`Run ID: ${hosted.runId || "(none)"}`);
       lines.push(`Adapter: ${hosted.adapter || "(none)"}`);
       lines.push(`Completion status: ${hosted.completionStatus || "(none)"}`);
+      lines.push(`Progress status: ${hosted.progressState?.status || "(none)"}`);
+      if (hosted.progressState?.stallReason) lines.push(`Stall reason: ${hosted.progressState.stallReason}`);
+      if (hosted.progressState?.nextDeterministicAction) {
+        lines.push(`Next deterministic action: ${hosted.progressState.nextDeterministicAction}`);
+      }
+      lines.push(`Objective status: ${hosted.objectiveState?.status || "(none)"}`);
+      if (hosted.objectiveState?.targetPath) lines.push(`Objective target: ${hosted.objectiveState.targetPath}`);
       lines.push(`Tools used: ${hosted.toolCallsUsed.join(", ") || "(none)"}`);
       if (hosted.assistantPreview) lines.push(`Assistant preview: ${hosted.assistantPreview}`);
       if (hosted.error) lines.push(`Error: ${hosted.error}`);
@@ -3407,6 +3815,8 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         envelope = await this.executeToolLoop({
           auth,
           initialEnvelope: envelope,
+          intent: preview.intent,
+          mode: this.state.mode,
           workspaceFingerprint: workspaceHash,
           signal: promptAbort.signal,
           toolCallsUsed: hostedToolCallsUsed,
@@ -3417,30 +3827,73 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         throw new Error("Prompt aborted");
       }
 
+      const hostedObjectiveState = (envelope.objectiveState as ObjectiveState | null) || null;
+      const hostedProgressState = (envelope.progressState as ProgressState | null) || null;
+      const hostedMutationProof = hasMutationProofFromTools(hostedToolCallsUsed, envelope);
+      const hostedSucceeded = isHostedCompletionSuccessful({
+        envelope,
+        objectiveState: hostedObjectiveState,
+        progressState: hostedProgressState,
+        mutationProof: hostedMutationProof,
+        mode: this.state.mode,
+      });
       const assistantBody =
         this.state.mode === "plan" && envelope.plan
           ? [envelope.final || "Plan ready.", "", formatPlan(envelope.plan)].filter(Boolean).join("\n")
           : envelope.final || "No final response text was returned.";
-      this.applyChatLiveEvent({
-        type: "final",
-        text: sanitizeQwenAssistantOutput({
-          text: assistantBody,
-          task: taskText,
-          workspaceRoot: getWorkspaceRootPath(),
-          executablePath: getQwenExecutablePath() || null,
-          workspaceTargets: [
-            preview.activeFile || "",
-            ...preview.resolvedFiles,
-            ...preview.selectedFiles,
-          ],
-        }),
+      const sanitizedAssistantBody = sanitizeQwenAssistantOutput({
+        text: assistantBody,
+        task: taskText,
+        workspaceRoot: getWorkspaceRootPath(),
+        executablePath: getQwenExecutablePath() || null,
+        workspaceTargets: [
+          preview.activeFile || "",
+          ...preview.resolvedFiles,
+          ...preview.selectedFiles,
+        ],
       });
+      const finalAssistantText = hostedSucceeded
+        ? sanitizedAssistantBody
+        : [
+            buildHostedTerminalMessage({
+              task: taskText,
+              preview: {
+                intent: preview.intent,
+                activeFile: preview.activeFile,
+                resolvedFiles: preview.resolvedFiles,
+                selectedFiles: preview.selectedFiles,
+              },
+              envelope,
+              progressState: hostedProgressState,
+              objectiveState: hostedObjectiveState,
+              toolCallsUsed: hostedToolCallsUsed,
+              mutationProof: hostedMutationProof,
+            }),
+            String(envelope.final || "").trim() &&
+            String(envelope.final || "").trim() !== "No final response text was returned."
+              ? `Last model text:\n${sanitizedAssistantBody}`
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n\n");
 
-      if (envelope.completionStatus === "incomplete" && envelope.missingRequirements?.length) {
-        this.appendMessage("system", `Missing: ${envelope.missingRequirements.join(", ")}`);
+      if (hostedSucceeded) {
+        this.applyChatLiveEvent({
+          type: "final",
+          text: finalAssistantText,
+        });
+      } else {
+        this.applyChatLiveEvent({
+          type: "failed",
+          text: finalAssistantText,
+          phase: "failed",
+        });
+        this.pushActivity("Model returned without provable completion");
+        this.state.runtimePhase = "failed";
       }
 
       if (
+        hostedSucceeded &&
         this.state.mode !== "plan" &&
         envelope.actions?.length &&
         envelope.adapter === "deterministic_batch"
@@ -3464,7 +3917,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         this.pushActivity(`Receipt: ${label}.`);
       }
 
-      this.state.runtimePhase = "done";
+      this.state.runtimePhase = hostedSucceeded ? "done" : "failed";
       this.lastHostedDebugSnapshot = {
         timestamp: nowIso(),
         task: taskText,
@@ -3480,8 +3933,15 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         runId: envelope.runId,
         adapter: envelope.adapter,
         completionStatus: envelope.completionStatus,
+        progressState: hostedProgressState,
+        objectiveState: hostedObjectiveState,
         toolCallsUsed: [...hostedToolCallsUsed],
-        assistantPreview: assistantBody ? String(assistantBody).slice(0, 300) : undefined,
+        assistantPreview: finalAssistantText ? String(finalAssistantText).slice(0, 300) : undefined,
+        ...(hostedSucceeded
+          ? {}
+          : {
+              error: finalAssistantText,
+            }),
       };
 
       await this.refreshHistory();
@@ -3689,12 +4149,62 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   private async executeToolLoop(input: {
     auth: RequestAuth;
     initialEnvelope: AssistRunEnvelope;
+    intent: IntentKind;
+    mode: Mode;
     workspaceFingerprint: string;
     signal?: AbortSignal;
     toolCallsUsed?: string[];
     debugRef?: { runId?: string; adapter?: string };
   }): Promise<AssistRunEnvelope> {
     let envelope = input.initialEnvelope;
+    const seenPendingSignatures = new Map<string, number>();
+    const blockEnvelope = (source: AssistRunEnvelope, reason: string, nextAction: string): AssistRunEnvelope => {
+      const existingMissing = readStringArray(source.missingRequirements);
+      const targetPath =
+        readRecordString(source.objectiveState, "targetPath") ||
+        readRecordString(source.pendingToolCall?.toolCall.arguments || {}, "path") ||
+        readRecordString(source.pendingToolCall?.toolCall.arguments || {}, "filePath") ||
+        "";
+      const progressState: ProgressState = {
+        status: "stalled",
+        lastMeaningfulProgressAtStep: source.loopState?.stepCount || 0,
+        lastMeaningfulProgressSummary: reason,
+        stallCount:
+          source.progressState &&
+          typeof source.progressState === "object" &&
+          typeof source.progressState.stallCount === "number"
+            ? source.progressState.stallCount + 1
+            : 1,
+        stallReason: reason,
+        nextDeterministicAction: nextAction,
+        pendingToolCallSignature: buildToolCallSignature(source.pendingToolCall?.toolCall || null),
+      };
+      const objectiveState: ObjectiveState = {
+        status: "blocked",
+        goalType: getObjectiveGoalType(input.intent, input.mode),
+        ...(targetPath ? { targetPath } : {}),
+        requiredProof: Array.from(new Set([...readRecordStringArray(source.objectiveState, "requiredProof"), ...existingMissing])),
+        observedProof: readRecordStringArray(source.objectiveState, "observedProof"),
+        missingProof: Array.from(new Set([...readRecordStringArray(source.objectiveState, "missingProof"), reason])),
+      };
+      return {
+        ...source,
+        completionStatus: "incomplete",
+        missingRequirements: Array.from(new Set([...existingMissing, reason])),
+        progressState,
+        objectiveState,
+        reviewState: {
+          ...(source.reviewState && typeof source.reviewState === "object" ? (source.reviewState as Record<string, unknown>) : {}),
+          status: "blocked",
+          reason,
+          recommendedAction: nextAction,
+          surface: "playground_panel",
+          controlActions: ["repair"],
+        },
+        pendingToolCall: null,
+        final: reason,
+      };
+    };
     while (envelope.pendingToolCall && envelope.runId) {
       if (input.signal?.aborted) {
         throw new Error("Prompt aborted");
@@ -3729,7 +4239,44 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         input.debugRef.runId = envelope.runId;
         input.debugRef.adapter = envelope.adapter;
       }
-      envelope = await this.continueRun(input.auth, envelope.runId, toolResult, input.signal);
+      const nextEnvelope = await this.continueRun(input.auth, envelope.runId, toolResult, input.signal);
+      const nextSignature = buildToolCallSignature(nextEnvelope.pendingToolCall?.toolCall || null);
+      const currentFingerprint = buildHostedProgressFingerprint({
+        envelope,
+        toolCallsUsed: input.toolCallsUsed || [],
+        objectiveState: envelope.objectiveState || null,
+        progressState: envelope.progressState || null,
+      });
+      const nextFingerprint = buildHostedProgressFingerprint({
+        envelope: nextEnvelope,
+        toolCallsUsed: input.toolCallsUsed || [],
+        objectiveState: nextEnvelope.objectiveState || null,
+        progressState: nextEnvelope.progressState || null,
+      });
+      const nextMutationProof = hasMutationProofFromTools(input.toolCallsUsed || [], nextEnvelope);
+      if (nextEnvelope.loopState && nextEnvelope.loopState.stepCount < pendingToolCall.step) {
+        envelope = blockEnvelope(
+          nextEnvelope,
+          `Hosted loop regressed from step ${pendingToolCall.step} to ${nextEnvelope.loopState.stepCount}.`,
+          `Repair the run around ${pendingToolCall.toolCall.name} before continuing.`
+        );
+        break;
+      }
+      if (nextSignature) {
+        const repeatCount = (seenPendingSignatures.get(nextSignature) || 0) + 1;
+        seenPendingSignatures.set(nextSignature, repeatCount);
+        if (repeatCount > 1 && nextFingerprint === currentFingerprint && !nextMutationProof) {
+          envelope = blockEnvelope(
+            nextEnvelope,
+            `Repeated pending tool call without new proof: ${pendingToolCall.toolCall.name}.`,
+            pendingToolCall.toolCall.kind === "mutate"
+              ? `Use a repair stage for ${pendingToolCall.toolCall.name}.`
+              : `Switch to a concrete mutation for ${pendingToolCall.toolCall.name}.`
+          );
+          break;
+        }
+      }
+      envelope = nextEnvelope;
       if (envelope.sessionId) {
         this.sessionId = envelope.sessionId;
         this.state.selectedSessionId = envelope.sessionId;

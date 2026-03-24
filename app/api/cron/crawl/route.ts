@@ -20,6 +20,11 @@ import { crawlDifyMarketplace } from "@/lib/search/crawlers/dify-marketplace";
 import { crawlN8nTemplates } from "@/lib/search/crawlers/n8n-templates";
 import { crawlLangflowStarterProjects } from "@/lib/search/crawlers/langflow-starter-projects";
 import { crawlNacosAgentRegistry } from "@/lib/search/crawlers/nacos-agent-registry";
+import { crawlLangChainHub } from "@/lib/search/crawlers/langchain-hub";
+import { crawlCrewAI } from "@/lib/search/crawlers/crewai";
+import { crawlVercelTemplates } from "@/lib/search/crawlers/vercel-templates";
+import { crawlOllama } from "@/lib/search/crawlers/ollama";
+import { crawlMediaWebFrontier } from "@/lib/search/crawlers/media-web";
 import type { CrawlMode, CrawlRuntimeOptions } from "@/lib/search/crawlers/crawler-mode";
 
 export const maxDuration = 300;
@@ -204,6 +209,41 @@ export async function GET(req: NextRequest) {
       source: "REPLICATE",
       bucket: "platform",
       fn: () => crawlReplicate(500),
+    });
+  }
+  if (runSource("LANGCHAIN_HUB")) {
+    tasks.push({
+      source: "LANGCHAIN_HUB",
+      bucket: "platform",
+      fn: () => crawlLangChainHub(Math.min(maxResults, 500)),
+    });
+  }
+  if (runSource("CREWAI")) {
+    tasks.push({
+      source: "CREWAI",
+      bucket: "github",
+      fn: () => crawlCrewAI(Math.min(maxResults, 300), runtimeOptions),
+    });
+  }
+  if (runSource("VERCEL_TEMPLATES")) {
+    tasks.push({
+      source: "VERCEL_TEMPLATES",
+      bucket: "platform",
+      fn: () => crawlVercelTemplates(Math.min(maxResults, 300), runtimeOptions),
+    });
+  }
+  if (runSource("OLLAMA")) {
+    tasks.push({
+      source: "OLLAMA",
+      bucket: "platform",
+      fn: () => crawlOllama(Math.min(maxResults, 500)),
+    });
+  }
+  if (process.env.SEARCH_MEDIA_WEB_ENABLED === "1" && runSource("MEDIA_WEB")) {
+    tasks.push({
+      source: "MEDIA_WEB",
+      bucket: "platform",
+      fn: () => crawlMediaWebFrontier(Math.max(200, Math.min(2000, maxResults)), runtimeOptions.workerId),
     });
   }
 

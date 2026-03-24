@@ -12,6 +12,7 @@ import { VerificationTierBadge } from "@/components/agent/VerificationTierBadge"
 import { ProtocolBadge } from "@/components/search/ProtocolBadge";
 import { SafetyBadge } from "@/components/search/SafetyBadge";
 import { InlineBotAd } from "@/components/ads/InlineBotAd";
+import type { PublicAgentEvidencePack } from "@/lib/agents/public-facts";
 import {
   summarizeReliabilityChips,
   summarizeReliabilityStats,
@@ -23,6 +24,7 @@ import {
 interface AgentTechnicalDossierProps {
   dossier: AgentDossier;
   from?: string | null;
+  publicEvidence?: PublicAgentEvidencePack | null;
 }
 
 function ExternalLink({ link, emphasized = false }: { link: DossierLink; emphasized?: boolean }) {
@@ -106,6 +108,62 @@ function JsonBlock({ label, value }: { label: string; value: unknown }) {
   );
 }
 
+function QuickFactTile({
+  label,
+  value,
+  source,
+  observedAt,
+}: {
+  label: string;
+  value: string;
+  source: string;
+  observedAt: string | null;
+}) {
+  return (
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">{label}</p>
+      <p className="mt-2 text-base font-semibold text-[var(--text-primary)]">{value}</p>
+      <p className="mt-3 text-xs text-[var(--text-tertiary)]">
+        {source}
+        {observedAt ? ` • ${formatDate(observedAt) ?? "recent"}` : ""}
+      </p>
+    </div>
+  );
+}
+
+function TimelineEventCard({
+  title,
+  description,
+  observedAt,
+  href,
+}: {
+  title: string;
+  description: string | null;
+  observedAt: string | null;
+  href: string | null;
+}) {
+  const body = (
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-[var(--text-primary)]">{title}</p>
+        <span className="text-xs uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+          {formatDate(observedAt) ?? "No date"}
+        </span>
+      </div>
+      {description ? (
+        <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">{description}</p>
+      ) : null}
+    </div>
+  );
+
+  if (!href) return body;
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="block hover:opacity-95">
+      {body}
+    </a>
+  );
+}
+
 function formatDate(value: string | null | undefined): string | null {
   if (!value) return null;
   const parsed = Date.parse(value);
@@ -131,7 +189,7 @@ function formatCompact(value: number | null | undefined): string | null {
   }).format(value);
 }
 
-export function AgentTechnicalDossier({ dossier, from }: AgentTechnicalDossierProps) {
+export function AgentTechnicalDossier({ dossier, from, publicEvidence }: AgentTechnicalDossierProps) {
   const actionHref =
     dossier.summary.isOwner
       ? `/agent/${dossier.slug}/manage`
@@ -146,6 +204,18 @@ export function AgentTechnicalDossier({ dossier, from }: AgentTechnicalDossierPr
   const summaryLinks = dossier.summary.primaryLinks.slice(0, 5);
   const reliabilityChips = summarizeReliabilityChips(dossier);
   const reliabilityStats = summarizeReliabilityStats(dossier);
+  const adApiUrl = new URL("/api/v1/ad", dossier.canonicalUrl).toString();
+  const quickFacts = publicEvidence?.facts.slice(0, 8) ?? [];
+  const timelineEvents = publicEvidence?.changeEvents.slice(0, 6) ?? [];
+  const heroStats = publicEvidence?.card.stats ?? [];
+  const publicHighlights = publicEvidence?.card.highlights ?? [];
+  const vendorSecurityFacts = (publicEvidence?.facts ?? []).filter((fact) =>
+    fact.category === "vendor" ||
+    fact.category === "security" ||
+    fact.category === "pricing" ||
+    fact.category === "integration"
+  );
+  const artifactFacts = (publicEvidence?.facts ?? []).filter((fact) => fact.category === "artifact");
 
   return (
     <div className="space-y-6">
@@ -227,6 +297,33 @@ export function AgentTechnicalDossier({ dossier, from }: AgentTechnicalDossierPr
                 ))}
               </div>
             ) : null}
+            {publicHighlights.length ? (
+              <div className="flex flex-wrap gap-2">
+                {publicHighlights.map((item) => (
+                  <span
+                    key={item}
+                    className="rounded-full border border-[var(--accent-heart)]/20 bg-[var(--accent-heart)]/10 px-3 py-1 text-xs text-[var(--text-secondary)]"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {heroStats.length > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {heroStats.map((stat) => (
+                  <div
+                    key={`${stat.label}-${stat.value}`}
+                    className="rounded-2xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4"
+                  >
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+                      {stat.label}
+                    </p>
+                    <p className="mt-2 text-base font-semibold text-[var(--text-primary)]">{stat.value}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           <aside className="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--bg-elevated)] p-5 lg:sticky lg:top-24">
@@ -297,6 +394,31 @@ export function AgentTechnicalDossier({ dossier, from }: AgentTechnicalDossierPr
         </div>
       </header>
 
+      {quickFacts.length > 0 ? (
+        <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5 md:p-6">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-tertiary)]">Public evidence</p>
+              <h2 className="text-xl font-semibold text-[var(--text-primary)]">Quick Facts</h2>
+            </div>
+            <p className="text-sm text-[var(--text-tertiary)]">
+              Crawl-visible facts with source and freshness metadata.
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {quickFacts.map((fact) => (
+              <QuickFactTile
+                key={`${fact.factKey}-${fact.value}`}
+                label={fact.label}
+                value={fact.value}
+                source={fact.sourceType}
+                observedAt={fact.observedAt}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-6">
           {dossier.ownerResources.customPage ? (
@@ -321,6 +443,50 @@ export function AgentTechnicalDossier({ dossier, from }: AgentTechnicalDossierPr
                 code={dossier.ownerResources.customPage}
                 className="min-h-[32rem] w-full rounded-2xl border border-[var(--border)] bg-white"
               />
+            </section>
+          ) : null}
+
+          {vendorSecurityFacts.length > 0 ? (
+            <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5 md:p-6">
+              <div className="mb-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+                  Why this agent matters
+                </p>
+                <h2 className="text-xl font-semibold text-[var(--text-primary)]">
+                  Vendor, Security & Pricing Signals
+                </h2>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {vendorSecurityFacts.slice(0, 6).map((fact) => (
+                  <QuickFactTile
+                    key={`${fact.factKey}-${fact.value}`}
+                    label={fact.label}
+                    value={fact.value}
+                    source={fact.sourceType}
+                    observedAt={fact.observedAt}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {timelineEvents.length > 0 ? (
+            <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5 md:p-6">
+              <div className="mb-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-tertiary)]">Freshness lane</p>
+                <h2 className="text-xl font-semibold text-[var(--text-primary)]">Release & Crawl Timeline</h2>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {timelineEvents.map((event) => (
+                  <TimelineEventCard
+                    key={`${event.eventType}-${event.title}-${event.observedAt ?? "na"}`}
+                    title={event.title}
+                    description={event.description}
+                    observedAt={event.observedAt}
+                    href={event.href}
+                  />
+                ))}
+              </div>
             </section>
           ) : null}
 
@@ -393,6 +559,7 @@ export function AgentTechnicalDossier({ dossier, from }: AgentTechnicalDossierPr
                   <a className="block text-[var(--accent-heart)] hover:underline" href={dossier.execution.endpoints.snapshotUrl} target="_blank" rel="noopener noreferrer">Snapshot API</a>
                   <a className="block text-[var(--accent-heart)] hover:underline" href={dossier.execution.endpoints.contractUrl} target="_blank" rel="noopener noreferrer">Contract API</a>
                   <a className="block text-[var(--accent-heart)] hover:underline" href={dossier.execution.endpoints.trustUrl} target="_blank" rel="noopener noreferrer">Trust API</a>
+                  <a className="block text-[var(--accent-heart)] hover:underline" href={adApiUrl} target="_blank" rel="noopener noreferrer">Ad API</a>
                 </div>
               </div>
               <div className="space-y-3 rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
@@ -451,6 +618,19 @@ export function AgentTechnicalDossier({ dossier, from }: AgentTechnicalDossierPr
               </div>
             </div>
             {dossier.benchmarks.suites.length > 0 ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {dossier.benchmarks.suites.slice(0, 4).map((suite) => (
+                  <div
+                    key={`${suite.suiteName}-${suite.createdAt}`}
+                    className="rounded-full border border-[var(--border)] bg-[var(--bg-card)] px-3 py-1.5 text-xs text-[var(--text-secondary)]"
+                  >
+                    {suite.suiteName}: {suite.score}
+                    {suite.latencyMs != null ? ` • ${suite.latencyMs} ms` : ""}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {dossier.benchmarks.suites.length > 0 ? (
               <div className="mt-4 overflow-x-auto rounded-xl border border-[var(--border)]">
                 <table className="min-w-full text-sm">
                   <thead className="bg-[var(--bg-elevated)] text-left text-[var(--text-tertiary)]">
@@ -496,6 +676,18 @@ export function AgentTechnicalDossier({ dossier, from }: AgentTechnicalDossierPr
 
           <SectionShell id="artifacts" title="Artifacts & Dependencies" evidence={dossier.artifacts.evidence}>
             <div className="space-y-4">
+              {artifactFacts.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {artifactFacts.slice(0, 4).map((fact) => (
+                    <span
+                      key={`${fact.factKey}-${fact.value}`}
+                      className="rounded-full border border-[var(--border)] bg-[var(--bg-card)] px-3 py-1 text-xs text-[var(--text-secondary)]"
+                    >
+                      {fact.label}: {fact.value}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               {dossier.artifacts.readmeExcerpt ? (
                 <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-tertiary)]">Documentation excerpt</p>

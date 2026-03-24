@@ -16,10 +16,14 @@ export function createDefaultBinaryPanelState(): BinaryPanelState {
     previewFiles: [],
     recentLogs: [],
     reliability: null,
+    liveReliability: null,
     artifactState: null,
     sourceGraph: null,
+    astState: null,
     execution: null,
+    runtimeState: null,
     checkpoints: [],
+    snapshots: [],
     pendingRefinement: null,
     canCancel: false,
     lastAction: null,
@@ -44,14 +48,14 @@ export function formatBytes(value: number): string {
 export function formatBinaryBuildMessage(build: BinaryBuildRecord): string {
   const lines = [
     build.status === "completed"
-      ? "Portable starter bundle ready."
+      ? "Prompt-to-app build ready."
       : build.status === "canceled"
-        ? "Portable starter bundle canceled."
+        ? "Prompt-to-app build canceled."
         : build.status === "failed"
-          ? "Portable starter bundle failed."
+          ? "Prompt-to-app build failed."
           : build.status === "running"
-            ? "Portable starter bundle is still building."
-            : "Portable starter bundle is queued on the server.",
+            ? "Prompt-to-app build is still cooking."
+            : "Prompt-to-app build is queued on the server.",
     `Build: ${build.id}`,
     `Intent: ${build.intent}`,
     `Target runtime: ${build.targetEnvironment.runtime}`,
@@ -61,9 +65,15 @@ export function formatBinaryBuildMessage(build: BinaryBuildRecord): string {
     lines.push(`Reliability: ${build.reliability.status.toUpperCase()} (${build.reliability.score}/100)`);
     lines.push(build.reliability.summary);
   }
+  if (build.liveReliability) {
+    lines.push(`Live reliability: ${build.liveReliability.score}/100 (${build.liveReliability.trend})`);
+    if (build.liveReliability.blockers.length) {
+      lines.push(`Blockers: ${build.liveReliability.blockers.map((blocker) => blocker.code).join(", ")}`);
+    }
+  }
   if (build.artifactState) {
     lines.push(
-      `Formation: ${build.artifactState.coverage}% formed, ${build.artifactState.runnable ? "runnable" : "not runnable yet"}`
+      `Build coverage: ${build.artifactState.coverage}% live, ${build.artifactState.runnable ? "runnable" : "not runnable yet"}`
     );
     lines.push(
       `Files: ${build.artifactState.sourceFilesReady}/${build.artifactState.sourceFilesTotal} source, ${build.artifactState.outputFilesReady} output`
@@ -74,35 +84,49 @@ export function formatBinaryBuildMessage(build: BinaryBuildRecord): string {
   }
   if (build.sourceGraph) {
     lines.push(
-      `Source graph: ${build.sourceGraph.readyModules}/${build.sourceGraph.totalModules} modules, ${build.sourceGraph.coverage}% covered`
+      `Code map: ${build.sourceGraph.readyModules}/${build.sourceGraph.totalModules} modules, ${build.sourceGraph.coverage}% covered`
     );
     if (build.sourceGraph.diagnostics.length) {
       lines.push(`Diagnostics: ${build.sourceGraph.diagnostics.length}`);
     }
   }
+  if (build.astState) {
+    lines.push(`Live structure: ${build.astState.moduleCount} modules, ${build.astState.coverage}% covered`);
+  }
   if (build.execution) {
     lines.push(
-      `Partial runtime: ${build.execution.mode}${build.execution.availableFunctions.length ? ` (${build.execution.availableFunctions.length} callable functions)` : ""}`
+      `Live preview runtime: ${build.execution.mode}${build.execution.availableFunctions.length ? ` (${build.execution.availableFunctions.length} callable functions)` : ""}`
     );
     if (build.execution.lastRun) {
       lines.push(`Last run: ${build.execution.lastRun.entryPoint} -> ${build.execution.lastRun.status.toUpperCase()}`);
     }
   }
+  if (build.runtimeState) {
+    lines.push(
+      `Hot runtime: ${build.runtimeState.engine}${build.runtimeState.availableFunctions.length ? ` (${build.runtimeState.availableFunctions.length} callable functions)` : ""}`
+    );
+    if (build.runtimeState.patches.length) {
+      lines.push(`Live patches: ${build.runtimeState.patches.length}`);
+    }
+  }
   if (build.checkpoints?.length) {
-    lines.push(`Checkpoints: ${build.checkpoints.length}`);
+    lines.push(`Save points: ${build.checkpoints.length}`);
+  }
+  if (build.snapshots?.length) {
+    lines.push(`Timeline saves: ${build.snapshots.length}`);
   }
   if (build.pendingRefinement) {
     lines.push(`Pending refinement: ${build.pendingRefinement.intent}`);
   }
   if (build.parentBuildId) {
-    lines.push(`Parent build: ${build.parentBuildId}`);
+    lines.push(`Forked from: ${build.parentBuildId}`);
   }
   if (build.artifact) {
-    lines.push(`Artifact: ${build.artifact.fileName} (${formatBytes(build.artifact.sizeBytes)})`);
+    lines.push(`Download build: ${build.artifact.fileName} (${formatBytes(build.artifact.sizeBytes)})`);
   }
   if (build.manifest) {
-    lines.push(`Entrypoint: ${build.manifest.entrypoint}`);
-    lines.push(`Start: ${build.manifest.startCommand}`);
+    lines.push(`Launch file: ${build.manifest.entrypoint}`);
+    lines.push(`Run command: ${build.manifest.startCommand}`);
   }
   if (build.publish?.downloadUrl) {
     lines.push(`Download: ${build.publish.downloadUrl}`);
@@ -134,25 +158,25 @@ export function deriveBinaryPhase(build: BinaryBuildRecord | null): BinaryBuildP
 export function phaseProgressLabel(phase: BinaryBuildPhase | undefined): string {
   switch (phase) {
     case "planning":
-      return "Designing bundle plan";
+      return "Sketching the build";
     case "materializing":
-      return "Writing source files";
+      return "Writing the app";
     case "installing":
-      return "Installing dependencies";
+      return "Pulling packages";
     case "compiling":
-      return "Compiling generated source";
+      return "Bundling the app";
     case "validating":
-      return "Scoring reliability";
+      return "Running a confidence pass";
     case "packaging":
-      return "Sealing portable bundle";
+      return "Wrapping the app";
     case "completed":
-      return "Portable starter bundle ready";
+      return "Prompt-to-app build ready";
     case "failed":
-      return "Portable starter bundle failed";
+      return "Prompt-to-app build failed";
     case "canceled":
-      return "Portable starter bundle canceled";
+      return "Prompt-to-app build canceled";
     default:
-      return "Queued for build";
+      return "Queued to build";
   }
 }
 

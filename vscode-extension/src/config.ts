@@ -117,6 +117,12 @@ export function getQwenExecutablePath(): string | undefined {
   return isRuntimePathLeak(value) ? undefined : value;
 }
 
+export function getBinaryStreamGatewayUrl(): string {
+  const configured = getConfigurationValue<string>("streamGatewayUrl", "");
+  const value = String(configured || "").trim();
+  return value.replace(/\/+$/, "");
+}
+
 export function getWorkspaceFolder(): vscode.WorkspaceFolder | null {
   return vscode.workspace.workspaceFolders?.[0] ?? null;
 }

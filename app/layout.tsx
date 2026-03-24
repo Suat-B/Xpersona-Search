@@ -13,6 +13,9 @@ import { auth } from "@/lib/auth";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { HFChrome } from "@/components/layout/HFChrome";
 import { BotAdBanner } from "@/components/ads/BotAdBanner";
+import { serializeSponsoredJsonLd } from "@/lib/ads/structured-ad";
+import { shouldLoadPublisherTagScript } from "@/lib/ads/gam-config";
+import { isAdSenseEnabled, isAdStressModeEnabled } from "@/lib/ads/adsense-config";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -62,6 +65,10 @@ export default async function RootLayout({
   const headerStore = await headers();
   const isBot = headerStore.get("x-is-bot") === "1";
   const botPath = headerStore.get("x-bot-path") || "/";
+  const adsenseEnabled = isAdSenseEnabled();
+  const stressMode = isAdStressModeEnabled();
+  const shouldLoadGoogleAdScripts = !isBot && adsenseEnabled && !stressMode;
+  const loadGpt = shouldLoadGoogleAdScripts && shouldLoadPublisherTagScript();
   let isAuthenticated = false;
 
   if (variant === "hf") {
@@ -86,11 +93,22 @@ export default async function RootLayout({
           __html: `(function(){var t=localStorage.getItem("xpersona-theme")||"system";if(t==="system")t=window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";if(t==="light")document.documentElement.classList.add("light-mode");})();`,
         }}
       />
-        <script
-          async
-          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6090164906593135"
-          crossOrigin="anonymous"
-        />
+        {shouldLoadGoogleAdScripts ? (
+          <>
+            <script
+              async
+              src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6090164906593135"
+              crossOrigin="anonymous"
+            />
+            {loadGpt ? (
+              <Script
+                src="https://securepubads.g.doubleclick.net/tag/js/gpt.js"
+                strategy="afterInteractive"
+                id="gpt-js"
+              />
+            ) : null}
+          </>
+        ) : null}
         {ga4Id ? (
           <>
             <Script src={`https://www.googletagmanager.com/gtag/js?id=${ga4Id}`} strategy="afterInteractive" />
@@ -98,6 +116,15 @@ export default async function RootLayout({
               {`window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${ga4Id}');`}
             </Script>
           </>
+        ) : null}
+        {isBot ? (
+          <script
+            type="application/ld+json"
+            // eslint-disable-next-line react/no-danger
+            dangerouslySetInnerHTML={{
+              __html: serializeSponsoredJsonLd(),
+            }}
+          />
         ) : null}
       </head>
   <body

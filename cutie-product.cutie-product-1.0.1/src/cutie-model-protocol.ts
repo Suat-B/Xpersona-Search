@@ -1,4 +1,16 @@
-import type { CutieStructuredResponse, CutieToolName } from "./types";
+import type {
+  CutieArtifactExtractionShape,
+  CutieFallbackModeUsed,
+  CutieModelAdapterKind,
+  CutieModelCapabilityProfile,
+  CutieNormalizationTier,
+  CutieNormalizationSource,
+  CutieOrchestratorContractVersion,
+  CutiePortabilityMode,
+  CutieProtocolMode,
+  CutieStructuredResponse,
+  CutieToolName,
+} from "./types";
 
 const KNOWN_TOOL_NAMES = new Set<CutieToolName>([
   "list_files",
@@ -27,7 +39,22 @@ const KNOWN_TOOL_NAMES = new Set<CutieToolName>([
 
 type ParsedStreamEvent =
   | { type: "assistant_delta"; text: string }
-  | { type: "meta"; usage?: Record<string, unknown> | null; model?: string }
+  | {
+      type: "meta";
+      usage?: Record<string, unknown> | null;
+      model?: string;
+      modelAdapter?: CutieModelAdapterKind;
+      modelCapabilities?: CutieModelCapabilityProfile;
+      protocolMode?: CutieProtocolMode;
+      orchestratorContractVersion?: CutieOrchestratorContractVersion;
+      portabilityMode?: CutiePortabilityMode;
+      transportModeUsed?: CutieProtocolMode;
+      normalizationSource?: CutieNormalizationSource;
+      normalizationTier?: CutieNormalizationTier;
+      artifactExtractionShape?: CutieArtifactExtractionShape;
+      fallbackModeUsed?: CutieFallbackModeUsed;
+      batchCollapsedToSingleAction?: boolean;
+    }
   | { type: "response"; response: CutieStructuredResponse }
   | { type: "noop" }
   | { type: "error"; message: string };
@@ -74,6 +101,12 @@ function normalizeToolCall(value: unknown, index: number): { name: CutieToolName
   };
 }
 
+function collapseToolCallsToCanonicalAction(
+  toolCalls: Array<{ name: CutieToolName; arguments: Record<string, unknown>; summary?: string }>
+): { name: CutieToolName; arguments: Record<string, unknown>; summary?: string } {
+  return toolCalls[0];
+}
+
 export class CutieStructuredProtocolError extends Error {
   constructor(message: string) {
     super(message);
@@ -101,15 +134,28 @@ export function normalizeProtocolResponsePayload(payload: unknown): CutieStructu
       throw new CutieStructuredProtocolError("cutie_tools_v2 tool_batch payload is missing toolCalls.");
     }
     const normalized = toolCalls.map((item, index) => normalizeToolCall(item, index));
-    if (normalized.length === 1) {
-      return {
-        type: "tool_call",
-        tool_call: normalized[0],
-      };
+    return {
+      type: "tool_call",
+      tool_call: collapseToolCallsToCanonicalAction(normalized),
+    };
+  }
+
+  if (type === "tool_call") {
+    const toolCall = row.tool_call && typeof row.tool_call === "object" ? row.tool_call : row;
+    return {
+      type: "tool_call",
+      tool_call: normalizeToolCall(toolCall, 0),
+    };
+  }
+
+  if (type === "tool_calls") {
+    const toolCalls = Array.isArray(row.tool_calls) ? row.tool_calls : [];
+    if (!toolCalls.length) {
+      throw new CutieStructuredProtocolError("cutie_tools_v2 tool_calls payload is missing tool_calls.");
     }
     return {
-      type: "tool_calls",
-      tool_calls: normalized,
+      type: "tool_call",
+      tool_call: collapseToolCallsToCanonicalAction(toolCalls.map((item, index) => normalizeToolCall(item, index))),
     };
   }
 
@@ -142,6 +188,41 @@ export function parseStructuredStreamEvent(event: string, data: unknown): Parsed
       type: "meta",
       ...(payload.usage && typeof payload.usage === "object" ? { usage: payload.usage as Record<string, unknown> } : {}),
       ...(typeof payload.model === "string" && payload.model.trim() ? { model: payload.model.trim() } : {}),
+      ...(typeof payload.modelAdapter === "string"
+        ? { modelAdapter: payload.modelAdapter.trim() as CutieModelAdapterKind }
+        : {}),
+      ...(payload.modelCapabilities && typeof payload.modelCapabilities === "object"
+        ? { modelCapabilities: payload.modelCapabilities as CutieModelCapabilityProfile }
+        : {}),
+      ...(typeof payload.protocolMode === "string"
+        ? { protocolMode: payload.protocolMode.trim() as CutieProtocolMode }
+        : {}),
+      ...(typeof payload.orchestratorContractVersion === "string"
+        ? {
+            orchestratorContractVersion: payload.orchestratorContractVersion.trim() as CutieOrchestratorContractVersion,
+          }
+        : {}),
+      ...(typeof payload.portabilityMode === "string"
+        ? { portabilityMode: payload.portabilityMode.trim() as CutiePortabilityMode }
+        : {}),
+      ...(typeof payload.transportModeUsed === "string"
+        ? { transportModeUsed: payload.transportModeUsed.trim() as CutieProtocolMode }
+        : {}),
+      ...(typeof payload.normalizationSource === "string"
+        ? { normalizationSource: payload.normalizationSource.trim() as CutieNormalizationSource }
+        : {}),
+      ...(typeof payload.normalizationTier === "string"
+        ? { normalizationTier: payload.normalizationTier.trim() as CutieNormalizationTier }
+        : {}),
+      ...(typeof payload.artifactExtractionShape === "string"
+        ? { artifactExtractionShape: payload.artifactExtractionShape.trim() as CutieArtifactExtractionShape }
+        : {}),
+      ...(typeof payload.fallbackModeUsed === "string"
+        ? { fallbackModeUsed: payload.fallbackModeUsed.trim() as CutieFallbackModeUsed }
+        : {}),
+      ...(typeof payload.batchCollapsedToSingleAction === "boolean"
+        ? { batchCollapsedToSingleAction: payload.batchCollapsedToSingleAction }
+        : {}),
     };
   }
   if (normalizedEvent === "final" || normalizedEvent === "tool_batch") {

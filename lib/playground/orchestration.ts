@@ -2,9 +2,11 @@ import { checkRateLimits, getUserPlan } from "@/lib/hf-router/rate-limit";
 import { hasUnlimitedPlaygroundAccess } from "@/lib/playground/auth";
 import type {
   LoopStateContract,
+  ObjectiveStateContract,
   OrchestrationProtocol,
   PendingToolCallContract,
   PlaygroundToolName,
+  ProgressStateContract,
   ToolTraceEntryContract,
 } from "@/lib/playground/contracts";
 import {
@@ -123,6 +125,9 @@ export type AssistContextSelection = {
   usedCloudIndex: boolean;
 };
 
+export type AssistProgressState = ProgressStateContract;
+export type AssistObjectiveState = ObjectiveStateContract;
+
 export type AssistValidationPlan = {
   scope: "none" | "targeted";
   checks: string[];
@@ -201,6 +206,8 @@ export type AssistResult = {
   };
   completionStatus: "complete" | "incomplete";
   missingRequirements: string[];
+  progressState: AssistProgressState;
+  objectiveState: AssistObjectiveState;
   lane: AssistExecutionLane;
   taskGraph: AssistTaskGraphStage[];
   checkpoint: AssistRunCheckpoint;
@@ -376,6 +383,138 @@ export function collectInfluence(contextSelection: AssistContextSelection): Assi
   return {
     files: contextSelection.files.map((file) => file.path).slice(0, 8),
     snippets: contextSelection.snippets,
+  };
+}
+
+function uniqueProof(values: Array<string | null | undefined>): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const next = compactWhitespace(String(value || ""));
+    if (!next || seen.has(next)) continue;
+    seen.add(next);
+    out.push(next);
+  }
+  return out;
+}
+
+export function mapIntentToGoalType(intent: AssistIntent["type"]): AssistObjectiveState["goalType"] {
+  if (intent === "code_edit") return "code_edit";
+  if (intent === "command_run") return "command_run";
+  if (intent === "plan") return "plan";
+  return "unknown";
+}
+
+function requiredProofForGoal(goalType: AssistObjectiveState["goalType"]): string[] {
+  if (goalType === "code_edit") {
+    return ["target_resolved", "target_grounded", "workspace_change_prepared"];
+  }
+  if (goalType === "command_run") {
+    return ["command_prepared"];
+  }
+  if (goalType === "plan") {
+    return ["plan_ready"];
+  }
+  return [];
+}
+
+export function buildObjectiveState(input: {
+  request: AssistRuntimeInput;
+  intent: AssistIntent;
+  targetInference: AssistTargetInference;
+  contextSelection: AssistContextSelection;
+  actions: ExecuteAction[];
+  missingRequirements: string[];
+  plan: AssistPlan | null;
+  final: string;
+  observedProof?: string[];
+  blocked?: boolean;
+}): AssistObjectiveState {
+  const goalType = mapIntentToGoalType(input.intent.type);
+  const requiredProof = requiredProofForGoal(goalType);
+  const hasPreparedMutation = input.actions.some((action) => {
+    if (action.type !== "edit" && action.type !== "write_file" && action.type !== "mkdir") return false;
+    if (!input.targetInference.path || !("path" in action)) return true;
+    return compactWhitespace(String(action.path || "")) === compactWhitespace(input.targetInference.path);
+  });
+  const hasPreparedCommand = input.actions.some((action) => action.type === "command");
+  const hasGrounding =
+    Boolean(input.targetInference.path) &&
+    input.contextSelection.files.some((file) => file.path === input.targetInference.path);
+  const observedProof = uniqueProof([
+    ...(input.observedProof || []),
+    input.targetInference.path ? "target_resolved" : null,
+    hasGrounding ? "target_grounded" : null,
+    hasPreparedMutation ? "workspace_change_prepared" : null,
+    hasPreparedCommand ? "command_prepared" : null,
+    goalType === "plan" && input.plan ? "plan_ready" : null,
+    goalType === "unknown" && input.final.trim() ? "response_ready" : null,
+  ]);
+  const missingProof = requiredProof.filter((proof) => !observedProof.includes(proof));
+  const status: AssistObjectiveState["status"] =
+    missingProof.length === 0 && input.missingRequirements.length === 0
+      ? "satisfied"
+      : input.blocked
+        ? "blocked"
+        : "in_progress";
+
+  return {
+    status,
+    goalType,
+    ...(input.targetInference.path ? { targetPath: input.targetInference.path } : {}),
+    requiredProof,
+    observedProof,
+    missingProof,
+  };
+}
+
+export function buildProgressState(input: {
+  completionStatus: "complete" | "incomplete";
+  objectiveState: AssistObjectiveState;
+  loopState?: LoopStateContract | null;
+  lastMeaningfulProgressAtStep?: number;
+  lastMeaningfulProgressSummary?: string;
+  stallCount?: number;
+  stallReason?: string;
+  nextDeterministicAction?: string;
+  pendingToolCallSignature?: string;
+  failed?: boolean;
+  repairing?: boolean;
+}): AssistProgressState {
+  const lastMeaningfulProgressAtStep =
+    typeof input.lastMeaningfulProgressAtStep === "number"
+      ? input.lastMeaningfulProgressAtStep
+      : input.loopState?.stepCount || 0;
+  const status: AssistProgressState["status"] =
+    input.failed || input.loopState?.status === "failed"
+      ? "failed"
+      : input.completionStatus === "complete" && input.objectiveState.status === "satisfied"
+        ? "completed"
+        : input.repairing
+          ? "repairing"
+          : (input.stallCount || 0) > 0
+            ? "stalled"
+            : "running";
+  const lastMeaningfulProgressSummary =
+    compactWhitespace(
+      input.lastMeaningfulProgressSummary ||
+        (status === "completed"
+          ? "Objective satisfied."
+          : input.nextDeterministicAction
+            ? input.nextDeterministicAction
+            : input.pendingToolCallSignature
+              ? `Waiting for ${input.pendingToolCallSignature}.`
+              : "Run initialized.")
+    ) || "Run initialized.";
+
+  return {
+    status,
+    lastMeaningfulProgressAtStep,
+    lastMeaningfulProgressSummary,
+    stallCount: Math.max(0, Math.floor(input.stallCount || 0)),
+    ...(input.stallReason ? { stallReason: input.stallReason } : {}),
+    ...(input.nextDeterministicAction ? { nextDeterministicAction: input.nextDeterministicAction } : {}),
+    ...(input.pendingToolCallSignature ? { pendingToolCallSignature: input.pendingToolCallSignature } : {}),
   };
 }
 
@@ -1048,8 +1187,9 @@ export function buildDecoratedAssistResult(input: {
   contextSelection: AssistContextSelection;
   missingRequirements: string[];
   logs?: string[];
+  objectiveState?: AssistObjectiveState;
+  progressState?: AssistProgressState;
 }): AssistResult {
-  const completionStatus: "complete" | "incomplete" = input.missingRequirements.length === 0 ? "complete" : "incomplete";
   const intent = inferIntent({
     mode: input.request.mode,
     task: input.request.task,
@@ -1086,6 +1226,28 @@ export function buildDecoratedAssistResult(input: {
   const toolState = buildToolState();
   const risk = inferRisk(input.request.mode, input.request.task, input.actions);
   const influence = collectInfluence(input.contextSelection);
+  const objectiveState =
+    input.objectiveState ||
+    buildObjectiveState({
+      request: input.request,
+      intent,
+      targetInference: input.targetInference,
+      contextSelection: input.contextSelection,
+      actions: input.actions,
+      missingRequirements: input.missingRequirements,
+      plan: input.plan,
+      final: input.final,
+    });
+  const completionStatus: "complete" | "incomplete" =
+    objectiveState.status === "satisfied" && input.missingRequirements.length === 0
+      ? "complete"
+      : "incomplete";
+  const progressState =
+    input.progressState ||
+    buildProgressState({
+      completionStatus,
+      objectiveState,
+    });
   const nextBestActions = buildNextBestActions(input.request.mode, completionStatus);
   const actionability: AssistResult["actionability"] = {
     summary: completionStatus === "complete" ? "valid_actions" : "clarification_needed",
@@ -1124,6 +1286,8 @@ export function buildDecoratedAssistResult(input: {
     },
     completionStatus,
     missingRequirements: input.missingRequirements,
+    progressState,
+    objectiveState,
     nextBestActions,
     now: new Date(),
   });
@@ -1153,6 +1317,8 @@ export function buildDecoratedAssistResult(input: {
     actionability,
     completionStatus,
     missingRequirements: input.missingRequirements,
+    progressState,
+    objectiveState,
     lane: agentArtifacts.lane,
     taskGraph: agentArtifacts.taskGraph,
     checkpoint: agentArtifacts.checkpoint,

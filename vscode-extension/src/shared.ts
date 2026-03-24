@@ -97,6 +97,25 @@ export type LoopState = {
   lastToolCallKey?: string;
 };
 
+export type ProgressState = {
+  status: "running" | "stalled" | "repairing" | "completed" | "failed";
+  lastMeaningfulProgressAtStep: number;
+  lastMeaningfulProgressSummary: string;
+  stallCount: number;
+  stallReason?: string;
+  nextDeterministicAction?: string;
+  pendingToolCallSignature?: string;
+};
+
+export type ObjectiveState = {
+  status: "in_progress" | "satisfied" | "blocked";
+  goalType: "code_edit" | "command_run" | "plan" | "unknown";
+  targetPath?: string;
+  requiredProof: string[];
+  observedProof: string[];
+  missingProof: string[];
+};
+
 export type PendingToolCall = {
   step: number;
   adapter: PlaygroundAdapter;
@@ -163,6 +182,8 @@ export type AssistResponsePayload = {
   orchestrationProtocol?: OrchestrationProtocol;
   adapter?: PlaygroundAdapter;
   loopState?: LoopState | null;
+  progressState?: ProgressState | null;
+  objectiveState?: ObjectiveState | null;
   pendingToolCall?: PendingToolCall | null;
   toolTrace?: ToolTraceEntry[];
 };
@@ -392,12 +413,97 @@ export type BinaryBuildPreview = {
   recentLogs: string[];
 };
 
+export type BinaryAstNodeSummary = {
+  id: string;
+  kind: string;
+  label: string;
+  path?: string;
+  parentId?: string;
+  exported?: boolean;
+  callable?: boolean;
+  completeness?: number;
+};
+
+export type BinaryAstModuleSummary = {
+  path: string;
+  language?: string;
+  nodeCount: number;
+  exportedSymbols: string[];
+  callableFunctions: string[];
+  completed: boolean;
+};
+
+export type BinaryAstState = {
+  coverage: number;
+  moduleCount: number;
+  modules: BinaryAstModuleSummary[];
+  nodes: BinaryAstNodeSummary[];
+  updatedAt: string;
+  source: "compat" | "gateway";
+};
+
+export type BinaryAstDelta = {
+  changeId: string;
+  coverage: number;
+  source: "compat" | "gateway";
+  nodes: BinaryAstNodeSummary[];
+  modulesTouched: string[];
+  updatedAt: string;
+};
+
+export type BinaryRuntimePatch = {
+  id: string;
+  modulePath: string;
+  symbolNames: string[];
+  engine: "none" | "stub" | "native" | "quickjs" | "wasmtime";
+  status: "applied" | "replaced";
+  appliedAt: string;
+};
+
+export type BinaryRuntimeState = {
+  runnable: boolean;
+  engine: "none" | "stub" | "native" | "quickjs" | "wasmtime";
+  availableFunctions: BinaryExecutionFunction[];
+  patches: BinaryRuntimePatch[];
+  updatedAt: string;
+  lastRun?: BinaryExecutionRun | null;
+};
+
+export type BinaryLiveReliabilityBlocker = {
+  code: string;
+  severity: "info" | "warning" | "error";
+  message: string;
+};
+
+export type BinaryLiveReliabilityState = {
+  score: number;
+  trend: "rising" | "falling" | "steady";
+  warnings: string[];
+  blockers: BinaryLiveReliabilityBlocker[];
+  resolvedBlockers: string[];
+  updatedAt: string;
+  source: "compat" | "gateway";
+};
+
+export type BinarySnapshotSummary = {
+  id: string;
+  checkpointId?: string | null;
+  parentSnapshotId?: string | null;
+  phase: BinaryBuildPhase;
+  label?: string;
+  savedAt: string;
+  source: "compat" | "gateway";
+};
+
 export type BinaryBuildStream = {
   enabled: boolean;
-  transport: "sse";
+  transport: "sse" | "websocket";
   streamPath: string;
   eventsPath: string;
   controlPath: string;
+  wsPath?: string;
+  resumeToken?: string | null;
+  streamSessionId?: string | null;
   lastEventId?: string | null;
 };
 
@@ -513,9 +619,13 @@ export type BinaryBuildCheckpoint = {
   preview?: BinaryBuildPreview | null;
   manifest?: BinaryManifest | null;
   reliability?: BinaryValidationReport | null;
+  liveReliability?: BinaryLiveReliabilityState | null;
   artifactState?: BinaryArtifactState | null;
   sourceGraph?: BinarySourceGraph | null;
+  astState?: BinaryAstState | null;
   execution?: BinaryExecutionState | null;
+  runtimeState?: BinaryRuntimeState | null;
+  snapshot?: BinarySnapshotSummary | null;
   artifact?: BinaryArtifactMetadata | null;
 };
 
@@ -544,11 +654,15 @@ export type BinaryBuildRecord = {
   cancelable?: boolean;
   manifest?: BinaryManifest | null;
   reliability?: BinaryValidationReport | null;
+  liveReliability?: BinaryLiveReliabilityState | null;
   artifactState?: BinaryArtifactState | null;
   sourceGraph?: BinarySourceGraph | null;
+  astState?: BinaryAstState | null;
   execution?: BinaryExecutionState | null;
+  runtimeState?: BinaryRuntimeState | null;
   checkpointId?: string | null;
   checkpoints?: BinaryBuildCheckpointSummary[];
+  snapshots?: BinarySnapshotSummary[];
   parentBuildId?: string | null;
   pendingRefinement?: BinaryPendingRefinement | null;
   artifact?: BinaryArtifactMetadata | null;
@@ -567,6 +681,7 @@ export type BinaryBuildEvent =
       type: "phase.changed";
       data: { status: BinaryBuildRecord["status"]; phase: BinaryBuildPhase; progress?: number; message?: string };
     }
+  | { id: string; buildId: string; timestamp: string; type: "token.delta"; data: { text: string; cursor: number; updatedAt: string; source: "compat" | "gateway" } }
   | { id: string; buildId: string; timestamp: string; type: "plan.updated"; data: { plan: BinaryPlanPreview } }
   | { id: string; buildId: string; timestamp: string; type: "generation.delta"; data: { delta: BinaryGenerationDelta } }
   | { id: string; buildId: string; timestamp: string; type: "file.updated"; data: BinaryPreviewFile }
@@ -578,8 +693,13 @@ export type BinaryBuildEvent =
       type: "reliability.delta";
       data: { kind: "prebuild" | "full"; report: BinaryValidationReport };
     }
+  | { id: string; buildId: string; timestamp: string; type: "reliability.stream"; data: { reliability: BinaryLiveReliabilityState } }
   | { id: string; buildId: string; timestamp: string; type: "graph.updated"; data: { sourceGraph: BinarySourceGraph } }
+  | { id: string; buildId: string; timestamp: string; type: "ast.delta"; data: { delta: BinaryAstDelta } }
+  | { id: string; buildId: string; timestamp: string; type: "ast.state"; data: { astState: BinaryAstState } }
   | { id: string; buildId: string; timestamp: string; type: "execution.updated"; data: { execution: BinaryExecutionState } }
+  | { id: string; buildId: string; timestamp: string; type: "runtime.state"; data: { runtime: BinaryRuntimeState } }
+  | { id: string; buildId: string; timestamp: string; type: "patch.applied"; data: { patch: BinaryRuntimePatch; runtime: BinaryRuntimeState } }
   | {
       id: string;
       buildId: string;
@@ -594,6 +714,7 @@ export type BinaryBuildEvent =
       type: "checkpoint.saved";
       data: { checkpoint: BinaryBuildCheckpoint };
     }
+  | { id: string; buildId: string; timestamp: string; type: "snapshot.saved"; data: { snapshot: BinarySnapshotSummary } }
   | {
       id: string;
       buildId: string;
@@ -632,10 +753,14 @@ export type BinaryPanelState = {
   previewFiles: BinaryPreviewFile[];
   recentLogs: string[];
   reliability: BinaryValidationReport | null;
+  liveReliability: BinaryLiveReliabilityState | null;
   artifactState: BinaryArtifactState | null;
   sourceGraph: BinarySourceGraph | null;
+  astState: BinaryAstState | null;
   execution: BinaryExecutionState | null;
+  runtimeState: BinaryRuntimeState | null;
   checkpoints: BinaryBuildCheckpointSummary[];
+  snapshots: BinarySnapshotSummary[];
   pendingRefinement: BinaryPendingRefinement | null;
   canCancel: boolean;
   lastAction: "generate" | "refine" | "branch" | "rewind" | "execute" | "validate" | "deploy" | null;

@@ -5,7 +5,11 @@ const assert = require("node:assert/strict");
 const {
   appendDeadEndMemory,
   batchNeedsMoreAutonomy,
+  getCurrentStrategyLabel,
+  getStallLabel,
+  hasCompletedTargetInspection,
   hasCodeChangeCompletionProof,
+  isMeaningfulProgressReceipt,
   requiresCodeChangeVerification,
   resolveRetryStrategy,
 } = require("../out/cutie-autonomy-controller.js");
@@ -31,6 +35,9 @@ function makeRun(overrides = {}) {
     repeatedCallCount: 0,
     objectivesPhase: "off",
     deadEndMemory: [],
+    objectiveRepairCount: 0,
+    noProgressTurns: 0,
+    stallLevel: "none",
     ...overrides,
   };
 }
@@ -136,6 +143,23 @@ test("batchNeedsMoreAutonomy blocks weak post-read and post-mutation batches", (
   );
 });
 
+test("batchNeedsMoreAutonomy allows first target inspection before requiring a mutation", () => {
+  const inspectionRun = makeRun({
+    preferredTargetPath: "src/app.ts",
+    targetAcquisitionPhase: "target_inspection",
+    currentRepairTactic: "read_target",
+  });
+
+  assert.equal(
+    batchNeedsMoreAutonomy({
+      goal: "code_change",
+      run: inspectionRun,
+      batch: [{ name: "read_file", arguments: { path: "src/app.ts", startLine: 1, endLine: 4000 } }],
+    }),
+    "ok"
+  );
+});
+
 test("resolveRetryStrategy escalates direct code-change repair tactics", () => {
   assert.equal(resolveRetryStrategy({ run: makeRun({ repairAttemptCount: 0 }), reason: "missing_mutation" }), "force_mutation");
   assert.equal(resolveRetryStrategy({ run: makeRun({ repairAttemptCount: 1 }), reason: "missing_mutation" }), "alternate_mutation");
@@ -159,4 +183,147 @@ test("appendDeadEndMemory keeps a capped ordered memory", () => {
     "dead-end-10",
     "dead-end-11",
   ]);
+});
+
+test("first successful read of the preferred target counts as meaningful progress", () => {
+  const run = makeRun({
+    preferredTargetPath: "src/app.ts",
+  });
+  const receipt = {
+    id: "tool_1",
+    step: 1,
+    toolName: "read_file",
+    kind: "observe",
+    domain: "workspace",
+    status: "completed",
+    summary: "Read src/app.ts lines 1-40.",
+    startedAt: "2026-03-22T00:00:00.000Z",
+    finishedAt: "2026-03-22T00:00:01.000Z",
+    data: { path: "src/app.ts", range: "1-40" },
+  };
+
+  assert.equal(hasCompletedTargetInspection(run), false);
+  assert.equal(isMeaningfulProgressReceipt("code_change", run, receipt), true);
+});
+
+test("generic observe commands do not count as meaningful code-change progress", () => {
+  const run = makeRun({
+    preferredTargetPath: "src/app.ts",
+    receipts: [
+      {
+        id: "tool_1",
+        step: 1,
+        toolName: "read_file",
+        kind: "observe",
+        domain: "workspace",
+        status: "completed",
+        summary: "Read src/app.ts lines 1-40.",
+        startedAt: "2026-03-22T00:00:00.000Z",
+        finishedAt: "2026-03-22T00:00:01.000Z",
+        data: { path: "src/app.ts", range: "1-40" },
+      },
+    ],
+  });
+  const receipt = {
+    id: "tool_2",
+    step: 2,
+    toolName: "run_command",
+    kind: "command",
+    domain: "workspace",
+    status: "completed",
+    summary: "Command completed.",
+    startedAt: "2026-03-22T00:00:02.000Z",
+    finishedAt: "2026-03-22T00:00:03.000Z",
+    data: { command: "git status --short" },
+  };
+
+  assert.equal(isMeaningfulProgressReceipt("code_change", run, receipt), false);
+});
+
+test("command-assisted recovery commands count as meaningful progress when the strategy called for them", () => {
+  const run = makeRun({
+    retryStrategy: "command_repair",
+  });
+  const receipt = {
+    id: "tool_2",
+    step: 2,
+    toolName: "run_command",
+    kind: "command",
+    domain: "workspace",
+    status: "completed",
+    summary: "Command completed.",
+    startedAt: "2026-03-22T00:00:02.000Z",
+    finishedAt: "2026-03-22T00:00:03.000Z",
+    data: { command: "python fix_strategy.py" },
+  };
+
+  assert.equal(isMeaningfulProgressReceipt("code_change", run, receipt), true);
+});
+
+test("semantic search receipts count as meaningful progress during semantic recovery", () => {
+  const run = makeRun({
+    currentRepairTactic: "semantic_search",
+  });
+  const receipt = {
+    id: "tool_3",
+    step: 3,
+    toolName: "search_workspace",
+    kind: "observe",
+    domain: "workspace",
+    status: "completed",
+    summary: "Found 3 workspace matches.",
+    startedAt: "2026-03-22T00:00:04.000Z",
+    finishedAt: "2026-03-22T00:00:05.000Z",
+    data: { query: "trail_points" },
+  };
+
+  assert.equal(isMeaningfulProgressReceipt("code_change", run, receipt), true);
+});
+
+test("verified no-op conclusions satisfy code-change completion proof without inventing a mutation", () => {
+  const run = makeRun({
+    noOpConclusion: "Verified that trailing stop loss is not present in src/app.ts, so no file change was needed.",
+    lastVerifiedOutcome: "Verified that trailing stop loss is not present in src/app.ts, so no file change was needed.",
+    receipts: [
+      {
+        id: "tool_2",
+        step: 2,
+        toolName: "run_command",
+        kind: "command",
+        domain: "workspace",
+        status: "completed",
+        summary: "Command completed.",
+        startedAt: "2026-03-22T00:00:02.000Z",
+        finishedAt: "2026-03-22T00:00:03.000Z",
+        data: { command: "Select-String ...", stdout: "CUTIE_ENTITY_NOT_FOUND" },
+      },
+    ],
+  });
+
+  assert.equal(hasCodeChangeCompletionProof(run), true);
+  assert.equal(requiresCodeChangeVerification(run), false);
+});
+
+test("strategy and stall labels describe capability escalation clearly", () => {
+  const run = makeRun({
+    retryStrategy: "full_rewrite",
+    noProgressTurns: 4,
+    stallLevel: "severe",
+    stallSinceStep: 14,
+  });
+
+  assert.equal(getCurrentStrategyLabel(run), "Escalating to a full-file rewrite");
+  assert.equal(getStallLabel(run), "Severely stalled since step 14");
+});
+
+test("conversation runs do not inherit code-change strategy labels", () => {
+  const run = makeRun({
+    goal: "conversation",
+    goalSatisfied: true,
+    strategyPhase: "verify",
+    retryStrategy: "none",
+  });
+
+  assert.equal(getCurrentStrategyLabel(run), "");
+  assert.equal(hasCodeChangeCompletionProof(run), false);
 });

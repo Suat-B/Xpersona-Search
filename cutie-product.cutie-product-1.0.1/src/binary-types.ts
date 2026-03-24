@@ -105,13 +105,101 @@ export type BinaryBuildPreview = {
   recentLogs: string[];
 };
 
+export type BinaryRuntimeEngine = "none" | "native" | "stub" | "quickjs" | "wasmtime";
+
+export type BinaryAstNodeSummary = {
+  id: string;
+  kind: "module" | "function" | "export" | "dependency" | "unknown";
+  label: string;
+  path?: string;
+  parentId?: string | null;
+  exported?: boolean;
+  callable?: boolean;
+  completeness: number;
+};
+
+export type BinaryAstModuleSummary = {
+  path: string;
+  language?: string;
+  nodeCount: number;
+  exportedSymbols: string[];
+  callableFunctions: string[];
+  completed: boolean;
+};
+
+export type BinaryAstState = {
+  coverage: number;
+  moduleCount: number;
+  modules: BinaryAstModuleSummary[];
+  nodes: BinaryAstNodeSummary[];
+  updatedAt: string;
+  source: "compat" | "stream";
+};
+
+export type BinaryAstDelta = {
+  changeId: string;
+  coverage: number;
+  source: BinaryAstState["source"];
+  nodes: BinaryAstNodeSummary[];
+  modulesTouched: string[];
+  updatedAt: string;
+};
+
+export type BinaryRuntimePatch = {
+  id: string;
+  modulePath: string;
+  description: string;
+  appliedAt: string;
+  source: "compat" | "stream";
+  exports: string[];
+  dependencies: string[];
+};
+
+export type BinaryRuntimeState = {
+  runnable: boolean;
+  engine: BinaryRuntimeEngine;
+  availableFunctions: BinaryExecutionFunction[];
+  patches: BinaryRuntimePatch[];
+  updatedAt: string;
+  lastRun?: BinaryExecutionRun | null;
+};
+
+export type BinaryLiveReliabilityBlocker = {
+  code: string;
+  severity: "error";
+  message: string;
+};
+
+export type BinaryLiveReliabilityState = {
+  score: number;
+  trend: "steady" | "rising" | "falling";
+  warnings: string[];
+  blockers: BinaryLiveReliabilityBlocker[];
+  resolvedBlockers: string[];
+  updatedAt: string;
+  source: "compat" | "stream";
+};
+
+export type BinarySnapshotSummary = {
+  id: string;
+  checkpointId: string;
+  parentSnapshotId?: string | null;
+  phase: BinaryBuildPhase;
+  label?: string;
+  savedAt: string;
+  source: "compat" | "stream";
+};
+
 export type BinaryBuildStream = {
   enabled: boolean;
-  transport: "sse";
+  transport: "sse" | "websocket";
   streamPath: string;
   eventsPath: string;
   controlPath: string;
   lastEventId?: string | null;
+  wsPath?: string | null;
+  resumeToken?: string | null;
+  streamSessionId?: string | null;
 };
 
 export type BinaryGenerationDelta = {
@@ -226,9 +314,16 @@ export type BinaryBuildCheckpoint = {
   preview?: BinaryBuildPreview | null;
   manifest?: BinaryManifest | null;
   reliability?: BinaryValidationReport | null;
+  liveReliability?: BinaryLiveReliabilityState | null;
   artifactState?: BinaryArtifactState | null;
   sourceGraph?: BinarySourceGraph | null;
   execution?: BinaryExecutionState | null;
+  astState?: BinaryAstState | null;
+  runtimeState?: BinaryRuntimeState | null;
+  runtimePatches?: BinaryRuntimePatch[];
+  prompt?: string | null;
+  parentSnapshotId?: string | null;
+  snapshot?: BinarySnapshotSummary | null;
   artifact?: BinaryArtifactMetadata | null;
 };
 
@@ -257,9 +352,13 @@ export type BinaryBuildRecord = {
   cancelable?: boolean;
   manifest?: BinaryManifest | null;
   reliability?: BinaryValidationReport | null;
+  liveReliability?: BinaryLiveReliabilityState | null;
   artifactState?: BinaryArtifactState | null;
   sourceGraph?: BinarySourceGraph | null;
   execution?: BinaryExecutionState | null;
+  astState?: BinaryAstState | null;
+  runtimeState?: BinaryRuntimeState | null;
+  snapshots?: BinarySnapshotSummary[];
   checkpointId?: string | null;
   checkpoints?: BinaryBuildCheckpointSummary[];
   parentBuildId?: string | null;
@@ -282,6 +381,13 @@ export type BinaryBuildEvent =
     }
   | { id: string; buildId: string; timestamp: string; type: "plan.updated"; data: { plan: BinaryPlanPreview } }
   | { id: string; buildId: string; timestamp: string; type: "generation.delta"; data: { delta: BinaryGenerationDelta } }
+  | {
+      id: string;
+      buildId: string;
+      timestamp: string;
+      type: "token.delta";
+      data: { text: string; cursor: number; updatedAt: string; source: "compat" | "stream" };
+    }
   | { id: string; buildId: string; timestamp: string; type: "file.updated"; data: BinaryPreviewFile }
   | { id: string; buildId: string; timestamp: string; type: "log.chunk"; data: { stream: "stdout" | "stderr" | "system"; chunk: string } }
   | {
@@ -291,8 +397,19 @@ export type BinaryBuildEvent =
       type: "reliability.delta";
       data: { kind: "prebuild" | "full"; report: BinaryValidationReport };
     }
+  | {
+      id: string;
+      buildId: string;
+      timestamp: string;
+      type: "reliability.stream";
+      data: { reliability: BinaryLiveReliabilityState };
+    }
   | { id: string; buildId: string; timestamp: string; type: "graph.updated"; data: { sourceGraph: BinarySourceGraph } }
+  | { id: string; buildId: string; timestamp: string; type: "ast.delta"; data: { delta: BinaryAstDelta } }
+  | { id: string; buildId: string; timestamp: string; type: "ast.state"; data: { astState: BinaryAstState } }
   | { id: string; buildId: string; timestamp: string; type: "execution.updated"; data: { execution: BinaryExecutionState } }
+  | { id: string; buildId: string; timestamp: string; type: "runtime.state"; data: { runtime: BinaryRuntimeState } }
+  | { id: string; buildId: string; timestamp: string; type: "patch.applied"; data: { patch: BinaryRuntimePatch; runtime: BinaryRuntimeState } }
   | {
       id: string;
       buildId: string;
@@ -306,6 +423,13 @@ export type BinaryBuildEvent =
       timestamp: string;
       type: "checkpoint.saved";
       data: { checkpoint: BinaryBuildCheckpoint };
+    }
+  | {
+      id: string;
+      buildId: string;
+      timestamp: string;
+      type: "snapshot.saved";
+      data: { snapshot: BinarySnapshotSummary };
     }
   | {
       id: string;
@@ -345,10 +469,14 @@ export type BinaryPanelState = {
   previewFiles: BinaryPreviewFile[];
   recentLogs: string[];
   reliability: BinaryValidationReport | null;
+  liveReliability: BinaryLiveReliabilityState | null;
   artifactState: BinaryArtifactState | null;
   sourceGraph: BinarySourceGraph | null;
+  astState: BinaryAstState | null;
   execution: BinaryExecutionState | null;
+  runtimeState: BinaryRuntimeState | null;
   checkpoints: BinaryBuildCheckpointSummary[];
+  snapshots: BinarySnapshotSummary[];
   pendingRefinement: BinaryPendingRefinement | null;
   canCancel: boolean;
   lastAction: "generate" | "refine" | "branch" | "rewind" | "execute" | "validate" | "deploy" | null;
@@ -356,7 +484,11 @@ export type BinaryPanelState = {
 
 /** Future Streaming Binary IDE Plan event names — extend BinaryBuildEvent union when backend ships them. */
 export const BINARY_STREAMING_PLAN_FUTURE_EVENTS = [
+  "token.delta",
   "ast.delta",
+  "ast.state",
   "reliability.stream",
+  "runtime.state",
+  "snapshot.saved",
   "patch.applied",
 ] as const;

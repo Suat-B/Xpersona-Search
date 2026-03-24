@@ -198,3 +198,83 @@ export async function sendAccountClaimEmail(to: string, claimUrl: string): Promi
 
   throw new Error("RESEND_API_KEY is required to send account claim emails");
 }
+
+export async function sendCrawlLicenseKeyEmail(
+  to: string,
+  apiKey: string,
+  credits: number
+): Promise<void> {
+  const from = getFrom();
+  const baseUrl = getBaseUrl();
+  const subject = "Your Xpersona crawl license key";
+  const safeKey = apiKey.trim();
+  const statusUrl = `${baseUrl}/api/v1/crawl-license/status`;
+  const tokenUrl = `${baseUrl}/api/v1/crawl-license`;
+  const successUrl = `${baseUrl}/crawl-license/success`;
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;font-family:system-ui,-apple-system,sans-serif;background:#0a0a0a;color:#e5e5e5;">
+  <div style="max-width:560px;margin:32px auto;padding:24px;">
+    <h1 style="font-size:20px;margin:0 0 16px;">Your crawl license is ready</h1>
+    <p style="margin:0 0 16px;line-height:1.6;color:#cbd5e1;">
+      Your Xpersona crawl license has been funded with <strong>${credits.toLocaleString()}</strong> credits.
+    </p>
+    <p style="margin:0 0 12px;line-height:1.6;color:#94a3b8;">
+      Use this API key to exchange for short-lived crawl tokens:
+    </p>
+    <pre style="padding:16px;border-radius:12px;background:#111827;color:#f8fafc;overflow:auto;">${safeKey}</pre>
+    <p style="margin:16px 0 0;line-height:1.6;color:#94a3b8;">
+      Token endpoint: <a href="${tokenUrl}" style="color:#7dd3fc;">${tokenUrl}</a><br />
+      Status endpoint: <a href="${statusUrl}" style="color:#7dd3fc;">${statusUrl}</a><br />
+      Success page: <a href="${successUrl}" style="color:#7dd3fc;">${successUrl}</a>
+    </p>
+  </div>
+</body>
+</html>
+`.trim();
+
+  const text = [
+    "Your Xpersona crawl license is ready.",
+    "",
+    `Credits: ${credits.toLocaleString()}`,
+    `API key: ${safeKey}`,
+    "",
+    `Token endpoint: ${tokenUrl}`,
+    `Status endpoint: ${statusUrl}`,
+    `Success page: ${successUrl}`,
+  ].join("\n");
+
+  const resendKey = process.env.RESEND_API_KEY;
+  if (resendKey) {
+    const { Resend } = await import("resend");
+    const resend = new Resend(resendKey);
+    const { error } = await resend.emails.send({
+      from,
+      to,
+      subject,
+      html,
+      text,
+    });
+    if (error) {
+      console.error("[email] Resend error:", error);
+      throw new Error("Failed to send crawl license email");
+    }
+    return;
+  }
+
+  if (process.env.NODE_ENV === "development") {
+    console.log("[email] Crawl license key (no RESEND_API_KEY):");
+    console.log("  To:", to);
+    console.log("  API key:", safeKey);
+    console.log("  Credits:", credits);
+    return;
+  }
+
+  throw new Error("RESEND_API_KEY is required to send crawl license emails");
+}

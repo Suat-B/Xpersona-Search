@@ -2,6 +2,7 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type {
+  BinaryAstState,
   BinaryArtifactMetadata,
   BinaryArtifactState,
   BinaryBuildCheckpoint,
@@ -10,11 +11,15 @@ import type {
   BinaryBuildStatus,
   BinaryExecutionState,
   BinaryGenerationDelta,
+  BinaryLiveReliabilityState,
   BinaryLogStream,
   BinaryManifest,
   BinaryPendingRefinement,
   BinaryPlanPreview,
   BinaryPreviewFile,
+  BinaryRuntimePatch,
+  BinaryRuntimeState,
+  BinarySnapshotSummary,
   BinaryReliabilityKind,
   BinarySourceGraph,
   BinaryValidationReport,
@@ -35,6 +40,12 @@ import {
 } from "@/lib/binary/execution";
 import { computeBinaryValidationReport } from "@/lib/binary/reliability";
 import {
+  buildBinaryAstStateFromSourceGraph,
+  buildBinaryLiveReliabilityState,
+  buildBinaryRuntimeState,
+  buildBinarySnapshotSummary,
+} from "@/lib/binary/live-state";
+import {
   getBinaryArtifactPath,
   getBinaryBuildRootDir,
   getBinaryBuildWorkspaceDir,
@@ -50,11 +61,16 @@ export type BinaryStreamingRunResult = {
   logs: string[];
   manifest: BinaryManifest;
   reliability: BinaryValidationReport;
+  liveReliability: BinaryLiveReliabilityState | null;
   artifactState: BinaryArtifactState;
   artifact: BinaryArtifactMetadata | null;
   errorMessage: string | null;
   sourceGraph: BinarySourceGraph | null;
+  astState: BinaryAstState | null;
   execution: BinaryExecutionState | null;
+  runtimeState: BinaryRuntimeState | null;
+  runtimePatches: BinaryRuntimePatch[];
+  snapshots: BinarySnapshotSummary[];
   checkpoints: BinaryBuildCheckpoint[];
   checkpointId: string | null;
   preview: {
@@ -161,9 +177,13 @@ function createCheckpoint(input: {
   };
   manifest?: BinaryManifest | null;
   reliability?: BinaryValidationReport | null;
+  liveReliability?: BinaryLiveReliabilityState | null;
   artifactState?: BinaryArtifactState | null;
   sourceGraph?: BinarySourceGraph | null;
+  astState?: BinaryAstState | null;
   execution?: BinaryExecutionState | null;
+  runtimeState?: BinaryRuntimeState | null;
+  snapshot?: BinarySnapshotSummary | null;
   artifact?: BinaryArtifactMetadata | null;
 }): BinaryBuildCheckpoint {
   return {
@@ -179,9 +199,13 @@ function createCheckpoint(input: {
     },
     manifest: input.manifest || null,
     reliability: input.reliability || null,
+    liveReliability: input.liveReliability || null,
     artifactState: input.artifactState || null,
     sourceGraph: input.sourceGraph || null,
+    astState: input.astState || null,
     execution: input.execution || null,
+    runtimeState: input.runtimeState || null,
+    snapshot: input.snapshot || null,
     artifact: input.artifact || null,
   };
 }
@@ -418,6 +442,11 @@ export async function runStreamingBinaryBuild(input: {
   let previewFiles: BinaryPreviewFile[] = [];
   let sourceGraph: BinarySourceGraph | null = null;
   let execution: BinaryExecutionState | null = null;
+  let astState: BinaryAstState | null = null;
+  let runtimeState: BinaryRuntimeState | null = null;
+  let liveReliability: BinaryLiveReliabilityState | null = null;
+  const runtimePatches: BinaryRuntimePatch[] = [];
+  const snapshots: BinarySnapshotSummary[] = [];
   let reliability: BinaryValidationReport = await computeBinaryValidationReport({
     workspaceDir,
     manifest: manifestBase,
@@ -431,6 +460,8 @@ export async function runStreamingBinaryBuild(input: {
     execution: null,
   });
   let latestCheckpointId: string | null = null;
+  let latestSnapshotId: string | null = null;
+  let effectiveRequest = { ...input.request };
 
   const recordLog = (value: string) => {
     const entry = String(value || "").trim();
@@ -441,6 +472,12 @@ export async function runStreamingBinaryBuild(input: {
   };
 
   const emitCheckpoint = async (phase: BinaryBuildPhase, label: string, artifact: BinaryArtifactMetadata | null = null) => {
+    astState = buildBinaryAstStateFromSourceGraph(sourceGraph);
+    runtimeState = buildBinaryRuntimeState({ execution, patches: runtimePatches });
+    liveReliability = buildBinaryLiveReliabilityState({
+      report: reliability,
+      previous: liveReliability,
+    });
     const checkpoint = createCheckpoint({
       buildId: input.buildId,
       phase,
@@ -452,13 +489,23 @@ export async function runStreamingBinaryBuild(input: {
       },
       manifest: manifestBase,
       reliability,
+      liveReliability,
       artifactState,
       sourceGraph,
+      astState,
       execution,
+      runtimeState,
       artifact,
     });
+    const snapshot = buildBinarySnapshotSummary({
+      checkpoint,
+      parentSnapshotId: latestSnapshotId,
+    });
+    checkpoint.snapshot = snapshot;
     checkpoints.push(checkpoint);
+    snapshots.push(snapshot);
     latestCheckpointId = checkpoint.id;
+    latestSnapshotId = snapshot.id;
     await input.hooks?.onCheckpoint?.(checkpoint);
     await writeBinaryCheckpointSnapshot({
       buildId: input.buildId,
@@ -469,9 +516,16 @@ export async function runStreamingBinaryBuild(input: {
       preview: checkpoint.preview || null,
       manifest: manifestBase,
       reliability,
+      liveReliability,
       artifactState,
       sourceGraph,
+      astState,
       execution,
+      runtimeState,
+      runtimePatches,
+      prompt: effectiveRequest.intent,
+      parentSnapshotId: snapshot.parentSnapshotId || null,
+      snapshot,
     });
   };
 
@@ -483,7 +537,6 @@ export async function runStreamingBinaryBuild(input: {
     assertNotCanceled(signal);
     await emitPhase(input.hooks, "running", "planning", 10, "Preparing streaming generation plan.");
 
-    let effectiveRequest = { ...input.request };
     while (true) {
       const prepared: BinaryGenerationPreparedWorkspace = await prepareBinaryGenerationWorkspace({
         request: effectiveRequest,
@@ -548,6 +601,12 @@ export async function runStreamingBinaryBuild(input: {
           sourceGraph,
           execution,
           latestFile: delta.path,
+        });
+        astState = buildBinaryAstStateFromSourceGraph(sourceGraph);
+        runtimeState = buildBinaryRuntimeState({ execution, patches: runtimePatches });
+        liveReliability = buildBinaryLiveReliabilityState({
+          report: reliability,
+          previous: liveReliability,
         });
 
         const progress = 20 + Math.round(((index + 1) / Math.max(1, deltas.length)) * 40);
@@ -671,6 +730,12 @@ export async function runStreamingBinaryBuild(input: {
       kind: "full",
       report: reliability,
     });
+    astState = buildBinaryAstStateFromSourceGraph(sourceGraph);
+    runtimeState = buildBinaryRuntimeState({ execution, patches: runtimePatches });
+    liveReliability = buildBinaryLiveReliabilityState({
+      report: reliability,
+      previous: liveReliability,
+    });
 
     assertNotCanceled(signal);
     await emitPhase(input.hooks, "running", "packaging", 94, "Packaging the streamed workspace artifact.");
@@ -704,11 +769,16 @@ export async function runStreamingBinaryBuild(input: {
       logs,
       manifest: manifestBase,
       reliability,
+      liveReliability,
       artifactState,
       artifact,
       errorMessage: null,
       sourceGraph,
+      astState,
       execution,
+      runtimeState,
+      runtimePatches,
+      snapshots,
       checkpoints,
       checkpointId: latestCheckpointId,
       preview: {
@@ -753,6 +823,12 @@ export async function runStreamingBinaryBuild(input: {
       execution,
       latestFile: previewFiles[0]?.path,
     });
+    astState = buildBinaryAstStateFromSourceGraph(sourceGraph);
+    runtimeState = buildBinaryRuntimeState({ execution, patches: runtimePatches });
+    liveReliability = buildBinaryLiveReliabilityState({
+      report: reliability,
+      previous: liveReliability,
+    });
     await Promise.resolve(
       input.hooks?.onReliability?.({
         kind: "prebuild",
@@ -767,11 +843,16 @@ export async function runStreamingBinaryBuild(input: {
       logs,
       manifest: manifestBase,
       reliability,
+      liveReliability,
       artifactState,
       artifact: null,
       errorMessage: message,
       sourceGraph,
+      astState,
       execution,
+      runtimeState,
+      runtimePatches,
+      snapshots,
       checkpoints,
       checkpointId: latestCheckpointId,
       preview: {

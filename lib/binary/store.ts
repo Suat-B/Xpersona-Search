@@ -1,14 +1,19 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type {
+  BinaryAstState,
   BinaryArtifactState,
   BinaryBuildCheckpoint,
   BinaryBuildEvent,
   BinaryBuildPreview,
   BinaryBuildRecord,
   BinaryExecutionState,
+  BinaryLiveReliabilityState,
   BinaryManifest,
   BinaryPlanPreview,
+  BinaryRuntimePatch,
+  BinaryRuntimeState,
+  BinarySnapshotSummary,
   BinarySourceGraph,
   BinaryValidationReport,
 } from "@/lib/binary/contracts";
@@ -54,9 +59,16 @@ export type BinaryCheckpointSnapshot = {
   preview: BinaryBuildPreview | null;
   manifest: BinaryManifest | null;
   reliability: BinaryValidationReport | null;
+  liveReliability: BinaryLiveReliabilityState | null;
   artifactState: BinaryArtifactState | null;
   sourceGraph: BinarySourceGraph | null;
+  astState: BinaryAstState | null;
   execution: BinaryExecutionState | null;
+  runtimeState: BinaryRuntimeState | null;
+  runtimePatches: BinaryRuntimePatch[];
+  prompt: string | null;
+  parentSnapshotId: string | null;
+  snapshot: BinarySnapshotSummary | null;
 };
 
 export function getBinaryArtifactsRootDir(): string {

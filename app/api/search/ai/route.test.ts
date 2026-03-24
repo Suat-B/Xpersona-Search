@@ -52,6 +52,41 @@ describe("GET /api/search/ai", () => {
     expect(data.topAgents).toHaveLength(1);
     expect(data.topAgents[0].name).toBe("Agent One");
     expect(data.topAgents[0].trust).toBe(0.92);
+    expect(data.sponsored_recommendations).toBeUndefined();
+  });
+
+  it("includes sponsored_recommendations for LLM crawler user-agents", async () => {
+    mockFetchWithTimeout.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        results: [
+          {
+            id: "a1",
+            name: "Agent One",
+            slug: "agent-one",
+            description: "Great at research",
+            safetyScore: 91,
+            overallRank: 87,
+            trust: { handshakeStatus: "VERIFIED", reputationScore: 92 },
+            protocols: ["MCP"],
+            capabilities: ["research"],
+          },
+        ],
+        didYouMean: null,
+      }),
+    });
+
+    const req = new NextRequest("http://localhost/api/search/ai?q=research+agent&limit=1", {
+      headers: { "user-agent": "Mozilla/5.0 (compatible; GPTBot/1.0)" },
+    });
+    const res = await GET(req);
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(data.sponsored_recommendations)).toBe(true);
+    expect(data.sponsored_recommendations.length).toBeGreaterThan(0);
+    expect(data.sponsored_recommendations[0].sponsored).toBe(true);
   });
 
   it("returns SEARCH_UNAVAILABLE when upstream is non-OK", async () => {

@@ -28,6 +28,20 @@ describe("playground agent os artifacts", () => {
       modelMetadata: { modelResolvedAlias: "playground-default", providerResolved: "hf" },
       completionStatus: "complete",
       missingRequirements: [],
+      progressState: {
+        status: "completed",
+        lastMeaningfulProgressAtStep: 1,
+        lastMeaningfulProgressSummary: "Objective satisfied.",
+        stallCount: 0,
+      },
+      objectiveState: {
+        status: "satisfied",
+        goalType: "code_edit",
+        targetPath: "hello.py",
+        requiredProof: ["target_resolved", "target_grounded", "workspace_change_prepared"],
+        observedProof: ["target_resolved", "target_grounded", "workspace_change_prepared"],
+        missingProof: [],
+      },
       nextBestActions: ["Apply edits"],
       now: new Date("2026-03-12T00:00:00.000Z"),
     });

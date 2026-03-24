@@ -69,10 +69,13 @@ describe("binary contracts", () => {
       progress: 100,
       stream: {
         enabled: true,
-        transport: "sse",
+        transport: "websocket",
         streamPath: "/api/v1/binary/builds/stream",
         eventsPath: "/api/v1/binary/builds/bin_123/events",
         controlPath: "/api/v1/binary/builds/bin_123/control",
+        wsPath: "ws://localhost:4010/ws/stream_bin_123",
+        resumeToken: "resume_bin_123_abc123",
+        streamSessionId: "stream_bin_123",
         lastEventId: "evt_123",
       },
       preview: {
@@ -131,6 +134,14 @@ describe("binary contracts", () => {
         warnings: [],
         generatedAt: new Date().toISOString(),
       },
+      liveReliability: {
+        score: 100,
+        trend: "steady",
+        warnings: [],
+        blockers: [],
+        resolvedBlockers: [],
+        updatedAt: new Date().toISOString(),
+      },
       artifactState: {
         coverage: 100,
         runnable: true,
@@ -141,12 +152,54 @@ describe("binary contracts", () => {
         latestFile: "bin_123.zip",
         updatedAt: new Date().toISOString(),
       },
+      astState: {
+        coverage: 100,
+        moduleCount: 2,
+        modules: [
+          {
+            path: "src/index.ts",
+            language: "typescript",
+            exportedSymbols: ["health"],
+            callableFunctions: ["health"],
+            completed: true,
+            nodeCount: 12,
+          },
+        ],
+        nodes: [],
+        updatedAt: new Date().toISOString(),
+      },
+      runtimeState: {
+        runnable: true,
+        engine: "native",
+        availableFunctions: [
+          {
+            name: "health",
+            sourcePath: "src/index.ts",
+            mode: "native",
+            callable: true,
+            signature: "health()",
+          },
+        ],
+        patches: [],
+        updatedAt: new Date().toISOString(),
+      },
       artifact: {
         fileName: "bin_123.zip",
         relativePath: "artifacts/binary-builds/bin_123/bin_123.zip",
         sizeBytes: 1024,
         sha256: "deadbeef",
       },
+      snapshots: [
+        {
+          id: "chk_completed_abc123",
+          checkpointId: "chk_completed_abc123",
+          phase: "completed",
+          label: "Completed",
+          parentSnapshotId: null,
+          source: "compat",
+          savedAt: new Date().toISOString(),
+        },
+      ],
       publish: null,
       errorMessage: null,
       createdAt: new Date().toISOString(),
@@ -293,5 +346,127 @@ describe("binary contracts", () => {
     });
 
     expect(executionEvent.type).toBe("execution.updated");
+
+    const tokenEvent = zBinaryBuildEvent.parse({
+      id: "evt_127",
+      buildId: "bin_123",
+      timestamp: new Date().toISOString(),
+      type: "token.delta",
+      data: {
+        path: "src/index.ts",
+        language: "typescript",
+        text: "export const",
+        cursor: 17,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+
+    expect(tokenEvent.type).toBe("token.delta");
+
+    const liveReliabilityEvent = zBinaryBuildEvent.parse({
+      id: "evt_128",
+      buildId: "bin_123",
+      timestamp: new Date().toISOString(),
+      type: "reliability.stream",
+      data: {
+        reliability: {
+          score: 82,
+          trend: "rising",
+          warnings: ["Missing lockfile"],
+          blockers: [
+            {
+              id: "missing_output",
+              code: "missing_output",
+              message: "No packaged output yet.",
+              severity: "warning",
+            },
+          ],
+          resolvedBlockers: [],
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    expect(liveReliabilityEvent.type).toBe("reliability.stream");
+
+    const astStateEvent = zBinaryBuildEvent.parse({
+      id: "evt_129",
+      buildId: "bin_123",
+      timestamp: new Date().toISOString(),
+      type: "ast.state",
+      data: {
+        astState: {
+          coverage: 75,
+          moduleCount: 4,
+          modules: [
+            {
+              path: "src/index.ts",
+              language: "typescript",
+              exportedSymbols: ["health"],
+              callableFunctions: ["health"],
+              completed: true,
+              nodeCount: 18,
+            },
+          ],
+          nodes: [],
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    expect(astStateEvent.type).toBe("ast.state");
+
+    const runtimeStateEvent = zBinaryBuildEvent.parse({
+      id: "evt_130",
+      buildId: "bin_123",
+      timestamp: new Date().toISOString(),
+      type: "runtime.state",
+      data: {
+        runtime: {
+          runnable: true,
+          engine: "quickjs",
+          availableFunctions: [
+            {
+              name: "health",
+              sourcePath: "src/index.ts",
+              mode: "native",
+              callable: true,
+              signature: "health()",
+            },
+          ],
+          patches: [
+            {
+              id: "patch_123",
+              modulePath: "src/index.ts",
+              symbolNames: ["health"],
+              appliedAt: new Date().toISOString(),
+            },
+          ],
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    expect(runtimeStateEvent.type).toBe("runtime.state");
+
+    const snapshotEvent = zBinaryBuildEvent.parse({
+      id: "evt_131",
+      buildId: "bin_123",
+      timestamp: new Date().toISOString(),
+      type: "snapshot.saved",
+      data: {
+        snapshot: {
+          id: "snap_123",
+          checkpointId: "chk_123",
+          phase: "materializing",
+          label: "AST milestone",
+          parentSnapshotId: null,
+          source: "compat",
+          savedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    expect(snapshotEvent.type).toBe("snapshot.saved");
   });
 });

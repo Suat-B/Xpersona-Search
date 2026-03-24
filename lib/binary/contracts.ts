@@ -20,12 +20,15 @@ export const zBinaryPlatform = z.enum(["portable"]);
 export const zBinaryPackageManager = z.enum(["npm"]);
 export const zBinarySeverity = z.enum(["info", "warning", "error"]);
 export const zBinaryValidationStatus = z.enum(["pass", "warn", "fail"]);
-export const zBinaryStreamTransport = z.enum(["sse"]);
+export const zBinaryStreamTransport = z.enum(["sse", "websocket"]);
 export const zBinaryLogStream = z.enum(["stdout", "stderr", "system"]);
 export const zBinaryReliabilityKind = z.enum(["prebuild", "full"]);
 export const zBinaryGenerationOperation = z.enum(["upsert"]);
 export const zBinaryExecutionMode = z.enum(["none", "native", "stub"]);
 export const zBinaryExecutionStatus = z.enum(["completed", "failed", "stubbed"]);
+export const zBinaryRuntimeEngine = z.enum(["none", "stub", "native", "quickjs", "wasmtime"]);
+export const zBinaryLiveReliabilityTrend = z.enum(["rising", "falling", "steady"]);
+export const zBinarySnapshotSource = z.enum(["compat", "gateway"]);
 
 export const zBinaryTargetEnvironment = z.object({
   runtime: zBinaryRuntime.default("node18"),
@@ -186,6 +189,9 @@ export const zBinaryBuildStream = z.object({
   streamPath: z.string().min(1).max(4096),
   eventsPath: z.string().min(1).max(4096),
   controlPath: z.string().min(1).max(4096),
+  wsPath: z.string().min(1).max(4096).optional(),
+  resumeToken: z.string().min(1).max(512).nullable().optional(),
+  streamSessionId: z.string().min(1).max(160).nullable().optional(),
   lastEventId: z.string().min(1).max(160).nullable().optional(),
 });
 
@@ -269,6 +275,78 @@ export const zBinaryExecutionState = z.object({
   updatedAt: z.string().datetime(),
 });
 
+export const zBinaryAstNodeSummary = z.object({
+  id: z.string().min(1).max(256),
+  kind: z.string().min(1).max(64),
+  label: z.string().min(1).max(512),
+  path: z.string().min(1).max(4096).optional(),
+  parentId: z.string().min(1).max(256).optional(),
+  exported: z.boolean().optional(),
+  callable: z.boolean().optional(),
+  completeness: z.number().int().min(0).max(100).optional(),
+});
+
+export const zBinaryAstModuleSummary = z.object({
+  path: z.string().min(1).max(4096),
+  language: z.string().min(1).max(64).optional(),
+  nodeCount: z.number().int().min(0).max(50_000),
+  exportedSymbols: z.array(z.string().min(1).max(256)).max(512).default([]),
+  callableFunctions: z.array(z.string().min(1).max(256)).max(512).default([]),
+  completed: z.boolean().default(true),
+});
+
+export const zBinaryAstState = z.object({
+  coverage: z.number().int().min(0).max(100),
+  moduleCount: z.number().int().min(0).max(500),
+  modules: z.array(zBinaryAstModuleSummary).max(500).default([]),
+  nodes: z.array(zBinaryAstNodeSummary).max(5_000).default([]),
+  updatedAt: z.string().datetime(),
+  source: zBinarySnapshotSource.default("compat"),
+});
+
+export const zBinaryAstDelta = z.object({
+  changeId: z.string().min(1).max(160),
+  coverage: z.number().int().min(0).max(100),
+  source: zBinarySnapshotSource.default("compat"),
+  nodes: z.array(zBinaryAstNodeSummary).max(512).default([]),
+  modulesTouched: z.array(z.string().min(1).max(4096)).max(120).default([]),
+  updatedAt: z.string().datetime(),
+});
+
+export const zBinaryRuntimePatch = z.object({
+  id: z.string().min(1).max(160),
+  modulePath: z.string().min(1).max(4096),
+  symbolNames: z.array(z.string().min(1).max(256)).max(256).default([]),
+  engine: zBinaryRuntimeEngine.default("quickjs"),
+  status: z.enum(["applied", "replaced"]).default("applied"),
+  appliedAt: z.string().datetime(),
+});
+
+export const zBinaryRuntimeState = z.object({
+  runnable: z.boolean(),
+  engine: zBinaryRuntimeEngine,
+  availableFunctions: z.array(zBinaryExecutionFunction).max(120).default([]),
+  patches: z.array(zBinaryRuntimePatch).max(512).default([]),
+  updatedAt: z.string().datetime(),
+  lastRun: zBinaryExecutionRun.nullable().optional(),
+});
+
+export const zBinaryLiveReliabilityBlocker = z.object({
+  code: z.string().min(1).max(128),
+  severity: zBinarySeverity,
+  message: z.string().min(1).max(4000),
+});
+
+export const zBinaryLiveReliabilityState = z.object({
+  score: z.number().int().min(0).max(100),
+  trend: zBinaryLiveReliabilityTrend,
+  warnings: z.array(z.string().min(1).max(4000)).max(200).default([]),
+  blockers: z.array(zBinaryLiveReliabilityBlocker).max(200).default([]),
+  resolvedBlockers: z.array(z.string().min(1).max(128)).max(200).default([]),
+  updatedAt: z.string().datetime(),
+  source: zBinarySnapshotSource.default("compat"),
+});
+
 export const zBinaryPendingRefinement = z.object({
   intent: z.string().min(1).max(120_000),
   requestedAt: z.string().datetime(),
@@ -292,6 +370,16 @@ export const zBinaryBuildCheckpointSummary = z.object({
   label: z.string().min(1).max(256).optional(),
 });
 
+export const zBinarySnapshotSummary = z.object({
+  id: z.string().min(1).max(160),
+  checkpointId: z.string().min(1).max(160).nullable().optional(),
+  parentSnapshotId: z.string().min(1).max(160).nullable().optional(),
+  phase: zBinaryBuildPhase,
+  label: z.string().min(1).max(256).optional(),
+  savedAt: z.string().datetime(),
+  source: zBinarySnapshotSource.default("compat"),
+});
+
 export const zBinaryBuildCheckpoint = z.object({
   id: z.string().min(1).max(160),
   buildId: z.string().min(1).max(128),
@@ -301,9 +389,13 @@ export const zBinaryBuildCheckpoint = z.object({
   preview: zBinaryBuildPreview.nullable().optional(),
   manifest: zBinaryManifest.nullable().optional(),
   reliability: zBinaryValidationReport.nullable().optional(),
+  liveReliability: zBinaryLiveReliabilityState.nullable().optional(),
   artifactState: zBinaryArtifactState.nullable().optional(),
   sourceGraph: zBinarySourceGraph.nullable().optional(),
+  astState: zBinaryAstState.nullable().optional(),
   execution: zBinaryExecutionState.nullable().optional(),
+  runtimeState: zBinaryRuntimeState.nullable().optional(),
+  snapshot: zBinarySnapshotSummary.nullable().optional(),
   artifact: zBinaryArtifactMetadata.nullable().optional(),
 });
 
@@ -332,11 +424,15 @@ export const zBinaryBuildRecord = z.object({
   cancelable: z.boolean().optional(),
   manifest: zBinaryManifest.nullable().optional(),
   reliability: zBinaryValidationReport.nullable().optional(),
+  liveReliability: zBinaryLiveReliabilityState.nullable().optional(),
   artifactState: zBinaryArtifactState.nullable().optional(),
   sourceGraph: zBinarySourceGraph.nullable().optional(),
+  astState: zBinaryAstState.nullable().optional(),
   execution: zBinaryExecutionState.nullable().optional(),
+  runtimeState: zBinaryRuntimeState.nullable().optional(),
   checkpointId: z.string().min(1).max(160).nullable().optional(),
   checkpoints: z.array(zBinaryBuildCheckpointSummary).max(200).optional(),
+  snapshots: z.array(zBinarySnapshotSummary).max(400).optional(),
   parentBuildId: z.string().min(1).max(128).nullable().optional(),
   pendingRefinement: zBinaryPendingRefinement.nullable().optional(),
   artifact: zBinaryArtifactMetadata.nullable().optional(),
@@ -389,6 +485,21 @@ const zBinaryGenerationDeltaEvent = z.object({
   }),
 });
 
+const zBinaryTokenDeltaEvent = z.object({
+  id: z.string().min(1).max(160),
+  buildId: z.string().min(1).max(128),
+  timestamp: z.string().datetime(),
+  type: z.literal("token.delta"),
+  data: z.object({
+    path: z.string().min(1).max(4096).optional(),
+    language: z.string().min(1).max(64).optional(),
+    text: z.string().max(16_000),
+    cursor: z.number().int().min(0).max(10_000_000),
+    updatedAt: z.string().datetime(),
+    source: zBinarySnapshotSource.default("compat"),
+  }),
+});
+
 const zBinaryFileUpdatedEvent = z.object({
   id: z.string().min(1).max(160),
   buildId: z.string().min(1).max(128),
@@ -419,6 +530,16 @@ const zBinaryReliabilityDeltaEvent = z.object({
   }),
 });
 
+const zBinaryLiveReliabilityEvent = z.object({
+  id: z.string().min(1).max(160),
+  buildId: z.string().min(1).max(128),
+  timestamp: z.string().datetime(),
+  type: z.literal("reliability.stream"),
+  data: z.object({
+    reliability: zBinaryLiveReliabilityState,
+  }),
+});
+
 const zBinaryGraphUpdatedEvent = z.object({
   id: z.string().min(1).max(160),
   buildId: z.string().min(1).max(128),
@@ -429,6 +550,26 @@ const zBinaryGraphUpdatedEvent = z.object({
   }),
 });
 
+const zBinaryAstDeltaEvent = z.object({
+  id: z.string().min(1).max(160),
+  buildId: z.string().min(1).max(128),
+  timestamp: z.string().datetime(),
+  type: z.literal("ast.delta"),
+  data: z.object({
+    delta: zBinaryAstDelta,
+  }),
+});
+
+const zBinaryAstStateEvent = z.object({
+  id: z.string().min(1).max(160),
+  buildId: z.string().min(1).max(128),
+  timestamp: z.string().datetime(),
+  type: z.literal("ast.state"),
+  data: z.object({
+    astState: zBinaryAstState,
+  }),
+});
+
 const zBinaryExecutionUpdatedEvent = z.object({
   id: z.string().min(1).max(160),
   buildId: z.string().min(1).max(128),
@@ -436,6 +577,27 @@ const zBinaryExecutionUpdatedEvent = z.object({
   type: z.literal("execution.updated"),
   data: z.object({
     execution: zBinaryExecutionState,
+  }),
+});
+
+const zBinaryRuntimeStateEvent = z.object({
+  id: z.string().min(1).max(160),
+  buildId: z.string().min(1).max(128),
+  timestamp: z.string().datetime(),
+  type: z.literal("runtime.state"),
+  data: z.object({
+    runtime: zBinaryRuntimeState,
+  }),
+});
+
+const zBinaryPatchAppliedEvent = z.object({
+  id: z.string().min(1).max(160),
+  buildId: z.string().min(1).max(128),
+  timestamp: z.string().datetime(),
+  type: z.literal("patch.applied"),
+  data: z.object({
+    patch: zBinaryRuntimePatch,
+    runtime: zBinaryRuntimeState,
   }),
 });
 
@@ -456,6 +618,16 @@ const zBinaryCheckpointSavedEvent = z.object({
   type: z.literal("checkpoint.saved"),
   data: z.object({
     checkpoint: zBinaryBuildCheckpoint,
+  }),
+});
+
+const zBinarySnapshotSavedEvent = z.object({
+  id: z.string().min(1).max(160),
+  buildId: z.string().min(1).max(128),
+  timestamp: z.string().datetime(),
+  type: z.literal("snapshot.saved"),
+  data: z.object({
+    snapshot: zBinarySnapshotSummary,
   }),
 });
 
@@ -552,14 +724,21 @@ export const zBinaryBuildEvent = z.discriminatedUnion("type", [
   zBinaryBuildCreatedEvent,
   zBinaryPhaseChangedEvent,
   zBinaryPlanUpdatedEvent,
+  zBinaryTokenDeltaEvent,
   zBinaryGenerationDeltaEvent,
   zBinaryFileUpdatedEvent,
   zBinaryLogChunkEvent,
   zBinaryReliabilityDeltaEvent,
+  zBinaryLiveReliabilityEvent,
   zBinaryGraphUpdatedEvent,
+  zBinaryAstDeltaEvent,
+  zBinaryAstStateEvent,
   zBinaryExecutionUpdatedEvent,
+  zBinaryRuntimeStateEvent,
+  zBinaryPatchAppliedEvent,
   zBinaryArtifactDeltaEvent,
   zBinaryCheckpointSavedEvent,
+  zBinarySnapshotSavedEvent,
   zBinaryInterruptAcceptedEvent,
   zBinaryArtifactReadyEvent,
   zBinaryBuildCompletedEvent,
@@ -598,15 +777,25 @@ export type BinarySourceGraph = z.infer<typeof zBinarySourceGraph>;
 export type BinaryExecutionFunction = z.infer<typeof zBinaryExecutionFunction>;
 export type BinaryExecutionRun = z.infer<typeof zBinaryExecutionRun>;
 export type BinaryExecutionState = z.infer<typeof zBinaryExecutionState>;
+export type BinaryAstNodeSummary = z.infer<typeof zBinaryAstNodeSummary>;
+export type BinaryAstModuleSummary = z.infer<typeof zBinaryAstModuleSummary>;
+export type BinaryAstState = z.infer<typeof zBinaryAstState>;
+export type BinaryAstDelta = z.infer<typeof zBinaryAstDelta>;
+export type BinaryRuntimePatch = z.infer<typeof zBinaryRuntimePatch>;
+export type BinaryRuntimeState = z.infer<typeof zBinaryRuntimeState>;
+export type BinaryLiveReliabilityBlocker = z.infer<typeof zBinaryLiveReliabilityBlocker>;
+export type BinaryLiveReliabilityState = z.infer<typeof zBinaryLiveReliabilityState>;
 export type BinaryPendingRefinement = z.infer<typeof zBinaryPendingRefinement>;
 export type BinaryArtifactState = z.infer<typeof zBinaryArtifactState>;
 export type BinaryBuildCheckpointSummary = z.infer<typeof zBinaryBuildCheckpointSummary>;
+export type BinarySnapshotSummary = z.infer<typeof zBinarySnapshotSummary>;
 export type BinaryBuildCheckpoint = z.infer<typeof zBinaryBuildCheckpoint>;
 export type BinaryPublishResult = z.infer<typeof zBinaryPublishResult>;
 export type BinaryBuildRecord = z.infer<typeof zBinaryBuildRecord>;
 export type BinaryBuildEvent = z.infer<typeof zBinaryBuildEvent>;
 export type BinaryLogStream = z.infer<typeof zBinaryLogStream>;
 export type BinaryReliabilityKind = z.infer<typeof zBinaryReliabilityKind>;
+export type BinaryRuntimeEngine = z.infer<typeof zBinaryRuntimeEngine>;
 
 export function normalizeBinaryTargetEnvironment(
   input?: Partial<BinaryTargetEnvironment> | null

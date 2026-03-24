@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents } from "@/lib/db/schema";
 import { USE_CASES, sourceSlugFromValue } from "@/lib/agents/hub-data";
+import { listPublicArtifactTypes, listPublicVendorSlugs } from "@/lib/agents/public-collections";
 import { normalizeCapabilityToken } from "@/lib/search/capability-tokens";
 
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
@@ -62,6 +63,42 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       lastModified: new Date(),
     },
     {
+      url: `${baseUrl}/api/v1/crawl-license`,
+      changeFrequency: "daily",
+      priority: 0.92,
+      lastModified: new Date(),
+    },
+    {
+      url: `${baseUrl}/api/v1/feeds/agents/latest`,
+      changeFrequency: "daily",
+      priority: 0.86,
+      lastModified: new Date(),
+    },
+    {
+      url: `${baseUrl}/api/v1/feeds/agents/benchmarked`,
+      changeFrequency: "daily",
+      priority: 0.86,
+      lastModified: new Date(),
+    },
+    {
+      url: `${baseUrl}/api/v1/feeds/agents/security-reviewed`,
+      changeFrequency: "daily",
+      priority: 0.86,
+      lastModified: new Date(),
+    },
+    {
+      url: `${baseUrl}/api/v1/feeds/agents/openapi-ready`,
+      changeFrequency: "daily",
+      priority: 0.86,
+      lastModified: new Date(),
+    },
+    {
+      url: `${baseUrl}/api/v1/feeds/agents/recent-updates`,
+      changeFrequency: "daily",
+      priority: 0.86,
+      lastModified: new Date(),
+    },
+    {
       url: `${baseUrl}/docs`,
       changeFrequency: "weekly",
       priority: 0.9,
@@ -113,6 +150,30 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: `${baseUrl}/methodology/agent-ranking`,
       changeFrequency: "weekly",
       priority: 0.75,
+      lastModified: new Date(),
+    },
+    {
+      url: `${baseUrl}/agent/benchmarked`,
+      changeFrequency: "daily",
+      priority: 0.9,
+      lastModified: new Date(),
+    },
+    {
+      url: `${baseUrl}/agent/openapi-ready`,
+      changeFrequency: "daily",
+      priority: 0.9,
+      lastModified: new Date(),
+    },
+    {
+      url: `${baseUrl}/agent/security-reviewed`,
+      changeFrequency: "daily",
+      priority: 0.9,
+      lastModified: new Date(),
+    },
+    {
+      url: `${baseUrl}/agent/recent-updates`,
+      changeFrequency: "daily",
+      priority: 0.9,
       lastModified: new Date(),
     },
   ];
@@ -211,16 +272,53 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     if (compareEntries.length >= MAX_COMPARE_URLS) break;
   }
 
+  const [vendorPages, artifactPages] = await Promise.all([
+    listPublicVendorSlugs(16),
+    listPublicArtifactTypes(16),
+  ]);
+
+  const vendorEntries: MetadataRoute.Sitemap = vendorPages.map((vendor) => ({
+    url: `${baseUrl}/agent/vendor/${encodeURIComponent(vendor.slug)}`,
+    changeFrequency: "daily",
+    priority: 0.76,
+    lastModified: new Date(),
+  }));
+
+  const artifactEntries: MetadataRoute.Sitemap = artifactPages.map((artifact) => ({
+    url: `${baseUrl}/agent/artifacts/${encodeURIComponent(artifact.slug)}`,
+    changeFrequency: "daily",
+    priority: 0.76,
+    lastModified: new Date(),
+  }));
+
+  const cardEntries: MetadataRoute.Sitemap = rows.slice(0, 200).flatMap((row) => [
+    {
+      url: `${baseUrl}/api/v1/agents/${encodeURIComponent(row.slug)}/card`,
+      changeFrequency: "daily" as const,
+      priority: 0.62,
+      lastModified: row.updatedAt ?? new Date(),
+    },
+    {
+      url: `${baseUrl}/api/v1/agents/${encodeURIComponent(row.slug)}/facts`,
+      changeFrequency: "daily" as const,
+      priority: 0.62,
+      lastModified: row.updatedAt ?? new Date(),
+    },
+  ]);
+
   return [
     ...staticEntries,
     ...agentEntries,
     ...protocolEntries,
     ...sourceEntries,
     ...useCaseEntries,
+    ...vendorEntries,
+    ...artifactEntries,
     ...capabilityEntries,
     ...protocolSearchEntries,
     ...protocolCapabilityEntries,
     ...compareEntries,
+    ...cardEntries,
   ];
 }
 

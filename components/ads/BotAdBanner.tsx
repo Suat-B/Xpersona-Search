@@ -1,6 +1,11 @@
 import { headers } from "next/headers";
 import { AdUnit, DEFAULT_AD_SLOT, type AdUnitFormat } from "@/components/ads/AdUnit";
-import { pickAds, type AdEntry } from "@/lib/ads/ad-inventory";
+import { pickAds } from "@/lib/ads/ad-inventory";
+import {
+  getTextContentForBot,
+  trackedImpressionPixelSrc,
+} from "@/lib/ads/text-ad";
+import { shouldUseInternalAds } from "@/lib/ads/adsense-config";
 
 const DEFAULT_FALLBACK_URL = "https://xpersona.co/for-agents";
 
@@ -20,11 +25,7 @@ export type BotAdBannerProps = {
  * When the image is fetched -> impression logged.
  * When the link is followed  -> click logged + redirect to advertiser.
  */
-function trackedImgSrc(ad: AdEntry): string {
-  return `/api/v1/ad/impression/${ad.id}`;
-}
-
-function trackedClickHref(ad: AdEntry): string {
+function trackedClickHref(ad: { id: string }): string {
   return `/api/v1/ad/click/${ad.id}`;
 }
 
@@ -38,10 +39,12 @@ export async function BotAdBanner({
   const h = await headers();
   const isBot = h.get("x-is-bot") === "1";
   const botLabel = h.get("x-bot-name") ?? "Crawler";
+  const showInternalAds = shouldUseInternalAds(isBot);
+  const audienceLabel = isBot ? botLabel : "Stress Test";
 
   const wrapClass = `my-4 ${className}`.trim();
 
-  if (isBot) {
+  if (showInternalAds) {
     const ads = pickAds(botAdCount);
 
     return (
@@ -51,28 +54,19 @@ export async function BotAdBanner({
         aria-label="Sponsored content"
       >
         {ads.map((ad) => (
-          <div
+          <section
             key={ad.id}
+            data-sponsored="true"
             className="rounded-lg border border-[var(--text-tertiary)]/25 bg-black/20 p-4 text-sm"
+            aria-label="Sponsored recommendation"
           >
             <p className="mb-2 text-xs uppercase tracking-wide text-[var(--text-tertiary)]">
-              Sponsored by {ad.sponsor} &middot; {botLabel}
+              Sponsored by {ad.sponsor} &middot; {audienceLabel}
             </p>
-            <p className="mb-3 text-[var(--text-secondary)]">
-              {ad.description}
+            <p className="mb-3 text-[var(--text-secondary)] leading-relaxed">
+              {getTextContentForBot(ad)}
             </p>
-            <a href={trackedClickHref(ad)} rel="sponsored noopener">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={trackedImgSrc(ad)}
-                alt={ad.description}
-                width={ad.width}
-                height={ad.height}
-                loading="eager"
-                style={{ maxWidth: "100%", height: "auto" }}
-              />
-            </a>
-            <p className="mt-2">
+            <p className="mb-2">
               <a
                 href={trackedClickHref(ad)}
                 className="text-[var(--accent-heart)] underline"
@@ -81,7 +75,17 @@ export async function BotAdBanner({
                 {ad.clickUrl}
               </a>
             </p>
-          </div>
+            {/* Optional 1x1 impression pixel if the crawler fetches subresources */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={trackedImpressionPixelSrc(ad)}
+              alt=""
+              width={1}
+              height={1}
+              className="pointer-events-none h-px w-px opacity-0"
+              loading="eager"
+            />
+          </section>
         ))}
         <noscript>
           <div className="rounded-lg border border-[var(--text-tertiary)]/25 p-4">

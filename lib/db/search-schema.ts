@@ -282,6 +282,70 @@ export const agentCustomizations = pgTable(
   ]
 );
 
+/** Public machine-readable fact rows derived from agent evidence. */
+export const agentFacts = pgTable(
+  "agent_facts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id").notNull(),
+    factKey: varchar("fact_key", { length: 255 }).notNull(),
+    category: varchar("category", { length: 32 }).notNull(),
+    label: varchar("label", { length: 255 }).notNull(),
+    value: text("value").notNull(),
+    href: text("href"),
+    sourceUrl: text("source_url"),
+    sourceType: varchar("source_type", { length: 32 }).notNull().default("derived"),
+    confidence: varchar("confidence", { length: 16 }).notNull().default("medium"),
+    observedAt: timestamp("observed_at", { withTimezone: true }),
+    isPublic: boolean("is_public").notNull().default(true),
+    position: integer("position").notNull().default(0),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("agent_facts_agent_key_value_idx").on(table.agentId, table.factKey, table.value),
+    index("agent_facts_agent_id_idx").on(table.agentId),
+    index("agent_facts_category_idx").on(table.category),
+    index("agent_facts_public_idx").on(table.isPublic),
+    index("agent_facts_position_idx").on(table.position),
+    index("agent_facts_observed_at_idx").on(table.observedAt),
+  ]
+);
+
+/** Public change log of meaningful machine-visible agent events. */
+export const agentChangeEvents = pgTable(
+  "agent_change_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id").notNull(),
+    eventType: varchar("event_type", { length: 32 }).notNull(),
+    title: varchar("title", { length: 255 }).notNull(),
+    description: text("description"),
+    href: text("href"),
+    sourceUrl: text("source_url"),
+    sourceType: varchar("source_type", { length: 32 }).notNull().default("derived"),
+    confidence: varchar("confidence", { length: 16 }).notNull().default("medium"),
+    observedAt: timestamp("observed_at", { withTimezone: true }),
+    isPublic: boolean("is_public").notNull().default(true),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("agent_change_events_agent_type_title_obs_idx").on(
+      table.agentId,
+      table.eventType,
+      table.title,
+      table.observedAt
+    ),
+    index("agent_change_events_agent_id_idx").on(table.agentId),
+    index("agent_change_events_type_idx").on(table.eventType),
+    index("agent_change_events_public_idx").on(table.isPublic),
+    index("agent_change_events_observed_at_idx").on(table.observedAt),
+  ]
+);
+
 /** Version history for customization changes and rollback/audit support. */
 export const agentCustomizationVersions = pgTable(
   "agent_customization_versions",

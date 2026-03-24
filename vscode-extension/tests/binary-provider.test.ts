@@ -325,6 +325,85 @@ function createExecutionState(overrides: Partial<NonNullable<BinaryBuildRecord["
   };
 }
 
+function createLiveReliabilityState(
+  overrides: Partial<NonNullable<BinaryBuildRecord["liveReliability"]>> = {}
+): NonNullable<BinaryBuildRecord["liveReliability"]> {
+  return {
+    score: 91,
+    trend: "rising" as const,
+    warnings: [],
+    blockers: [],
+    resolvedBlockers: [],
+    updatedAt: new Date().toISOString(),
+    source: "compat" as const,
+    ...overrides,
+  };
+}
+
+function createAstState(overrides: Partial<NonNullable<BinaryBuildRecord["astState"]>> = {}) {
+  return {
+    coverage: 74,
+    moduleCount: 1,
+    modules: [
+      {
+        path: "src/index.ts",
+        language: "typescript",
+        nodeCount: 4,
+        exportedSymbols: ["health"],
+        callableFunctions: ["health"],
+        completed: true,
+      },
+    ],
+    nodes: [
+      {
+        id: "node_health",
+        kind: "function",
+        label: "health",
+        path: "src/index.ts",
+        exported: true,
+        callable: true,
+        completeness: 100,
+      },
+    ],
+    updatedAt: new Date().toISOString(),
+    source: "compat" as const,
+    ...overrides,
+  };
+}
+
+function createRuntimeState(overrides: Partial<NonNullable<BinaryBuildRecord["runtimeState"]>> = {}) {
+  return {
+    runnable: true,
+    engine: "quickjs" as const,
+    availableFunctions: [
+      {
+        name: "health",
+        sourcePath: "src/index.ts",
+        mode: "native" as const,
+        callable: true,
+        signature: "health()",
+      },
+    ],
+    patches: [],
+    updatedAt: new Date().toISOString(),
+    lastRun: null,
+    ...overrides,
+  };
+}
+
+function createSnapshotSummary(overrides: Partial<NonNullable<BinaryBuildRecord["snapshots"]>[number]> = {}) {
+  return {
+    id: "snap_123",
+    checkpointId: "chk_123",
+    parentSnapshotId: null,
+    phase: "materializing" as const,
+    label: "AST synced",
+    savedAt: new Date().toISOString(),
+    source: "compat" as const,
+    ...overrides,
+  };
+}
+
 function createCheckpointSummary(overrides: Partial<NonNullable<BinaryBuildRecord["checkpoints"]>[number]> = {}) {
   return {
     id: "chk_123",
@@ -360,6 +439,7 @@ function createBuild(overrides: Partial<BinaryBuildRecord> = {}): BinaryBuildRec
     cancelable: true,
     manifest: null,
     reliability: null,
+    liveReliability: null,
     artifact: null,
     publish: null,
     errorMessage: null,
@@ -760,7 +840,7 @@ describe("binary provider", () => {
     expect(provider.state.messages.some((message: any) => /Only completed portable starter bundles can be published/i.test(message.content))).toBe(true);
   });
 
-  it("tracks graph, execution, checkpoint, and refinement stream events in binary state", async () => {
+  it("tracks graph, execution, checkpoint, snapshot, and runtime stream events in binary state", async () => {
     configurationValues["xpersona.binary"].runtime = "playgroundApi";
     const { provider } = createProvider();
     provider.state.binary.activeBuild = createBuild({
@@ -771,6 +851,23 @@ describe("binary provider", () => {
       cancelable: true,
     });
 
+    await provider.handleBinaryBuildEvent(
+      createEvent("token.delta", {
+        text: "export const health = () => ({ ok: true });",
+        cursor: 13,
+        updatedAt: new Date().toISOString(),
+        source: "compat",
+      }, "bin_stream")
+    );
+    await provider.handleBinaryBuildEvent(
+      createEvent(
+        "reliability.stream",
+        {
+          reliability: createLiveReliabilityState({ score: 93, trend: "steady" }),
+        },
+        "bin_stream"
+      )
+    );
     await provider.handleBinaryBuildEvent(
       createEvent("generation.delta", {
         delta: {
@@ -787,7 +884,53 @@ describe("binary provider", () => {
       createEvent("graph.updated", { sourceGraph: createSourceGraph() }, "bin_stream")
     );
     await provider.handleBinaryBuildEvent(
+      createEvent("ast.delta", {
+        delta: {
+          changeId: "chg_1",
+          coverage: 82,
+          source: "compat",
+          nodes: createAstState().nodes,
+          modulesTouched: ["src/index.ts"],
+          updatedAt: new Date().toISOString(),
+        },
+      }, "bin_stream")
+    );
+    await provider.handleBinaryBuildEvent(
+      createEvent("ast.state", { astState: createAstState({ coverage: 84 }) }, "bin_stream")
+    );
+    await provider.handleBinaryBuildEvent(
       createEvent("execution.updated", { execution: createExecutionState() }, "bin_stream")
+    );
+    await provider.handleBinaryBuildEvent(
+      createEvent("runtime.state", { runtime: createRuntimeState() }, "bin_stream")
+    );
+    await provider.handleBinaryBuildEvent(
+      createEvent(
+        "patch.applied",
+        {
+          patch: {
+            id: "patch_1",
+            modulePath: "src/index.ts",
+            symbolNames: ["health"],
+            engine: "quickjs",
+            status: "applied",
+            appliedAt: new Date().toISOString(),
+          },
+          runtime: createRuntimeState({
+            patches: [
+              {
+                id: "patch_1",
+                modulePath: "src/index.ts",
+                symbolNames: ["health"],
+                engine: "quickjs",
+                status: "applied",
+                appliedAt: new Date().toISOString(),
+              },
+            ],
+          }),
+        },
+        "bin_stream"
+      )
     );
     await provider.handleBinaryBuildEvent(
       createEvent(
@@ -806,14 +949,21 @@ describe("binary provider", () => {
             },
             manifest: null,
             reliability: null,
+            liveReliability: createLiveReliabilityState({ score: 93, trend: "steady" }),
             artifactState: createArtifactState(),
             sourceGraph: createSourceGraph(),
+            astState: createAstState({ coverage: 84 }),
             execution: createExecutionState(),
+            runtimeState: createRuntimeState(),
+            snapshot: createSnapshotSummary(),
             artifact: null,
           },
         },
         "bin_stream"
       )
+    );
+    await provider.handleBinaryBuildEvent(
+      createEvent("snapshot.saved", { snapshot: createSnapshotSummary({ id: "snap_456" }) }, "bin_stream")
     );
     await provider.handleBinaryBuildEvent(
       createEvent(
@@ -833,7 +983,11 @@ describe("binary provider", () => {
     expect(provider.state.binary.previewFiles[0]?.path).toBe("src/index.ts");
     expect(provider.state.binary.sourceGraph?.coverage).toBe(67);
     expect(provider.state.binary.execution?.availableFunctions[0]?.name).toBe("health");
+    expect(provider.state.binary.liveReliability?.score).toBe(93);
+    expect(provider.state.binary.astState?.coverage).toBe(84);
+    expect(provider.state.binary.runtimeState?.engine).toBe("quickjs");
     expect(provider.state.binary.checkpoints[0]?.id).toBe("chk_123");
+    expect(provider.state.binary.snapshots[0]?.id).toBe("snap_456");
     expect(provider.state.binary.pendingRefinement?.intent).toBe("Add retry logic");
   });
 
@@ -1186,52 +1340,6 @@ describe("binary provider", () => {
     await runPromise;
   });
 
-  it("streams hosted assist events into a single live assistant bubble", async () => {
-    configurationValues["xpersona.binary"].runtime = "playgroundApi";
-    const { provider } = createProvider();
-
-    streamJsonEventsMock.mockImplementationOnce(
-      async (
-        _method: string,
-        _url: string,
-        _auth: unknown,
-        _body: unknown,
-        onEvent: (event: string, data: unknown) => Promise<void>
-      ) => {
-        await onEvent("ack", "Assist stream connected.");
-        await onEvent("status", "Starting Playground assist run...");
-        await onEvent("activity", "Resolving context and orchestration plan.");
-        await onEvent("meta", {
-          sessionId: "sess_hosted",
-          decision: { mode: "auto", reason: "x", confidence: 0.9 },
-          validationPlan: {
-            scope: "targeted",
-            checks: [],
-            touchedFiles: [],
-            reason: "targeted",
-          },
-          targetInference: { confidence: 0.8, source: "unknown" },
-          contextSelection: { files: [], snippets: 0, usedCloudIndex: false },
-          completionStatus: "complete",
-          missingRequirements: [],
-          actions: [],
-          plan: null,
-        });
-        await onEvent("final", "Hosted stream answer.");
-      }
-    );
-
-    await provider.sendPromptWithPlaygroundApi("help me with this file");
-
-    expect(streamJsonEventsMock).toHaveBeenCalledTimes(1);
-    expect(requestJsonMock).not.toHaveBeenCalled();
-    const assistantMessages = provider.state.messages.filter((message: any) => message.role === "assistant");
-    expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].content).toContain("Hosted stream answer.");
-    expect(assistantMessages[0].presentation).toBe("live_binary");
-    expect(provider.state.liveChat).toBeNull();
-  });
-
   it("keeps the richer streamed body when the hosted final answer is shorter", async () => {
     configurationValues["xpersona.binary"].runtime = "playgroundApi";
     const { provider } = createProvider();
@@ -1274,7 +1382,78 @@ describe("binary provider", () => {
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].content).toContain(streamedBody);
     expect(assistantMessages[0].content).not.toBe("Hosted stream answer.");
-    expect(assistantMessages[0].live?.status).toBe("done");
+    expect(assistantMessages[0].live?.status).toBe("failed");
+  });
+
+  it("treats hosted completion as failed when objective proof is missing", async () => {
+    configurationValues["xpersona.binary"].runtime = "playgroundApi";
+    const { provider } = createProvider();
+
+    streamJsonEventsMock.mockImplementationOnce(
+      async (
+        _method: string,
+        _url: string,
+        _auth: unknown,
+        _body: unknown,
+        onEvent: (event: string, data: unknown) => Promise<void>
+      ) => {
+        await onEvent("ack", "Assist stream connected.");
+        await onEvent("meta", {
+          sessionId: "sess_hosted",
+          decision: { mode: "auto", reason: "x", confidence: 0.9 },
+          validationPlan: {
+            scope: "targeted",
+            checks: [],
+            touchedFiles: [],
+            reason: "targeted",
+          },
+          targetInference: { confidence: 0.8, source: "active_file" },
+          contextSelection: { files: [], snippets: 0, usedCloudIndex: false },
+          completionStatus: "complete",
+          missingRequirements: ["Need a concrete mutation."],
+          actions: [],
+          plan: null,
+          reviewState: {
+            status: "blocked",
+            reason: "No mutation proof was recorded.",
+            recommendedAction: "Edit src/index.ts directly.",
+            surface: "playground_panel",
+            controlActions: ["repair"],
+          },
+          progressState: {
+            status: "stalled",
+            lastMeaningfulProgressAtStep: 1,
+            lastMeaningfulProgressSummary: "Inspected the target file but never mutated it.",
+            stallCount: 1,
+            stallReason: "Inspected the target file but never mutated it.",
+            nextDeterministicAction: "Edit src/index.ts directly.",
+            pendingToolCallSignature: "read_file",
+          },
+          objectiveState: {
+            status: "in_progress",
+            goalType: "code_edit",
+            targetPath: "src/index.ts",
+            requiredProof: ["mutation"],
+            observedProof: ["inspection"],
+            missingProof: ["mutation"],
+          },
+        });
+        await onEvent("final", "I inspected the file, but I did not make a change.");
+      }
+    );
+
+    await provider.sendPromptWithPlaygroundApi("please create a trailing stop loss in this file");
+
+    expect(provider.state.runtimePhase).toBe("failed");
+    expect(provider.state.liveChat).toBeNull();
+    const assistantMessages = provider.state.messages.filter((message: any) => message.role === "assistant");
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].live?.status).toBe("failed");
+    expect(assistantMessages[0].content).toContain("The run stopped before proving the objective was complete.");
+    expect(assistantMessages[0].content).toContain("Missing requirements: Need a concrete mutation.");
+    expect(assistantMessages[0].content).toContain("Stall reason: Inspected the target file but never mutated it.");
+    expect(assistantMessages[0].content).toContain("Next deterministic action: Edit src/index.ts directly.");
+    expect(assistantMessages[0].content).toContain("Receipt status:");
   });
 
   it("waits for bootstrap before handling the first send prompt", async () => {
@@ -1411,6 +1590,51 @@ describe("binary provider", () => {
     expect(provider.qwenCodeRuntime.runPrompt).toHaveBeenCalledTimes(2);
     expect(provider.state.messages.at(-1)?.content).toContain("trailing stop");
     expect(provider.state.activity.some((line: string) => /tool-first/i.test(line))).toBe(true);
+  });
+
+  it("marks a trusted-target Qwen run as stalled when it only inspects and never mutates", async () => {
+    const { provider } = createProvider();
+    provider.qwenCodeRuntime.runPrompt
+      .mockResolvedValueOnce({
+        sessionId: "qwen_session",
+        assistantText: "I inspected the file and I will think about the change.",
+        permissionDenials: [],
+        usedTools: ["read_file"],
+        didMutate: false,
+        toolEvents: [],
+      })
+      .mockResolvedValueOnce({
+        sessionId: "qwen_session",
+        assistantText: "I inspected the file again and still did not edit it.",
+        permissionDenials: [],
+        usedTools: ["read_file"],
+        didMutate: false,
+        toolEvents: [],
+      })
+      .mockResolvedValueOnce({
+        sessionId: "qwen_session",
+        assistantText: "I inspected the file a third time and still did not edit it.",
+        permissionDenials: [],
+        usedTools: ["read_file"],
+        didMutate: false,
+        toolEvents: [],
+      });
+
+    await provider.runQwenPrompt({
+      text: "please create a trailing stop loss in this file",
+      appendUser: true,
+      searchDepth: "fast",
+    });
+
+    expect(provider.qwenCodeRuntime.runPrompt).toHaveBeenCalledTimes(3);
+    expect(provider.state.runtimePhase).toBe("failed");
+    expect(provider.state.messages.at(-1)?.live?.status).toBe("failed");
+    expect(provider.state.messages.at(-1)?.content).toContain(
+      "The local Qwen run stalled before proving the change request was complete."
+    );
+    expect(provider.state.messages.at(-1)?.content).toContain("Mutation proof: missing");
+    expect(provider.state.messages.at(-1)?.content).toContain("Next deterministic action:");
+    expect(provider.state.activity.some((line: string) => /real tool execution/i.test(line))).toBe(true);
   });
 
   it("copies a debug report that includes latest Qwen tool usage", async () => {
