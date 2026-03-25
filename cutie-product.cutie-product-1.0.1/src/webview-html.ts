@@ -1091,6 +1091,14 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       color: var(--text);
       letter-spacing: 0.02em;
     }
+    .cutie-files-summary-empty-note {
+      padding: 9px 12px 11px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+      border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+      background: color-mix(in srgb, var(--canvas) 18%, transparent);
+    }
     .cutie-files-summary-actions {
       display: flex;
       align-items: center;
@@ -1236,7 +1244,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       padding: 6px 10px 8px;
       display: grid;
       gap: 4px;
-      background: linear-gradient(180deg, color-mix(in srgb, var(--canvas) 98%, #000 2%), var(--canvas));
+      background: transparent;
       overflow: visible;
     }
     .prompt-queue-wrap {
@@ -1322,8 +1330,8 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
     .composer-card {
       border: 1px solid var(--line);
       border-radius: 14px;
-      background: color-mix(in srgb, var(--panel-elevated) 90%, transparent);
-      box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 8%, transparent);
+      background: transparent;
+      box-shadow: none;
       overflow: hidden;
     }
     .mentions {
@@ -1629,6 +1637,88 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
     .binary-panel-body[hidden] {
       display: none !important;
     }
+    .binary-intro {
+      margin-bottom: 10px;
+    }
+    .binary-intro-title {
+      font-size: 13px;
+      font-weight: 650;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .binary-intro-copy {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .binary-prompt-card {
+      margin-bottom: 10px;
+      padding: 10px;
+      border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line) 82%);
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--panel-soft) 84%, var(--canvas) 16%);
+    }
+    .binary-input-label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .binary-prompt-input {
+      width: 100%;
+      min-height: 78px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--panel-soft);
+      color: var(--text);
+      resize: vertical;
+      line-height: 1.5;
+    }
+    .binary-prompt-input:focus-visible {
+      outline: 1px solid var(--focus);
+      border-color: var(--accent-line);
+    }
+    .binary-create-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .binary-hint {
+      flex: 1 1 220px;
+      font-size: 10px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .binary-starters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 0 0 10px;
+    }
+    .binary-starter {
+      padding: 5px 9px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: color-mix(in srgb, var(--widget-surface) 82%, transparent);
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .binary-starter:hover,
+    .binary-starter:focus-visible {
+      border-color: var(--accent-line);
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+      color: var(--text);
+      outline: none;
+    }
+    .binary-starter:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
     .binary-progress-track {
       height: 4px;
       border-radius: 999px;
@@ -1650,6 +1740,26 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       margin-bottom: 8px;
       white-space: pre-wrap;
       word-break: break-word;
+    }
+    .binary-section-label {
+      margin: 10px 0 6px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .binary-advanced {
+      margin-top: 8px;
+    }
+    .binary-advanced[hidden] {
+      display: none !important;
+    }
+    .binary-advanced-copy {
+      margin: 0 0 8px;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.45;
     }
     .binary-actions {
       display: flex;
@@ -1906,7 +2016,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
             <button type="button" id="settingsSignOut" role="menuitem">Sign out</button>
             <button type="button" id="settingsCopyDebug" role="menuitem">Copy debug report</button>
             <button type="button" id="settingsCapture" role="menuitem">Capture desktop</button>
-            <button type="button" id="settingsBinaryConfigure" role="menuitem">App builder…</button>
+            <button type="button" id="settingsBinaryConfigure" role="menuitem">Builder settings</button>
           </div>
         </div>
       </div>
@@ -1954,12 +2064,75 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
           <span id="authLabel">Not signed in</span>
         </div>
         <div class="desktop-panel" id="desktopSummaryPanel">Desktop not loaded yet.</div>
-        <div class="sidebar-note">Use @ to target files or windows before you run a task.</div>
+        <div class="sidebar-note">Describe what you want in plain English. Using @ for files or windows is optional.</div>
       </aside>
 
       <main class="main">
         <div class="chat" id="chat"></div>
         <div class="objectives-panel is-hidden" id="objectivesPanel" aria-live="polite" aria-label="Task objectives"></div>
+        <section class="binary-panel" id="binaryPanel" aria-label="App builder">
+          <button type="button" class="binary-panel-toggle" id="binaryPanelToggle" aria-expanded="true">
+            <span class="binary-panel-chevron" aria-hidden="true">></span>
+            <span class="binary-panel-title">App Builder</span>
+            <span class="binary-panel-chip" id="binaryStatusChip">Ready</span>
+          </button>
+          <div class="binary-panel-body" id="binaryPanelBody">
+            <div class="binary-intro">
+              <div class="binary-intro-title">Describe what you want in plain English</div>
+              <div class="binary-intro-copy" id="binaryGuideCopy">
+                Cutie can turn a simple description into a live app build. No special commands or coding words needed.
+              </div>
+            </div>
+            <div class="binary-prompt-card">
+              <label class="binary-input-label" for="binaryPromptInput">What should Cutie build?</label>
+              <textarea
+                id="binaryPromptInput"
+                class="binary-prompt-input"
+                placeholder="Example: Make me a simple booking app for a salon with a calendar, customer list, and reminder texts."
+              ></textarea>
+              <div class="binary-create-row">
+                <button type="button" class="binary-action" id="binaryGenerateBtn">Create app</button>
+                <div class="binary-hint">Tip: say what it is for, who will use it, and the main screens or actions you want.</div>
+              </div>
+            </div>
+            <div class="binary-starters" aria-label="Starter ideas">
+              <button type="button" class="binary-starter" data-binary-prompt="Make me a small customer support dashboard with a login screen, ticket list, and search.">Customer dashboard</button>
+              <button type="button" class="binary-starter" data-binary-prompt="Create a landing page for my business with a hero section, testimonials, pricing, and a contact form.">Business website</button>
+              <button type="button" class="binary-starter" data-binary-prompt="Build a simple inventory tracker with add, edit, search, and low-stock alerts.">Inventory tracker</button>
+              <button type="button" class="binary-starter" data-binary-prompt="Make a webhook tool that receives a form submission and sends a Slack message.">Webhook automation</button>
+            </div>
+            <div class="binary-progress-track" aria-hidden="true">
+              <div class="binary-progress-fill" id="binaryProgressFill"></div>
+            </div>
+            <div class="binary-meta" id="binaryMeta"></div>
+            <div class="binary-advanced" id="binaryAdvancedControls" hidden>
+              <div class="binary-section-label">Improve This Build</div>
+              <p class="binary-advanced-copy">Once Cutie has created your first version, you can improve it, go back to a save point, or share it.</p>
+              <div class="binary-actions">
+                <button type="button" class="binary-action subtle" id="binaryRefineBtn">Improve current build</button>
+                <button type="button" class="binary-action subtle" id="binaryBranchBtn">Start new version</button>
+                <button type="button" class="binary-action subtle" id="binaryRewindBtn">Go back to save point</button>
+                <button type="button" class="binary-action subtle" id="binaryValidateBtn">Check quality</button>
+                <button type="button" class="binary-action subtle" id="binaryPublishBtn">Share build</button>
+                <button type="button" class="binary-action subtle" id="binaryCancelBtn">Stop</button>
+                <button type="button" class="binary-action subtle" id="binaryConfigureBtn">Builder settings</button>
+              </div>
+              <div class="binary-runtime-row" id="binaryRuntimeRow">
+                <span>Preview runtime</span>
+                <select class="binary-runtime-select" id="binaryRuntimeSelect" aria-label="App runtime">
+                  <option value="node18">Node 18</option>
+                  <option value="node20">Node 20</option>
+                </select>
+              </div>
+              <div class="binary-execute-row" id="binaryExecuteRow">
+                <input id="binaryEntryInput" type="text" placeholder="Try a function name like main or handler" />
+                <button type="button" class="binary-action subtle" id="binaryExecuteBtn">Try function</button>
+              </div>
+            </div>
+            <div class="binary-section-label">Latest Activity</div>
+            <div class="binary-activity-log" id="binaryActivityLog"></div>
+          </div>
+        </section>
         <div class="composer">
           <div class="mentions" id="mentions"></div>
           <div class="prompt-queue-wrap is-hidden" id="promptQueueWrap" aria-live="polite" aria-label="Queued prompts">
@@ -1970,7 +2143,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
             <div class="prompt-queue-list" id="promptQueueList"></div>
           </div>
           <div class="composer-card" id="composerForm">
-            <textarea id="input" placeholder="Ask Cutie to work in this workspace or help with a desktop task"></textarea>
+            <textarea id="input" placeholder="Ask for anything and create binary code"></textarea>
             <div class="composer-row">
               <button type="button" class="composer-send" id="sendBtn" aria-label="Submit">
                 ${submitIcon}
@@ -2070,6 +2243,8 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
     const binaryPanelBody = document.getElementById('binaryPanelBody');
     const binaryStatusChip = document.getElementById('binaryStatusChip');
     const binaryProgressFill = document.getElementById('binaryProgressFill');
+    const binaryGuideCopy = document.getElementById('binaryGuideCopy');
+    const binaryPromptInput = document.getElementById('binaryPromptInput');
     const binaryMeta = document.getElementById('binaryMeta');
     const binaryActivityLog = document.getElementById('binaryActivityLog');
     const binaryGenerateBtn = document.getElementById('binaryGenerateBtn');
@@ -2082,7 +2257,11 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
     const binaryConfigureBtn = document.getElementById('binaryConfigureBtn');
     const binaryExecuteBtn = document.getElementById('binaryExecuteBtn');
     const binaryEntryInput = document.getElementById('binaryEntryInput');
+    const binaryAdvancedControls = document.getElementById('binaryAdvancedControls');
+    const binaryRuntimeRow = document.getElementById('binaryRuntimeRow');
+    const binaryExecuteRow = document.getElementById('binaryExecuteRow');
     const binaryRuntimeSelect = document.getElementById('binaryRuntimeSelect');
+    const binaryStarterButtons = Array.from(document.querySelectorAll('[data-binary-prompt]'));
     const settingsBinaryConfigure = document.getElementById('settingsBinaryConfigure');
     const drafts = new Map();
     const draftMentions = new Map();
@@ -2172,10 +2351,10 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
     function readBinaryPanelCollapsedPreference() {
       try {
         const raw = localStorage.getItem(BINARY_PANEL_COLLAPSED_STORAGE_KEY);
-        if (raw === null || raw === '') return true;
+        if (raw === null || raw === '') return false;
         return raw === '1' || raw === 'true';
       } catch {
-        return true;
+        return false;
       }
     }
 
@@ -2361,6 +2540,52 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
 
     function normalizePromptText(text) {
       return String(text || '').trim();
+    }
+
+    function binaryIntentText() {
+      return binaryPromptInput && 'value' in binaryPromptInput ? String(binaryPromptInput.value || '').trim() : '';
+    }
+
+    function activeBinaryIntentText() {
+      return binaryIntentText() || composerIntentText();
+    }
+
+    function friendlyBinaryPhaseLabel(phase) {
+      const normalized = String(phase || '').trim();
+      switch (normalized) {
+        case 'queued':
+          return 'waiting to start';
+        case 'planning':
+          return 'planning your app';
+        case 'materializing':
+          return 'writing the app';
+        case 'installing':
+          return 'setting things up';
+        case 'compiling':
+          return 'getting it ready';
+        case 'validating':
+          return 'checking quality';
+        case 'packaging':
+          return 'preparing a shareable build';
+        case 'completed':
+          return 'ready to use';
+        case 'failed':
+          return 'needs attention';
+        case 'canceled':
+          return 'stopped';
+        default:
+          return normalized ? normalized.replace(/_/g, ' ') : 'ready to start';
+      }
+    }
+
+    function friendlyBinaryStatusChip(build, phase, streamTransport, connected) {
+      if (!build) return 'Ready';
+      if (build.status === 'failed') return 'Needs attention';
+      if (build.status === 'canceled') return 'Stopped';
+      if (build.status === 'completed') return 'Ready to use';
+      const parts = [friendlyBinaryPhaseLabel(phase)];
+      if (connected && streamTransport) parts.push(streamTransport);
+      return parts.join(' · ');
     }
 
     function armRecentSubmissionGuard(prompt) {
@@ -2863,6 +3088,28 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       chat.appendChild(wrap);
     }
 
+    function appendNoFilesChangedCard(summaryText) {
+      const wrap = document.createElement('div');
+      wrap.className = 'cutie-files-summary';
+      wrap.setAttribute('role', 'region');
+      wrap.setAttribute('aria-label', 'No files changed');
+
+      const head = document.createElement('div');
+      head.className = 'cutie-files-summary-head';
+      const title = document.createElement('div');
+      title.className = 'cutie-files-summary-title';
+      title.textContent = 'No files changed';
+      head.appendChild(title);
+
+      const note = document.createElement('div');
+      note.className = 'cutie-files-summary-empty-note';
+      note.textContent = String(summaryText || '').trim() || 'Cutie finished this run without editing files.';
+
+      wrap.appendChild(head);
+      wrap.appendChild(note);
+      chat.appendChild(wrap);
+    }
+
     function appendCutieDiffBubble(diff) {
       const wrap = document.createElement('div');
       wrap.className = 'bubble cutie-diff';
@@ -3277,15 +3524,28 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       chat.appendChild(card);
     }
 
+    const MAX_COMPACT_ACTION_ROWS = 18;
+
+    function compactActionLogRows(lines, maxRows) {
+      const source = Array.isArray(lines) ? lines : [];
+      const deduped = [];
+      for (let index = 0; index < source.length; index += 1) {
+        const line = String(source[index] || '').trim();
+        if (!line) continue;
+        if (deduped.length && deduped[deduped.length - 1] === line) continue;
+        deduped.push(line);
+      }
+      const safeLimit = Number.isFinite(maxRows) && maxRows > 0 ? Math.floor(maxRows) : deduped.length;
+      if (deduped.length <= safeLimit) return deduped;
+      const hiddenCount = deduped.length - safeLimit;
+      return ['... ' + hiddenCount + ' earlier updates hidden'].concat(deduped.slice(-safeLimit));
+    }
+
     function formatLiveActionLogText(lines) {
-      const rows = Array.isArray(lines) ? lines.filter(Boolean).slice(-48) : [];
-      if (!rows.length) return '';
-      return rows
-        .map(function (line) {
-          return String(line || '').trim();
-        })
-        .filter(Boolean)
-        .join('\\n');
+      const rows = Array.isArray(lines) ? lines.slice(-160) : [];
+      const compactRows = compactActionLogRows(rows, MAX_COMPACT_ACTION_ROWS);
+      if (!compactRows.length) return '';
+      return compactRows.join('\\n');
     }
 
     function isLowSignalConversationStatus(text) {
@@ -3327,9 +3587,10 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       const sections = buildTranscriptSections(events, goal);
       if (!sections.operational.length && !sections.assistant) return '';
       const parts = [];
+      const compactOperational = compactActionLogRows(sections.operational, MAX_COMPACT_ACTION_ROWS);
       if (sections.operational.length) {
         parts.push('Cutie action log:');
-        parts.push(sections.operational.join('\\n\\n'));
+        parts.push(compactOperational.join('\\n'));
       }
       if (sections.assistant) {
         parts.push('Cutie response:');
@@ -3342,6 +3603,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       const trimmed = String(text || '').trim();
       if (!trimmed) return 'gap';
       if (/^Cutie action log:$/i.test(trimmed) || /^Cutie response:$/i.test(trimmed)) return 'section';
+      if (/^\\.\\.\\.\\s+\\d+\\s+earlier updates hidden$/i.test(trimmed)) return 'section';
       if (/^(Cutie\\b|Step\\s+\\d+:|Recovered\\s+\`|Created checkpoint\\b)/i.test(trimmed)) return 'ops';
       return 'chat';
     }
@@ -3377,43 +3639,125 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       if (!binaryPanel || !binaryStatusChip || !binaryProgressFill || !binaryMeta || !binaryActivityLog) return;
       const b = state.binary;
       if (!b) {
-        binaryStatusChip.textContent = '—';
+        binaryStatusChip.textContent = 'Ready';
         binaryProgressFill.style.width = '0%';
-        binaryMeta.textContent = '';
-        binaryActivityLog.textContent = '';
+        if (binaryGuideCopy) {
+          binaryGuideCopy.textContent =
+            'Cutie can turn a simple description into a live app build. No special commands or coding words needed.';
+        }
+        binaryMeta.textContent = 'Describe what you want above, then click Create app.';
+        binaryActivityLog.textContent = 'Live build updates will appear here.';
         return;
       }
       const ab = b.activeBuild;
       const phase = b.phase || (ab && ab.phase) || 'idle';
       const streamTransport = ab && ab.stream ? (ab.stream.transport === 'websocket' ? 'WS' : 'SSE') : '';
-      const streamNote = b.streamConnected && streamTransport ? ' · ' + streamTransport : '';
-      const statusPart = ab ? ab.status : 'none';
-      binaryStatusChip.textContent = statusPart + ' · ' + phase + streamNote;
+      binaryStatusChip.textContent = friendlyBinaryStatusChip(ab, phase, streamTransport, b.streamConnected);
       const p = typeof b.progress === 'number' ? Math.max(0, Math.min(100, b.progress)) : 0;
       binaryProgressFill.style.width = p + '%';
       const lines = [];
-      if (ab) {
-        lines.push('Build: ' + ab.id);
-        if (ab.intent) lines.push('Intent: ' + String(ab.intent).slice(0, 220));
+      const hasBuild = !!ab;
+      const hasCheckpoint =
+        Boolean(ab && ab.checkpointId) ||
+        (Array.isArray(b.checkpoints) && b.checkpoints.length > 0) ||
+        (Array.isArray(b.snapshots) && b.snapshots.length > 0);
+      if (!hasBuild) {
+        lines.push('Start by describing the app, tool, or workflow you want.');
+        lines.push('Cutie will build the first version, then you can improve it with simple buttons.');
+      } else if (ab) {
+        if (ab.intent) lines.push('Building: ' + String(ab.intent).slice(0, 220));
+        lines.push('Current step: ' + friendlyBinaryPhaseLabel(phase));
+        if (b.liveReliability && typeof b.liveReliability.score === 'number') {
+          lines.push('Confidence: ' + Math.max(0, Math.min(100, b.liveReliability.score)) + '%');
+        }
+        if (b.astState) {
+          lines.push(
+            'Live structure: ' +
+              b.astState.moduleCount +
+              ' modules mapped (' +
+              Math.max(0, Math.min(100, b.astState.coverage)) +
+              '%)'
+          );
+        }
+        if (b.runtimeState && Array.isArray(b.runtimeState.availableFunctions) && b.runtimeState.availableFunctions.length) {
+          lines.push(
+            'Try now: ' +
+              b.runtimeState.availableFunctions
+                .slice(0, 3)
+                .map((item) => item.name)
+                .join(', ')
+          );
+        }
+        if (hasCheckpoint) {
+          lines.push('Save points: ' + Math.max(b.checkpoints.length, b.snapshots.length, ab.checkpointId ? 1 : 0));
+        }
       }
       if (b.pendingRefinement && b.pendingRefinement.intent) {
-        lines.push('Refinement: ' + String(b.pendingRefinement.intent).slice(0, 160));
+        lines.push('Next improvement: ' + String(b.pendingRefinement.intent).slice(0, 160));
       }
       binaryMeta.textContent = lines.join('\\n');
       const act = Array.isArray(state.binaryActivity) ? state.binaryActivity : [];
-      binaryActivityLog.textContent = act.slice(-14).join('\\n');
+      binaryActivityLog.textContent = act.length ? act.slice(-14).join('\\n') : 'Live build updates will appear here.';
       const busy = !!b.busy;
+      const canRefine = !!ab && ab.status === 'running' && !busy;
+      const canBranch = !!ab && !busy && hasCheckpoint;
+      const canRewind = !!ab && ab.status !== 'running' && !busy && hasCheckpoint;
+      const canValidate = !!ab && ab.status === 'completed' && !busy;
+      const canPublish = !!ab && ab.status === 'completed' && !busy;
+      const canExecute = !!ab && !busy;
+      if (binaryGuideCopy) {
+        if (!ab) {
+          binaryGuideCopy.textContent =
+            'Cutie can turn a simple description into a live app build. No special commands or coding words needed.';
+        } else if (ab.status === 'running') {
+          binaryGuideCopy.textContent =
+            'Your app is being built live. You can watch progress here or write a simple improvement request below.';
+        } else {
+          binaryGuideCopy.textContent =
+            'Your latest build is ready. Improve it, go back to a save point, or share it when it feels right.';
+        }
+      }
+      if (binaryAdvancedControls) binaryAdvancedControls.hidden = !hasBuild;
+      if (binaryRuntimeRow) binaryRuntimeRow.hidden = !hasBuild;
+      if (binaryExecuteRow) binaryExecuteRow.hidden = !hasBuild;
       if (binaryCancelBtn) binaryCancelBtn.disabled = !b.canCancel;
-      if (binaryGenerateBtn) binaryGenerateBtn.disabled = busy;
-      if (binaryRefineBtn) binaryRefineBtn.disabled = busy;
-      if (binaryBranchBtn) binaryBranchBtn.disabled = busy;
-      if (binaryRewindBtn) binaryRewindBtn.disabled = busy;
-      if (binaryValidateBtn) binaryValidateBtn.disabled = busy;
-      if (binaryPublishBtn) binaryPublishBtn.disabled = busy;
-      if (binaryExecuteBtn) binaryExecuteBtn.disabled = busy;
+      if (binaryGenerateBtn) {
+        binaryGenerateBtn.disabled = busy;
+        binaryGenerateBtn.textContent = busy ? 'Creating app...' : hasBuild ? 'Create another app' : 'Create app';
+      }
+      if (binaryRefineBtn) binaryRefineBtn.disabled = !canRefine;
+      if (binaryBranchBtn) binaryBranchBtn.disabled = !canBranch;
+      if (binaryRewindBtn) binaryRewindBtn.disabled = !canRewind;
+      if (binaryValidateBtn) binaryValidateBtn.disabled = !canValidate;
+      if (binaryPublishBtn) binaryPublishBtn.disabled = !canPublish;
+      if (binaryExecuteBtn) binaryExecuteBtn.disabled = !canExecute;
       if (binaryRuntimeSelect) {
         binaryRuntimeSelect.value = b.targetEnvironment && b.targetEnvironment.runtime === 'node20' ? 'node20' : 'node18';
       }
+      if (binaryEntryInput) {
+        if (b.runtimeState && Array.isArray(b.runtimeState.availableFunctions) && b.runtimeState.availableFunctions.length) {
+          binaryEntryInput.placeholder = 'Try "' + b.runtimeState.availableFunctions[0].name + '"';
+        } else {
+          binaryEntryInput.placeholder = 'Try a function name like main or handler';
+        }
+      }
+      for (let index = 0; index < binaryStarterButtons.length; index += 1) {
+        binaryStarterButtons[index].disabled = busy;
+      }
+    }
+
+    function parseIsoTimestamp(value) {
+      const parsed = Date.parse(String(value || ''));
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    function matchesPendingSubmissionEcho(message, pending) {
+      if (!pending || !message || message.role !== 'user') return false;
+      if (String(message.content || '') !== String(pending.content || '')) return false;
+      const pendingAt = parseIsoTimestamp(pending.createdAt);
+      const messageAt = parseIsoTimestamp(message.createdAt);
+      if (pendingAt === null || messageAt === null) return false;
+      return messageAt >= pendingAt;
     }
 
     function renderMessages() {
@@ -3421,7 +3765,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       const visibleMessages = [...(Array.isArray(state.messages) ? state.messages : [])];
       if (
         pendingSubmission &&
-        !visibleMessages.some((message) => message.role === 'user' && message.content === pendingSubmission.content)
+        !visibleMessages.some((message) => matchesPendingSubmissionEcho(message, pendingSubmission))
       ) {
         visibleMessages.push(pendingSubmission);
       }
@@ -3453,6 +3797,13 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
         }
         return true;
       });
+      const runRecapRunIds = new Set();
+      for (let tm = 0; tm < timelineMessages.length; tm += 1) {
+        const msg = timelineMessages[tm];
+        if (msg && msg.presentation === 'run_change_recap' && msg.runId) {
+          runRecapRunIds.add(String(msg.runId));
+        }
+      }
       const displayedDiffIds = new Set();
       const merged = [];
       let mergeSeq = 0;
@@ -3513,6 +3864,19 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
             wrap.appendChild(meta);
             wrap.appendChild(body);
             chat.appendChild(wrap);
+          } else if (entry.message.presentation === 'run_change_recap') {
+            const recapRunId = String(entry.message.runId || '').trim();
+            const runDiffs = recapRunId ? chatDiffsForRun(recapRunId, chatDiffs) : [];
+            if (runDiffs.length) {
+              appendRunFilesSummaryCard(recapRunId, chatDiffs);
+              for (let d = 0; d < runDiffs.length; d += 1) {
+                const diff = runDiffs[d];
+                appendCutieDiffBubble(diff);
+                if (diff && diff.id) displayedDiffIds.add(diff.id);
+              }
+            } else {
+              appendNoFilesChangedCard(entry.message.content || 'No files changed.');
+            }
           } else if (entry.message.presentation === 'run_transcript') {
             appendTranscriptBubble(chat, entry.message.content || '');
           } else {
@@ -3523,6 +3887,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
           }
           if (
             entry.message.role === 'assistant' &&
+            !runRecapRunIds.has(String(entry.message.runId || '')) &&
             isTerminalAssistantForRun(entry.message, timelineMessages)
           ) {
             appendRunFilesSummaryCard(entry.message.runId, chatDiffs);
@@ -3911,7 +4276,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       const hasPendingEcho =
         pendingSubmission &&
         Array.isArray(next.messages) &&
-        next.messages.some((message) => message.role === 'user' && message.content === pendingSubmission.content);
+        next.messages.some((message) => matchesPendingSubmissionEcho(message, pendingSubmission));
       const shouldClearPendingWithoutEcho =
         pendingSubmission &&
         !next.running &&
@@ -4096,6 +4461,14 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       function composerIntentText() {
         return String(input.value || '').trim();
       }
+      function focusBinaryPromptInput() {
+        if (!binaryPromptInput) return;
+        binaryPromptInput.focus();
+        const end = String(binaryPromptInput.value || '').length;
+        if (typeof binaryPromptInput.setSelectionRange === 'function') {
+          binaryPromptInput.setSelectionRange(end, end);
+        }
+      }
       if (binaryPanelToggle && binaryPanel) {
         binaryPanelToggle.addEventListener('click', () => {
           const nextCollapsed = !binaryPanel.classList.contains('is-collapsed');
@@ -4103,22 +4476,40 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
           applyBinaryPanelCollapseUi(nextCollapsed);
         });
       }
+      if (binaryPromptInput) {
+        binaryPromptInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            closeSettingsMenu();
+            vscode.postMessage({ type: 'binaryGenerate', intent: activeBinaryIntentText() });
+          }
+        });
+      }
+      for (let starterIndex = 0; starterIndex < binaryStarterButtons.length; starterIndex += 1) {
+        const starterButton = binaryStarterButtons[starterIndex];
+        starterButton.addEventListener('click', () => {
+          const prompt = String(starterButton.getAttribute('data-binary-prompt') || '').trim();
+          if (!prompt || !binaryPromptInput) return;
+          binaryPromptInput.value = prompt;
+          focusBinaryPromptInput();
+        });
+      }
       if (binaryGenerateBtn) {
         binaryGenerateBtn.addEventListener('click', () => {
           closeSettingsMenu();
-          vscode.postMessage({ type: 'binaryGenerate', intent: composerIntentText() });
+          vscode.postMessage({ type: 'binaryGenerate', intent: activeBinaryIntentText() });
         });
       }
       if (binaryRefineBtn) {
         binaryRefineBtn.addEventListener('click', () => {
           closeSettingsMenu();
-          vscode.postMessage({ type: 'binaryRefine', intent: composerIntentText() });
+          vscode.postMessage({ type: 'binaryRefine', intent: activeBinaryIntentText() });
         });
       }
       if (binaryBranchBtn) {
         binaryBranchBtn.addEventListener('click', () => {
           closeSettingsMenu();
-          vscode.postMessage({ type: 'binaryBranch', intent: composerIntentText() });
+          vscode.postMessage({ type: 'binaryBranch', intent: activeBinaryIntentText() });
         });
       }
       if (binaryRewindBtn) {

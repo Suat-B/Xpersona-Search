@@ -23,6 +23,8 @@ describe("POST /api/v1/cutie/model/chat", () => {
     authenticatePlaygroundRequest.mockResolvedValue({ userId: "user-1" });
     vi.stubGlobal("fetch", vi.fn());
     process.env.HF_TOKEN = "hf_test_token";
+    process.env.CUTIE_JSON_MODE_ENABLED = "1";
+    process.env.CUTIE_JSON_MODE_RETRY_ENABLED = "1";
   });
 
   it("strips raw TOOL_CALL markup from visible assistant text", () => {
@@ -82,6 +84,63 @@ describe("POST /api/v1/cutie/model/chat", () => {
     expect(normalized.normalizationSource).toBe("text_tool_artifact");
     expect(normalized.artifactExtractionShape).toBe("top_level_tool_name");
     expect(normalized.assistantText).toBe("");
+  });
+
+  it("normalizes final json wrappers with objective outcomes", () => {
+    const normalized = normalizeStructuredCutieTurnResult({
+      assistantText:
+        '{"type":"final","final":"Completed update.","objectives":[{"id":"1","status":"done","note":"patched file"}]}',
+      allowedToolNames: ["read_file", "patch_file"],
+      maxToolsPerBatch: 1,
+    });
+
+    expect(normalized.response.type).toBe("final");
+    if (normalized.response.type !== "final") {
+      throw new Error("expected final response");
+    }
+    expect(normalized.response.text).toBe("Completed update.");
+    expect(normalized.response.objectives).toEqual([{ id: "1", status: "done", note: "patched file" }]);
+    expect(normalized.normalizationSource).toBe("text_tool_artifact");
+    expect(normalized.assistantText).toBe("Completed update.");
+  });
+
+  it("normalizes final_answer wrappers into canonical final text", () => {
+    const normalized = normalizeStructuredCutieTurnResult({
+      assistantText: '{"type":"final_answer","final_answer":"The capital of France is Paris."}',
+      allowedToolNames: ["read_file", "patch_file"],
+      maxToolsPerBatch: 1,
+    });
+
+    expect(normalized.response.type).toBe("final");
+    if (normalized.response.type !== "final") {
+      throw new Error("expected final response");
+    }
+    expect(normalized.response.text).toBe("The capital of France is Paris.");
+    expect(normalized.normalizationSource).toBe("text_tool_artifact");
+    expect(normalized.assistantText).toBe("The capital of France is Paris.");
+  });
+
+  it("suppresses raw final wrapper json from visible assistant text", () => {
+    expect(stripCutieToolArtifactText('{"type":"final","final":"Done."}')).toBe("");
+  });
+
+  it("suppresses raw final_answer wrapper json from visible assistant text", () => {
+    expect(stripCutieToolArtifactText('{"type":"final_answer","final_answer":"Paris"}')).toBe("");
+  });
+
+  it("handles malformed json wrappers without throwing", () => {
+    const normalized = normalizeStructuredCutieTurnResult({
+      assistantText: '{"type":"final","final":"Done."',
+      allowedToolNames: ["read_file"],
+      maxToolsPerBatch: 1,
+    });
+
+    expect(normalized.response.type).toBe("final");
+    if (normalized.response.type !== "final") {
+      throw new Error("expected final response");
+    }
+    expect(normalized.response.text).toBe("");
+    expect(normalized.normalizationSource).toBe("plain_final");
   });
 
   it("prefers upstream native tool_calls when they are present", () => {
@@ -174,6 +233,7 @@ describe("POST /api/v1/cutie/model/chat", () => {
     const upstreamBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body || "{}")) as Record<string, unknown>;
     expect(upstreamBody.tool_choice).toBeUndefined();
     expect(Array.isArray(upstreamBody.tools)).toBe(false);
+    expect(upstreamBody.response_format).toEqual({ type: "json_object" });
   });
 
   it("streams native tool batches instead of leaking raw tool text", async () => {
@@ -287,6 +347,128 @@ describe("POST /api/v1/cutie/model/chat", () => {
     expect(body).toContain("[DONE]");
   });
 
+  it("streams final wrappers without leaking protocol json text", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const encoder = new TextEncoder();
+    const upstreamBody = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            'data: {"choices":[{"delta":{"content":"{\\"type\\":\\"final\\",\\"final\\":\\"All done.\\",\\"objectives\\":[{\\"id\\":\\"1\\",\\"status\\":\\"done\\"}]}"}}]}\n\n'
+          )
+        );
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+    fetchMock.mockResolvedValueOnce(
+      new Response(upstreamBody, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      })
+    );
+
+    const req = new NextRequest("http://localhost/api/v1/cutie/model/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        protocol: "cutie_tools_v2",
+        stream: true,
+        model: "openai/gpt-oss-120b:fastest",
+        messages: [{ role: "user", content: "finish this run" }],
+        tools: [
+          {
+            name: "read_file",
+            description: "Read a file from the workspace.",
+            kind: "observe",
+            domain: "workspace",
+            inputSchema: { type: "object", properties: { path: { type: "string" } } },
+          },
+        ],
+        maxToolsPerBatch: 1,
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const res = await POST(req);
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(body).toContain('"event":"final"');
+    expect(body).toContain('"text":"All done."');
+    expect(body).toContain('"objectives":[{"id":"1","status":"done"}]');
+    expect(body).not.toContain('\\"type\\":\\"final\\"');
+  });
+
+  it("retries once without response_format when upstream rejects json mode", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "response_format json_object is not supported for this model.",
+            },
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: '{"tool_call":{"name":"read_file","arguments":{"path":"foo.pine"}}}',
+                },
+              },
+            ],
+            model: "openai/gpt-oss-120b:fastest",
+            usage: { completion_tokens: 3 },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        )
+      );
+
+    const req = new NextRequest("http://localhost/api/v1/cutie/model/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        protocol: "cutie_tools_v2",
+        stream: false,
+        model: "openai/gpt-oss-120b:fastest",
+        messages: [{ role: "user", content: "inspect foo.pine" }],
+        tools: [
+          {
+            name: "read_file",
+            description: "Read a file from the workspace.",
+            kind: "observe",
+            domain: "workspace",
+            inputSchema: { type: "object", properties: { path: { type: "string" } } },
+          },
+        ],
+        maxToolsPerBatch: 1,
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body || "{}")) as Record<string, unknown>;
+    const secondBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body || "{}")) as Record<string, unknown>;
+    expect(firstBody.response_format).toEqual({ type: "json_object" });
+    expect(secondBody.response_format).toBeUndefined();
+    expect(json.response.type).toBe("tool_batch");
+    expect(json.response.toolCalls[0].name).toBe("read_file");
+  });
+
   it("keeps native upstream tool wiring for reliable native-tool models", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockResolvedValueOnce(
@@ -350,5 +532,6 @@ describe("POST /api/v1/cutie/model/chat", () => {
     expect(upstreamBody.tool_choice).toBe("auto");
     expect(Array.isArray(upstreamBody.tools)).toBe(true);
     expect(upstreamBody.parallel_tool_calls).toBeUndefined();
+    expect(upstreamBody.response_format).toBeUndefined();
   });
 });

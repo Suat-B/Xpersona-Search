@@ -8,6 +8,7 @@ exports.validateAndNormalizeToolCall = validateAndNormalizeToolCall;
 exports.validateAndCoerceMutationToolCall = validateAndCoerceMutationToolCall;
 exports.tryRescueStructuredFromSuppressedArtifact = tryRescueStructuredFromSuppressedArtifact;
 exports.buildBootstrapToolCall = buildBootstrapToolCall;
+const diff_1 = require("diff");
 const cutie_autonomy_controller_1 = require("./cutie-autonomy-controller");
 const cutie_code_intelligence_1 = require("./cutie-code-intelligence");
 const cutie_edit_synthesis_1 = require("./cutie-edit-synthesis");
@@ -46,6 +47,8 @@ function getMostRecentRuntimeFileState(latestFileStates) {
     return [...latestFileStates.values()].sort((a, b) => b.updatedAtStep - a.updatedAtStep)[0] ?? null;
 }
 const MAX_OBJECTIVES_DECOMPOSE = 12;
+const CUTIE_RECEIPT_PATCH_MAX_CHARS = 52000;
+const CUTIE_RECEIPT_SNAPSHOT_MAX_CHARS = 500000;
 const DEFAULT_OBJECTIVE_FINAL_REPAIR_CAP = 24;
 const UNLIMITED_OBJECTIVE_FINAL_REPAIR_CAP = 256;
 const UNLIMITED_RUN_BUDGET_SENTINEL = 999999;
@@ -1074,11 +1077,28 @@ function describePlanningFailureAfterInspection(run, message) {
 function sanitizeToolResultDataForReceipt(data) {
     if (!data)
         return undefined;
-    if (!Object.prototype.hasOwnProperty.call(data, "previousContent") &&
-        !Object.prototype.hasOwnProperty.call(data, "nextContent")) {
+    if (!Object.prototype.hasOwnProperty.call(data, "previousContent") && !Object.prototype.hasOwnProperty.call(data, "nextContent")) {
         return data;
     }
     const rest = { ...data };
+    const previous = typeof data.previousContent === "string" ? data.previousContent : null;
+    const next = typeof data.nextContent === "string" ? data.nextContent : null;
+    const filePath = typeof data.path === "string" ? String(data.path).trim() : "";
+    if (previous !== null && next !== null) {
+        const previousSnapshot = previous.length > CUTIE_RECEIPT_SNAPSHOT_MAX_CHARS
+            ? `${previous.slice(0, CUTIE_RECEIPT_SNAPSHOT_MAX_CHARS)}\n\n/* ... truncated before snapshot ... */\n`
+            : previous;
+        const nextSnapshot = next.length > CUTIE_RECEIPT_SNAPSHOT_MAX_CHARS
+            ? `${next.slice(0, CUTIE_RECEIPT_SNAPSHOT_MAX_CHARS)}\n\n/* ... truncated after snapshot ... */\n`
+            : next;
+        let patch = (0, diff_1.createTwoFilesPatch)(filePath || "file", filePath || "file", previousSnapshot, nextSnapshot, "", "", {
+            context: 3,
+        });
+        if (patch.length > CUTIE_RECEIPT_PATCH_MAX_CHARS) {
+            patch = `${patch.slice(0, CUTIE_RECEIPT_PATCH_MAX_CHARS)}\n\n... patch truncated for receipt replay ...\n`;
+        }
+        rest.patch = patch;
+    }
     delete rest.previousContent;
     delete rest.nextContent;
     return Object.keys(rest).length ? rest : undefined;
@@ -1194,7 +1214,7 @@ function wantsDesktopAction(prompt, mentionContext) {
 }
 function requestsWorkspaceChange(prompt) {
     const t = stripMentionTokens(prompt);
-    return (/\b(?:add|change|edit|update|modify|fix|implement|create|write|rewrite|replace|make|remove|delete|drop|trim|shorten|condense|simplify|revise|expand|elaborate|improve|enhance|extend|enrich|refine|polish|augment|append|insert|lengthen|grow|restructure|reorganize|split|merge|move)\b/i.test(t) || /\b(?:flesh\s+out|fill\s+in|fill\s+out|beef\s+up)\b/i.test(t));
+    return (/\b(?:add|change|edit|update|modify|fix|implement|create|write|rewrite|replace|make|remove|rmove|delete|delte|drop|trim|shorten|condense|simplify|revise|expand|elaborate|improve|enhance|extend|enrich|refine|polish|augment|append|insert|lengthen|grow|restructure|reorganize|split|merge|move)\b/i.test(t) || /\b(?:flesh\s+out|fill\s+in|fill\s+out|beef\s+up)\b/i.test(t));
 }
 function requestsDesktopAutomation(prompt, mentionContext) {
     if (!wantsDesktopAction(prompt, mentionContext))
@@ -3107,6 +3127,7 @@ class CutieRuntime {
         }
         let previousToolKey = "";
         let mutationGoalRepairCount = 0;
+        let emptyToolBatchCycles = 0;
         const latestFileStates = new Map();
         /** When set, skip streaming planning and execute this tool call (for example a forced write_file after weak edit planning). */
         let injectedPlanningTool = null;
@@ -3628,6 +3649,10 @@ class CutieRuntime {
                     }
                 }
                 if (!isStructuredTooling(structured)) {
+                    emptyToolBatchCycles += 1;
+                    if (emptyToolBatchCycles >= 3) {
+                        throw new Error("Cutie could not normalize a usable structured tool action after repeated planning attempts.");
+                    }
                     continue mainLoop;
                 }
                 let batchToolCalls = [];
@@ -3748,8 +3773,31 @@ class CutieRuntime {
                     });
                 }
                 if (!batchToolCalls.length) {
+                    emptyToolBatchCycles += 1;
+                    transcript.push({
+                        role: "system",
+                        content: [
+                            "Repair instruction:",
+                            "The previous planning response did not produce a valid native tool action after normalization.",
+                            "Return either one valid native tool call with complete arguments, or a structured final response.",
+                        ].join(" "),
+                    });
+                    await input.callbacks?.onStatusChanged?.("Cutie is recovering from an invalid planning response.", run);
+                    if (emptyToolBatchCycles >= 3) {
+                        if (run.goal === "code_change") {
+                            return this.enterAutonomyTerminalFailure({
+                                session,
+                                run,
+                                reason: run.suppressedToolRejectedReason ||
+                                    "Cutie could not normalize a usable structured tool action after repeated planning attempts.",
+                                callbacks: input.callbacks,
+                            });
+                        }
+                        throw new Error("Cutie could not normalize a usable structured tool action after repeated planning attempts.");
+                    }
                     continue mainLoop;
                 }
+                emptyToolBatchCycles = 0;
                 if (run.objectivesPhase === "active" && run.objectives?.length) {
                     ({ session, run } = await this.updateRun(session, run, {
                         objectiveRepairCount: 0,
@@ -4067,6 +4115,8 @@ class CutieRuntime {
                             runId: run.id,
                             relativePath: String(payload.path),
                             toolName: effectiveToolCall.name,
+                            receiptId: receipt.id,
+                            step: receipt.step,
                             previousContent: typeof payload.previousContent === "string" ? payload.previousContent : "",
                             ...(typeof payload.nextContent === "string" ? { nextContent: payload.nextContent } : {}),
                             ...(typeof payload.revisionId === "string" ? { revisionId: payload.revisionId } : {}),

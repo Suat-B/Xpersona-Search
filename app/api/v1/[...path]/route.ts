@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { fail, inferErrorCode, ok } from "@/lib/api/contracts";
 import { GET as getSearchAi } from "@/app/api/search/ai/route";
 import { POST as postPlaygroundCheckout } from "@/app/api/me/playground-checkout/route";
+import { GET as getCrawlLicense, POST as postCrawlLicense } from "@/app/api/v1/crawl-license/route";
+import { POST as postCrawlLicenseCheckout } from "@/app/api/v1/crawl-license/checkout/route";
+import { POST as postCrawlLicenseReveal } from "@/app/api/v1/crawl-license/reveal/route";
+import { GET as getCrawlLicenseStatus } from "@/app/api/v1/crawl-license/status/route";
+import { POST as postCrawlLicenseRotateKey } from "@/app/api/v1/crawl-license/rotate-key/route";
+import { GET as getCrawlLicenseRenderAgent } from "@/app/api/v1/crawl-license/render-agent/[slug]/route";
 import {
   applyResponseMetaHeaders,
   cloneHeadersWithProxyBypass,
@@ -72,6 +78,32 @@ async function proxyToLegacy(req: NextRequest, ctx: RouteContext): Promise<Respo
   }
   if (req.method.toUpperCase() === "POST" && pathText === "me/playground-checkout") {
     return postPlaygroundCheckout(req);
+  }
+  if (req.method.toUpperCase() === "GET" && pathText === "crawl-license") {
+    return getCrawlLicense(req);
+  }
+  if (req.method.toUpperCase() === "POST" && pathText === "crawl-license") {
+    return postCrawlLicense(req);
+  }
+  if (req.method.toUpperCase() === "POST" && pathText === "crawl-license/checkout") {
+    return postCrawlLicenseCheckout(req);
+  }
+  if (req.method.toUpperCase() === "POST" && pathText === "crawl-license/reveal") {
+    return postCrawlLicenseReveal(req);
+  }
+  if (req.method.toUpperCase() === "GET" && pathText === "crawl-license/status") {
+    return getCrawlLicenseStatus(req);
+  }
+  if (req.method.toUpperCase() === "POST" && pathText === "crawl-license/rotate-key") {
+    return postCrawlLicenseRotateKey(req);
+  }
+  if (req.method.toUpperCase() === "GET" && pathText.startsWith("crawl-license/render-agent/")) {
+    const slug = pathText.slice("crawl-license/render-agent/".length).trim();
+    if (slug.length > 0) {
+      return getCrawlLicenseRenderAgent(req, {
+        params: Promise.resolve({ slug }),
+      });
+    }
   }
 
   const legacyPath = `/api/${pathText}${req.nextUrl.search}`;

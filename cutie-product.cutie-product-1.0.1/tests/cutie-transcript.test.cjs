@@ -59,8 +59,7 @@ test("mergeTranscriptIntoAssistantContent keeps one unified assistant message", 
     content,
     [
       "Cutie action log:",
-      "Calling `read_file` on `src/app.ts`.",
-      "`read_file` completed: read lines 1-40.",
+      ["Calling `read_file` on `src/app.ts`.", "`read_file` completed: read lines 1-40."].join("\n"),
       "Cutie response:",
       "Trailing stop loss added.",
     ].join("\n\n")
@@ -92,5 +91,20 @@ test("buildOperationalTranscriptText excludes assistant text from the action log
     "code_change"
   );
 
-  assert.equal(content, ["Cutie is collecting context.", "Step 1: `read_file` completed."].join("\n\n"));
+  assert.equal(content, ["Cutie is collecting context.", "Step 1: `read_file` completed."].join("\n"));
+});
+
+test("buildOperationalTranscriptText keeps recent entries when logs are long", () => {
+  const events = Array.from({ length: 22 }, (_, index) => ({
+    id: String(index + 1),
+    kind: "status",
+    text: `Cutie is planning step ${index + 1}.`,
+    createdAt: `2026-03-23T00:00:${String(index).padStart(2, "0")}.000Z`,
+  }));
+
+  const content = buildOperationalTranscriptText(events, "code_change");
+
+  assert.ok(content.startsWith("... 4 earlier updates hidden\n"));
+  assert.ok(content.includes("Cutie is planning step 22."));
+  assert.equal(content.includes("Cutie is planning step 1."), false);
 });

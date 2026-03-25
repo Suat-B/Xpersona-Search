@@ -292,6 +292,10 @@ function settledStatusForRun(run: CutieRunState | null): string {
   return "Cutie stopped early.";
 }
 
+function isTerminalRunStatus(status: CutieRunState["status"]): boolean {
+  return status === "completed" || status === "failed" || status === "canceled";
+}
+
 function buildDefaultDesktopState(): DesktopContextForView {
   return {
     platform: process.platform,
@@ -516,6 +520,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
   private workspaceMentionPathsFetchedAt = 0;
   private workspaceMentionIndexPromise: Promise<string[]> | null = null;
   private static readonly WORKSPACE_MENTION_INDEX_TTL_MS = 90_000;
+  private static readonly MENTION_QUERY_INDEX_WAIT_MS = 60;
   private static readonly MAX_CHAT_DIFFS_PER_SESSION = 120;
   private static readonly MAX_PATCH_CHARS = 52_000;
   private static readonly MAX_FILE_CHARS_FOR_PATCH = 500_000;
@@ -529,7 +534,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
   private static readonly HOST_PROBE_TTL_MS = 30_000;
   private static readonly HOST_PROBE_TIMEOUT_MS = 1_500;
 
-  /** Inline chat diff cards keyed by session id (not persisted to disk). */
+  /** Inline chat diff cards keyed by session id (rehydrated from persisted run receipts on load). */
   private readonly chatDiffsBySessionId = new Map<string, CutieChatDiffItem[]>();
 
   /** Recent workspace paths mutated by Cutie (portable bundle retrievalHints). */
@@ -887,6 +892,41 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       return await this.workspaceMentionIndexPromise;
     } finally {
       this.workspaceMentionIndexPromise = null;
+    }
+  }
+
+  /**
+   * Keep @ suggestions snappy:
+   * - Return fresh cache immediately.
+   * - If cache is stale, return stale results while refreshing in background.
+   * - If no cache exists yet, wait briefly for the first index build, then fall back.
+   */
+  private async getWorkspaceMentionPathsForQuery(): Promise<string[]> {
+    const cached = this.workspaceMentionPaths;
+    const cacheIsFresh = Boolean(
+      cached &&
+      Date.now() - this.workspaceMentionPathsFetchedAt < CutieSidebarProvider.WORKSPACE_MENTION_INDEX_TTL_MS
+    );
+    if (cacheIsFresh && cached) {
+      return cached;
+    }
+
+    const refreshPromise = this.ensureWorkspaceMentionIndex().catch(() => this.workspaceMentionPaths || []);
+
+    if (cached && cached.length > 0) {
+      void refreshPromise;
+      return cached;
+    }
+
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    const timeoutPromise = new Promise<null>((resolve) => {
+      timeoutHandle = setTimeout(() => resolve(null), CutieSidebarProvider.MENTION_QUERY_INDEX_WAIT_MS);
+    });
+    try {
+      const result = await Promise.race([refreshPromise, timeoutPromise]);
+      return Array.isArray(result) ? result : this.workspaceMentionPaths || [];
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
     }
   }
 
@@ -1466,18 +1506,165 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
     return this.chatDiffsBySessionId.get(this.activeSessionId) ?? [];
   }
 
-  private async recordChatWorkspaceDiff(info: CutieWorkspaceMutationInfo): Promise<void> {
-    const sessionId = String(info.sessionId || "").trim() || this.activeSessionId;
-    if (!sessionId) return;
-    const trimmed = String(info.relativePath || "")
+  private getChatDiffsForRun(runId: string, sessionId: string | null = this.activeSessionId): CutieChatDiffItem[] {
+    const trimmedRunId = String(runId || "").trim();
+    const trimmedSessionId = String(sessionId || "").trim();
+    if (!trimmedRunId || !trimmedSessionId) return [];
+    const list = this.chatDiffsBySessionId.get(trimmedSessionId) ?? [];
+    return list.filter((item) => String(item.runId || "").trim() === trimmedRunId);
+  }
+
+  private normalizeChatDiffPath(relativePath: string): string {
+    return String(relativePath || "")
       .trim()
       .replace(/\\/g, "/");
+  }
+
+  private touchRecentPortableBundlePath(relativePath: string): void {
+    const trimmed = this.normalizeChatDiffPath(relativePath);
     if (!trimmed) return;
     const touchList = this.recentPortableBundleTouchedPaths;
     const idx = touchList.indexOf(trimmed);
     if (idx >= 0) touchList.splice(idx, 1);
     touchList.unshift(trimmed);
     while (touchList.length > 32) touchList.pop();
+  }
+
+  private truncateDiffSnapshot(content: string, label: "before" | "after"): string {
+    if (content.length <= CutieSidebarProvider.MAX_FILE_CHARS_FOR_PATCH) return content;
+    return `${content.slice(0, CutieSidebarProvider.MAX_FILE_CHARS_FOR_PATCH)}\n\n/* ... truncated ${label} snapshot ... */\n`;
+  }
+
+  private truncateChatPatch(patch: string): string {
+    if (patch.length <= CutieSidebarProvider.MAX_PATCH_CHARS) return patch;
+    return `${patch.slice(0, CutieSidebarProvider.MAX_PATCH_CHARS)}\n\n... patch truncated for chat preview ...\n`;
+  }
+
+  private upsertChatDiffItem(sessionId: string, item: CutieChatDiffItem): void {
+    const list = [...(this.chatDiffsBySessionId.get(sessionId) ?? [])];
+    const runId = String(item.runId || "").trim();
+    const existingIndex = list.findIndex((candidate) => {
+      const candidateRunId = String(candidate.runId || "").trim();
+      if (candidateRunId !== runId) return false;
+      if (item.receiptId && candidate.receiptId) {
+        return candidate.receiptId === item.receiptId;
+      }
+      if (
+        typeof item.step === "number" &&
+        typeof candidate.step === "number" &&
+        item.step === candidate.step &&
+        item.relativePath === candidate.relativePath
+      ) {
+        return item.patch === candidate.patch;
+      }
+      return item.relativePath === candidate.relativePath && item.patch === candidate.patch;
+    });
+    if (existingIndex >= 0) {
+      const previous = list[existingIndex];
+      list[existingIndex] = {
+        ...previous,
+        ...item,
+        id: previous.id || item.id,
+        createdAt:
+          String(previous.createdAt || "") <= String(item.createdAt || "") ? previous.createdAt : item.createdAt,
+        source: previous.source === "live_callback" ? "live_callback" : item.source || previous.source,
+      };
+    } else {
+      list.push(item);
+    }
+    list.sort((a, b) => {
+      const aTime = String(a.createdAt || "");
+      const bTime = String(b.createdAt || "");
+      if (aTime < bTime) return -1;
+      if (aTime > bTime) return 1;
+      return String(a.id || "").localeCompare(String(b.id || ""));
+    });
+    while (list.length > CutieSidebarProvider.MAX_CHAT_DIFFS_PER_SESSION) {
+      list.shift();
+    }
+    this.chatDiffsBySessionId.set(sessionId, list);
+  }
+
+  private hydrateChatDiffsFromRunReceipts(session: CutieSessionRecord): void {
+    const sessionId = String(session.id || "").trim();
+    if (!sessionId) return;
+    for (const run of session.runs || []) {
+      const runId = String(run.id || "").trim();
+      if (!runId) continue;
+      for (const receipt of run.receipts || []) {
+        if (receipt.status !== "completed") continue;
+        if (receipt.toolName !== "write_file" && receipt.toolName !== "patch_file" && receipt.toolName !== "edit_file") {
+          continue;
+        }
+        const data = receipt.data && typeof receipt.data === "object" ? (receipt.data as Record<string, unknown>) : null;
+        if (!data) continue;
+        const relativePath = this.normalizeChatDiffPath(typeof data.path === "string" ? String(data.path) : "");
+        if (!relativePath) continue;
+        let patch = typeof data.patch === "string" ? String(data.patch) : "";
+        if (!patch && typeof data.previousContent === "string" && typeof data.nextContent === "string") {
+          patch = createTwoFilesPatch(relativePath, relativePath, String(data.previousContent), String(data.nextContent), "", "", {
+            context: 3,
+          });
+        }
+        if (!patch) continue;
+        const receiptId = String(receipt.id || "").trim();
+        const item: CutieChatDiffItem = {
+          id: `cutie_chat_diff_receipt_${runId}_${receiptId || String(receipt.step || "0")}`,
+          createdAt: receipt.finishedAt || receipt.startedAt || run.endedAt || run.startedAt || new Date().toISOString(),
+          runId,
+          relativePath,
+          toolName: receipt.toolName,
+          patch: this.truncateChatPatch(patch),
+          ...(receiptId ? { receiptId } : {}),
+          ...(typeof receipt.step === "number" ? { step: receipt.step } : {}),
+          source: "receipt_backfill",
+        };
+        this.upsertChatDiffItem(sessionId, item);
+      }
+    }
+  }
+
+  private async ensureRunChangeRecap(
+    run: CutieRunState | null,
+    sourceSession: CutieSessionRecord | null = this.activeSession
+  ): Promise<CutieSessionRecord | null> {
+    if (!run || !isTerminalRunStatus(run.status) || !sourceSession) return sourceSession;
+    const runId = String(run.id || "").trim();
+    if (!runId) return sourceSession;
+
+    this.hydrateChatDiffsFromRunReceipts(sourceSession);
+    const runDiffs = this.getChatDiffsForRun(runId, sourceSession.id);
+    const changedPaths = new Set(runDiffs.map((item) => item.relativePath));
+    const recapContent = changedPaths.size
+      ? `${changedPaths.size} file${changedPaths.size === 1 ? "" : "s"} changed this run.`
+      : "No files changed.";
+    const isRecapForRun = (message: CutieChatMessage): boolean =>
+      message.role === "assistant" && message.presentation === "run_change_recap" && message.runId === runId;
+    const recaps = sourceSession.messages.filter(isRecapForRun);
+    if (recaps.length === 1 && String(recaps[0].content || "").trim() === recapContent) {
+      return sourceSession;
+    }
+
+    let nextSession = sourceSession;
+    if (recaps.length) {
+      const withoutRecaps = sourceSession.messages.filter((message) => !isRecapForRun(message));
+      nextSession = await this.sessionStore.replaceMessages(sourceSession, withoutRecaps);
+    }
+    nextSession = await this.sessionStore.appendMessage(nextSession, {
+      role: "assistant",
+      content: recapContent,
+      runId,
+      presentation: "run_change_recap",
+    });
+    return nextSession;
+  }
+
+  private async recordChatWorkspaceDiff(info: CutieWorkspaceMutationInfo): Promise<void> {
+    const sessionId = String(info.sessionId || "").trim() || this.activeSessionId;
+    if (!sessionId) return;
+    const trimmed = this.normalizeChatDiffPath(info.relativePath);
+    if (!trimmed) return;
+    this.touchRecentPortableBundlePath(trimmed);
 
     const root = getWorkspaceRootPath();
     const hasNextContent = typeof info.nextContent === "string";
@@ -1493,13 +1680,14 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
         after = "";
       }
     }
-    let before = typeof info.previousContent === "string" ? info.previousContent : "";
+    let before = this.truncateDiffSnapshot(typeof info.previousContent === "string" ? info.previousContent : "", "before");
     if (before.length > CutieSidebarProvider.MAX_FILE_CHARS_FOR_PATCH) {
       before = `${before.slice(0, CutieSidebarProvider.MAX_FILE_CHARS_FOR_PATCH)}\n\n/* … truncated before snapshot … */\n`;
     }
     if (after.length > CutieSidebarProvider.MAX_FILE_CHARS_FOR_PATCH) {
       after = `${after.slice(0, CutieSidebarProvider.MAX_FILE_CHARS_FOR_PATCH)}\n\n/* … truncated after snapshot … */\n`;
     }
+    after = this.truncateDiffSnapshot(after, "after");
     let patch =
       hasAfterContent
         ? createTwoFilesPatch(trimmed, trimmed, before, after, "", "", { context: 3 })
@@ -1507,6 +1695,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
     if (patch.length > CutieSidebarProvider.MAX_PATCH_CHARS) {
       patch = `${patch.slice(0, CutieSidebarProvider.MAX_PATCH_CHARS)}\n\n… patch truncated for chat preview …\n`;
     }
+    patch = this.truncateChatPatch(patch);
     const item: CutieChatDiffItem = {
       id: `cutie_chat_diff_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
       createdAt: new Date().toISOString(),
@@ -1514,23 +1703,11 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       relativePath: trimmed,
       toolName: info.toolName,
       patch,
+      ...(String(info.receiptId || "").trim() ? { receiptId: String(info.receiptId || "").trim() } : {}),
+      ...(typeof info.step === "number" ? { step: info.step } : {}),
+      source: "live_callback",
     };
-    const list = [...(this.chatDiffsBySessionId.get(sessionId) ?? [])];
-    const previous = list[list.length - 1];
-    if (
-      previous &&
-      previous.runId === item.runId &&
-      previous.relativePath === item.relativePath &&
-      previous.toolName === item.toolName &&
-      previous.patch === item.patch
-    ) {
-      return;
-    }
-    list.push(item);
-    while (list.length > CutieSidebarProvider.MAX_CHAT_DIFFS_PER_SESSION) {
-      list.shift();
-    }
-    this.chatDiffsBySessionId.set(sessionId, list);
+    this.upsertChatDiffItem(sessionId, item);
   }
 
   private async initializeView(): Promise<void> {
@@ -1945,6 +2122,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
     }
     this.binaryController.stopStreamsAndLiveBubble();
     this.binaryController.binaryActivity = [];
+    this.hydrateChatDiffsFromRunReceipts(session);
     this.activeSession = session;
     this.activeSessionId = session.id;
     this.activeRun = this.sessionStore.getLatestRun(session);
@@ -2067,7 +2245,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       }
 
       if (fileQuery) {
-        const indexedPaths = await this.ensureWorkspaceMentionIndex();
+        const indexedPaths = await this.getWorkspaceMentionPathsForQuery();
         for (const relativePath of indexedPaths) {
           pushFile(relativePath);
         }
@@ -2087,7 +2265,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
         } satisfies CutieMentionSuggestion;
       });
 
-    const shouldLookupWindows = wantsWindowsOnly || windowQuery.length > 0;
+    const shouldLookupWindows = wantsWindowsOnly;
     const activeWindow = shouldLookupWindows
       ? await this.desktop.getActiveWindow().catch(() => this.desktopState.activeWindow || null)
       : this.desktopState.activeWindow || null;
@@ -2283,9 +2461,17 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
         if (runRequestVersion !== this.runRequestVersion) return;
         this.activeSession = result.session;
         this.activeSessionId = result.session.id;
+        this.hydrateChatDiffsFromRunReceipts(result.session);
         this.activeRun = result.run;
         this.syncLiveActionReceipts(result.run);
         await this.persistUnifiedRunTranscript(result.run);
+        if (runRequestVersion !== this.runRequestVersion) return;
+        const recapSession = await this.ensureRunChangeRecap(result.run, this.activeSession);
+        if (runRequestVersion !== this.runRequestVersion) return;
+        if (recapSession) {
+          this.activeSession = recapSession;
+          this.activeSessionId = recapSession.id;
+        }
         this.streamingAssistantText = "";
         this.submitState = "settled";
         this.status = settledStatusForRun(result.run);
@@ -2297,6 +2483,14 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
         this.suppressedAssistantArtifactText = "";
         this.status = isCancel ? "Cutie run cancelled." : `Cutie failed: ${message}`;
         this.submitState = "settled";
+        if (this.activeSession && this.activeRun && isTerminalRunStatus(this.activeRun.status)) {
+          const recapSession = await this.ensureRunChangeRecap(this.activeRun, this.activeSession);
+          if (runRequestVersion !== this.runRequestVersion) return;
+          if (recapSession) {
+            this.activeSession = recapSession;
+            this.activeSessionId = recapSession.id;
+          }
+        }
         if (!isCancel) void vscode.window.showErrorMessage(this.status);
       } finally {
         if (this.currentAbortController === abortController) {

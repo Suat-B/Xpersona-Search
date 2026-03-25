@@ -34,7 +34,7 @@ const zCutieToolDefinition = z.object({
 });
 
 const zCutieChatRequest = z.object({
-  model: z.string().min(1).max(240).default("openai/gpt-oss-120b:fastest"),
+  model: z.string().min(1).max(240).default("Qwen/Qwen2.5-Coder-32B-Instruct:fastest"),
   protocol: z.enum(["cutie_tools_v2"]).optional(),
   protocolMode: z.enum(["native_tools", "text_extraction", "final_only"]).optional(),
   messages: z.array(zCutieMessage).min(1).max(80),
@@ -129,36 +129,122 @@ function mapCutieToolsForUpstream(tools: z.infer<typeof zCutieToolDefinition>[])
   }));
 }
 
-function buildUpstreamRequestBody(input: { body: z.infer<typeof zCutieChatRequest> }): Record<string, unknown> {
-  const capabilities = resolveServerModelCapabilities(input.body.model);
-  const resolvedMode = resolveServerProtocolMode({
-    requestedMode: input.body.protocolMode as CutieServerProtocolMode | undefined,
-    capabilities,
-  });
-  const maxToolsPerBatch = resolveServerMaxToolsPerBatch({
-    requested: input.body.maxToolsPerBatch ?? 1,
-    capabilities,
-  });
+function readBooleanEnv(name: string, defaultValue: boolean): boolean {
+  const raw = String(process.env[name] || "").trim().toLowerCase();
+  if (!raw) return defaultValue;
+  if (["1", "true", "yes", "on"].includes(raw)) return true;
+  if (["0", "false", "no", "off"].includes(raw)) return false;
+  return defaultValue;
+}
+
+function isCutieJsonModeEnabled(): boolean {
+  return readBooleanEnv("CUTIE_JSON_MODE_ENABLED", true);
+}
+
+function isCutieJsonModeRetryEnabled(): boolean {
+  return readBooleanEnv("CUTIE_JSON_MODE_RETRY_ENABLED", true);
+}
+
+function shouldUseJsonResponseFormat(input: {
+  protocolActive: boolean;
+  resolvedMode: CutieServerProtocolMode;
+}): boolean {
+  if (!isCutieJsonModeEnabled()) return false;
+  return input.protocolActive && input.resolvedMode === "text_extraction";
+}
+
+function isUnsupportedJsonResponseFormatError(status: number, rawError: string): boolean {
+  if (!(status >= 400 && status < 500)) return false;
+  const text = String(rawError || "").toLowerCase();
+  if (!text) return false;
+  if (text.includes("response_format")) return true;
+  if (text.includes("json_object") && (text.includes("unsupported") || text.includes("not support") || text.includes("invalid"))) {
+    return true;
+  }
+  return false;
+}
+
+function buildUpstreamRequestBody(input: {
+  body: z.infer<typeof zCutieChatRequest>;
+  capabilities: ReturnType<typeof resolveServerModelCapabilities>;
+  resolvedMode: CutieServerProtocolMode;
+  maxToolsPerBatch: number;
+  stream: boolean;
+  includeJsonResponseFormat: boolean;
+}): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     model: input.body.model,
     messages: input.body.messages,
-    stream: input.body.stream,
+    stream: input.stream,
     temperature: input.body.temperature ?? 0.2,
     max_tokens: input.body.maxTokens ?? 1200,
   };
   if (
     input.body.protocol === "cutie_tools_v2" &&
-    resolvedMode === "native_tools" &&
-    capabilities.nativeTools !== "none" &&
+    input.resolvedMode === "native_tools" &&
+    input.capabilities.nativeTools !== "none" &&
     input.body.tools.length
   ) {
     payload.tools = mapCutieToolsForUpstream(input.body.tools);
     payload.tool_choice = "auto";
-    if (maxToolsPerBatch > 1) {
+    if (input.maxToolsPerBatch > 1) {
       payload.parallel_tool_calls = true;
     }
   }
+  if (input.includeJsonResponseFormat) {
+    payload.response_format = { type: "json_object" };
+  }
   return payload;
+}
+
+async function requestUpstreamWithJsonFallback(input: {
+  token: string;
+  body: z.infer<typeof zCutieChatRequest>;
+  protocolActive: boolean;
+  capabilities: ReturnType<typeof resolveServerModelCapabilities>;
+  resolvedMode: CutieServerProtocolMode;
+  maxToolsPerBatch: number;
+  stream: boolean;
+}): Promise<Response> {
+  const useJsonResponseFormat = shouldUseJsonResponseFormat({
+    protocolActive: input.protocolActive,
+    resolvedMode: input.resolvedMode,
+  });
+
+  const requestOnce = async (includeJsonResponseFormat: boolean): Promise<Response> =>
+    fetch(`${CUTIE_ROUTER_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${input.token}`,
+      },
+      body: JSON.stringify(
+        buildUpstreamRequestBody({
+          body: input.body,
+          capabilities: input.capabilities,
+          resolvedMode: input.resolvedMode,
+          maxToolsPerBatch: input.maxToolsPerBatch,
+          stream: input.stream,
+          includeJsonResponseFormat: includeJsonResponseFormat && useJsonResponseFormat,
+        })
+      ),
+    });
+
+  let upstream = await requestOnce(useJsonResponseFormat);
+  if (upstream.ok || !useJsonResponseFormat || !isCutieJsonModeRetryEnabled()) {
+    return upstream;
+  }
+
+  const rawError = await upstream.text().catch(() => "");
+  if (!isUnsupportedJsonResponseFormatError(upstream.status, rawError)) {
+    return new Response(rawError, {
+      status: upstream.status || 502,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+
+  upstream = await requestOnce(false);
+  return upstream;
 }
 
 async function streamHfRouterResponse(input: {
@@ -189,13 +275,14 @@ async function streamHfRouterResponse(input: {
     capabilities,
   });
 
-  const upstream = await fetch(`${CUTIE_ROUTER_BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(buildUpstreamRequestBody(input)),
+  const upstream = await requestUpstreamWithJsonFallback({
+    token,
+    body: input.body,
+    protocolActive,
+    capabilities,
+    resolvedMode,
+    maxToolsPerBatch,
+    stream: true,
   });
 
   if (!upstream.ok || !upstream.body) {
@@ -248,7 +335,14 @@ async function streamHfRouterResponse(input: {
         if (normalized.response.type === "tool_batch") {
           await writer.write(encoder.encode(sse("tool_batch", { toolCalls: normalized.response.toolCalls })));
         } else {
-          await writer.write(encoder.encode(sse("final", { text: normalized.response.text })));
+          await writer.write(
+            encoder.encode(
+              sse("final", {
+                text: normalized.response.text,
+                ...(normalized.response.objectives ? { objectives: normalized.response.objectives } : {}),
+              })
+            )
+          );
         }
       } else {
         await writer.write(encoder.encode(sse("final", { text: finalText })));
@@ -414,13 +508,14 @@ async function requestHfRouterResponse(input: {
     capabilities,
   });
 
-  const upstream = await fetch(`${CUTIE_ROUTER_BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(buildUpstreamRequestBody({ body: { ...input.body, stream: false } })),
+  const upstream = await requestUpstreamWithJsonFallback({
+    token,
+    body: input.body,
+    protocolActive,
+    capabilities,
+    resolvedMode,
+    maxToolsPerBatch,
+    stream: false,
   });
 
   if (!upstream.ok) {

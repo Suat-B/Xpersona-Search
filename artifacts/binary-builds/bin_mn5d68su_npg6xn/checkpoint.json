@@ -1,0 +1,485 @@
+{
+  "id": "chk_packaging_mn5d6qap_duy4yx",
+  "buildId": "bin_mn5d68su_npg6xn",
+  "phase": "packaging",
+  "savedAt": "2026-03-25T01:28:03.745Z",
+  "label": "Packaged streamed workspace artifact.",
+  "preview": {
+    "plan": {
+      "name": "binary-make-me-a-small-customer-support-dashboa",
+      "displayName": "Make Me A Small Customer Support Dashboa",
+      "description": "Make me a small customer support dashboard with a login screen, ticket list, and search.",
+      "entrypoint": "dist/src/index.js",
+      "buildCommand": "npm run build",
+      "startCommand": "npm start",
+      "sourceFiles": [
+        "package.json",
+        "README.md",
+        "src/index.ts",
+        "tsconfig.json"
+      ],
+      "warnings": []
+    },
+    "files": [
+      {
+        "path": "dist/src/index.js",
+        "language": "javascript",
+        "preview": "\"use strict\";\nObject.defineProperty(exports, \"__esModule\", { value: true });\nexports.buildIntentSummary = buildIntentSummary;\nexports.describeWorkspaceContext = describeWorkspaceContext;\nexports.health = health;\nexports.routeIndex = routeIndex;\nexports.routeRequest = routeRequest;\nexports.startServer = startServer;\nconst node_http_1 = require(\"node:http\");\nconst port = Number(process.env.PORT || 3000);\nfunction buildIntentSummary() {\n    return \"Make me a small customer support dashboard with a login screen, ticket list, and search.\";\n}\nfunction describeWorkspaceContext() {\n    return {\n        targetPath: \"src/index.ts\",\n        preferredTargetPath: \"trading/ai-trading-research/Math-Foundations One/strategies/pending/CMMI_Strategy_6.pine\",\n        context: \"Active file: trading/ai-trading-research/Math-Foundations One/strategies/pending/CMMI_Strategy_6.pine. Preferred target: trading/ai-trading-research/Math-Foundations One/strategies/pending/CMMI_Strategy_6.pine. Mentioned paths: trading/ai-trading-research/Math-Foundations One/strategies/pending/CMMI_Strategy_6.pine. Open files: trading/ai-trading-research/Math-Foundations One/strategies/pending/CMMI_Strategy_6.pine.\",\n    };\n}\nasync function readBody(req) {\n    const chunks = [];\n    for await (const chunk of req) {\n        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));\n    }\n    return Buffer.concat(chunks).toString(\"utf8\");\n}\nasync function health() {\n    return {\n        ok: true,\n        service: \"Make Me A Small Customer Support Dashboa\",\n        intent: buildIntentSummary(),\n        runtime: \"node18\",\n    };\n}\nasync function routeIndex() {\n    return {\n        ok: true,\n        service: \"Make Me A Small Customer Support Dashboa\",\n        intent: buildIntentSummary(),\n        runtime: \"node18\",\n        implementationHint: \"Expose a GET / route and a GET /health route.\",\n        workspaceContext: describeWorkspaceContext(),\n    };\n}\nasync function routeRequest(req) {\n    if (req.method === \"GET\" && req.url === \"/health\") {\n        return { statusCode: 200, body: await health() };\n    }\n    if (req.method === \"GET\" && req.url === \"/\") {\n        return { statusCode: 200, body: await routeIndex() };\n    }\n    return {\n        statusCode: 404,\n        body: { ok: false, error: \"Not found\", workspaceContext: describeWorkspaceContext() },\n    };\n}\nasync function startServer() {\n    const server = (0, node_http_1.createServer)(async (req, res) => {\n        const response = await routeRequest(req);\n        res.writeHead(response.statusCode, { \"Content-Type\": \"application/json\" });\n        res.end(JSON.stringify(response.body));\n    });\n    return new Promise((resolve, reject) => {\n        server.once(\"error\", reject);\n        server.listen(port, () => {\n            console.log(`[binary-ide] Make Me A Small Customer Support Dashboa listening on port ${port}`);\n            console.log(`[binary-ide] intent: ${buildIntentSummary()}`);\n            resolve(`listening:${port}`);\n        });\n    });\n}\nif (typeof require !== \"undefined\" && require.main === module) {\n    void startServer().catch((error) => {\n        console.error(\"[binary-ide] startup failed\", error);\n        process.exitCode = 1;\n    });\n}\n",
+        "hash": "068b95cedf800e407bd6766ed2331c6390c33cd8db6912118bad17966ab7bb8d",
+        "completed": true,
+        "updatedAt": "2026-03-25T01:28:02.252Z"
+      },
+      {
+        "path": "tsconfig.json",
+        "language": "json",
+        "preview": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"module\": \"CommonJS\",\n    \"moduleResolution\": \"Node\",\n    \"outDir\": \"dist\",\n    \"rootDir\": \".\",\n    \"strict\": true,\n    \"esModuleInterop\": true,\n    \"skipLibCheck\": true,\n    \"types\": [\n      \"node\"\n    ]\n  },\n  \"include\": [\n    \"**/*\"\n  ]\n}",
+        "hash": "d85f4d66b7cac9d0f3688abd87861e3354faf338c88afda2763b5976296f2d3f",
+        "completed": true,
+        "updatedAt": "2026-03-25T01:27:55.878Z"
+      },
+      {
+        "path": "src/index.ts",
+        "language": "typescript",
+        "preview": "import { createServer, IncomingMessage } from \"node:http\";\n\nconst port = Number(process.env.PORT || 3000);\n\nexport function buildIntentSummary(): string {\n  return \"Make me a small customer support dashboard with a login screen, ticket list, and search.\";\n}\n\nexport function describeWorkspaceContext() {\n  return {\n    targetPath: \"src/index.ts\",\n    preferredTargetPath: \"trading/ai-trading-research/Math-Foundations One/strategies/pending/CMMI_Strategy_6.pine\",\n    context: \"Active file: trading/ai-trading-research/Math-Foundations One/strategies/pending/CMMI_Strategy_6.pine. Preferred target: trading/ai-trading-research/Math-Foundations One/strategies/pending/CMMI_Strategy_6.pine. Mentioned paths: trading/ai-trading-research/Math-Foundations One/strategies/pending/CMMI_Strategy_6.pine. Open files: trading/ai-trading-research/Math-Foundations One/strategies/pending/CMMI_Strategy_6.pine.\",\n  };\n}\n\nasync function readBody(req: IncomingMessage): Promise<string> {\n  const chunks: Buffer[] = [];\n  for await (const chunk of req) {\n    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));\n  }\n  return Buffer.concat(chunks).toString(\"utf8\");\n}\n\nexport async function health() {\n  return {\n    ok: true,\n    service: \"Make Me A Small Customer Support Dashboa\",\n    intent: buildIntentSummary(),\n    runtime: \"node18\",\n  };\n}\n\nexport async function routeIndex() {\n  return {\n    ok: true,\n    service: \"Make Me A Small Customer Support Dashboa\",\n    intent: buildIntentSummary(),\n    runtime: \"node18\",\n    implementationHint: \"Expose a GET / route and a GET /health route.\",\n    workspaceContext: describeWorkspaceContext(),\n  };\n}\n\n\n\n\n\nexport async function routeRequest(req: IncomingMessage) {\n  if (req.method === \"GET\" && req.url === \"/health\") {\n    return { statusCode: 200, body: await health() };\n  }\n\n  \n  \n\n  if (req.method === \"GET\" && req.url === \"/\") {\n    return { statusCode: 200, body: await routeIndex() };\n  }\n\n  return {\n    statusCode: 404,\n    body: { ok: false, error: \"Not found\", workspaceContext: describeWorkspaceContext() },\n  };\n}\n\nexport async function startServer() {\n  const server = createServer(async (req, res) => {\n    const response = await routeRequest(req);\n    res.writeHead(response.statusCode, { \"Content-Type\": \"application/json\" });\n    res.end(JSON.stringify(response.body));\n  });\n\n  return new Promise<string>((resolve, reject) => {\n    server.once(\"error\", reject);\n    server.listen(port, () => {\n      console.log(`[binary-ide] Make Me A Small Customer Support Dashboa listening on port ${port}`);\n      console.log(`[binary-ide] intent: ${buildIntentSummary()}`);\n      resolve(`listening:${port}`);\n    });\n  });\n}\n\n\n\nif (typeof require !== \"undefined\" && require.main === module) {\n  \n  void startServer().catch((error) => {\n    console.error(\"[binary-ide] startup failed\", error);\n    process.exitCode = 1;\n  });\n}\n",
+        "hash": "d186dd9be9c33f65b7d377645cfd91519855e252d4c2398e05b0353fcfbc91d4",
+        "completed": true,
+        "updatedAt": "2026-03-25T01:27:54.839Z"
+      },
+      {
+        "path": "README.md",
+        "language": "markdown",
+        "preview": "# Make Me A Small Customer Support Dashboa\n\nGenerated by Binary IDE as a portable `package_bundle` starter bundle.\n\n## Intent\n\nMake me a small customer support dashboard with a login screen, ticket list, and search.\n\n## Run\n\n```bash\nnpm install\nnpm run build\nnpm start\n```\n\n## Runtime\n\n- Runtime: node18\n- Platform: portable\n- Package manager: npm\n- Target source path: src/index.ts\n- Grounded workspace context: Active file: trading/ai-trading-research/Math-Foundations One/strategies/pending/CMMI_Strategy_6.pine. Preferred target: trading/ai-trading-research/Math-Foundations One/strategies/pending/CMMI_Strategy_6.pine. Mentioned paths: trading/ai-trading-research/Math-Foundations One/strategies/pending/CMMI_Strategy_6.pine. Open files: trading/ai-trading-research/Math-Foundations One/strategies/pending/CMMI_Strategy_6.pine.\n",
+        "hash": "3373db9df76d7182efb438432fbe2cfed6f17ca07f567f973d6d51eff3866883",
+        "completed": true,
+        "updatedAt": "2026-03-25T01:27:53.160Z"
+      },
+      {
+        "path": "package.json",
+        "language": "json",
+        "preview": "{\n  \"name\": \"binary-make-me-a-small-customer-support-dashboa\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"description\": \"Make me a small customer support dashboard with a login screen, ticket list, and search.\",\n  \"scripts\": {\n    \"build\": \"tsc -p tsconfig.json\",\n    \"start\": \"node dist/src/index.js\"\n  },\n  \"devDependencies\": {\n    \"@types/node\": \"^22.0.0\",\n    \"typescript\": \"^5.0.0\"\n  }\n}",
+        "hash": "503003271a85c293f2720d849143ecd116fac6740b536b86a964f71ccc8eac1b",
+        "completed": true,
+        "updatedAt": "2026-03-25T01:27:53.126Z"
+      }
+    ],
+    "recentLogs": [
+      "Completed package.json",
+      "Completed README.md",
+      "Updated src/index.ts",
+      "Completed src/index.ts",
+      "Completed tsconfig.json",
+      "Running npm install.",
+      "npm install exit code 0.",
+      "Running npm run build.",
+      "npm run build exit code 0."
+    ]
+  },
+  "manifest": {
+    "buildId": "bin_mn5d68su_npg6xn",
+    "artifactKind": "package_bundle",
+    "name": "binary-make-me-a-small-customer-support-dashboa",
+    "displayName": "Make Me A Small Customer Support Dashboa",
+    "description": "Make me a small customer support dashboard with a login screen, ticket list, and search.",
+    "intent": "Make me a small customer support dashboard with a login screen, ticket list, and search.",
+    "runtime": "node18",
+    "platform": "portable",
+    "packageManager": "npm",
+    "entrypoint": "dist/src/index.js",
+    "installCommand": "npm install",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "sourceFiles": [
+      "package.json",
+      "README.md",
+      "src/index.ts",
+      "tsconfig.json"
+    ],
+    "outputFiles": [
+      "binary.manifest.json",
+      "dist/src/index.js",
+      "package-lock.json",
+      "package.json",
+      "README.md",
+      "src/index.ts",
+      "tsconfig.json"
+    ],
+    "warnings": [],
+    "createdAt": "2026-03-25T01:27:53.107Z"
+  },
+  "reliability": {
+    "status": "warn",
+    "score": 92,
+    "summary": "Package bundle completed with 1 warning.",
+    "targetEnvironment": {
+      "runtime": "node18",
+      "platform": "portable",
+      "packageManager": "npm"
+    },
+    "issues": [
+      {
+        "code": "bundle_size_large",
+        "severity": "warning",
+        "message": "The generated workspace is larger than the recommended portable threshold.",
+        "detail": "Workspace size is 26145855 bytes."
+      }
+    ],
+    "warnings": [
+      "The generated workspace exceeds 1 MB and may be slow to distribute."
+    ],
+    "generatedAt": "2026-03-25T01:28:03.196Z"
+  },
+  "liveReliability": {
+    "score": 92,
+    "trend": "steady",
+    "warnings": [
+      "The generated workspace exceeds 1 MB and may be slow to distribute.",
+      "The generated workspace is larger than the recommended portable threshold."
+    ],
+    "blockers": [],
+    "resolvedBlockers": [],
+    "updatedAt": "2026-03-25T01:28:03.196Z",
+    "source": "compat"
+  },
+  "artifactState": {
+    "coverage": 100,
+    "runnable": true,
+    "sourceFilesTotal": 1,
+    "sourceFilesReady": 1,
+    "outputFilesReady": 1,
+    "entryPoints": [
+      "dist/src/index.js"
+    ],
+    "latestFile": "bin_mn5d68su_npg6xn.zip",
+    "updatedAt": "2026-03-25T01:28:03.739Z"
+  },
+  "sourceGraph": {
+    "coverage": 100,
+    "readyModules": 1,
+    "totalModules": 1,
+    "modules": [
+      {
+        "path": "src/index.ts",
+        "language": "typescript",
+        "imports": [
+          "node:http"
+        ],
+        "exports": [
+          "buildIntentSummary",
+          "describeWorkspaceContext",
+          "health",
+          "routeIndex",
+          "routeRequest",
+          "startServer"
+        ],
+        "functions": [
+          {
+            "name": "buildIntentSummary",
+            "sourcePath": "src/index.ts",
+            "exported": true,
+            "async": false,
+            "callable": true,
+            "signature": "buildIntentSummary()"
+          },
+          {
+            "name": "describeWorkspaceContext",
+            "sourcePath": "src/index.ts",
+            "exported": true,
+            "async": false,
+            "callable": true,
+            "signature": "describeWorkspaceContext()"
+          },
+          {
+            "name": "readBody",
+            "sourcePath": "src/index.ts",
+            "exported": false,
+            "async": true,
+            "callable": true,
+            "signature": "readBody(req: IncomingMessage)"
+          },
+          {
+            "name": "health",
+            "sourcePath": "src/index.ts",
+            "exported": true,
+            "async": true,
+            "callable": true,
+            "signature": "health()"
+          },
+          {
+            "name": "routeIndex",
+            "sourcePath": "src/index.ts",
+            "exported": true,
+            "async": true,
+            "callable": true,
+            "signature": "routeIndex()"
+          },
+          {
+            "name": "routeRequest",
+            "sourcePath": "src/index.ts",
+            "exported": true,
+            "async": true,
+            "callable": true,
+            "signature": "routeRequest(req: IncomingMessage)"
+          },
+          {
+            "name": "startServer",
+            "sourcePath": "src/index.ts",
+            "exported": true,
+            "async": true,
+            "callable": true,
+            "signature": "startServer()"
+          }
+        ],
+        "completed": true,
+        "diagnosticCount": 0
+      }
+    ],
+    "dependencies": [
+      {
+        "from": "src/index.ts",
+        "to": "node:http",
+        "kind": "import",
+        "resolved": true
+      },
+      {
+        "from": "package.json",
+        "to": "@types/node",
+        "kind": "dependency",
+        "resolved": true
+      },
+      {
+        "from": "package.json",
+        "to": "typescript",
+        "kind": "dependency",
+        "resolved": true
+      }
+    ],
+    "diagnostics": [],
+    "updatedAt": "2026-03-25T01:28:03.026Z"
+  },
+  "astState": {
+    "coverage": 100,
+    "moduleCount": 1,
+    "modules": [
+      {
+        "path": "src/index.ts",
+        "language": "typescript",
+        "nodeCount": 8,
+        "exportedSymbols": [
+          "buildIntentSummary",
+          "describeWorkspaceContext",
+          "health",
+          "routeIndex",
+          "routeRequest",
+          "startServer"
+        ],
+        "callableFunctions": [
+          "buildIntentSummary",
+          "describeWorkspaceContext",
+          "readBody",
+          "health",
+          "routeIndex",
+          "routeRequest",
+          "startServer"
+        ],
+        "completed": true
+      }
+    ],
+    "nodes": [
+      {
+        "id": "module:src/index.ts",
+        "kind": "module",
+        "label": "src/index.ts",
+        "path": "src/index.ts",
+        "completeness": 100
+      },
+      {
+        "id": "function:src/index.ts:buildIntentSummary",
+        "kind": "function",
+        "label": "buildIntentSummary",
+        "path": "src/index.ts",
+        "parentId": "module:src/index.ts",
+        "exported": true,
+        "callable": true,
+        "completeness": 100
+      },
+      {
+        "id": "function:src/index.ts:describeWorkspaceContext",
+        "kind": "function",
+        "label": "describeWorkspaceContext",
+        "path": "src/index.ts",
+        "parentId": "module:src/index.ts",
+        "exported": true,
+        "callable": true,
+        "completeness": 100
+      },
+      {
+        "id": "function:src/index.ts:readBody",
+        "kind": "function",
+        "label": "readBody",
+        "path": "src/index.ts",
+        "parentId": "module:src/index.ts",
+        "exported": false,
+        "callable": true,
+        "completeness": 100
+      },
+      {
+        "id": "function:src/index.ts:health",
+        "kind": "function",
+        "label": "health",
+        "path": "src/index.ts",
+        "parentId": "module:src/index.ts",
+        "exported": true,
+        "callable": true,
+        "completeness": 100
+      },
+      {
+        "id": "function:src/index.ts:routeIndex",
+        "kind": "function",
+        "label": "routeIndex",
+        "path": "src/index.ts",
+        "parentId": "module:src/index.ts",
+        "exported": true,
+        "callable": true,
+        "completeness": 100
+      },
+      {
+        "id": "function:src/index.ts:routeRequest",
+        "kind": "function",
+        "label": "routeRequest",
+        "path": "src/index.ts",
+        "parentId": "module:src/index.ts",
+        "exported": true,
+        "callable": true,
+        "completeness": 100
+      },
+      {
+        "id": "function:src/index.ts:startServer",
+        "kind": "function",
+        "label": "startServer",
+        "path": "src/index.ts",
+        "parentId": "module:src/index.ts",
+        "exported": true,
+        "callable": true,
+        "completeness": 100
+      }
+    ],
+    "updatedAt": "2026-03-25T01:28:03.026Z",
+    "source": "compat"
+  },
+  "execution": {
+    "runnable": true,
+    "mode": "native",
+    "availableFunctions": [
+      {
+        "name": "buildIntentSummary",
+        "sourcePath": "src/index.ts",
+        "mode": "native",
+        "callable": true,
+        "signature": "buildIntentSummary()"
+      },
+      {
+        "name": "describeWorkspaceContext",
+        "sourcePath": "src/index.ts",
+        "mode": "native",
+        "callable": true,
+        "signature": "describeWorkspaceContext()"
+      },
+      {
+        "name": "health",
+        "sourcePath": "src/index.ts",
+        "mode": "native",
+        "callable": true,
+        "signature": "health()"
+      },
+      {
+        "name": "routeIndex",
+        "sourcePath": "src/index.ts",
+        "mode": "native",
+        "callable": true,
+        "signature": "routeIndex()"
+      },
+      {
+        "name": "routeRequest",
+        "sourcePath": "src/index.ts",
+        "mode": "native",
+        "callable": true,
+        "signature": "routeRequest(req: IncomingMessage)"
+      },
+      {
+        "name": "startServer",
+        "sourcePath": "src/index.ts",
+        "mode": "native",
+        "callable": true,
+        "signature": "startServer()"
+      }
+    ],
+    "lastRun": null,
+    "updatedAt": "2026-03-25T01:28:03.148Z"
+  },
+  "runtimeState": {
+    "runnable": true,
+    "engine": "native",
+    "availableFunctions": [
+      {
+        "name": "buildIntentSummary",
+        "sourcePath": "src/index.ts",
+        "mode": "native",
+        "callable": true,
+        "signature": "buildIntentSummary()"
+      },
+      {
+        "name": "describeWorkspaceContext",
+        "sourcePath": "src/index.ts",
+        "mode": "native",
+        "callable": true,
+        "signature": "describeWorkspaceContext()"
+      },
+      {
+        "name": "health",
+        "sourcePath": "src/index.ts",
+        "mode": "native",
+        "callable": true,
+        "signature": "health()"
+      },
+      {
+        "name": "routeIndex",
+        "sourcePath": "src/index.ts",
+        "mode": "native",
+        "callable": true,
+        "signature": "routeIndex()"
+      },
+      {
+        "name": "routeRequest",
+        "sourcePath": "src/index.ts",
+        "mode": "native",
+        "callable": true,
+        "signature": "routeRequest(req: IncomingMessage)"
+      },
+      {
+        "name": "startServer",
+        "sourcePath": "src/index.ts",
+        "mode": "native",
+        "callable": true,
+        "signature": "startServer()"
+      }
+    ],
+    "patches": [],
+    "updatedAt": "2026-03-25T01:28:03.148Z",
+    "lastRun": null
+  },
+  "snapshot": {
+    "id": "chk_packaging_mn5d6qap_duy4yx",
+    "checkpointId": "chk_packaging_mn5d6qap_duy4yx",
+    "parentSnapshotId": "chk_materializing_mn5d6l0x_cts6v8",
+    "phase": "packaging",
+    "label": "Packaged streamed workspace artifact.",
+    "savedAt": "2026-03-25T01:28:03.745Z",
+    "source": "compat"
+  },
+  "artifact": {
+    "fileName": "bin_mn5d68su_npg6xn.zip",
+    "relativePath": "artifacts/binary-builds/bin_mn5d68su_npg6xn/bin_mn5d68su_npg6xn.zip",
+    "sizeBytes": 26188473,
+    "sha256": "42a3f1305cc93969b77358848f464871702a2cabc8ac143b9694420c5962bb2e"
+  }
+}

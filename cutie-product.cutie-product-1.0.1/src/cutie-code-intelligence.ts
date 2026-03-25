@@ -64,7 +64,7 @@ function toIdentifierCandidate(label: string): string {
 function extractActionScopedEntityLabel(prompt: string): string {
   const normalized = stripMentionTokens(prompt).toLowerCase();
   const scopedMatch =
-    /\b(?:remove|delete|drop|unset|strip|eliminate|rename|replace|change|update|modify|fix)\b\s+(.+)$/.exec(normalized) ||
+    /\b(?:remove|rmove|delete|delte|drop|unset|strip|eliminate|rename|replace|change|update|modify|fix)\b\s+(.+)$/.exec(normalized) ||
     /\b(?:add|create|implement|insert|append|introduce)\b\s+(.+)$/.exec(normalized);
   const scoped = scopedMatch?.[1] || normalized;
   return normalizeIdentifierLabel(
@@ -76,7 +76,7 @@ function extractActionScopedEntityLabel(prompt: string): string {
 
 function normalizeAction(prompt: string): CutieTaskFrameAction {
   const normalized = stripMentionTokens(prompt).toLowerCase();
-  if (/\b(remove|delete|drop|unset|strip|eliminate)\b/.test(normalized)) return "remove";
+  if (/\b(remove|rmove|delete|delte|drop|unset|strip|eliminate)\b/.test(normalized)) return "remove";
   if (/\b(verify|check|confirm|test|validate)\b/.test(normalized)) return "verify";
   if (/\b(add|create|implement|insert|append|introduce)\b/.test(normalized)) return "add";
   return "update";

@@ -1,0 +1,32 @@
+{
+  "buildId": "bin_mn5d68su_npg6xn",
+  "artifactKind": "package_bundle",
+  "name": "binary-make-me-a-small-customer-support-dashboa",
+  "displayName": "Make Me A Small Customer Support Dashboa",
+  "description": "Make me a small customer support dashboard with a login screen, ticket list, and search.",
+  "intent": "Make me a small customer support dashboard with a login screen, ticket list, and search.",
+  "runtime": "node18",
+  "platform": "portable",
+  "packageManager": "npm",
+  "entrypoint": "dist/src/index.js",
+  "installCommand": "npm install",
+  "buildCommand": "npm run build",
+  "startCommand": "npm start",
+  "sourceFiles": [
+    "package.json",
+    "README.md",
+    "src/index.ts",
+    "tsconfig.json"
+  ],
+  "outputFiles": [
+    "binary.manifest.json",
+    "dist/src/index.js",
+    "package-lock.json",
+    "package.json",
+    "README.md",
+    "src/index.ts",
+    "tsconfig.json"
+  ],
+  "warnings": [],
+  "createdAt": "2026-03-25T01:27:53.107Z"
+}

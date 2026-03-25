@@ -194,7 +194,10 @@ export class CutieBinaryBundleController {
   async generateBinaryBuild(rawIntent: string): Promise<void> {
     const intent = rawIntent.trim();
     if (!intent) {
-      await this.appendSessionMessage("system", "Add an intent in the composer before spinning up an app build.");
+      await this.appendSessionMessage(
+        "system",
+        "Add what you want to build in the App Builder box or the chat composer before creating an app."
+      );
       await this.deps.emitState();
       return;
     }
@@ -368,7 +371,10 @@ export class CutieBinaryBundleController {
 
     const intent = rawIntent.trim();
     if (!intent) {
-      await this.appendSessionMessage("system", "Add refinement instructions in the composer before sending them to the active build.");
+      await this.appendSessionMessage(
+        "system",
+        "Add a plain-English improvement request in the App Builder box or the chat composer before improving this build."
+      );
       await this.deps.emitState();
       return;
     }
@@ -940,7 +946,7 @@ export class CutieBinaryBundleController {
         return;
       case "canceled":
         this.resolveLiveAssistant({
-          content: event.text || "Portable bundle run was canceled.",
+          content: event.text || "App build was canceled.",
           status: "canceled",
           mode: this.liveBubble.live.mode,
           phase: event.phase || "canceled",
@@ -1399,7 +1405,7 @@ export class CutieBinaryBundleController {
     let transientFailures = 0;
 
     while (isBinaryBuildPending(current)) {
-      const nextActivity = current.status === "queued" ? "Portable starter bundle queued" : "Building portable starter bundle";
+      const nextActivity = current.status === "queued" ? "App build queued" : "Building app";
       if (nextActivity !== lastActivity) {
         this.pushActivity(nextActivity);
         lastActivity = nextActivity;
@@ -1417,7 +1423,7 @@ export class CutieBinaryBundleController {
         }
 
         transientFailures += 1;
-        this.pushActivity(`Retrying bundle status (${transientFailures}/4)`);
+        this.pushActivity(`Retrying app build status (${transientFailures}/4)`);
         await delay(400 * transientFailures);
         continue;
       }

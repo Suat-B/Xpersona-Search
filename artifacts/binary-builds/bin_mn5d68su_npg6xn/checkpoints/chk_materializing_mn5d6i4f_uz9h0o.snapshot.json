@@ -1,0 +1,181 @@
+{
+  "buildId": "bin_mn5d68su_npg6xn",
+  "checkpointId": "chk_materializing_mn5d6i4f_uz9h0o",
+  "savedAt": "2026-03-25T01:27:53.151Z",
+  "draftFiles": {
+    "package.json": "{\n  \"name\": \"binary-make-me-a-small-customer-support-dashboa\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"description\": \"Make me a small customer support dashboard with a login screen, ticket list, and search.\",\n  \"scripts\": {\n    \"build\": \"tsc -p tsconfig.json\",\n    \"start\": \"node dist/src/index.js\"\n  },\n  \"devDependencies\": {\n    \"@types/node\": \"^22.0.0\",\n    \"typescript\": \"^5.0.0\"\n  }\n}"
+  },
+  "plan": {
+    "name": "binary-make-me-a-small-customer-support-dashboa",
+    "displayName": "Make Me A Small Customer Support Dashboa",
+    "description": "Make me a small customer support dashboard with a login screen, ticket list, and search.",
+    "entrypoint": "dist/src/index.js",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "sourceFiles": [
+      "package.json",
+      "README.md",
+      "src/index.ts",
+      "tsconfig.json"
+    ],
+    "warnings": []
+  },
+  "preview": {
+    "plan": {
+      "name": "binary-make-me-a-small-customer-support-dashboa",
+      "displayName": "Make Me A Small Customer Support Dashboa",
+      "description": "Make me a small customer support dashboard with a login screen, ticket list, and search.",
+      "entrypoint": "dist/src/index.js",
+      "buildCommand": "npm run build",
+      "startCommand": "npm start",
+      "sourceFiles": [
+        "package.json",
+        "README.md",
+        "src/index.ts",
+        "tsconfig.json"
+      ],
+      "warnings": []
+    },
+    "files": [
+      {
+        "path": "package.json",
+        "language": "json",
+        "preview": "{\n  \"name\": \"binary-make-me-a-small-customer-support-dashboa\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"description\": \"Make me a small customer support dashboard with a login screen, ticket list, and search.\",\n  \"scripts\": {\n    \"build\": \"tsc -p tsconfig.json\",\n    \"start\": \"node dist/src/index.js\"\n  },\n  \"devDependencies\": {\n    \"@types/node\": \"^22.0.0\",\n    \"typescript\": \"^5.0.0\"\n  }\n}",
+        "hash": "503003271a85c293f2720d849143ecd116fac6740b536b86a964f71ccc8eac1b",
+        "completed": true,
+        "updatedAt": "2026-03-25T01:27:53.126Z"
+      }
+    ],
+    "recentLogs": [
+      "Completed package.json"
+    ]
+  },
+  "manifest": {
+    "buildId": "bin_mn5d68su_npg6xn",
+    "artifactKind": "package_bundle",
+    "name": "binary-make-me-a-small-customer-support-dashboa",
+    "displayName": "Make Me A Small Customer Support Dashboa",
+    "description": "Make me a small customer support dashboard with a login screen, ticket list, and search.",
+    "intent": "Make me a small customer support dashboard with a login screen, ticket list, and search.",
+    "runtime": "node18",
+    "platform": "portable",
+    "packageManager": "npm",
+    "entrypoint": "dist/src/index.js",
+    "installCommand": "npm install",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "sourceFiles": [
+      "package.json",
+      "README.md",
+      "src/index.ts",
+      "tsconfig.json"
+    ],
+    "outputFiles": [],
+    "warnings": [],
+    "createdAt": "2026-03-25T01:27:53.107Z"
+  },
+  "reliability": {
+    "status": "warn",
+    "score": 82,
+    "summary": "Live reliability snapshot found 2 warnings.",
+    "targetEnvironment": {
+      "runtime": "node18",
+      "platform": "portable",
+      "packageManager": "npm"
+    },
+    "issues": [
+      {
+        "code": "incomplete_modules",
+        "severity": "warning",
+        "message": "Not all planned source modules are fully formed yet.",
+        "detail": "0/1 ready"
+      },
+      {
+        "code": "runtime_not_runnable",
+        "severity": "warning",
+        "message": "The live runtime is not callable yet."
+      }
+    ],
+    "warnings": [],
+    "generatedAt": "2026-03-25T01:27:53.134Z"
+  },
+  "liveReliability": {
+    "score": 82,
+    "trend": "steady",
+    "warnings": [
+      "Not all planned source modules are fully formed yet.",
+      "The live runtime is not callable yet."
+    ],
+    "blockers": [],
+    "resolvedBlockers": [],
+    "updatedAt": "2026-03-25T01:27:53.134Z",
+    "source": "compat"
+  },
+  "artifactState": {
+    "coverage": 17,
+    "runnable": false,
+    "sourceFilesTotal": 1,
+    "sourceFilesReady": 0,
+    "outputFilesReady": 0,
+    "entryPoints": [],
+    "latestFile": "package.json",
+    "updatedAt": "2026-03-25T01:27:53.134Z"
+  },
+  "sourceGraph": {
+    "coverage": 21,
+    "readyModules": 0,
+    "totalModules": 1,
+    "modules": [],
+    "dependencies": [
+      {
+        "from": "package.json",
+        "to": "@types/node",
+        "kind": "dependency",
+        "resolved": true
+      },
+      {
+        "from": "package.json",
+        "to": "typescript",
+        "kind": "dependency",
+        "resolved": true
+      }
+    ],
+    "diagnostics": [],
+    "updatedAt": "2026-03-25T01:27:53.132Z"
+  },
+  "astState": {
+    "coverage": 21,
+    "moduleCount": 0,
+    "modules": [],
+    "nodes": [],
+    "updatedAt": "2026-03-25T01:27:53.132Z",
+    "source": "compat"
+  },
+  "execution": {
+    "runnable": false,
+    "mode": "none",
+    "availableFunctions": [],
+    "lastRun": null,
+    "updatedAt": "2026-03-25T01:27:53.132Z"
+  },
+  "runtimeState": {
+    "runnable": false,
+    "engine": "none",
+    "availableFunctions": [],
+    "patches": [],
+    "updatedAt": "2026-03-25T01:27:53.132Z",
+    "lastRun": null
+  },
+  "runtimePatches": [],
+  "prompt": "Make me a small customer support dashboard with a login screen, ticket list, and search.",
+  "parentSnapshotId": "chk_planning_mn5d6i3c_vm4w6o",
+  "snapshot": {
+    "id": "chk_materializing_mn5d6i4f_uz9h0o",
+    "checkpointId": "chk_materializing_mn5d6i4f_uz9h0o",
+    "parentSnapshotId": "chk_planning_mn5d6i3c_vm4w6o",
+    "phase": "materializing",
+    "label": "Generated package.json",
+    "savedAt": "2026-03-25T01:27:53.151Z",
+    "source": "compat"
+  }
+}

@@ -38,8 +38,23 @@ function isAssistantTranscriptEvent(event: CutieTranscriptEvent): boolean {
   return event.kind === "assistant_text" || event.kind === "final";
 }
 
+const MAX_OPERATIONAL_TRANSCRIPT_LINES = 18;
+
+function compactOperationalTranscriptLines(lines: string[]): string[] {
+  const deduped: string[] = [];
+  for (const rawLine of lines) {
+    const line = trimText(rawLine);
+    if (!line) continue;
+    if (deduped.length && deduped[deduped.length - 1] === line) continue;
+    deduped.push(line);
+  }
+  if (deduped.length <= MAX_OPERATIONAL_TRANSCRIPT_LINES) return deduped;
+  const hiddenCount = deduped.length - MAX_OPERATIONAL_TRANSCRIPT_LINES;
+  return [`... ${hiddenCount} earlier updates hidden`, ...deduped.slice(-MAX_OPERATIONAL_TRANSCRIPT_LINES)];
+}
+
 function formatTranscriptSectionLines(lines: string[]): string {
-  return lines.map((line) => trimText(line)).filter(Boolean).join("\n\n");
+  return compactOperationalTranscriptLines(lines).join("\n");
 }
 
 export function humanizeSuppressedAssistantArtifact(raw: string): string {

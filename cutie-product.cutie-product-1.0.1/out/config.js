@@ -153,8 +153,8 @@ function getProjectKey() {
 function getModelHint() {
     const configured = vscode.workspace
         .getConfiguration(exports.EXTENSION_NAMESPACE)
-        .get("model", "openai/gpt-oss-120b:fastest");
-    return String(configured || "openai/gpt-oss-120b:fastest").trim();
+        .get("model", "Qwen/Qwen2.5-Coder-32B-Instruct:fastest");
+    return String(configured || "Qwen/Qwen2.5-Coder-32B-Instruct:fastest").trim();
 }
 function getPromptMarkdownPath() {
     const configured = vscode.workspace
@@ -163,7 +163,7 @@ function getPromptMarkdownPath() {
     return String(configured || "").trim();
 }
 /** Presets for the chat model dropdown; the configured workspace model is always included. Add ids here as you ship more. */
-const MODEL_PICKER_PRESETS = ["openai/gpt-oss-120b:fastest"];
+const MODEL_PICKER_PRESETS = ["Qwen/Qwen2.5-Coder-32B-Instruct:fastest"];
 function getModelPickerOptions() {
     return Array.from(new Set([getModelHint(), ...MODEL_PICKER_PRESETS])).sort((a, b) => a.localeCompare(b));
 }

@@ -285,7 +285,7 @@ export type CutieChatMessage = {
   content: string;
   createdAt: string;
   runId?: string;
-  presentation?: "plain" | "live_binary" | "run_transcript";
+  presentation?: "plain" | "live_binary" | "run_transcript" | "run_change_recap";
   live?: CutieBinaryLiveBubbleState;
 };
 
@@ -498,6 +498,11 @@ export type CutieChatDiffItem = {
   toolName: "write_file" | "patch_file" | "edit_file";
   /** Unified diff text (may be truncated for very large files). */
   patch: string;
+  /** Stable receipt id when this diff came from a persisted run receipt. */
+  receiptId?: string;
+  /** Tool step index when available (helps dedupe live + receipt replay). */
+  step?: number;
+  source?: "live_callback" | "receipt_backfill";
 };
 
 /** Model + reasoning controls under the chat composer (synced with workspace settings). */
@@ -681,6 +686,8 @@ export type CutieWorkspaceMutationInfo = {
   runId: string;
   relativePath: string;
   toolName: "write_file" | "patch_file" | "edit_file";
+  receiptId?: string;
+  step?: number;
   /** Snapshot immediately before this mutation (empty string if the file did not exist). */
   previousContent: string;
   /** Snapshot immediately after this mutation when available (can be empty for an empty file). */

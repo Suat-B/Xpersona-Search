@@ -50,7 +50,7 @@ function toIdentifierCandidate(label) {
 }
 function extractActionScopedEntityLabel(prompt) {
     const normalized = stripMentionTokens(prompt).toLowerCase();
-    const scopedMatch = /\b(?:remove|delete|drop|unset|strip|eliminate|rename|replace|change|update|modify|fix)\b\s+(.+)$/.exec(normalized) ||
+    const scopedMatch = /\b(?:remove|rmove|delete|delte|drop|unset|strip|eliminate|rename|replace|change|update|modify|fix)\b\s+(.+)$/.exec(normalized) ||
         /\b(?:add|create|implement|insert|append|introduce)\b\s+(.+)$/.exec(normalized);
     const scoped = scopedMatch?.[1] || normalized;
     return normalizeIdentifierLabel(scoped
@@ -59,7 +59,7 @@ function extractActionScopedEntityLabel(prompt) {
 }
 function normalizeAction(prompt) {
     const normalized = stripMentionTokens(prompt).toLowerCase();
-    if (/\b(remove|delete|drop|unset|strip|eliminate)\b/.test(normalized))
+    if (/\b(remove|rmove|delete|delte|drop|unset|strip|eliminate)\b/.test(normalized))
         return "remove";
     if (/\b(verify|check|confirm|test|validate)\b/.test(normalized))
         return "verify";

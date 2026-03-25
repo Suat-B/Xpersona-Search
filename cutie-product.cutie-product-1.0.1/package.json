@@ -173,7 +173,7 @@
 				},
 				"cutie-product.model": {
 					"type": "string",
-					"default": "openai/gpt-oss-120b:fastest",
+					"default": "Qwen/Qwen2.5-Coder-32B-Instruct:fastest",
 					"description": "Model id for the Cutie proxy. Use a \"fastest\" or small variant if your host exposes one—planning runs once per agent step, so a faster model noticeably shortens waits."
 				},
 				"cutie-product.reasoningLevel": {

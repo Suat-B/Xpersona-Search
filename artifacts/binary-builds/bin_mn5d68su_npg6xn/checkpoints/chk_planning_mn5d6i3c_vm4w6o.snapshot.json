@@ -1,0 +1,111 @@
+{
+  "buildId": "bin_mn5d68su_npg6xn",
+  "checkpointId": "chk_planning_mn5d6i3c_vm4w6o",
+  "savedAt": "2026-03-25T01:27:53.112Z",
+  "draftFiles": {},
+  "plan": {
+    "name": "binary-make-me-a-small-customer-support-dashboa",
+    "displayName": "Make Me A Small Customer Support Dashboa",
+    "description": "Make me a small customer support dashboard with a login screen, ticket list, and search.",
+    "entrypoint": "dist/src/index.js",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "sourceFiles": [
+      "package.json",
+      "README.md",
+      "src/index.ts",
+      "tsconfig.json"
+    ],
+    "warnings": []
+  },
+  "preview": {
+    "plan": {
+      "name": "binary-make-me-a-small-customer-support-dashboa",
+      "displayName": "Make Me A Small Customer Support Dashboa",
+      "description": "Make me a small customer support dashboard with a login screen, ticket list, and search.",
+      "entrypoint": "dist/src/index.js",
+      "buildCommand": "npm run build",
+      "startCommand": "npm start",
+      "sourceFiles": [
+        "package.json",
+        "README.md",
+        "src/index.ts",
+        "tsconfig.json"
+      ],
+      "warnings": []
+    },
+    "files": [],
+    "recentLogs": []
+  },
+  "manifest": {
+    "buildId": "bin_mn5d68su_npg6xn",
+    "artifactKind": "package_bundle",
+    "name": "binary-make-me-a-small-customer-support-dashboa",
+    "displayName": "Make Me A Small Customer Support Dashboa",
+    "description": "Make me a small customer support dashboard with a login screen, ticket list, and search.",
+    "intent": "Make me a small customer support dashboard with a login screen, ticket list, and search.",
+    "runtime": "node18",
+    "platform": "portable",
+    "packageManager": "npm",
+    "entrypoint": "dist/src/index.js",
+    "installCommand": "npm install",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "sourceFiles": [
+      "package.json",
+      "README.md",
+      "src/index.ts",
+      "tsconfig.json"
+    ],
+    "outputFiles": [],
+    "warnings": [],
+    "createdAt": "2026-03-25T01:27:53.107Z"
+  },
+  "reliability": {
+    "status": "pass",
+    "score": 100,
+    "summary": "Pre-build reliability snapshot looks healthy.",
+    "targetEnvironment": {
+      "runtime": "node18",
+      "platform": "portable",
+      "packageManager": "npm"
+    },
+    "issues": [],
+    "warnings": [],
+    "generatedAt": "2026-03-25T01:27:41.592Z"
+  },
+  "liveReliability": {
+    "score": 100,
+    "trend": "steady",
+    "warnings": [],
+    "blockers": [],
+    "resolvedBlockers": [],
+    "updatedAt": "2026-03-25T01:27:41.592Z",
+    "source": "compat"
+  },
+  "artifactState": {
+    "coverage": 0,
+    "runnable": false,
+    "sourceFilesTotal": 0,
+    "sourceFilesReady": 0,
+    "outputFilesReady": 0,
+    "entryPoints": [],
+    "updatedAt": "2026-03-25T01:27:41.592Z"
+  },
+  "sourceGraph": null,
+  "astState": null,
+  "execution": null,
+  "runtimeState": null,
+  "runtimePatches": [],
+  "prompt": "Make me a small customer support dashboard with a login screen, ticket list, and search.",
+  "parentSnapshotId": null,
+  "snapshot": {
+    "id": "chk_planning_mn5d6i3c_vm4w6o",
+    "checkpointId": "chk_planning_mn5d6i3c_vm4w6o",
+    "parentSnapshotId": null,
+    "phase": "planning",
+    "label": "Prepared streaming generation plan.",
+    "savedAt": "2026-03-25T01:27:53.112Z",
+    "source": "compat"
+  }
+}

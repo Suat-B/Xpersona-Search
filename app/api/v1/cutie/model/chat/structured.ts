@@ -5,6 +5,12 @@ type CutieStructuredToolCall = {
   summary?: string;
 };
 
+type CutieStructuredObjectiveOutcome = {
+  id: string;
+  status: "done" | "blocked";
+  note?: string;
+};
+
 type CutieArtifactExtractionShape =
   | "tool_call_wrapper"
   | "tool_calls_wrapper"
@@ -27,9 +33,10 @@ export type CutieStructuredTurnResult =
       response: {
         type: "final";
         text: string;
+        objectives?: CutieStructuredObjectiveOutcome[];
       };
       assistantText: string;
-      normalizationSource: "plain_final";
+      normalizationSource: "plain_final" | "text_tool_artifact";
       artifactExtractionShape?: CutieArtifactExtractionShape;
       batchCollapsedToSingleAction?: boolean;
     };
@@ -45,12 +52,76 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
+function stripCodeFence(raw: string): string {
+  const trimmed = String(raw || "").trim();
+  const fenceMatch = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(trimmed);
+  return fenceMatch ? fenceMatch[1].trim() : trimmed;
+}
+
 function tryParseJson(value: string): unknown | null {
+  const normalized = stripCodeFence(value);
+  if (!normalized) return null;
   try {
-    return JSON.parse(value) as unknown;
+    return JSON.parse(normalized) as unknown;
   } catch {
     return null;
   }
+}
+
+function normalizeObjectiveOutcomes(value: unknown): CutieStructuredObjectiveOutcome[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const rows: CutieStructuredObjectiveOutcome[] = [];
+  for (const item of value) {
+    const row = asRecord(item);
+    const id = String(row.id || "").trim();
+    const status = row.status === "done" || row.status === "blocked" ? row.status : null;
+    const note = String(row.note || "").trim();
+    if (!id || !status) continue;
+    rows.push({
+      id,
+      status,
+      ...(note ? { note: note.slice(0, 500) } : {}),
+    });
+  }
+  return rows.length ? rows : undefined;
+}
+
+function normalizeFinalCandidate(value: unknown): { text: string; objectives?: CutieStructuredObjectiveOutcome[] } | null {
+  const record = asRecord(value);
+  if (!Object.keys(record).length) return null;
+
+  // Some models wrap under a nested response object.
+  if (record.response && typeof record.response === "object") {
+    const nested = normalizeFinalCandidate(record.response);
+    if (nested) return nested;
+  }
+
+  if (record.tool_call || Array.isArray(record.tool_calls)) return null;
+
+  const type = String(record.type || "").trim().toLowerCase();
+  const hasFinalText =
+    typeof record.final === "string" ||
+    typeof record.text === "string" ||
+    typeof record.final_answer === "string";
+  const objectives = normalizeObjectiveOutcomes(record.objectives);
+  const isExplicitFinal = type === "final" || type === "final_answer";
+
+  if (!isExplicitFinal && !hasFinalText && !objectives?.length) return null;
+  if (type && type !== "final" && type !== "final_answer") return null;
+
+  const text =
+    typeof record.final === "string"
+      ? record.final.trim()
+      : typeof record.text === "string"
+        ? record.text.trim()
+        : typeof record.final_answer === "string"
+          ? record.final_answer.trim()
+        : "";
+
+  return {
+    text,
+    ...(objectives ? { objectives } : {}),
+  };
 }
 
 function normalizeToolArguments(value: unknown): Record<string, unknown> {
@@ -109,7 +180,9 @@ function detectArtifactExtractionShape(value: unknown): CutieArtifactExtractionS
   return null;
 }
 
-function extractToolPayloadsFromText(text: string): Array<{ payload: unknown; artifactExtractionShape?: CutieArtifactExtractionShape }> {
+function extractJsonPayloadsFromText(
+  text: string
+): Array<{ payload: unknown; artifactExtractionShape?: CutieArtifactExtractionShape }> {
   const payloads: Array<{ payload: unknown; artifactExtractionShape?: CutieArtifactExtractionShape }> = [];
   const matches = [...String(text || "").matchAll(/\[TOOL_CALL\]([\s\S]*?)\[\/TOOL_CALL\]/gi)];
   for (const match of matches) {
@@ -135,21 +208,53 @@ function extractToolPayloadsFromText(text: string): Array<{ payload: unknown; ar
   return payloads;
 }
 
-export function stripCutieToolArtifactText(text: string): string {
-  const withoutBlocks = String(text || "").replace(/\[TOOL_CALL\][\s\S]*?\[\/TOOL_CALL\]/gi, "").trim();
-  if (!withoutBlocks) return "";
-  const parsed = tryParseJson(withoutBlocks);
-  const record = asRecord(parsed);
-  if (
+function isToolArtifactRecord(record: Record<string, unknown>): boolean {
+  return Boolean(
     record.tool_call ||
-    Array.isArray(record.tool_calls) ||
-    (typeof record.toolName === "string" && record.toolName.trim()) ||
-    (typeof record.name === "string" && record.name.trim()) ||
-    (typeof record.tool === "string" && record.tool.trim())
-  ) {
-    return "";
+      Array.isArray(record.tool_calls) ||
+      (typeof record.toolName === "string" && record.toolName.trim()) ||
+      (typeof record.name === "string" && record.name.trim()) ||
+      (typeof record.tool === "string" && record.tool.trim())
+  );
+}
+
+function findStructuredArtifactStart(text: string): number {
+  const source = String(text || "");
+  if (!source.trim()) return -1;
+
+  const leadingWhitespace = source.length - source.trimStart().length;
+  const trimmed = source.trimStart();
+  const parsedTopLevel = tryParseJson(trimmed);
+  const parsedRecord = asRecord(parsedTopLevel);
+  if (isToolArtifactRecord(parsedRecord) || normalizeFinalCandidate(parsedTopLevel)) {
+    return leadingWhitespace;
   }
-  return withoutBlocks;
+
+  const patterns = [
+    /\[TOOL_CALL\]/i,
+    /[\{\[]\s*"tool_call"\s*:/i,
+    /[\{\[]\s*"tool_calls"\s*:/i,
+    /[\{\[]\s*"toolName"\s*:\s*"[^"]+"/i,
+    /[\{\[]\s*"type"\s*:\s*"(?:tool_call|tool_calls|tool_batch|final|final_answer)"/i,
+  ];
+  let best = -1;
+  for (const pattern of patterns) {
+    const match = pattern.exec(source);
+    if (!match?.length) continue;
+    if (best < 0 || match.index < best) {
+      best = match.index;
+    }
+  }
+  return best;
+}
+
+export function stripCutieToolArtifactText(text: string): string {
+  const withoutBlocks = String(text || "").replace(/\[TOOL_CALL\][\s\S]*?\[\/TOOL_CALL\]/gi, "");
+  const trimmed = withoutBlocks.trim();
+  if (!trimmed) return "";
+  const artifactStart = findStructuredArtifactStart(trimmed);
+  if (artifactStart < 0) return trimmed;
+  return trimmed.slice(0, artifactStart).trimEnd();
 }
 
 export function extractCutieToolCallsFromText(
@@ -160,7 +265,7 @@ export function extractCutieToolCallsFromText(
   const allowed = new Set(Array.from(allowedToolNames));
   const calls: CutieStructuredToolCall[] = [];
   let artifactExtractionShape: CutieArtifactExtractionShape | undefined;
-  const payloads = extractToolPayloadsFromText(text);
+  const payloads = extractJsonPayloadsFromText(text);
   for (const payload of payloads) {
     const record = asRecord(payload.payload);
     const items = Array.isArray(record.tool_calls)
@@ -179,6 +284,17 @@ export function extractCutieToolCallsFromText(
     }
   }
   return { toolCalls: calls, ...(artifactExtractionShape ? { artifactExtractionShape } : {}) };
+}
+
+function extractCutieFinalFromText(
+  text: string
+): { text: string; objectives?: CutieStructuredObjectiveOutcome[] } | null {
+  const payloads = extractJsonPayloadsFromText(text);
+  for (const payload of payloads) {
+    const direct = normalizeFinalCandidate(payload.payload);
+    if (direct) return direct;
+  }
+  return null;
 }
 
 export function extractCutieToolCallsFromUpstream(
@@ -291,6 +407,18 @@ export function normalizeStructuredCutieTurnResult(input: {
       ...(textExtraction.artifactExtractionShape
         ? { artifactExtractionShape: textExtraction.artifactExtractionShape }
         : {}),
+    };
+  }
+  const finalExtraction = extractCutieFinalFromText(input.assistantText);
+  if (finalExtraction) {
+    return {
+      response: {
+        type: "final",
+        text: finalExtraction.text,
+        ...(finalExtraction.objectives ? { objectives: finalExtraction.objectives } : {}),
+      },
+      assistantText: finalExtraction.text,
+      normalizationSource: "text_tool_artifact",
     };
   }
 
