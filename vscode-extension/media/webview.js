@@ -83,6 +83,7 @@
     settingsMenu: document.getElementById("settingsMenu"),
     settingsSignIn: document.getElementById("settingsSignIn"),
     settingsSignOut: document.getElementById("settingsSignOut"),
+    settingsRuntimeCutie: document.getElementById("settingsRuntimeCutie"),
     settingsRuntimeQwen: document.getElementById("settingsRuntimeQwen"),
     settingsRuntimeHosted: document.getElementById("settingsRuntimeHosted"),
     settingsUndo: document.getElementById("settingsUndo"),
@@ -377,6 +378,8 @@
         return "Draft ready";
       case "collecting_context":
         return "Collecting context";
+      case "waiting_for_cutie":
+        return "Waiting for Cutie";
       case "waiting_for_qwen":
         return "Waiting for Qwen";
       case "awaiting_approval":
@@ -1556,6 +1559,8 @@
   function liveTransportLabel(live) {
     const transport = String((live && live.transport) || "");
     switch (transport) {
+      case "cutie":
+        return "Cutie stream";
       case "qwen":
         return "Qwen stream";
       case "playground":
@@ -2169,6 +2174,11 @@
       elements.settingsRuntimeQwen.classList.toggle("active", isQwen);
       elements.settingsRuntimeQwen.disabled = isQwen;
     }
+    if (elements.settingsRuntimeCutie) {
+      const isCutie = state.runtime === "cutie";
+      elements.settingsRuntimeCutie.classList.toggle("active", isCutie);
+      elements.settingsRuntimeCutie.disabled = isCutie;
+    }
     if (elements.settingsRuntimeHosted) {
       const isHosted = state.runtime === "playgroundApi";
       elements.settingsRuntimeHosted.classList.toggle("active", isHosted);
@@ -2310,6 +2320,10 @@
       case "runtimeQwen":
         setSettingsMenuOpen(false);
         vscode.postMessage({ type: "setRuntimeBackend", runtime: "qwenCode" });
+        return;
+      case "runtimeCutie":
+        setSettingsMenuOpen(false);
+        vscode.postMessage({ type: "setRuntimeBackend", runtime: "cutie" });
         return;
       case "runtimeHosted":
         setSettingsMenuOpen(false);

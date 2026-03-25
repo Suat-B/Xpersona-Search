@@ -229,6 +229,23 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
     .settings-menu.is-hidden {
       display: none;
     }
+    .settings-menu-section {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding-bottom: 6px;
+      margin-bottom: 2px;
+      border-bottom: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+    }
+    .settings-menu-label {
+      padding: 0 10px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      line-height: 1.4;
+    }
     .settings-menu button {
       display: flex;
       align-items: center;
@@ -278,7 +295,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       color: var(--danger);
     }
     .drawer-scrim {
-      display: none;
+      display: none !important;
       position: absolute;
       inset: 0;
       z-index: 14;
@@ -286,53 +303,33 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       background: rgba(0, 0, 0, 0.34);
       cursor: pointer;
     }
-    .workspace-shell[data-history-open="true"] .drawer-scrim,
-    .workspace-shell[data-artifacts-open="true"] .drawer-scrim {
-      display: block;
-    }
-    .history-drawer {
-      position: absolute;
-      top: 0;
-      left: 0;
-      bottom: 0;
-      z-index: 15;
-      width: min(340px, calc(100vw - 84px));
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-      min-height: 0;
-      border-right: 1px solid var(--line);
-      background: var(--widget-surface);
-      box-shadow: var(--shadow);
-      transform: translateX(-104%);
-      opacity: 0;
-      pointer-events: none;
-    }
-    .workspace-shell[data-history-open="true"] .history-drawer {
-      transform: translateX(0);
-      opacity: 1;
-      pointer-events: auto;
-    }
+    .history-drawer,
     .artifacts-drawer {
       position: absolute;
       top: 0;
       right: 0;
       bottom: 0;
+      left: 0;
       z-index: 15;
-      width: min(360px, calc(100vw - 84px));
       display: flex;
       flex-direction: column;
       gap: 0;
       min-height: 0;
-      border-left: 1px solid var(--line);
-      background: var(--widget-surface);
-      box-shadow: var(--shadow);
-      transform: translateX(104%);
+      border: 0;
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--canvas) 96%, #000 4%), color-mix(in srgb, var(--panel) 90%, var(--canvas) 10%));
+      box-shadow: none;
+      transform: translateY(12px);
       opacity: 0;
       pointer-events: none;
     }
+    .workspace-shell[data-history-open="true"] .history-drawer {
+      transform: translateY(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
     .workspace-shell[data-artifacts-open="true"] .artifacts-drawer {
-      transform: translateX(0);
+      transform: translateY(0);
       opacity: 1;
       pointer-events: auto;
     }
@@ -341,8 +338,14 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       align-items: flex-start;
       justify-content: space-between;
       gap: 12px;
-      padding: 18px 18px 14px;
+      padding: 26px 28px 18px;
       border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--surface-elevated) 72%, transparent);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      width: 100%;
+      z-index: 2;
     }
     .history-drawer-label {
       color: var(--muted);
@@ -404,19 +407,28 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       flex: 1;
       min-height: 0;
       overflow: auto;
-      padding: 10px 10px 14px;
+      width: 100%;
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 22px 20px 28px;
     }
     .task-empty {
-      padding: 14px 12px;
+      padding: 18px 18px;
       color: var(--muted);
       font-size: 13px;
       line-height: 1.6;
+      border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+      border-radius: 18px;
+      background: color-mix(in srgb, var(--panel-elevated) 78%, transparent);
     }
     .task-item {
-      margin-bottom: 4px;
+      margin-bottom: 10px;
     }
     .task-footer {
-      padding: 10px 12px 14px;
+      width: 100%;
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 0 20px 24px;
       border-top: 1px solid var(--line);
     }
     .task-footer.is-hidden {
@@ -499,11 +511,11 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       width: 100%;
       margin-bottom: 0;
       text-align: left;
-      border: 0;
-      border-radius: 14px;
-      background: var(--widget-surface);
+      border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+      border-radius: 18px;
+      background: color-mix(in srgb, var(--panel-elevated) 84%, transparent);
       color: var(--text);
-      padding: 10px 12px;
+      padding: 14px 16px;
       cursor: pointer;
     }
     .session {
@@ -524,7 +536,8 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
     }
     .task-list .session:hover,
     .task-list .session:focus-visible {
-      background: color-mix(in srgb, var(--accent) 8%, transparent);
+      border-color: color-mix(in srgb, var(--accent) 24%, var(--line) 76%);
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
       outline: none;
     }
     .session.active {
@@ -533,9 +546,9 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 14%, transparent);
     }
     .task-list .session.active {
-      border: 0;
-      box-shadow: none;
-      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      border-color: var(--accent-line);
+      box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 12%, transparent);
+      background: color-mix(in srgb, var(--accent) 14%, transparent);
     }
     .session-title {
       display: block;
@@ -624,10 +637,9 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
     .bubble.system {
       align-self: stretch;
       max-width: 100%;
-      padding: 4px 0 4px 10px;
+      padding: 4px 0;
       margin: 0;
       border: 0;
-      border-left: 2px solid color-mix(in srgb, var(--line) 70%, var(--muted) 30%);
       border-radius: 0;
       background: transparent;
       color: var(--muted);
@@ -1833,8 +1845,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       word-break: break-word;
     }
     .bubble.assistant.live-binary {
-      border-left: 3px solid color-mix(in srgb, var(--accent) 70%, var(--line) 30%);
-      padding-left: 10px;
+      padding-left: 0;
     }
     .live-binary-meta {
       font-size: 10px;
@@ -1918,15 +1929,13 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       text-transform: uppercase;
     }
     .transcript-line.is-ops {
-      padding-left: 12px;
-      border-left: 2px solid color-mix(in srgb, var(--line) 78%, transparent);
+      padding-left: 0;
       color: color-mix(in srgb, var(--text) 84%, var(--muted) 16%);
       font-family: var(--vscode-editor-font-family, ui-monospace, "Cascadia Code", Consolas, monospace);
       font-size: 11.5px;
       letter-spacing: 0.01em;
     }
     .transcript-line.is-ops.is-strong {
-      border-left-color: color-mix(in srgb, var(--accent) 36%, var(--line) 64%);
       color: var(--text);
     }
     .transcript-gap {
@@ -1965,8 +1974,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       }
       .history-drawer,
       .artifacts-drawer {
-        width: 100%;
-        max-width: none;
+        inset: 0;
       }
     }
     @media (max-width: 720px) {
@@ -1975,6 +1983,15 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       }
     }
     @media (max-width: 620px) {
+      .history-drawer-head {
+        padding: 18px 14px 14px;
+      }
+      .task-list {
+        padding: 14px 12px 18px;
+      }
+      .task-footer {
+        padding: 0 12px 16px;
+      }
       .chat {
         padding: 8px 10px 6px;
       }
@@ -1996,11 +2013,11 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
 </head>
 <body>
   <div class="workspace-shell" id="workspaceShell" data-history-open="false" data-artifacts-open="false">
-    <aside class="utility-rail" aria-label="Cutie Product navigation">
+      <aside class="utility-rail" aria-label="Cutie Product navigation">
       <div class="workspace-header-title" id="currentChatTitle">New chat</div>
       <div class="workspace-header-actions">
-        <button type="button" class="rail-button" id="historyToggle" aria-controls="historyDrawer" aria-expanded="false" title="Chats">${chatIcon}</button>
         <button type="button" class="rail-button" id="newChatBtn" title="New chat">${plusIcon}</button>
+        <button type="button" class="rail-button" id="historyToggle" aria-controls="historyDrawer" aria-expanded="false" title="Chats">${chatIcon}</button>
         <button type="button" class="rail-button" id="artifactsToggle" aria-controls="artifactsDrawer" aria-expanded="false" title="Artifacts">${artifactsIcon}</button>
         <button type="button" class="auth-status-button" id="authStatusButton" title="Set Xpersona API key">
           ${keyIcon}
@@ -2012,7 +2029,6 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
           <div class="settings-menu is-hidden" id="settingsMenu" role="menu" aria-label="Cutie Product settings">
             <button type="button" id="settingsSetKey" role="menuitem">Set Xpersona API key</button>
             <button type="button" id="settingsSignIn" role="menuitem">Browser sign in</button>
-            <button type="button" id="settingsUndoPlayground" role="menuitem">Undo last playground batch</button>
             <button type="button" id="settingsSignOut" role="menuitem">Sign out</button>
             <button type="button" id="settingsCopyDebug" role="menuitem">Copy debug report</button>
             <button type="button" id="settingsCapture" role="menuitem">Capture desktop</button>
@@ -2070,69 +2086,6 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       <main class="main">
         <div class="chat" id="chat"></div>
         <div class="objectives-panel is-hidden" id="objectivesPanel" aria-live="polite" aria-label="Task objectives"></div>
-        <section class="binary-panel" id="binaryPanel" aria-label="App builder">
-          <button type="button" class="binary-panel-toggle" id="binaryPanelToggle" aria-expanded="true">
-            <span class="binary-panel-chevron" aria-hidden="true">></span>
-            <span class="binary-panel-title">App Builder</span>
-            <span class="binary-panel-chip" id="binaryStatusChip">Ready</span>
-          </button>
-          <div class="binary-panel-body" id="binaryPanelBody">
-            <div class="binary-intro">
-              <div class="binary-intro-title">Describe what you want in plain English</div>
-              <div class="binary-intro-copy" id="binaryGuideCopy">
-                Cutie can turn a simple description into a live app build. No special commands or coding words needed.
-              </div>
-            </div>
-            <div class="binary-prompt-card">
-              <label class="binary-input-label" for="binaryPromptInput">What should Cutie build?</label>
-              <textarea
-                id="binaryPromptInput"
-                class="binary-prompt-input"
-                placeholder="Example: Make me a simple booking app for a salon with a calendar, customer list, and reminder texts."
-              ></textarea>
-              <div class="binary-create-row">
-                <button type="button" class="binary-action" id="binaryGenerateBtn">Create app</button>
-                <div class="binary-hint">Tip: say what it is for, who will use it, and the main screens or actions you want.</div>
-              </div>
-            </div>
-            <div class="binary-starters" aria-label="Starter ideas">
-              <button type="button" class="binary-starter" data-binary-prompt="Make me a small customer support dashboard with a login screen, ticket list, and search.">Customer dashboard</button>
-              <button type="button" class="binary-starter" data-binary-prompt="Create a landing page for my business with a hero section, testimonials, pricing, and a contact form.">Business website</button>
-              <button type="button" class="binary-starter" data-binary-prompt="Build a simple inventory tracker with add, edit, search, and low-stock alerts.">Inventory tracker</button>
-              <button type="button" class="binary-starter" data-binary-prompt="Make a webhook tool that receives a form submission and sends a Slack message.">Webhook automation</button>
-            </div>
-            <div class="binary-progress-track" aria-hidden="true">
-              <div class="binary-progress-fill" id="binaryProgressFill"></div>
-            </div>
-            <div class="binary-meta" id="binaryMeta"></div>
-            <div class="binary-advanced" id="binaryAdvancedControls" hidden>
-              <div class="binary-section-label">Improve This Build</div>
-              <p class="binary-advanced-copy">Once Cutie has created your first version, you can improve it, go back to a save point, or share it.</p>
-              <div class="binary-actions">
-                <button type="button" class="binary-action subtle" id="binaryRefineBtn">Improve current build</button>
-                <button type="button" class="binary-action subtle" id="binaryBranchBtn">Start new version</button>
-                <button type="button" class="binary-action subtle" id="binaryRewindBtn">Go back to save point</button>
-                <button type="button" class="binary-action subtle" id="binaryValidateBtn">Check quality</button>
-                <button type="button" class="binary-action subtle" id="binaryPublishBtn">Share build</button>
-                <button type="button" class="binary-action subtle" id="binaryCancelBtn">Stop</button>
-                <button type="button" class="binary-action subtle" id="binaryConfigureBtn">Builder settings</button>
-              </div>
-              <div class="binary-runtime-row" id="binaryRuntimeRow">
-                <span>Preview runtime</span>
-                <select class="binary-runtime-select" id="binaryRuntimeSelect" aria-label="App runtime">
-                  <option value="node18">Node 18</option>
-                  <option value="node20">Node 20</option>
-                </select>
-              </div>
-              <div class="binary-execute-row" id="binaryExecuteRow">
-                <input id="binaryEntryInput" type="text" placeholder="Try a function name like main or handler" />
-                <button type="button" class="binary-action subtle" id="binaryExecuteBtn">Try function</button>
-              </div>
-            </div>
-            <div class="binary-section-label">Latest Activity</div>
-            <div class="binary-activity-log" id="binaryActivityLog"></div>
-          </div>
-        </section>
         <div class="composer">
           <div class="mentions" id="mentions"></div>
           <div class="prompt-queue-wrap is-hidden" id="promptQueueWrap" aria-live="polite" aria-label="Queued prompts">
@@ -2284,8 +2237,6 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       warmStartState: null,
       promptState: null,
       authState: { kind: 'none', label: 'Not signed in' },
-      ideRuntime: 'cutie',
-      canUndoPlayground: false,
     };
     let pendingSubmission = null;
     let isSubmitting = false;
@@ -2345,35 +2296,6 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
     document.addEventListener('keydown', onComposerKeydown, true);
     document.addEventListener('keypress', composerKeypressFallback, true);
     document.addEventListener('beforeinput', composerBeforeInput, true);
-
-    const BINARY_PANEL_COLLAPSED_STORAGE_KEY = 'cutiePortableBundlePanelCollapsed';
-
-    function readBinaryPanelCollapsedPreference() {
-      try {
-        const raw = localStorage.getItem(BINARY_PANEL_COLLAPSED_STORAGE_KEY);
-        if (raw === null || raw === '') return false;
-        return raw === '1' || raw === 'true';
-      } catch {
-        return false;
-      }
-    }
-
-    function writeBinaryPanelCollapsedPreference(collapsed) {
-      try {
-        localStorage.setItem(BINARY_PANEL_COLLAPSED_STORAGE_KEY, collapsed ? '1' : '0');
-      } catch {
-        /* ignore quota / private mode */
-      }
-    }
-
-    function applyBinaryPanelCollapseUi(collapsed) {
-      if (!binaryPanel || !binaryPanelToggle) return;
-      binaryPanel.classList.toggle('is-collapsed', collapsed);
-      binaryPanelToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-      if (binaryPanelBody) binaryPanelBody.hidden = collapsed;
-    }
-
-    applyBinaryPanelCollapseUi(readBinaryPanelCollapsedPreference());
 
     function isHistoryOpen() {
       return workspaceShell.dataset.historyOpen === 'true';
@@ -2540,14 +2462,6 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
 
     function normalizePromptText(text) {
       return String(text || '').trim();
-    }
-
-    function binaryIntentText() {
-      return binaryPromptInput && 'value' in binaryPromptInput ? String(binaryPromptInput.value || '').trim() : '';
-    }
-
-    function activeBinaryIntentText() {
-      return binaryIntentText() || composerIntentText();
     }
 
     function friendlyBinaryPhaseLabel(phase) {
@@ -4125,35 +4039,30 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       const warm = state.warmStartState || null;
       const promptState = state.promptState || null;
       if (!warm) {
-        runtimeLine.textContent = '';
+        runtimeLine.textContent = 'Natural-language streaming binary mode is on.';
         return;
       }
       if (warm.warming && !warm.localReady) {
-        runtimeLine.textContent = 'Cutie is warming up.';
+        runtimeLine.textContent = 'Natural-language streaming binary mode is on. Cutie is warming up.';
         return;
       }
       if (promptState && promptState.promptSource === 'external_fallback' && promptState.promptLoadError) {
-        runtimeLine.textContent = 'Cutie is ready with the built-in prompt; the workspace markdown prompt could not be loaded.';
+        runtimeLine.textContent = 'Natural-language streaming binary mode is on. Using the built-in prompt.';
         return;
       }
       if (warm.localReady && warm.hostReady === false) {
-        runtimeLine.textContent = 'Cutie is locally ready; host not yet confirmed.';
+        runtimeLine.textContent = 'Natural-language streaming binary mode is on. Cutie is locally ready.';
         return;
       }
       if (warm.localReady) {
-        runtimeLine.textContent =
-          promptState && promptState.promptSource === 'external_markdown'
-            ? 'Cutie is ready with the workspace operating prompt.'
-            : promptState && promptState.promptSource === 'bundled_markdown'
-              ? 'Cutie is ready with the bundled operating prompt.'
-            : 'Cutie is ready.';
+        runtimeLine.textContent = 'Natural-language streaming binary mode is on.';
         return;
       }
       if (warm.warmFailureSummary) {
-        runtimeLine.textContent = 'Cutie warmup is still in progress.';
+        runtimeLine.textContent = 'Natural-language streaming binary mode is on. Warmup is still in progress.';
         return;
       }
-      runtimeLine.textContent = '';
+      runtimeLine.textContent = 'Natural-language streaming binary mode is on.';
     }
 
     function renderPromptQueue() {
@@ -4242,19 +4151,6 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       settingsToggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
     }
 
-    function syncIdeRuntimeUi() {
-      const rt = state.ideRuntime || 'cutie';
-      const signInEl = document.getElementById('settingsSignIn');
-      if (signInEl) {
-        signInEl.classList.toggle('is-hidden', rt === 'qwenCode');
-      }
-      const undoEl = document.getElementById('settingsUndoPlayground');
-      if (undoEl) {
-        undoEl.classList.toggle('is-hidden', rt !== 'playgroundApi');
-        undoEl.disabled = rt !== 'playgroundApi' || !state.canUndoPlayground;
-      }
-    }
-
     function applyState(next) {
       try {
         applyStateInner(next);
@@ -4319,7 +4215,6 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       renderSessions();
       renderArtifactsList();
       renderMessages();
-      syncIdeRuntimeUi();
 
       const settingsSignOutEl = document.getElementById('settingsSignOut');
       if (settingsSignOutEl) settingsSignOutEl.disabled = authState.kind === 'none';
@@ -4433,13 +4328,6 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
         closeSettingsMenu();
         vscode.postMessage({ type: 'signIn' });
       });
-      const settingsUndoPlayground = document.getElementById('settingsUndoPlayground');
-      if (settingsUndoPlayground) {
-        settingsUndoPlayground.addEventListener('click', () => {
-          closeSettingsMenu();
-          vscode.postMessage({ type: 'undoPlaygroundBatch' });
-        });
-      }
       document.getElementById('settingsSignOut').addEventListener('click', () => {
         closeSettingsMenu();
         vscode.postMessage({ type: 'signOut' });
@@ -4456,101 +4344,6 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
         settingsBinaryConfigure.addEventListener('click', () => {
           closeSettingsMenu();
           vscode.postMessage({ type: 'binaryConfigure' });
-        });
-      }
-      function composerIntentText() {
-        return String(input.value || '').trim();
-      }
-      function focusBinaryPromptInput() {
-        if (!binaryPromptInput) return;
-        binaryPromptInput.focus();
-        const end = String(binaryPromptInput.value || '').length;
-        if (typeof binaryPromptInput.setSelectionRange === 'function') {
-          binaryPromptInput.setSelectionRange(end, end);
-        }
-      }
-      if (binaryPanelToggle && binaryPanel) {
-        binaryPanelToggle.addEventListener('click', () => {
-          const nextCollapsed = !binaryPanel.classList.contains('is-collapsed');
-          writeBinaryPanelCollapsedPreference(nextCollapsed);
-          applyBinaryPanelCollapseUi(nextCollapsed);
-        });
-      }
-      if (binaryPromptInput) {
-        binaryPromptInput.addEventListener('keydown', (event) => {
-          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-            event.preventDefault();
-            closeSettingsMenu();
-            vscode.postMessage({ type: 'binaryGenerate', intent: activeBinaryIntentText() });
-          }
-        });
-      }
-      for (let starterIndex = 0; starterIndex < binaryStarterButtons.length; starterIndex += 1) {
-        const starterButton = binaryStarterButtons[starterIndex];
-        starterButton.addEventListener('click', () => {
-          const prompt = String(starterButton.getAttribute('data-binary-prompt') || '').trim();
-          if (!prompt || !binaryPromptInput) return;
-          binaryPromptInput.value = prompt;
-          focusBinaryPromptInput();
-        });
-      }
-      if (binaryGenerateBtn) {
-        binaryGenerateBtn.addEventListener('click', () => {
-          closeSettingsMenu();
-          vscode.postMessage({ type: 'binaryGenerate', intent: activeBinaryIntentText() });
-        });
-      }
-      if (binaryRefineBtn) {
-        binaryRefineBtn.addEventListener('click', () => {
-          closeSettingsMenu();
-          vscode.postMessage({ type: 'binaryRefine', intent: activeBinaryIntentText() });
-        });
-      }
-      if (binaryBranchBtn) {
-        binaryBranchBtn.addEventListener('click', () => {
-          closeSettingsMenu();
-          vscode.postMessage({ type: 'binaryBranch', intent: activeBinaryIntentText() });
-        });
-      }
-      if (binaryRewindBtn) {
-        binaryRewindBtn.addEventListener('click', () => {
-          closeSettingsMenu();
-          vscode.postMessage({ type: 'binaryRewind' });
-        });
-      }
-      if (binaryValidateBtn) {
-        binaryValidateBtn.addEventListener('click', () => {
-          closeSettingsMenu();
-          vscode.postMessage({ type: 'binaryValidate' });
-        });
-      }
-      if (binaryPublishBtn) {
-        binaryPublishBtn.addEventListener('click', () => {
-          closeSettingsMenu();
-          vscode.postMessage({ type: 'binaryPublish' });
-        });
-      }
-      if (binaryCancelBtn) {
-        binaryCancelBtn.addEventListener('click', () => {
-          closeSettingsMenu();
-          vscode.postMessage({ type: 'binaryCancel' });
-        });
-      }
-      if (binaryConfigureBtn) {
-        binaryConfigureBtn.addEventListener('click', () => {
-          closeSettingsMenu();
-          vscode.postMessage({ type: 'binaryConfigure' });
-        });
-      }
-      if (binaryExecuteBtn && binaryEntryInput) {
-        binaryExecuteBtn.addEventListener('click', () => {
-          closeSettingsMenu();
-          vscode.postMessage({ type: 'binaryExecute', entryPoint: String(binaryEntryInput.value || '').trim() });
-        });
-      }
-      if (binaryRuntimeSelect) {
-        binaryRuntimeSelect.addEventListener('change', () => {
-          vscode.postMessage({ type: 'binarySetTarget', runtime: binaryRuntimeSelect.value });
         });
       }
     function postSendOrStop(event) {

@@ -5,6 +5,7 @@ import { ContextCollector } from "./context";
 import { LEGACY_EXTENSION_NAMESPACE, WEBVIEW_VIEW_ID, EXTENSION_NAMESPACE, migrateLegacyConfiguration, toWorkspaceRelativePath } from "./config";
 import { SessionHistoryService } from "./history";
 import { CloudIndexManager } from "./indexer";
+import { CutieHistoryService } from "./cutie-history";
 import { QwenHistoryService } from "./qwen-history";
 import { QwenCodeRuntime } from "./qwen-code-runtime";
 import { buildSelectionPrefill } from "./selection-prefill";
@@ -19,12 +20,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const toolExecutor = new ToolExecutor(actionRunner, indexManager);
   const contextCollector = new ContextCollector(indexManager);
   const historyService = new SessionHistoryService();
+  const cutieHistoryService = new CutieHistoryService(context);
   const qwenHistoryService = new QwenHistoryService(context);
   const qwenCodeRuntime = new QwenCodeRuntime();
   const provider = new PlaygroundViewProvider(
     context,
     auth,
     historyService,
+    cutieHistoryService,
     qwenHistoryService,
     qwenCodeRuntime,
     contextCollector,

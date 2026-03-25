@@ -176,6 +176,7 @@ function buildExecutionLane(input) {
     if (input.preview.intent === "change") {
         lines.push("- For code changes, show a brief patch plan before making edits.");
         lines.push("- Inspect the likely target file with workspace tools before answering. If confidence is high, make the smallest correct edit instead of replying with prose only.");
+        lines.push("- After inspecting a trusted target file, either make a concrete mutation or state the exact blocker. Do not stop at read-only analysis.");
     }
     if (input.preview.intent === "find") {
         lines.push("- Use workspace search/read tools to verify at least one real file or symbol before answering. Do not answer from prompt text alone.");

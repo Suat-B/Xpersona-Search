@@ -127,7 +127,7 @@ export async function streamJsonEvents(
           const chunks: Buffer[] = [];
           res.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
           res.on("end", () => {
-            reject(new Error(`HTTP ${res.statusCode}: ${Buffer.concat(chunks).toString("utf8")}`));
+            finish(new Error(`HTTP ${res.statusCode}: ${Buffer.concat(chunks).toString("utf8")}`));
           });
           return;
         }

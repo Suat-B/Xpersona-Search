@@ -1,11 +1,12 @@
 export type Mode = "auto" | "plan" | "yolo";
-export type RuntimeBackend = "playgroundApi" | "qwenCode";
+export type RuntimeBackend = "cutie" | "playgroundApi" | "qwenCode";
 export type IntentKind = "ask" | "explain" | "find" | "change";
 export type ContextConfidence = "high" | "medium" | "low";
 export type RuntimePhase =
   | "idle"
   | "radar"
   | "collecting_context"
+  | "waiting_for_cutie"
   | "waiting_for_qwen"
   | "awaiting_approval"
   | "applying_result"
@@ -23,6 +24,8 @@ export type PlaygroundToolName =
   | "git_status"
   | "git_diff"
   | "create_checkpoint"
+  | "patch_file"
+  | "edit_file"
   | "edit"
   | "write_file"
   | "mkdir"
@@ -198,7 +201,7 @@ export type ChatMessage = {
 
 export type ChatLiveMode = "shell" | "answer" | "build";
 export type ChatLiveStatus = "pending" | "streaming" | "done" | "failed" | "canceled";
-export type ChatLiveTransport = "local" | "qwen" | "playground" | "binary";
+export type ChatLiveTransport = "local" | "qwen" | "cutie" | "playground" | "binary";
 
 export type ChatLiveState = {
   mode: ChatLiveMode;

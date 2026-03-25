@@ -101,6 +101,7 @@ function buildPlaygroundWebviewHtml(input) {
               <button type="button" data-action="setApiKey" id="settingsSetKey">Set Xpersona API key</button>
               <button type="button" data-action="signIn" id="settingsSignIn">Browser sign in</button>
               <button type="button" data-action="signOut" id="settingsSignOut">Sign out</button>
+              <button type="button" data-action="runtimeCutie" id="settingsRuntimeCutie">Use Cutie runtime</button>
               <button type="button" data-action="runtimeQwen" id="settingsRuntimeQwen">Use Qwen runtime</button>
               <button type="button" data-action="runtimeHosted" id="settingsRuntimeHosted">Use hosted runtime</button>
               <button type="button" data-action="copyDebugReport" id="settingsCopyDebug">Copy debug report</button>

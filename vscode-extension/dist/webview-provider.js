@@ -43,6 +43,7 @@ const config_1 = require("./config");
 const draft_store_1 = require("./draft-store");
 const qwen_ux_1 = require("./qwen-ux");
 const qwen_history_1 = require("./qwen-history");
+const qwen_runtime_utils_1 = require("./qwen-runtime-utils");
 const webview_html_1 = require("./webview-html");
 const qwen_prompt_1 = require("./qwen-prompt");
 const pseudo_markup_utils_1 = require("./pseudo-markup-utils");
@@ -68,6 +69,327 @@ function formatPlan(plan) {
         plan.risks.length ? `Risks:\n${plan.risks.map((risk) => `- ${risk}`).join("\n")}` : "",
     ].filter(Boolean);
     return lines.join("\n\n");
+}
+function runtimeDisplayLabel(runtime) {
+    if (runtime === "qwenCode")
+        return "Qwen Code";
+    if (runtime === "playgroundApi")
+        return "Hosted runtime";
+    return "Cutie";
+}
+function isLocalRuntime(runtime) {
+    return runtime === "qwenCode" || runtime === "cutie";
+}
+function stableStringify(value) {
+    return JSON.stringify(value, null, 2);
+}
+function trimCutieText(value, limit) {
+    const text = String(value ?? "");
+    return text.length <= limit ? text : `${text.slice(0, limit)}\n...[truncated]`;
+}
+function buildCutieSystemPrompt(mode) {
+    const lines = [
+        "You are Cutie inside Binary IDE, a careful coding assistant focused on the user's workspace.",
+        "Prefer inspecting workspace context before changing files.",
+        "Use available tools when you need evidence from the codebase.",
+        "For code changes, do not claim completion until the requested edits are applied.",
+        "When feasible after a code edit, run one focused verification step such as diagnostics or a targeted command.",
+        "Keep final answers concise and practical.",
+    ];
+    if (mode === "plan") {
+        lines.push("The user is in plan mode. Do not mutate files or run implementation commands unless the user explicitly asks.");
+    }
+    return lines.join("\n");
+}
+function buildCutieToolDefinitions() {
+    return [
+        {
+            name: "list_files",
+            kind: "observe",
+            domain: "workspace",
+            description: "List workspace files filtered by an optional substring query.",
+            inputSchema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                    query: { type: "string" },
+                    limit: { type: "integer", minimum: 1, maximum: 200 },
+                },
+            },
+        },
+        {
+            name: "read_file",
+            kind: "observe",
+            domain: "workspace",
+            description: "Read a workspace-relative file and optionally limit the response to a line range.",
+            inputSchema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["path"],
+                properties: {
+                    path: { type: "string" },
+                    startLine: { type: "integer", minimum: 1 },
+                    endLine: { type: "integer", minimum: 1 },
+                },
+            },
+        },
+        {
+            name: "search_workspace",
+            kind: "observe",
+            domain: "workspace",
+            description: "Search indexed workspace snippets for code or text.",
+            inputSchema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["query"],
+                properties: {
+                    query: { type: "string" },
+                    limit: { type: "integer", minimum: 1, maximum: 12 },
+                },
+            },
+        },
+        {
+            name: "get_diagnostics",
+            kind: "observe",
+            domain: "workspace",
+            description: "Read workspace diagnostics, optionally for one file path.",
+            inputSchema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                    path: { type: "string" },
+                },
+            },
+        },
+        {
+            name: "git_status",
+            kind: "observe",
+            domain: "workspace",
+            description: "Inspect the current git status.",
+            inputSchema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {},
+            },
+        },
+        {
+            name: "git_diff",
+            kind: "observe",
+            domain: "workspace",
+            description: "Inspect git diff statistics or a file-specific diff.",
+            inputSchema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                    path: { type: "string" },
+                },
+            },
+        },
+        {
+            name: "create_checkpoint",
+            kind: "mutate",
+            domain: "workspace",
+            description: "Create an undo checkpoint before a risky sequence of edits.",
+            inputSchema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                    reason: { type: "string" },
+                },
+            },
+        },
+        {
+            name: "patch_file",
+            kind: "mutate",
+            domain: "workspace",
+            description: "Apply a unified diff patch to a workspace-relative file.",
+            inputSchema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["path", "patch"],
+                properties: {
+                    path: { type: "string" },
+                    patch: { type: "string" },
+                },
+            },
+        },
+        {
+            name: "write_file",
+            kind: "mutate",
+            domain: "workspace",
+            description: "Write full file contents to a workspace-relative path.",
+            inputSchema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["path", "content"],
+                properties: {
+                    path: { type: "string" },
+                    content: { type: "string" },
+                    overwrite: { type: "boolean" },
+                },
+            },
+        },
+        {
+            name: "mkdir",
+            kind: "mutate",
+            domain: "workspace",
+            description: "Create a workspace directory.",
+            inputSchema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["path"],
+                properties: {
+                    path: { type: "string" },
+                },
+            },
+        },
+        {
+            name: "run_command",
+            kind: "command",
+            domain: "workspace",
+            description: "Run a targeted workspace command when inspection or verification requires it.",
+            inputSchema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["command"],
+                properties: {
+                    command: { type: "string" },
+                    timeoutMs: { type: "integer", minimum: 1000, maximum: 120000 },
+                    category: { type: "string", enum: ["implementation", "validation"] },
+                },
+            },
+        },
+    ];
+}
+function buildCutieContextMessage(input) {
+    return [
+        "Workspace context:",
+        stableStringify({
+            task: input.task,
+            intent: input.preview.intent,
+            confidence: input.preview.confidence,
+            activeFile: input.preview.activeFile || null,
+            resolvedFiles: input.preview.resolvedFiles,
+            selectedFiles: input.preview.selectedFiles,
+            candidateFiles: input.preview.candidateFiles,
+            context: input.context,
+        }),
+    ].join("\n");
+}
+function normalizeCutieToolName(value) {
+    const name = String(value || "").trim();
+    if (name === "edit_file")
+        return "patch_file";
+    const allowed = new Set([
+        "list_files",
+        "read_file",
+        "search_workspace",
+        "get_diagnostics",
+        "git_status",
+        "git_diff",
+        "create_checkpoint",
+        "patch_file",
+        "write_file",
+        "mkdir",
+        "run_command",
+    ]);
+    if (!allowed.has(name)) {
+        throw new Error(`Unknown Cutie tool "${name || "missing"}".`);
+    }
+    return name;
+}
+function normalizeCutieResponse(payload) {
+    const record = payload && typeof payload === "object" ? payload : {};
+    const nested = record.response && typeof record.response === "object"
+        ? record.response
+        : record;
+    const type = String(nested.type || "").trim();
+    if (type === "final") {
+        return {
+            type: "final",
+            final: String(nested.final || nested.text || "").trim(),
+        };
+    }
+    const firstTool = type === "tool_call"
+        ? (nested.tool_call && typeof nested.tool_call === "object"
+            ? nested.tool_call
+            : nested)
+        : type === "tool_calls"
+            ? (Array.isArray(nested.tool_calls) ? nested.tool_calls[0] : null)
+            : type === "tool_batch"
+                ? (Array.isArray(nested.toolCalls) ? nested.toolCalls[0] : null)
+                : null;
+    if (firstTool && typeof firstTool === "object") {
+        const toolCall = firstTool;
+        return {
+            type: "tool_call",
+            tool_call: {
+                name: normalizeCutieToolName(toolCall.name),
+                arguments: toolCall.arguments && typeof toolCall.arguments === "object"
+                    ? toolCall.arguments
+                    : {},
+                ...(typeof toolCall.summary === "string" && toolCall.summary.trim()
+                    ? { summary: toolCall.summary.trim() }
+                    : {}),
+            },
+        };
+    }
+    throw new Error(`Unknown Cutie response type "${type || "missing"}".`);
+}
+function summarizeCutieToolData(data) {
+    if (!data)
+        return {};
+    const summary = {};
+    for (const [key, value] of Object.entries(data)) {
+        if (key === "content" && typeof value === "string") {
+            summary.contentPreview = trimCutieText(value, 6000);
+            summary.contentLength = value.length;
+            continue;
+        }
+        if (key === "files" && Array.isArray(value)) {
+            summary.files = value.slice(0, 80);
+            summary.fileCount = value.length;
+            continue;
+        }
+        if (key === "matches" && Array.isArray(value)) {
+            summary.matches = value.slice(0, 24);
+            summary.matchCount = value.length;
+            continue;
+        }
+        if (key === "stdout" && typeof value === "string") {
+            summary.stdout = trimCutieText(value, 4000);
+            summary.stdoutLength = value.length;
+            continue;
+        }
+        if (key === "stderr" && typeof value === "string") {
+            summary.stderr = trimCutieText(value, 2000);
+            summary.stderrLength = value.length;
+            continue;
+        }
+        summary[key] = value;
+    }
+    return summary;
+}
+function buildCutieToolResultMessage(result) {
+    return stableStringify({
+        toolName: result.name,
+        ok: result.ok,
+        blocked: result.blocked || false,
+        summary: result.summary,
+        error: result.error || null,
+        data: summarizeCutieToolData(result.data),
+    });
+}
+function getCutieToolKind(name) {
+    if (name === "run_command")
+        return "command";
+    if (name === "patch_file" || name === "write_file" || name === "mkdir" || name === "create_checkpoint") {
+        return "mutate";
+    }
+    return "observe";
+}
+function isCutieMutationTool(name) {
+    return name === "patch_file" || name === "write_file" || name === "mkdir" || name === "create_checkpoint";
 }
 function createNonce() {
     return (0, crypto_1.randomUUID)().replace(/-/g, "");
@@ -96,10 +418,14 @@ function createDefaultBinaryPanelState() {
         previewFiles: [],
         recentLogs: [],
         reliability: null,
+        liveReliability: null,
         artifactState: null,
         sourceGraph: null,
+        astState: null,
         execution: null,
+        runtimeState: null,
         checkpoints: [],
+        snapshots: [],
         pendingRefinement: null,
         canCancel: false,
         lastAction: null,
@@ -143,6 +469,9 @@ function formatBinaryBuildMessage(build) {
         lines.push(`Reliability: ${build.reliability.status.toUpperCase()} (${build.reliability.score}/100)`);
         lines.push(build.reliability.summary);
     }
+    if (build.liveReliability) {
+        lines.push(`Live reliability: ${build.liveReliability.score}/100 (${build.liveReliability.trend}), ${build.liveReliability.blockers.length} blockers`);
+    }
     if (build.artifactState) {
         lines.push(`Formation: ${build.artifactState.coverage}% formed, ${build.artifactState.runnable ? "runnable" : "not runnable yet"}`);
         lines.push(`Files: ${build.artifactState.sourceFilesReady}/${build.artifactState.sourceFilesTotal} source, ${build.artifactState.outputFilesReady} output`);
@@ -156,14 +485,23 @@ function formatBinaryBuildMessage(build) {
             lines.push(`Diagnostics: ${build.sourceGraph.diagnostics.length}`);
         }
     }
+    if (build.astState) {
+        lines.push(`AST: ${build.astState.coverage}% covered across ${build.astState.moduleCount} modules`);
+    }
     if (build.execution) {
         lines.push(`Partial runtime: ${build.execution.mode}${build.execution.availableFunctions.length ? ` (${build.execution.availableFunctions.length} callable functions)` : ""}`);
         if (build.execution.lastRun) {
             lines.push(`Last run: ${build.execution.lastRun.entryPoint} -> ${build.execution.lastRun.status.toUpperCase()}`);
         }
     }
+    if (build.runtimeState) {
+        lines.push(`Runtime state: ${build.runtimeState.engine}${build.runtimeState.availableFunctions.length ? ` (${build.runtimeState.availableFunctions.length} callable functions)` : ""}`);
+    }
     if (build.checkpoints?.length) {
         lines.push(`Checkpoints: ${build.checkpoints.length}`);
+    }
+    if (build.snapshots?.length) {
+        lines.push(`Snapshots: ${build.snapshots.length}`);
     }
     if (build.pendingRefinement) {
         lines.push(`Pending refinement: ${build.pendingRefinement.intent}`);
@@ -206,6 +544,157 @@ function containsPseudoToolMarkupText(value) {
         /<function=[^>]+>/i.test(text) ||
         /<parameter=[^>]+>/i.test(text));
 }
+function readRecordString(input, key) {
+    if (!input || typeof input !== "object")
+        return undefined;
+    const value = input[key];
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+function readRecordStatus(input) {
+    return readRecordString(input, "status");
+}
+function readStringArray(input) {
+    return Array.isArray(input)
+        ? input
+            .map((item) => (typeof item === "string" ? item.trim() : ""))
+            .filter(Boolean)
+        : [];
+}
+function readRecordStringArray(input, key) {
+    if (!input || typeof input !== "object")
+        return [];
+    return readStringArray(input[key]);
+}
+function normalizeToolCallArguments(input) {
+    const entries = Object.keys(input || {})
+        .sort()
+        .map((key) => [key, input[key]]);
+    return JSON.stringify(entries);
+}
+function buildToolCallSignature(toolCall) {
+    if (!toolCall)
+        return "";
+    return JSON.stringify({
+        name: String(toolCall.name || "").trim().toLowerCase(),
+        kind: String(toolCall.kind || "").trim().toLowerCase(),
+        arguments: normalizeToolCallArguments(toolCall.arguments || {}),
+    });
+}
+function getObjectiveGoalType(intent, mode) {
+    if (mode === "plan")
+        return "plan";
+    if (intent === "change")
+        return "code_edit";
+    if (intent === "find")
+        return "command_run";
+    return "unknown";
+}
+function hasMutationProofFromTools(toolCallsUsed, envelope) {
+    if (toolCallsUsed.some((tool) => (0, qwen_runtime_utils_1.isMutationToolName)(tool)))
+        return true;
+    if (Array.isArray(envelope.actions) && envelope.actions.length > 0)
+        return true;
+    if (Array.isArray(envelope.toolTrace) &&
+        envelope.toolTrace.some((entry) => entry.status === "completed" &&
+            Boolean(entry.toolCall?.name) &&
+            (0, qwen_runtime_utils_1.isMutationToolName)(entry.toolCall?.name || ""))) {
+        return true;
+    }
+    return false;
+}
+function getRecordStatus(value, fallback) {
+    return readRecordStatus(value) || fallback || "";
+}
+function buildHostedProgressFingerprint(input) {
+    const loopState = input.envelope.loopState || null;
+    const pendingToolCall = input.envelope.pendingToolCall || null;
+    const missingRequirements = readStringArray(input.envelope.missingRequirements);
+    return JSON.stringify({
+        stepCount: loopState?.stepCount ?? null,
+        mutationCount: loopState?.mutationCount ?? null,
+        repairCount: loopState?.repairCount ?? null,
+        repeatedCallCount: loopState?.repeatedCallCount ?? null,
+        pendingToolCallSignature: buildToolCallSignature(pendingToolCall?.toolCall || null),
+        latestToolResult: input.toolCallsUsed.slice(-1)[0] || "",
+        missingRequirements,
+        objectiveStatus: input.objectiveState?.status || readRecordStatus(input.envelope.objectiveState) || "unknown",
+        progressStatus: input.progressState?.status || readRecordStatus(input.envelope.progressState) || "unknown",
+    });
+}
+function buildHostedTerminalMessage(input) {
+    const missingRequirements = readStringArray(input.envelope.missingRequirements);
+    const reviewStatus = getRecordStatus(input.envelope.reviewState, "ready");
+    const objectiveStatus = input.objectiveState?.status || readRecordStatus(input.envelope.objectiveState) || "in_progress";
+    const progressStatus = input.progressState?.status || readRecordStatus(input.envelope.progressState) || "running";
+    const targetPath = input.objectiveState?.targetPath ||
+        readRecordString(input.envelope.objectiveState, "targetPath") ||
+        input.preview.activeFile ||
+        input.preview.resolvedFiles?.[0] ||
+        input.preview.selectedFiles?.[0] ||
+        "";
+    const stallReason = input.progressState?.stallReason ||
+        readRecordString(input.envelope.progressState, "stallReason") ||
+        (missingRequirements.length ? missingRequirements[0] : "") ||
+        (input.preview.intent === "change" && !input.mutationProof
+            ? "The run inspected the target file but never proved a mutation."
+            : "");
+    const nextDeterministicAction = input.progressState?.nextDeterministicAction ||
+        readRecordString(input.envelope.progressState, "nextDeterministicAction") ||
+        (input.preview.intent === "change"
+            ? targetPath
+                ? `Edit ${targetPath} directly.`
+                : "Edit the resolved target file directly."
+            : "Return a concrete next workspace action.");
+    const receiptStatus = getRecordStatus(input.envelope.receipt, "ready");
+    const lines = [
+        "The run stopped before proving the objective was complete.",
+        `Task: ${String(input.task || "").trim() || "(unknown)"}`,
+        `Completion status: ${String(input.envelope.completionStatus || "incomplete")}`,
+        `Objective status: ${objectiveStatus}`,
+        `Review status: ${reviewStatus}`,
+        `Progress status: ${progressStatus}`,
+    ];
+    if (missingRequirements.length) {
+        lines.push(`Missing requirements: ${missingRequirements.join(", ")}`);
+    }
+    if (stallReason) {
+        lines.push(`Stall reason: ${stallReason}`);
+    }
+    if (nextDeterministicAction) {
+        lines.push(`Next deterministic action: ${nextDeterministicAction}`);
+    }
+    if (targetPath) {
+        lines.push(`Target: ${targetPath}`);
+    }
+    lines.push(`Receipt status: ${receiptStatus}`);
+    if (input.mutationProof) {
+        lines.push(`Mutation proof: ${input.toolCallsUsed.filter((tool) => (0, qwen_runtime_utils_1.isMutationToolName)(tool)).join(", ") || "(present)"}`);
+    }
+    else if (input.toolCallsUsed.length) {
+        lines.push(`Tools used: ${input.toolCallsUsed.join(", ")}`);
+    }
+    return lines.join("\n");
+}
+function isHostedCompletionSuccessful(input) {
+    const completionStatus = input.envelope.completionStatus === "complete";
+    const objectiveStatus = input.objectiveState?.status || readRecordStatus(input.envelope.objectiveState);
+    const reviewStatus = getRecordStatus(input.envelope.reviewState, "ready");
+    const missingRequirements = readStringArray(input.envelope.missingRequirements);
+    const terminalProgress = input.progressState?.status || readRecordStatus(input.envelope.progressState);
+    const objectSatisfied = objectiveStatus === "satisfied";
+    const reviewReady = reviewStatus !== "blocked";
+    const missingProof = input.objectiveState ? input.objectiveState.missingProof.length > 0 : false;
+    const mutationProofRequired = input.mode !== "plan";
+    const mutationProofOk = !mutationProofRequired || input.mutationProof;
+    const progressBlocked = terminalProgress === "failed" || terminalProgress === "stalled";
+    return (completionStatus &&
+        objectSatisfied &&
+        reviewReady &&
+        missingRequirements.length === 0 &&
+        !missingProof &&
+        mutationProofOk &&
+        !progressBlocked);
+}
 function buildContinuationPrompt(baseText, followUpText) {
     const base = String(baseText || "").trim();
     const followUp = String(followUpText || "").trim();
@@ -241,6 +730,8 @@ function livePhaseFromRuntimePhase(phase) {
     switch (phase) {
         case "collecting_context":
             return "collecting_context";
+        case "waiting_for_cutie":
+            return "connecting_runtime";
         case "waiting_for_qwen":
             return "connecting_runtime";
         case "awaiting_approval":
@@ -260,10 +751,11 @@ function livePhaseFromRuntimePhase(phase) {
     }
 }
 class PlaygroundViewProvider {
-    constructor(context, auth, historyService, qwenHistoryService, qwenCodeRuntime, contextCollector, actionRunner, toolExecutor, indexManager) {
+    constructor(context, auth, historyService, cutieHistoryService, qwenHistoryService, qwenCodeRuntime, contextCollector, actionRunner, toolExecutor, indexManager) {
         this.context = context;
         this.auth = auth;
         this.historyService = historyService;
+        this.cutieHistoryService = cutieHistoryService;
         this.qwenHistoryService = qwenHistoryService;
         this.qwenCodeRuntime = qwenCodeRuntime;
         this.contextCollector = contextCollector;
@@ -358,12 +850,11 @@ class PlaygroundViewProvider {
     }
     async openBinaryConfiguration() {
         await this.show();
-        const runtimeLabel = this.state.runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API";
-        const nextRuntime = this.state.runtime === "qwenCode" ? "Binary IDE API" : "Qwen Code";
+        const runtimeLabel = runtimeDisplayLabel(this.state.runtime);
         const selection = await vscode.window.showQuickPick([
             { label: "Set Xpersona API key", detail: "Save or clear your Xpersona Binary IDE API key.", action: "apiKey" },
             {
-                label: `Switch runtime to ${nextRuntime}`,
+                label: `Switch runtime from ${runtimeLabel}`,
                 detail: `Current runtime: ${runtimeLabel}.`,
                 action: "runtime",
             },
@@ -388,8 +879,9 @@ class PlaygroundViewProvider {
                 break;
             case "runtime": {
                 const pickedRuntime = await vscode.window.showQuickPick([
+                    { label: "Cutie", runtime: "cutie" },
                     { label: "Qwen Code", runtime: "qwenCode" },
-                    { label: "Binary IDE API", runtime: "playgroundApi" },
+                    { label: "Hosted runtime", runtime: "playgroundApi" },
                 ], {
                     title: "Choose Binary IDE Runtime",
                     ignoreFocusOut: true,
@@ -535,7 +1027,7 @@ class PlaygroundViewProvider {
                 return true;
             case "runtime":
                 await this.setRuntime(command.runtime);
-                this.appendMessage("system", `Runtime set to ${command.runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API"}.`);
+                this.appendMessage("system", `Runtime set to ${runtimeDisplayLabel(command.runtime)}.`);
                 this.state.runtimePhase = this.getRuntimePhaseForDraft();
                 this.postState();
                 return true;
@@ -631,6 +1123,11 @@ class PlaygroundViewProvider {
             this.postState();
             return;
         }
+        if (this.state.runtime === "cutie") {
+            this.state.history = await this.cutieHistoryService.list().catch(() => []);
+            this.postState();
+            return;
+        }
         const auth = await this.auth.getRequestAuth();
         if (!auth) {
             this.state.history = [];
@@ -712,6 +1209,14 @@ class PlaygroundViewProvider {
             this.postState();
             return;
         }
+        if (this.state.runtime === "cutie") {
+            this.state.auth = await this.auth.getAuthState().catch(() => ({
+                kind: "none",
+                label: "Sign in or set an Xpersona API key to use Cutie",
+            }));
+            this.postState();
+            return;
+        }
         this.state.auth = await this.auth.getAuthState().catch(() => ({
             kind: "none",
             label: "Not signed in",
@@ -735,6 +1240,18 @@ class PlaygroundViewProvider {
             const historyItem = this.state.history.find((item) => item.id === sessionId);
             if (historyItem)
                 this.state.mode = normalizeMode(historyItem.mode);
+            await this.loadDraftText();
+            this.state.runtimePhase = this.getRuntimePhaseForDraft();
+            await this.refreshDraftContext(this.draftText);
+            this.postState();
+            return;
+        }
+        if (this.state.runtime === "cutie") {
+            this.sessionId = sessionId;
+            this.state.selectedSessionId = sessionId;
+            this.state.messages = await this.cutieHistoryService.loadMessages(sessionId).catch(() => []);
+            this.state.activity = [];
+            this.state.followUpActions = [];
             await this.loadDraftText();
             this.state.runtimePhase = this.getRuntimePhaseForDraft();
             await this.refreshDraftContext(this.draftText);
@@ -823,9 +1340,9 @@ class PlaygroundViewProvider {
                 return;
             case "setRuntimeBackend": {
                 const runtime = String(message.runtime || "");
-                if (runtime === "qwenCode" || runtime === "playgroundApi") {
+                if (runtime === "cutie" || runtime === "qwenCode" || runtime === "playgroundApi") {
                     await this.setRuntime(runtime);
-                    this.appendMessage("system", `Binary IDE runtime switched to ${runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API"}.`);
+                    this.appendMessage("system", `Binary IDE runtime switched to ${runtimeDisplayLabel(runtime)}.`);
                     this.postState();
                 }
                 return;
@@ -892,6 +1409,26 @@ class PlaygroundViewProvider {
             ...(input?.intent ? { intent: input.intent } : {}),
         };
     }
+    async getCutieContextOptions(input) {
+        const includeWorkspaceHints = input?.includeWorkspaceHints !== false;
+        const hints = includeWorkspaceHints
+            ? await this.cutieHistoryService.getWorkspaceHints().catch(() => ({
+                recentTargets: [],
+                recentIntents: [],
+            }))
+            : {
+                recentTargets: [],
+                recentIntents: [],
+            };
+        return {
+            recentTouchedPaths: this.actionRunner.getRecentTouchedPaths(),
+            attachedFiles: this.manualContext.attachedFiles,
+            attachedSelection: this.manualContext.attachedSelection,
+            memoryTargets: hints.recentTargets,
+            searchDepth: input?.searchDepth || "fast",
+            ...(input?.intent ? { intent: input.intent } : {}),
+        };
+    }
     applyPreviewState(preview) {
         this.state.intent = preview.intent;
         this.state.contextConfidence = preview.confidence;
@@ -914,7 +1451,7 @@ class PlaygroundViewProvider {
     }
     queueDraftContextRefresh(text) {
         this.clearDraftPreviewTimer();
-        if (this.state.runtime !== "qwenCode")
+        if (this.state.runtime !== "qwenCode" && this.state.runtime !== "cutie")
             return;
         const draft = String(text || "");
         this.draftPreviewTimer = setTimeout(() => {
@@ -922,7 +1459,7 @@ class PlaygroundViewProvider {
         }, draft.trim() ? 90 : 0);
     }
     async refreshDraftContext(text) {
-        if (this.state.runtime !== "qwenCode")
+        if (this.state.runtime !== "qwenCode" && this.state.runtime !== "cutie")
             return;
         const draft = String(text || "");
         if (!draft.trim() && !this.hasManualDraftContext()) {
@@ -937,11 +1474,18 @@ class PlaygroundViewProvider {
         }
         const sequence = ++this.draftPreviewSequence;
         const includeWorkspaceHints = Boolean(this.sessionId || this.state.selectedSessionId);
-        const preview = await this.contextCollector.preview(draft, await this.getQwenContextOptions({
-            searchDepth: "fast",
-            intent: draft.trim() ? (0, assistant_ux_1.classifyIntent)(draft) : undefined,
-            includeWorkspaceHints,
-        }));
+        const contextOptions = this.state.runtime === "cutie"
+            ? await this.getCutieContextOptions({
+                searchDepth: "fast",
+                intent: draft.trim() ? (0, assistant_ux_1.classifyIntent)(draft) : undefined,
+                includeWorkspaceHints,
+            })
+            : await this.getQwenContextOptions({
+                searchDepth: "fast",
+                intent: draft.trim() ? (0, assistant_ux_1.classifyIntent)(draft) : undefined,
+                includeWorkspaceHints,
+            });
+        const preview = await this.contextCollector.preview(draft, contextOptions);
         if (sequence !== this.draftPreviewSequence)
             return;
         this.applyPreviewState(preview);
@@ -1289,14 +1833,49 @@ class PlaygroundViewProvider {
         this.state.binary.previewFiles = build?.preview?.files || [];
         this.state.binary.recentLogs = build?.preview?.recentLogs || [];
         this.state.binary.reliability = build?.reliability || null;
+        this.state.binary.liveReliability = build?.liveReliability || null;
         this.state.binary.artifactState = build?.artifactState || null;
         this.state.binary.sourceGraph = build?.sourceGraph || null;
+        this.state.binary.astState = build?.astState || null;
         this.state.binary.execution = build?.execution || null;
+        this.state.binary.runtimeState = build?.runtimeState || null;
         this.state.binary.checkpoints = build?.checkpoints || [];
+        this.state.binary.snapshots = build?.snapshots || [];
         this.state.binary.pendingRefinement = build?.pendingRefinement || null;
         this.state.binary.canCancel = Boolean(build?.cancelable && isBinaryBuildPending(build));
         if (build?.targetEnvironment) {
             this.state.binary.targetEnvironment = build.targetEnvironment;
+        }
+    }
+    updateBinarySnapshots(snapshot) {
+        const current = this.state.binary.snapshots || [];
+        return [snapshot, ...current.filter((item) => item.id !== snapshot.id)].slice(0, 80);
+    }
+    updateBinaryAstState(astState) {
+        this.state.binary.astState = astState;
+        if (this.state.binary.activeBuild) {
+            this.state.binary.activeBuild = {
+                ...this.state.binary.activeBuild,
+                astState,
+            };
+        }
+    }
+    updateBinaryRuntimeState(runtimeState) {
+        this.state.binary.runtimeState = runtimeState;
+        if (this.state.binary.activeBuild) {
+            this.state.binary.activeBuild = {
+                ...this.state.binary.activeBuild,
+                runtimeState,
+            };
+        }
+    }
+    updateBinaryLiveReliability(liveReliability) {
+        this.state.binary.liveReliability = liveReliability;
+        if (this.state.binary.activeBuild) {
+            this.state.binary.activeBuild = {
+                ...this.state.binary.activeBuild,
+                liveReliability,
+            };
         }
     }
     setActiveBinaryBuild(build) {
@@ -1470,6 +2049,15 @@ class PlaygroundViewProvider {
                     });
                 }
                 break;
+            case "reliability.stream":
+                this.applyChatLiveEvent({
+                    type: "build_event",
+                    eventType: event.type,
+                    phase: current?.phase || "validating",
+                    progress: current?.progress,
+                });
+                this.updateBinaryLiveReliability(event.data.reliability);
+                break;
             case "graph.updated":
                 this.applyChatLiveEvent({
                     type: "build_event",
@@ -1484,6 +2072,47 @@ class PlaygroundViewProvider {
                         sourceGraph: event.data.sourceGraph,
                     });
                 }
+                break;
+            case "token.delta":
+                this.applyChatLiveEvent({
+                    type: "build_event",
+                    eventType: event.type,
+                    phase: current?.phase || "materializing",
+                    progress: current?.progress,
+                    latestLog: String(event.data.text || "").slice(-120),
+                });
+                if (current && event.data.text.trim()) {
+                    this.setActiveBinaryBuild({
+                        ...current,
+                        logs: [...current.logs, event.data.text].slice(-500),
+                    });
+                }
+                break;
+            case "ast.delta":
+                this.applyChatLiveEvent({
+                    type: "build_event",
+                    eventType: event.type,
+                    phase: current?.phase || "materializing",
+                    progress: current?.progress,
+                    latestFile: event.data.delta.modulesTouched[0],
+                });
+                this.updateBinaryAstState({
+                    coverage: event.data.delta.coverage,
+                    moduleCount: current?.astState?.moduleCount || event.data.delta.modulesTouched.length || 0,
+                    modules: current?.astState?.modules || [],
+                    nodes: event.data.delta.nodes,
+                    updatedAt: event.data.delta.updatedAt,
+                    source: event.data.delta.source,
+                });
+                break;
+            case "ast.state":
+                this.applyChatLiveEvent({
+                    type: "build_event",
+                    eventType: event.type,
+                    phase: current?.phase || "materializing",
+                    progress: current?.progress,
+                });
+                this.updateBinaryAstState(event.data.astState);
                 break;
             case "execution.updated":
                 this.applyChatLiveEvent({
@@ -1507,6 +2136,29 @@ class PlaygroundViewProvider {
                         },
                     });
                 }
+                break;
+            case "runtime.state":
+                this.applyChatLiveEvent({
+                    type: "build_event",
+                    eventType: event.type,
+                    phase: current?.phase || "validating",
+                    progress: current?.progress,
+                    latestLog: event.data.runtime.lastRun?.logs?.slice(-1)[0],
+                });
+                this.updateBinaryRuntimeState(event.data.runtime);
+                break;
+            case "patch.applied":
+                this.applyChatLiveEvent({
+                    type: "build_event",
+                    eventType: event.type,
+                    phase: current?.phase || "materializing",
+                    progress: current?.progress,
+                    latestLog: `Patch applied: ${event.data.patch.modulePath}`,
+                });
+                this.updateBinaryRuntimeState({
+                    ...event.data.runtime,
+                    patches: [event.data.patch, ...(event.data.runtime.patches || []).filter((item) => item.id !== event.data.patch.id)],
+                });
                 break;
             case "artifact.delta":
                 this.applyChatLiveEvent({
@@ -1545,13 +2197,36 @@ class PlaygroundViewProvider {
                         preview: event.data.checkpoint.preview || current.preview || null,
                         manifest: event.data.checkpoint.manifest || current.manifest || null,
                         reliability: event.data.checkpoint.reliability || current.reliability || null,
+                        liveReliability: event.data.checkpoint.liveReliability || current.liveReliability || null,
                         artifactState: event.data.checkpoint.artifactState || current.artifactState || null,
                         sourceGraph: event.data.checkpoint.sourceGraph || current.sourceGraph || null,
+                        astState: event.data.checkpoint.astState || current.astState || null,
                         execution: event.data.checkpoint.execution || current.execution || null,
+                        runtimeState: event.data.checkpoint.runtimeState || current.runtimeState || null,
                         checkpointId: event.data.checkpoint.id,
                         checkpoints,
+                        snapshots: event.data.checkpoint.snapshot
+                            ? this.updateBinarySnapshots(event.data.checkpoint.snapshot)
+                            : current.snapshots || [],
                         artifact: event.data.checkpoint.artifact || current.artifact || null,
                     });
+                }
+                break;
+            case "snapshot.saved":
+                this.applyChatLiveEvent({
+                    type: "build_event",
+                    eventType: event.type,
+                    phase: current?.phase || "materializing",
+                    progress: current?.progress,
+                });
+                if (current) {
+                    this.setActiveBinaryBuild({
+                        ...current,
+                        snapshots: this.updateBinarySnapshots(event.data.snapshot),
+                    });
+                }
+                else {
+                    this.state.binary.snapshots = this.updateBinarySnapshots(event.data.snapshot);
                 }
                 break;
             case "interrupt.accepted":
@@ -1789,10 +2464,14 @@ class PlaygroundViewProvider {
             this.state.binary.previewFiles = [];
             this.state.binary.recentLogs = [];
             this.state.binary.reliability = null;
+            this.state.binary.liveReliability = null;
             this.state.binary.artifactState = null;
             this.state.binary.sourceGraph = null;
+            this.state.binary.astState = null;
             this.state.binary.execution = null;
+            this.state.binary.runtimeState = null;
             this.state.binary.checkpoints = [];
+            this.state.binary.snapshots = [];
             this.state.binary.pendingRefinement = null;
             this.state.binary.canCancel = false;
             this.postState();
@@ -2237,6 +2916,15 @@ class PlaygroundViewProvider {
                     });
                     return;
                 }
+                if (this.state.runtime === "cutie") {
+                    await this.runCutiePrompt({
+                        text: planTask,
+                        appendUser: true,
+                        searchDepth: "fast",
+                        clientMessageId,
+                    });
+                    return;
+                }
                 await this.sendPromptWithPlaygroundApi(planTask, clientMessageId);
                 return;
             }
@@ -2259,6 +2947,16 @@ class PlaygroundViewProvider {
         await this.clearCurrentDraft();
         if (this.state.runtime === "qwenCode") {
             await this.runQwenPrompt({
+                text,
+                promptText,
+                appendUser: true,
+                searchDepth,
+                clientMessageId,
+            });
+            return;
+        }
+        if (this.state.runtime === "cutie") {
+            await this.runCutiePrompt({
                 text,
                 promptText,
                 appendUser: true,
@@ -2300,6 +2998,9 @@ class PlaygroundViewProvider {
     shouldRetryQwenWithToolDirective(result, preview, input) {
         const isLoopLikeClarification = (0, qwen_loop_guard_1.containsGenericProjectClarification)(result.assistantText || "");
         const editOrDiscoveryIntent = preview.intent === "change" || preview.intent === "find" || preview.intent === "explain";
+        const usedMutationTool = result.usedTools.some((toolName) => (0, qwen_runtime_utils_1.isMutationToolName)(toolName));
+        const hasTrustedTarget = Boolean(preview.activeFile || preview.resolvedFiles.length || preview.selectedFiles.length) &&
+            preview.confidence !== "low";
         const hasRuntimeNoise = !result.didMutate &&
             (0, qwen_runtime_noise_1.containsRuntimeNoiseForContext)({
                 text: result.assistantText || "",
@@ -2318,17 +3019,46 @@ class PlaygroundViewProvider {
         if (isLoopLikeClarification && editOrDiscoveryIntent && !result.didMutate) {
             return true;
         }
-        if (result.usedTools.length > 0 || result.didMutate)
+        if (usedMutationTool || result.didMutate)
             return false;
+        if (preview.intent === "change" && result.usedTools.length > 0 && hasTrustedTarget) {
+            return true;
+        }
+        if (result.usedTools.length > 0) {
+            return false;
+        }
         if (preview.intent !== "change" && preview.intent !== "find")
             return false;
-        if (preview.confidence === "low" &&
-            !preview.resolvedFiles.length &&
-            !preview.selectedFiles.length &&
-            !preview.activeFile) {
+        if (preview.confidence === "low" && !hasTrustedTarget) {
             return false;
         }
         return true;
+    }
+    buildQwenStallMessage(input) {
+        const targetPath = input.preview.activeFile ||
+            input.preview.resolvedFiles[0] ||
+            input.preview.selectedFiles[0] ||
+            "(unknown target)";
+        const missingMutation = input.preview.intent === "change" && !input.result.didMutate
+            ? "The run inspected the target file but never produced a mutation."
+            : "The run did not produce a concrete workspace mutation.";
+        const toolsUsed = input.result.usedTools.length ? input.result.usedTools.join(", ") : "(none)";
+        const denials = input.result.permissionDenials.length ? input.result.permissionDenials.join(" | ") : "(none)";
+        return [
+            "The local Qwen run stalled before proving the change request was complete.",
+            `Task: ${String(input.task || "").trim() || "(unknown)"}`,
+            `Target: ${targetPath}`,
+            `Mutation proof: ${input.result.didMutate ? "present" : "missing"}`,
+            `Tools used: ${toolsUsed}`,
+            `Permission denials: ${denials}`,
+            input.retriedWithToolDirective ? "The run already retried with stricter tool instructions." : "",
+            missingMutation,
+            input.preview.intent === "change"
+                ? `Next deterministic action: edit ${targetPath} directly or write the full updated file contents.`
+                : "Next deterministic action: return one concrete workspace action.",
+        ]
+            .filter(Boolean)
+            .join("\n");
     }
     async runQwenPrompt(input) {
         const text = input.text.trim();
@@ -2362,7 +3092,7 @@ class PlaygroundViewProvider {
         let preflightMessage = null;
         const hadExistingSession = Boolean(this.sessionId);
         let localSessionId = this.sessionId || (0, qwen_history_1.createPendingQwenSessionId)();
-        let preview;
+        let preview = null;
         const qwenDebugAttempts = [];
         let retriedWithToolDirective = false;
         try {
@@ -2657,27 +3387,18 @@ class PlaygroundViewProvider {
             const resolvedSessionId = localSessionId;
             this.sessionId = resolvedSessionId;
             this.state.selectedSessionId = resolvedSessionId;
-            const exhaustedToolExecution = !result.didMutate &&
-                result.usedTools.length === 0 &&
-                (fullPreview.intent === "change" || fullPreview.intent === "find") &&
-                this.shouldRetryQwenWithToolDirective(result, fullPreview, {
+            const trustedTargetPath = fullPreview.activeFile || fullPreview.resolvedFiles[0] || fullPreview.selectedFiles[0] || "";
+            const qwenMutationProof = result.didMutate || result.usedTools.some((toolName) => (0, qwen_runtime_utils_1.isMutationToolName)(toolName));
+            const qwenStalled = fullPreview.intent === "change" &&
+                !qwenMutationProof &&
+                (result.usedTools.length > 0 || retriedWithToolDirective || Boolean(trustedTargetPath));
+            const finalAssistantText = qwenStalled
+                ? this.buildQwenStallMessage({
                     task: taskText,
-                    workspaceRoot,
-                    executablePath,
-                    workspaceTargets,
-                });
-            if (exhaustedToolExecution) {
-                this.pushActivity("Model returned without real tool execution");
-            }
-            const finalAssistantText = exhaustedToolExecution
-                ? [
-                    (0, qwen_loop_guard_1.buildProjectLoopRecoveryMessage)({
-                        task: taskText,
-                        workspaceTargets,
-                        workspaceRoot,
-                    }),
-                    "The current model run did not execute workspace tools. Try again, or switch to Hosted runtime for stronger tool-call reliability.",
-                ].join("\n\n")
+                    preview: fullPreview,
+                    result,
+                    retriedWithToolDirective,
+                })
                 : (0, qwen_ux_1.sanitizeQwenAssistantOutput)({
                     text: result.assistantText || "Qwen Code finished without a final message.",
                     task: taskText,
@@ -2685,10 +3406,21 @@ class PlaygroundViewProvider {
                     executablePath,
                     workspaceTargets,
                 });
-            this.applyChatLiveEvent({
-                type: "final",
-                text: finalAssistantText,
-            });
+            if (qwenStalled) {
+                this.pushActivity("Model returned without real tool execution");
+                this.applyChatLiveEvent({
+                    type: "failed",
+                    text: finalAssistantText,
+                    phase: "failed",
+                });
+                this.state.runtimePhase = "failed";
+            }
+            else {
+                this.applyChatLiveEvent({
+                    type: "final",
+                    text: finalAssistantText,
+                });
+            }
             this.state.followUpActions = (0, assistant_ux_1.buildFollowUpActions)({
                 intent: fullPreview.intent,
                 lastTask: taskText,
@@ -2702,15 +3434,17 @@ class PlaygroundViewProvider {
             for (const denial of result.permissionDenials) {
                 this.pushActivity(denial);
             }
-            this.pushActivity("Saving session");
-            this.state.runtimePhase = "saving_session";
-            this.applyChatLiveEvent({
-                type: "phase",
-                phase: "saving_session",
-                status: "streaming",
-                progress: liveProgressForPhase("saving_session"),
-                latestActivity: "Saving session",
-            });
+            this.pushActivity(qwenStalled ? "Saving stalled run" : "Saving session");
+            if (!qwenStalled) {
+                this.state.runtimePhase = "saving_session";
+                this.applyChatLiveEvent({
+                    type: "phase",
+                    phase: "saving_session",
+                    status: "streaming",
+                    progress: liveProgressForPhase("saving_session"),
+                    latestActivity: "Saving session",
+                });
+            }
             this.postState();
             await this.qwenHistoryService.saveConversation({
                 sessionId: resolvedSessionId,
@@ -2724,8 +3458,8 @@ class PlaygroundViewProvider {
                 throw new Error("Prompt aborted");
             }
             await this.refreshHistory();
-            this.pushActivity("Done");
-            this.state.runtimePhase = "done";
+            this.pushActivity(qwenStalled ? "Failed" : "Done");
+            this.state.runtimePhase = qwenStalled ? "failed" : "done";
             this.lastQwenDebugSnapshot = {
                 timestamp: nowIso(),
                 task: taskText,
@@ -2741,6 +3475,11 @@ class PlaygroundViewProvider {
                 runtimePhase: this.state.runtimePhase,
                 recentActivity: [...this.state.activity].slice(-12),
                 model: (0, config_1.getQwenModel)(),
+                ...(qwenStalled
+                    ? {
+                        error: finalAssistantText,
+                    }
+                    : {}),
             };
         }
         catch (error) {
@@ -2795,6 +3534,308 @@ class PlaygroundViewProvider {
             this.clearPromptAbort(promptAbort);
             this.state.busy = false;
             this.state.canUndo = false;
+            this.postState();
+        }
+    }
+    async requestCutieTurn(input) {
+        const response = await (0, api_client_1.requestJson)("POST", `${(0, config_1.getBaseApiUrl)()}/api/v1/cutie/model/chat`, input.auth, {
+            model: (0, config_1.getCutieModel)(),
+            protocol: "cutie_tools_v2",
+            protocolMode: "native_tools",
+            stream: false,
+            messages: input.messages,
+            tools: buildCutieToolDefinitions(),
+            maxToolsPerBatch: 1,
+        }, {
+            signal: input.signal,
+        });
+        return {
+            response: normalizeCutieResponse(response.response ?? response),
+            assistantText: typeof response.assistantText === "string" ? response.assistantText.trim() : "",
+            model: typeof response.model === "string" && response.model.trim() ? response.model.trim() : undefined,
+        };
+    }
+    async runCutiePrompt(input) {
+        const text = input.text.trim();
+        const taskText = String(input.promptText || input.text || "").trim() || text;
+        if (input.appendUser) {
+            this.appendMessage("user", text, undefined, input.clientMessageId);
+        }
+        const assistantMessageId = this.createLiveAssistantMessage({
+            transport: "cutie",
+            mode: "shell",
+            phase: "accepted",
+            latestActivity: "Prompt received",
+        });
+        this.state.followUpActions = [];
+        this.state.activity = [];
+        this.pushActivity("Collecting context");
+        this.state.runtimePhase = "collecting_context";
+        this.state.busy = true;
+        this.applyChatLiveEvent({
+            type: "phase",
+            phase: "collecting_context",
+            status: "pending",
+            progress: liveProgressForPhase("collecting_context"),
+            latestActivity: "Collecting context",
+        });
+        this.postState();
+        const workspaceRoot = (0, config_1.getWorkspaceRootPath)();
+        const workspaceHash = (0, config_1.getWorkspaceHash)();
+        const promptAbort = new AbortController();
+        this.promptAbort = promptAbort;
+        const hadExistingSession = Boolean(this.sessionId);
+        let localSessionId = this.sessionId || (0, crypto_1.randomUUID)();
+        let preview = null;
+        let resolvedModel = "";
+        try {
+            const auth = await this.auth.getRequestAuth();
+            if (!auth) {
+                throw new Error("Authenticate with browser sign-in or an Xpersona API key before using Cutie.");
+            }
+            localSessionId = this.sessionId || (0, crypto_1.randomUUID)();
+            this.sessionId = localSessionId;
+            this.state.selectedSessionId = localSessionId;
+            const intent = (0, assistant_ux_1.classifyIntent)(taskText);
+            preview = await this.contextCollector.preview(taskText, await this.getCutieContextOptions({
+                searchDepth: input.searchDepth,
+                intent,
+                includeWorkspaceHints: hadExistingSession,
+            }));
+            if (promptAbort.signal.aborted) {
+                throw new Error("Prompt aborted");
+            }
+            this.applyPreviewState(preview);
+            this.lastPrompt = {
+                text: taskText,
+                intent: preview.intent,
+                searchDepth: input.searchDepth,
+            };
+            if (this.shouldRequireEditClarification(preview)) {
+                this.pendingClarification = {
+                    text: taskText,
+                    intent: preview.intent,
+                    searchDepth: input.searchDepth,
+                };
+                this.resolveLiveAssistant({
+                    content: this.buildClarificationMessage(preview),
+                    status: "done",
+                    mode: "answer",
+                    phase: "completed",
+                });
+                this.state.followUpActions = (0, assistant_ux_1.buildClarificationActions)({
+                    candidateFiles: preview.candidateFiles,
+                });
+                this.state.runtimePhase = "clarify";
+                this.state.busy = false;
+                await this.cutieHistoryService.saveConversation({
+                    sessionId: localSessionId,
+                    mode: this.state.mode,
+                    title: taskText,
+                    messages: this.state.messages,
+                    targets: preview.resolvedFiles.length ? preview.resolvedFiles : preview.candidateFiles,
+                    intent: preview.intent,
+                });
+                await this.refreshHistory();
+                this.postState();
+                return;
+            }
+            this.pendingClarification = null;
+            const collected = await this.contextCollector.collect(text, await this.getCutieContextOptions({
+                searchDepth: input.searchDepth,
+                intent: preview.intent,
+                includeWorkspaceHints: hadExistingSession,
+            }));
+            if (promptAbort.signal.aborted) {
+                throw new Error("Prompt aborted");
+            }
+            const fullPreview = collected.preview;
+            this.applyPreviewState(fullPreview);
+            const attachedTargets = (fullPreview.selectedFiles.length ? fullPreview.selectedFiles : fullPreview.resolvedFiles).slice(0, 3);
+            if (attachedTargets.length) {
+                this.pushActivity(`Context attached: ${attachedTargets.join(", ")}`);
+            }
+            this.pushActivity("Waiting for Cutie");
+            this.state.runtimePhase = "waiting_for_cutie";
+            this.applyChatLiveEvent({
+                type: "phase",
+                phase: "connecting_runtime",
+                status: "pending",
+                progress: liveProgressForPhase("connecting_runtime"),
+                latestActivity: "Waiting for Cutie",
+            });
+            this.postState();
+            const transcript = [
+                {
+                    role: "system",
+                    content: buildCutieSystemPrompt(this.state.mode),
+                },
+                ...this.state.messages
+                    .filter((message) => message.id !== assistantMessageId)
+                    .map((message) => ({
+                    role: message.role,
+                    content: String(message.content || "").trim(),
+                }))
+                    .filter((message) => message.content),
+                {
+                    role: "system",
+                    content: buildCutieContextMessage({
+                        task: taskText,
+                        preview: fullPreview,
+                        context: collected.context,
+                    }),
+                },
+            ];
+            const usedTools = [];
+            const maxTurns = this.state.mode === "plan" ? 6 : 12;
+            for (let step = 1; step <= maxTurns; step += 1) {
+                const turn = await this.requestCutieTurn({
+                    auth,
+                    messages: transcript,
+                    signal: promptAbort.signal,
+                });
+                if (promptAbort.signal.aborted) {
+                    throw new Error("Prompt aborted");
+                }
+                if (turn.model) {
+                    resolvedModel = turn.model;
+                }
+                if (turn.response.type === "final") {
+                    const finalAssistantText = turn.response.final.trim() ||
+                        turn.assistantText.trim() ||
+                        "Cutie finished without a final message.";
+                    this.applyChatLiveEvent({
+                        type: "final",
+                        text: finalAssistantText,
+                    });
+                    this.state.followUpActions = (0, assistant_ux_1.buildFollowUpActions)({
+                        intent: fullPreview.intent,
+                        lastTask: taskText,
+                        preview: fullPreview,
+                        patchConfidence: (0, assistant_ux_1.buildPatchConfidence)({
+                            intent: fullPreview.intent,
+                            preview: fullPreview,
+                            didMutate: usedTools.some((toolName) => (0, qwen_runtime_utils_1.isMutationToolName)(toolName)),
+                        }),
+                    });
+                    this.pushActivity("Saving session");
+                    this.state.runtimePhase = "saving_session";
+                    this.applyChatLiveEvent({
+                        type: "phase",
+                        phase: "saving_session",
+                        status: "streaming",
+                        progress: liveProgressForPhase("saving_session"),
+                        latestActivity: "Saving session",
+                    });
+                    this.postState();
+                    await this.cutieHistoryService.saveConversation({
+                        sessionId: localSessionId,
+                        mode: this.state.mode,
+                        title: taskText,
+                        messages: this.state.messages,
+                        targets: fullPreview.resolvedFiles,
+                        intent: fullPreview.intent,
+                    });
+                    await this.refreshHistory();
+                    this.pushActivity("Done");
+                    this.state.runtimePhase = "done";
+                    this.postState();
+                    return;
+                }
+                const toolName = turn.response.tool_call.name;
+                usedTools.push(toolName);
+                const toolSummary = turn.response.tool_call.summary || `Step ${step}: ${toolName}`;
+                this.pushActivity(toolSummary);
+                this.applyChatLiveEvent({
+                    type: "tool_approval",
+                    activity: toolSummary,
+                });
+                this.postState();
+                const pendingToolCall = {
+                    step,
+                    adapter: "native_tools",
+                    requiresClientExecution: true,
+                    toolCall: {
+                        id: (0, crypto_1.randomUUID)(),
+                        name: toolName,
+                        arguments: turn.response.tool_call.arguments,
+                        kind: getCutieToolKind(toolName),
+                        ...(turn.response.tool_call.summary ? { summary: turn.response.tool_call.summary } : {}),
+                    },
+                    createdAt: nowIso(),
+                };
+                const toolResult = this.state.mode === "plan" && getCutieToolKind(toolName) !== "observe"
+                    ? {
+                        toolCallId: pendingToolCall.toolCall.id,
+                        name: pendingToolCall.toolCall.name,
+                        ok: false,
+                        blocked: true,
+                        summary: "Plan mode blocks Cutie from mutating the workspace or running commands.",
+                        error: "Plan mode blocks Cutie from mutating the workspace or running commands.",
+                        data: {},
+                        createdAt: nowIso(),
+                    }
+                    : await this.toolExecutor.executeToolCall({
+                        pendingToolCall,
+                        auth,
+                        sessionId: this.sessionId || undefined,
+                        workspaceFingerprint: workspaceHash,
+                    });
+                if (promptAbort.signal.aborted) {
+                    throw new Error("Prompt aborted");
+                }
+                this.pushActivity(toolResult.summary);
+                this.state.runtimePhase =
+                    toolResult.ok && isCutieMutationTool(toolName) ? "applying_result" : "waiting_for_cutie";
+                this.applyChatLiveEvent({
+                    type: "activity",
+                    activity: toolResult.summary,
+                    phase: livePhaseFromRuntimePhase(this.state.runtimePhase),
+                });
+                this.postState();
+                transcript.push({
+                    role: "system",
+                    content: buildCutieToolResultMessage(toolResult),
+                });
+            }
+            throw new Error("Cutie reached the local tool-step limit before finishing the request.");
+        }
+        catch (error) {
+            if (this.isPromptAbortError(error)) {
+                this.pushActivity("Canceled");
+                this.state.runtimePhase = "canceled";
+                this.applyChatLiveEvent({
+                    type: "canceled",
+                    text: "Canceled current response.",
+                    phase: "canceled",
+                });
+                return;
+            }
+            this.applyChatLiveEvent({
+                type: "failed",
+                text: `Cutie request failed: ${error instanceof Error ? error.message : String(error)}`,
+                phase: "failed",
+            });
+            this.pushActivity("Failed");
+            this.state.runtimePhase = "failed";
+            await this.cutieHistoryService.saveConversation({
+                sessionId: localSessionId,
+                mode: this.state.mode,
+                title: taskText,
+                messages: this.state.messages,
+                targets: preview?.resolvedFiles || [],
+                intent: preview?.intent || "ask",
+            });
+            await this.refreshHistory();
+            this.postState();
+        }
+        finally {
+            this.clearPromptAbort(promptAbort);
+            this.state.busy = false;
+            this.state.canUndo = false;
+            if (resolvedModel) {
+                this.pushActivity(`Cutie model: ${resolvedModel}`);
+            }
             this.postState();
         }
     }
@@ -2861,6 +3902,15 @@ class PlaygroundViewProvider {
             lines.push(`Run ID: ${hosted.runId || "(none)"}`);
             lines.push(`Adapter: ${hosted.adapter || "(none)"}`);
             lines.push(`Completion status: ${hosted.completionStatus || "(none)"}`);
+            lines.push(`Progress status: ${hosted.progressState?.status || "(none)"}`);
+            if (hosted.progressState?.stallReason)
+                lines.push(`Stall reason: ${hosted.progressState.stallReason}`);
+            if (hosted.progressState?.nextDeterministicAction) {
+                lines.push(`Next deterministic action: ${hosted.progressState.nextDeterministicAction}`);
+            }
+            lines.push(`Objective status: ${hosted.objectiveState?.status || "(none)"}`);
+            if (hosted.objectiveState?.targetPath)
+                lines.push(`Objective target: ${hosted.objectiveState.targetPath}`);
             lines.push(`Tools used: ${hosted.toolCallsUsed.join(", ") || "(none)"}`);
             if (hosted.assistantPreview)
                 lines.push(`Assistant preview: ${hosted.assistantPreview}`);
@@ -2871,7 +3921,7 @@ class PlaygroundViewProvider {
             lines.push("");
         }
         if (!qwen && !hosted) {
-            lines.push("No debug snapshots captured yet. Send a prompt with Qwen Code or Hosted runtime to populate.");
+            lines.push("No debug snapshots captured yet. Send a prompt with Cutie, Qwen Code, or Hosted runtime to populate.");
         }
         return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
     }
@@ -2987,6 +4037,8 @@ class PlaygroundViewProvider {
                 envelope = await this.executeToolLoop({
                     auth,
                     initialEnvelope: envelope,
+                    intent: preview.intent,
+                    mode: this.state.mode,
                     workspaceFingerprint: workspaceHash,
                     signal: promptAbort.signal,
                     toolCallsUsed: hostedToolCallsUsed,
@@ -2996,27 +4048,71 @@ class PlaygroundViewProvider {
             if (promptAbort.signal.aborted) {
                 throw new Error("Prompt aborted");
             }
+            const hostedObjectiveState = envelope.objectiveState || null;
+            const hostedProgressState = envelope.progressState || null;
+            const hostedMutationProof = hasMutationProofFromTools(hostedToolCallsUsed, envelope);
+            const hostedSucceeded = isHostedCompletionSuccessful({
+                envelope,
+                objectiveState: hostedObjectiveState,
+                progressState: hostedProgressState,
+                mutationProof: hostedMutationProof,
+                mode: this.state.mode,
+            });
             const assistantBody = this.state.mode === "plan" && envelope.plan
                 ? [envelope.final || "Plan ready.", "", formatPlan(envelope.plan)].filter(Boolean).join("\n")
                 : envelope.final || "No final response text was returned.";
-            this.applyChatLiveEvent({
-                type: "final",
-                text: (0, qwen_ux_1.sanitizeQwenAssistantOutput)({
-                    text: assistantBody,
-                    task: taskText,
-                    workspaceRoot: (0, config_1.getWorkspaceRootPath)(),
-                    executablePath: (0, config_1.getQwenExecutablePath)() || null,
-                    workspaceTargets: [
-                        preview.activeFile || "",
-                        ...preview.resolvedFiles,
-                        ...preview.selectedFiles,
-                    ],
-                }),
+            const sanitizedAssistantBody = (0, qwen_ux_1.sanitizeQwenAssistantOutput)({
+                text: assistantBody,
+                task: taskText,
+                workspaceRoot: (0, config_1.getWorkspaceRootPath)(),
+                executablePath: (0, config_1.getQwenExecutablePath)() || null,
+                workspaceTargets: [
+                    preview.activeFile || "",
+                    ...preview.resolvedFiles,
+                    ...preview.selectedFiles,
+                ],
             });
-            if (envelope.completionStatus === "incomplete" && envelope.missingRequirements?.length) {
-                this.appendMessage("system", `Missing: ${envelope.missingRequirements.join(", ")}`);
+            const finalAssistantText = hostedSucceeded
+                ? sanitizedAssistantBody
+                : [
+                    buildHostedTerminalMessage({
+                        task: taskText,
+                        preview: {
+                            intent: preview.intent,
+                            activeFile: preview.activeFile,
+                            resolvedFiles: preview.resolvedFiles,
+                            selectedFiles: preview.selectedFiles,
+                        },
+                        envelope,
+                        progressState: hostedProgressState,
+                        objectiveState: hostedObjectiveState,
+                        toolCallsUsed: hostedToolCallsUsed,
+                        mutationProof: hostedMutationProof,
+                    }),
+                    String(envelope.final || "").trim() &&
+                        String(envelope.final || "").trim() !== "No final response text was returned."
+                        ? `Last model text:\n${sanitizedAssistantBody}`
+                        : "",
+                ]
+                    .filter(Boolean)
+                    .join("\n\n");
+            if (hostedSucceeded) {
+                this.applyChatLiveEvent({
+                    type: "final",
+                    text: finalAssistantText,
+                });
             }
-            if (this.state.mode !== "plan" &&
+            else {
+                this.applyChatLiveEvent({
+                    type: "failed",
+                    text: finalAssistantText,
+                    phase: "failed",
+                });
+                this.pushActivity("Model returned without provable completion");
+                this.state.runtimePhase = "failed";
+            }
+            if (hostedSucceeded &&
+                this.state.mode !== "plan" &&
                 envelope.actions?.length &&
                 envelope.adapter === "deterministic_batch") {
                 this.appendMessage("system", "Applying deterministic batch changes locally...");
@@ -3036,7 +4132,7 @@ class PlaygroundViewProvider {
                 const label = String(receipt.status || "ready");
                 this.pushActivity(`Receipt: ${label}.`);
             }
-            this.state.runtimePhase = "done";
+            this.state.runtimePhase = hostedSucceeded ? "done" : "failed";
             this.lastHostedDebugSnapshot = {
                 timestamp: nowIso(),
                 task: taskText,
@@ -3052,8 +4148,15 @@ class PlaygroundViewProvider {
                 runId: envelope.runId,
                 adapter: envelope.adapter,
                 completionStatus: envelope.completionStatus,
+                progressState: hostedProgressState,
+                objectiveState: hostedObjectiveState,
                 toolCallsUsed: [...hostedToolCallsUsed],
-                assistantPreview: assistantBody ? String(assistantBody).slice(0, 300) : undefined,
+                assistantPreview: finalAssistantText ? String(finalAssistantText).slice(0, 300) : undefined,
+                ...(hostedSucceeded
+                    ? {}
+                    : {
+                        error: finalAssistantText,
+                    }),
             };
             await this.refreshHistory();
         }
@@ -3228,6 +4331,52 @@ class PlaygroundViewProvider {
     }
     async executeToolLoop(input) {
         let envelope = input.initialEnvelope;
+        const seenPendingSignatures = new Map();
+        const blockEnvelope = (source, reason, nextAction) => {
+            const existingMissing = readStringArray(source.missingRequirements);
+            const targetPath = readRecordString(source.objectiveState, "targetPath") ||
+                readRecordString(source.pendingToolCall?.toolCall.arguments || {}, "path") ||
+                readRecordString(source.pendingToolCall?.toolCall.arguments || {}, "filePath") ||
+                "";
+            const progressState = {
+                status: "stalled",
+                lastMeaningfulProgressAtStep: source.loopState?.stepCount || 0,
+                lastMeaningfulProgressSummary: reason,
+                stallCount: source.progressState &&
+                    typeof source.progressState === "object" &&
+                    typeof source.progressState.stallCount === "number"
+                    ? source.progressState.stallCount + 1
+                    : 1,
+                stallReason: reason,
+                nextDeterministicAction: nextAction,
+                pendingToolCallSignature: buildToolCallSignature(source.pendingToolCall?.toolCall || null),
+            };
+            const objectiveState = {
+                status: "blocked",
+                goalType: getObjectiveGoalType(input.intent, input.mode),
+                ...(targetPath ? { targetPath } : {}),
+                requiredProof: Array.from(new Set([...readRecordStringArray(source.objectiveState, "requiredProof"), ...existingMissing])),
+                observedProof: readRecordStringArray(source.objectiveState, "observedProof"),
+                missingProof: Array.from(new Set([...readRecordStringArray(source.objectiveState, "missingProof"), reason])),
+            };
+            return {
+                ...source,
+                completionStatus: "incomplete",
+                missingRequirements: Array.from(new Set([...existingMissing, reason])),
+                progressState,
+                objectiveState,
+                reviewState: {
+                    ...(source.reviewState && typeof source.reviewState === "object" ? source.reviewState : {}),
+                    status: "blocked",
+                    reason,
+                    recommendedAction: nextAction,
+                    surface: "playground_panel",
+                    controlActions: ["repair"],
+                },
+                pendingToolCall: null,
+                final: reason,
+            };
+        };
         while (envelope.pendingToolCall && envelope.runId) {
             if (input.signal?.aborted) {
                 throw new Error("Prompt aborted");
@@ -3260,7 +4409,36 @@ class PlaygroundViewProvider {
                 input.debugRef.runId = envelope.runId;
                 input.debugRef.adapter = envelope.adapter;
             }
-            envelope = await this.continueRun(input.auth, envelope.runId, toolResult, input.signal);
+            const nextEnvelope = await this.continueRun(input.auth, envelope.runId, toolResult, input.signal);
+            const nextSignature = buildToolCallSignature(nextEnvelope.pendingToolCall?.toolCall || null);
+            const currentFingerprint = buildHostedProgressFingerprint({
+                envelope,
+                toolCallsUsed: input.toolCallsUsed || [],
+                objectiveState: envelope.objectiveState || null,
+                progressState: envelope.progressState || null,
+            });
+            const nextFingerprint = buildHostedProgressFingerprint({
+                envelope: nextEnvelope,
+                toolCallsUsed: input.toolCallsUsed || [],
+                objectiveState: nextEnvelope.objectiveState || null,
+                progressState: nextEnvelope.progressState || null,
+            });
+            const nextMutationProof = hasMutationProofFromTools(input.toolCallsUsed || [], nextEnvelope);
+            if (nextEnvelope.loopState && nextEnvelope.loopState.stepCount < pendingToolCall.step) {
+                envelope = blockEnvelope(nextEnvelope, `Hosted loop regressed from step ${pendingToolCall.step} to ${nextEnvelope.loopState.stepCount}.`, `Repair the run around ${pendingToolCall.toolCall.name} before continuing.`);
+                break;
+            }
+            if (nextSignature) {
+                const repeatCount = (seenPendingSignatures.get(nextSignature) || 0) + 1;
+                seenPendingSignatures.set(nextSignature, repeatCount);
+                if (repeatCount > 1 && nextFingerprint === currentFingerprint && !nextMutationProof) {
+                    envelope = blockEnvelope(nextEnvelope, `Repeated pending tool call without new proof: ${pendingToolCall.toolCall.name}.`, pendingToolCall.toolCall.kind === "mutate"
+                        ? `Use a repair stage for ${pendingToolCall.toolCall.name}.`
+                        : `Switch to a concrete mutation for ${pendingToolCall.toolCall.name}.`);
+                    break;
+                }
+            }
+            envelope = nextEnvelope;
             if (envelope.sessionId) {
                 this.sessionId = envelope.sessionId;
                 this.state.selectedSessionId = envelope.sessionId;

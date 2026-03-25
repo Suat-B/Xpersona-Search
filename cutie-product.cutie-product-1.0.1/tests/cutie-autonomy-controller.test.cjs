@@ -93,6 +93,28 @@ test("code change completion proof requires mutation plus verification evidence"
   assert.equal(requiresCodeChangeVerification(verifiedRun), false);
 });
 
+test("fast integrity proof satisfies completion proof for successful mutations", () => {
+  const run = makeRun({
+    receipts: [
+      {
+        id: "tool_1",
+        step: 1,
+        toolName: "patch_file",
+        kind: "mutate",
+        domain: "workspace",
+        status: "completed",
+        summary: "Patched src/app.ts.",
+        startedAt: "2026-03-22T00:00:00.000Z",
+        finishedAt: "2026-03-22T00:00:01.000Z",
+      },
+    ],
+    fastIntegrityProof: "fast_integrity_proof:patch_file:src/app.ts:sha1:abc",
+  });
+
+  assert.equal(hasCodeChangeCompletionProof(run), true);
+  assert.equal(requiresCodeChangeVerification(run), false);
+});
+
 test("batchNeedsMoreAutonomy blocks weak post-read and post-mutation batches", () => {
   const readOnlyRun = makeRun({
     receipts: [

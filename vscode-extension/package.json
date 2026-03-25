@@ -108,11 +108,27 @@
         "xpersona.binary.runtime": {
           "type": "string",
           "enum": [
+            "cutie",
             "playgroundApi",
             "qwenCode"
           ],
+          "enumItemLabels": [
+            "Cutie",
+            "Hosted runtime",
+            "Qwen runtime"
+          ],
+          "enumDescriptions": [
+            "Use the local Cutie runtime inside Binary IDE.",
+            "Use the hosted Binary IDE API.",
+            "Use the local Qwen Code runtime."
+          ],
           "default": "qwenCode",
-          "description": "Choose whether Binary IDE uses the local Qwen Code runtime or the hosted Binary IDE API."
+          "description": "Choose whether Binary IDE uses the local Cutie runtime, the hosted Binary IDE API, or the local Qwen Code runtime."
+        },
+        "xpersona.binary.cutie.model": {
+          "type": "string",
+          "default": "Qwen/Qwen2.5-Coder-32B-Instruct:fastest",
+          "description": "Model name for Cutie runtime requests."
         },
         "xpersona.binary.qwen.model": {
           "type": "string",

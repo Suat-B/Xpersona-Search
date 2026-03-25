@@ -39,9 +39,11 @@ exports.getQwenCliWrapperEnabled = getQwenCliWrapperEnabled;
 exports.migrateLegacyConfiguration = migrateLegacyConfiguration;
 exports.getBaseApiUrl = getBaseApiUrl;
 exports.getRuntimeBackend = getRuntimeBackend;
+exports.getCutieModel = getCutieModel;
 exports.getQwenModel = getQwenModel;
 exports.getQwenOpenAiBaseUrl = getQwenOpenAiBaseUrl;
 exports.getQwenExecutablePath = getQwenExecutablePath;
+exports.getBinaryStreamGatewayUrl = getBinaryStreamGatewayUrl;
 exports.getWorkspaceFolder = getWorkspaceFolder;
 exports.getWorkspaceRootPath = getWorkspaceRootPath;
 exports.getWorkspaceHash = getWorkspaceHash;
@@ -127,7 +129,15 @@ function getBaseApiUrl() {
 }
 function getRuntimeBackend() {
     const configured = getConfigurationValue("runtime", "qwenCode");
-    return configured === "playgroundApi" ? "playgroundApi" : "qwenCode";
+    if (configured === "playgroundApi")
+        return "playgroundApi";
+    if (configured === "cutie")
+        return "cutie";
+    return "qwenCode";
+}
+function getCutieModel() {
+    const configured = getConfigurationValue("cutie.model", "Qwen/Qwen2.5-Coder-32B-Instruct:fastest");
+    return String(configured || "Qwen/Qwen2.5-Coder-32B-Instruct:fastest").trim();
 }
 function getQwenModel() {
     const configured = getConfigurationValue("qwen.model", "Qwen/Qwen3-Next-80B-A3B-Thinking:fastest");
@@ -144,6 +154,11 @@ function getQwenExecutablePath() {
     if (!value)
         return undefined;
     return (0, intelligence_utils_1.isRuntimePathLeak)(value) ? undefined : value;
+}
+function getBinaryStreamGatewayUrl() {
+    const configured = getConfigurationValue("streamGatewayUrl", "");
+    const value = String(configured || "").trim();
+    return value.replace(/\/+$/, "");
 }
 function getWorkspaceFolder() {
     return vscode.workspace.workspaceFolders?.[0] ?? null;

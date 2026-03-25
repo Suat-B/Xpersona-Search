@@ -33,7 +33,9 @@ export function parseSlashCommand(text: string): SlashCommand | null {
   if (lower === "/signout") return { kind: "signout" };
   if (lower === "/undo") return { kind: "undo" };
   if (lower === "/status") return { kind: "status" };
+  if (lower === "/runtime cutie") return { kind: "runtime", runtime: "cutie" };
   if (lower === "/runtime qwen") return { kind: "runtime", runtime: "qwenCode" };
+  if (lower === "/runtime hosted") return { kind: "runtime", runtime: "playgroundApi" };
   if (lower === "/runtime cloud") return { kind: "runtime", runtime: "playgroundApi" };
   return { kind: "unknown", raw: normalized };
 }
@@ -45,8 +47,10 @@ export function buildSlashCommandHelpMessage(prefix?: string): string {
     "- /new",
     "- /plan",
     "- /auto",
+    "- /runtime cutie",
+    "- /runtime hosted",
     "- /runtime qwen",
-    "- /runtime cloud",
+    "- /runtime cloud (alias for hosted)",
     "- /key",
     "- /signin",
     "- /signout",
@@ -91,9 +95,11 @@ export function buildSlashStatusMessage(input: {
   attachedSelectionPath?: string | null;
 }): string {
   const sessionLabel = input.sessionId?.trim() || "New chat";
+  const runtimeLabel =
+    input.runtime === "qwenCode" ? "Qwen Code" : input.runtime === "playgroundApi" ? "Hosted runtime" : "Cutie";
   const lines = [
     "Binary IDE status:",
-    `- Runtime: ${input.runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API"}`,
+    `- Runtime: ${runtimeLabel}`,
     `- Mode: ${input.mode === "plan" ? "Plan" : input.mode === "yolo" ? "Yolo" : "Auto"}`,
     `- Auth: ${input.authLabel}`,
     `- Phase: ${describeRuntimePhase(input.runtimePhase)}`,

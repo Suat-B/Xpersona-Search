@@ -209,35 +209,35 @@
 				},
 				"cutie-product.contextPreviewChars": {
 					"type": "number",
-					"default": 6000,
+					"default": 2500,
 					"minimum": 1024,
 					"maximum": 24000,
 					"description": "Maximum characters of the active editor buffer (or selection) included in Cutie live context."
 				},
 				"cutie-product.openFilePreviewLines": {
 					"type": "number",
-					"default": 25,
+					"default": 8,
 					"minimum": 0,
 					"maximum": 120,
 					"description": "First N lines of each open tab to include as a preview in context (0 disables tab previews)."
 				},
 				"cutie-product.maxOpenFilesInContext": {
 					"type": "number",
-					"default": 12,
+					"default": 6,
 					"minimum": 4,
 					"maximum": 24,
 					"description": "How many open editor tabs to list in live context metadata and previews."
 				},
 				"cutie-product.maxToolsPerBatch": {
 					"type": "number",
-					"default": 4,
+					"default": 1,
 					"minimum": 1,
 					"maximum": 8,
 					"description": "Maximum tool calls Cutie may run from a single planning response (observe tools plus optional one mutation last)."
 				},
 				"cutie-product.contextReceiptWindow": {
 					"type": "number",
-					"default": 14,
+					"default": 6,
 					"minimum": 4,
 					"maximum": 32,
 					"description": "How many recent tool receipts are included in live context JSON."
@@ -249,7 +249,7 @@
 				},
 				"cutie-product.objectiveBasedRuns": {
 					"type": "boolean",
-					"default": true,
+					"default": false,
 					"description": "For code tasks, decompose the user request into a checklist and require a structured final that marks every objective done or blocked before the run completes."
 				},
 				"cutie-product.objectiveBasedInvestigation": {
@@ -259,14 +259,14 @@
 				},
 				"cutie-product.maxToolSteps": {
 					"type": "number",
-					"default": 48,
+					"default": 18,
 					"minimum": 8,
 					"maximum": 128,
 					"description": "Maximum tool-call steps per run (planning waves count tools executed). Edit/mutation repair attempts and objective-checklist JSON repair budget scale with this value (unless Unlimited autonomy is on)."
 				},
 				"cutie-product.maxWorkspaceMutations": {
 					"type": "number",
-					"default": 24,
+					"default": 8,
 					"minimum": 2,
 					"maximum": 64,
 					"description": "Maximum successful workspace mutations (edit/write/mkdir/run_command) per run."
@@ -283,10 +283,12 @@
 		"vscode:prepublish": "npm run compile",
 		"compile": "tsc -p ./",
 		"watch": "tsc -watch -p ./",
+		"sync:trae": "cmd /c scripts\\sync-trae-extension.cmd",
+		"watch:trae": "powershell -ExecutionPolicy Bypass -File scripts\\watch-trae-sync.ps1",
 		"vendor:vscode-core": "node scripts/vendor-xpersona-core.cjs",
 		"package": "vsce package",
 		"test:binary-sse": "npm run compile && node --test tests/binary-sse.test.cjs",
-		"test:cutie-native": "npm run compile && node --test tests/binary-sse.test.cjs tests/cutie-file-patch.test.cjs tests/cutie-model-protocol.test.cjs tests/cutie-model-capabilities.test.cjs tests/cutie-operating-prompt.test.cjs tests/cutie-native-autonomy.test.cjs tests/cutie-autonomy-controller.test.cjs tests/cutie-code-intelligence.test.cjs tests/cutie-edit-synthesis.test.cjs tests/cutie-runtime-mutation.test.cjs"
+		"test:cutie-native": "npm run compile && node --test tests/binary-sse.test.cjs tests/cutie-file-patch.test.cjs tests/cutie-model-protocol.test.cjs tests/cutie-model-capabilities.test.cjs tests/cutie-operating-prompt.test.cjs tests/cutie-native-autonomy.test.cjs tests/cutie-autonomy-controller.test.cjs tests/cutie-code-intelligence.test.cjs tests/cutie-edit-synthesis.test.cjs tests/cutie-runtime-mutation.test.cjs tests/cutie-binary-controller-router.test.cjs tests/cutie-binary-debug.test.cjs tests/cutie-debug-report.test.cjs"
 	},
 	"devDependencies": {
 		"@types/node": "^20.10.0",

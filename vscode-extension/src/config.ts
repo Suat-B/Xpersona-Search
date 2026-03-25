@@ -93,7 +93,17 @@ export function getBaseApiUrl(): string {
 
 export function getRuntimeBackend(): RuntimeBackend {
   const configured = getConfigurationValue<string>("runtime", "qwenCode");
-  return configured === "playgroundApi" ? "playgroundApi" : "qwenCode";
+  if (configured === "playgroundApi") return "playgroundApi";
+  if (configured === "cutie") return "cutie";
+  return "qwenCode";
+}
+
+export function getCutieModel(): string {
+  const configured = getConfigurationValue<string>(
+    "cutie.model",
+    "Qwen/Qwen2.5-Coder-32B-Instruct:fastest"
+  );
+  return String(configured || "Qwen/Qwen2.5-Coder-32B-Instruct:fastest").trim();
 }
 
 export function getQwenModel(): string {

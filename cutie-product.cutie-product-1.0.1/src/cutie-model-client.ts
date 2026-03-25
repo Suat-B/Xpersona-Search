@@ -98,14 +98,7 @@ export class CutieModelClient {
       if (!(error instanceof CutieStructuredProtocolError)) {
         rethrowWithHostHttpHint(error);
       }
-      try {
-        return await factory();
-      } catch (secondError) {
-        if (secondError instanceof CutieStructuredProtocolError) {
-          throw new Error(`Cutie server returned an invalid cutie_tools_v2 response. ${secondError.message}`);
-        }
-        rethrowWithHostHttpHint(secondError);
-      }
+      throw new Error(`Cutie server returned an invalid cutie_tools_v2 response. ${error.message}`);
     }
   }
 

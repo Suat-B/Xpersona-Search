@@ -96,6 +96,9 @@ export function hasCodeChangeCompletionProof(run: CutieRunState): boolean {
   if (stringValue(run.noOpConclusion)) {
     return Boolean(stringValue(run.lastVerifiedOutcome) || hasSuccessfulVerification(run));
   }
+  if (Boolean(stringValue(run.fastIntegrityProof)) && hasSuccessfulWorkspaceMutation(run)) {
+    return true;
+  }
   return hasSuccessfulWorkspaceMutation(run) && Boolean(stringValue(run.lastVerifiedOutcome) || hasSuccessfulVerification(run));
 }
 

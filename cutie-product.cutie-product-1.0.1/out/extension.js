@@ -54,6 +54,7 @@ const cutie_tool_registry_1 = require("./cutie-tool-registry");
 const cutie_workspace_adapter_1 = require("./cutie-workspace-adapter");
 const diff_1 = require("diff");
 const cutie_diff_1 = require("./cutie-diff");
+const cutie_debug_report_1 = require("./cutie-debug-report");
 const webview_html_1 = require("./webview-html");
 const cutie_policy_1 = require("./cutie-policy");
 const binary_portable_context_1 = require("./binary-portable-context");
@@ -418,7 +419,6 @@ class CutieSidebarProvider {
         this.workspaceAdapter = new cutie_workspace_adapter_1.CutieWorkspaceAdapter();
         this.modelClient = new cutie_model_client_1.CutieModelClient();
         this.modelAdapter = new cutie_model_adapter_1.CutieModelAdapter(this.modelClient);
-        this.ideRuntimeValues = new Set(["cutie", "playgroundApi", "qwenCode"]);
         this.sessionStore = new cutie_session_store_1.CutieSessionStore(context);
         this.playgroundChatBridge = new cutie_playground_chat_bridge_1.CutiePlaygroundChatBridge(context, auth);
         this.toolRegistry = new cutie_tool_registry_1.CutieToolRegistry(new cutie_workspace_adapter_1.CutieWorkspaceAdapter(), this.desktop);
@@ -1015,16 +1015,16 @@ class CutieSidebarProvider {
     buildDynamicSettings() {
         const cfg = vscode.workspace.getConfiguration("cutie-product");
         return {
-            contextPreviewChars: Math.max(1024, Math.min(24000, cfg.get("contextPreviewChars", 6000))),
-            openFilePreviewLines: Math.max(0, Math.min(120, cfg.get("openFilePreviewLines", 25))),
-            maxOpenFilesInContext: Math.max(4, Math.min(24, cfg.get("maxOpenFilesInContext", 12))),
-            maxToolsPerBatch: Math.max(1, Math.min(8, cfg.get("maxToolsPerBatch", 4))),
-            contextReceiptWindow: Math.max(4, Math.min(32, cfg.get("contextReceiptWindow", 14))),
+            contextPreviewChars: Math.max(1024, Math.min(24000, cfg.get("contextPreviewChars", 2500))),
+            openFilePreviewLines: Math.max(0, Math.min(120, cfg.get("openFilePreviewLines", 8))),
+            maxOpenFilesInContext: Math.max(4, Math.min(24, cfg.get("maxOpenFilesInContext", 6))),
+            maxToolsPerBatch: Math.max(1, Math.min(8, cfg.get("maxToolsPerBatch", 1))),
+            contextReceiptWindow: Math.max(4, Math.min(32, cfg.get("contextReceiptWindow", 6))),
             investigationPreflight: cfg.get("investigationPreflight", false),
-            objectiveBasedRuns: cfg.get("objectiveBasedRuns", true),
+            objectiveBasedRuns: cfg.get("objectiveBasedRuns", false),
             objectiveBasedInvestigation: cfg.get("objectiveBasedInvestigation", false),
-            maxToolSteps: Math.max(8, Math.min(128, cfg.get("maxToolSteps", 48))),
-            maxWorkspaceMutations: Math.max(2, Math.min(64, cfg.get("maxWorkspaceMutations", 24))),
+            maxToolSteps: Math.max(8, Math.min(128, cfg.get("maxToolSteps", 18))),
+            maxWorkspaceMutations: Math.max(2, Math.min(64, cfg.get("maxWorkspaceMutations", 8))),
             unlimitedAutonomy: cfg.get("unlimitedAutonomy", false),
         };
     }
@@ -1292,18 +1292,39 @@ class CutieSidebarProvider {
         await this.emitState();
     }
     async stopAutomation() {
-        if (!this.currentAbortController) {
-            this.status = "No Cutie run is active.";
+        if (this.currentAbortController) {
+            this.status = "Stopping the active Cutie run...";
+            this.submitState = "stopping";
+            this.streamingAssistantText = "";
+            this.suppressedAssistantArtifactText = "";
+            this.currentAbortController.abort();
+            await this.emitState();
+            return;
+        }
+        const canCancelBinary = Boolean(this.binaryController.binary.canCancel ||
+            (this.binaryController.binary.activeBuild && this.binaryController.binary.busy));
+        if (!canCancelBinary) {
+            this.status = "No active automation run to stop.";
             this.submitState = "settled";
             await this.emitState();
             return;
         }
-        this.status = "Stopping the active Cutie run...";
+        this.status = "Stopping the active binary build...";
         this.submitState = "stopping";
         this.streamingAssistantText = "";
         this.suppressedAssistantArtifactText = "";
-        this.currentAbortController.abort();
         await this.emitState();
+        try {
+            await this.binaryController.cancelBinaryBuild();
+            this.status = "Binary cancellation requested.";
+        }
+        catch (error) {
+            this.status = `Binary cancel failed: ${error instanceof Error ? error.message : String(error)}`;
+        }
+        finally {
+            this.submitState = "settled";
+            await this.emitState();
+        }
     }
     getChatDiffsForActiveSession() {
         if (!this.activeSessionId)
@@ -1634,12 +1655,6 @@ class CutieSidebarProvider {
         if (message.type === "setComposerReasoningLevel") {
             return this.setComposerReasoningLevelFromWebview(String(message.level || "").trim());
         }
-        if (message.type === "setIdeRuntime") {
-            return this.setIdeRuntimeFromWebview(String(message.runtime || "").trim());
-        }
-        if (message.type === "undoPlaygroundBatch") {
-            return this.undoLastPlaygroundBatchCommand();
-        }
     }
     composerConfigurationTarget() {
         return vscode.workspace.workspaceFolders?.length
@@ -1660,14 +1675,6 @@ class CutieSidebarProvider {
         await vscode.workspace
             .getConfiguration(config_1.EXTENSION_NAMESPACE)
             .update("reasoningLevel", level, this.composerConfigurationTarget());
-        await this.emitState();
-    }
-    async setIdeRuntimeFromWebview(runtime) {
-        if (!this.ideRuntimeValues.has(runtime))
-            return;
-        await vscode.workspace
-            .getConfiguration(config_1.EXTENSION_NAMESPACE)
-            .update("binary.runtime", runtime, this.composerConfigurationTarget());
         await this.emitState();
     }
     async undoLastPlaygroundBatchCommand() {
@@ -2090,6 +2097,53 @@ class CutieSidebarProvider {
             await this.emitState();
             return;
         }
+        if (!this.isWarmSnapshotFresh()) {
+            void this.prewarmFastStartState();
+        }
+        const task = this.appendMentionsToPrompt(trimmedPrompt, mentions);
+        this.runRequestVersion += 1;
+        this.currentAbortController?.abort();
+        this.currentAbortController = null;
+        this.activeRun = null;
+        this.streamingAssistantText = "";
+        this.suppressedAssistantArtifactText = "";
+        this.resetLiveActionLog();
+        this.status = "Routing your prompt into natural-language streaming binary mode...";
+        this.submitState = "running";
+        await this.emitState();
+        try {
+            let session = await this.ensureSession(trimmedPrompt);
+            session = await this.sessionStore.appendMessage(session, {
+                role: "user",
+                content: task,
+            });
+            this.activeSession = session;
+            this.activeSessionId = session.id;
+            await this.emitState();
+            await this.binaryController.runNaturalLanguagePrompt(task);
+            const activeBuild = this.binaryController.binary.activeBuild;
+            this.status =
+                activeBuild && (activeBuild.status === "running" || activeBuild.status === "queued")
+                    ? "Binary build is streaming."
+                    : "Binary action completed.";
+        }
+        catch (error) {
+            this.status = `Binary action failed: ${error instanceof Error ? error.message : String(error)}`;
+            void vscode.window.showErrorMessage(this.status);
+        }
+        finally {
+            this.submitState = "settled";
+            await this.refreshDesktopState();
+            void this.prewarmFastStartState();
+            await this.emitState();
+        }
+    }
+    async runPromptLegacy(prompt, mentions = []) {
+        const trimmedPrompt = String(prompt || "").trim();
+        if (!trimmedPrompt) {
+            await this.emitState();
+            return;
+        }
         if ((0, config_1.getBinaryIdeChatRuntime)() !== "cutie") {
             return this.runIdeRuntimePrompt(trimmedPrompt, mentions);
         }
@@ -2307,23 +2361,22 @@ class CutieSidebarProvider {
         const session = this.activeSession;
         const run = this.activeRun;
         const messages = this.getVisibleMessages();
-        const debugPayload = {
-            exportedAt: new Date().toISOString(),
+        const payloadText = (0, cutie_debug_report_1.buildCutieDebugReportV2Text)({
+            generatedAt: new Date().toISOString(),
             extensionVersion: (0, config_1.getExtensionVersion)(this.context),
+            runtime: (0, config_1.getBinaryIdeChatRuntime)(),
             workspaceHash: (0, config_1.getWorkspaceHash)(),
+            workspaceRootPath: (0, config_1.getWorkspaceRootPath)(),
             submitState: this.submitState,
             status: this.status,
-            liveActionLogPreview: this.getLiveActionLogForRun(run).slice(-40),
-            liveTranscriptPreview: this.getLiveTranscriptForRun(run).slice(-40),
-            suppressedAssistantArtifactPreview: this.suppressedAssistantArtifactText
-                ? this.suppressedAssistantArtifactText.slice(0, 4000)
-                : null,
             auth: {
                 kind: this.authState.kind,
                 label: this.authState.label,
             },
             warmStartState: this.getWarmStartStateForView(),
             promptState: this.getPromptStateForView(),
+            dynamicSettings: this.buildDynamicSettings(),
+            desktop: this.desktopState,
             session: session
                 ? {
                     id: session.id,
@@ -2332,89 +2385,14 @@ class CutieSidebarProvider {
                     snapshotCount: session.snapshots.length,
                 }
                 : null,
-            activeRun: run
-                ? {
-                    id: run.id,
-                    status: run.status,
-                    phase: run.phase,
-                    stepCount: run.stepCount,
-                    maxSteps: run.maxSteps,
-                    workspaceMutationCount: run.workspaceMutationCount,
-                    maxWorkspaceMutations: run.maxWorkspaceMutations,
-                    desktopMutationCount: run.desktopMutationCount,
-                    maxDesktopMutations: run.maxDesktopMutations,
-                    repeatedCallCount: run.repeatedCallCount,
-                    goal: run.goal,
-                    autonomyMode: run.autonomyMode || null,
-                    preferredTargetPath: run.preferredTargetPath || null,
-                    targetConfidence: run.targetConfidence || null,
-                    targetSource: run.targetSource || null,
-                    taskFrame: run.taskFrame || null,
-                    targetCandidates: run.targetCandidates || [],
-                    targetAcquisitionPhase: run.targetAcquisitionPhase || null,
-                    currentRepairTactic: run.currentRepairTactic || null,
-                    lastNewEvidence: run.lastNewEvidence || null,
-                    noOpConclusion: run.noOpConclusion || null,
-                    modelAdapter: run.modelAdapter || null,
-                    modelCapabilities: run.modelCapabilities || null,
-                    protocolMode: run.protocolMode || null,
-                    normalizationSource: run.normalizationSource || null,
-                    artifactExtractionShape: run.artifactExtractionShape || null,
-                    fallbackModeUsed: run.fallbackModeUsed || null,
-                    simpleTaskFastPath: Boolean(run.simpleTaskFastPath),
-                    objectiveSuspendedForDirectRecovery: Boolean(run.objectiveSuspendedForDirectRecovery),
-                    nextDeterministicAction: run.nextDeterministicAction || null,
-                    suppressedToolRescued: Boolean(run.suppressedToolRescued),
-                    suppressedToolName: run.suppressedToolName || null,
-                    suppressedToolRejectedReason: run.suppressedToolRejectedReason || null,
-                    lastMutationValidationError: run.lastMutationValidationError || null,
-                    patchDisabledForRun: Boolean(run.patchDisabledForRun),
-                    mutationCoercionMode: run.mutationCoercionMode || null,
-                    executedRecoveredArtifact: Boolean(run.executedRecoveredArtifact),
-                    promptSource: run.promptSource || null,
-                    promptMarkdownPath: run.promptMarkdownPath || null,
-                    promptLoaded: Boolean(run.promptLoaded),
-                    promptLoadError: run.promptLoadError || null,
-                    promptLastLoadedAt: run.promptLastLoadedAt || null,
-                    goalSatisfied: run.goalSatisfied,
-                    lastMeaningfulProgressAtStep: run.lastMeaningfulProgressAtStep ?? null,
-                    lastMeaningfulProgressSummary: run.lastMeaningfulProgressSummary || null,
-                    lastActionAtStep: run.lastActionAtStep ?? null,
-                    lastActionSummary: run.lastActionSummary || null,
-                    lastStrategyShiftAtStep: run.lastStrategyShiftAtStep ?? null,
-                    noProgressTurns: run.noProgressTurns ?? 0,
-                    stallSinceStep: run.stallSinceStep ?? null,
-                    stallSinceSummary: run.stallSinceSummary || null,
-                    stallLevel: run.stallLevel || null,
-                    stallReason: run.stallReason || null,
-                    stallNextAction: run.stallNextAction || null,
-                    repairAttemptCount: run.repairAttemptCount,
-                    objectiveRepairCount: run.objectiveRepairCount ?? 0,
-                    escalationState: run.escalationState,
-                    stuckReason: run.stuckReason || null,
-                    suggestedNextAction: run.suggestedNextAction || null,
-                    currentStrategyLabel: (0, cutie_autonomy_controller_1.getCurrentStrategyLabel)(run),
-                    lastToolName: run.lastToolName || null,
-                    error: run.error || null,
-                    startedAt: run.startedAt,
-                    endedAt: run.endedAt || null,
-                    receipts: run.receipts,
-                }
-                : null,
-            desktop: {
-                platform: this.desktopState.platform,
-                activeWindow: this.desktopState.activeWindow || null,
-                displays: this.desktopState.displays,
-                recentSnapshots: this.desktopState.recentSnapshots,
-            },
-            recentMessages: messages.slice(-12).map((message) => ({
-                role: message.role,
-                content: message.content,
-                createdAt: message.createdAt,
-                runId: message.runId || null,
-            })),
-        };
-        const payloadText = JSON.stringify(debugPayload, null, 2);
+            activeRun: run,
+            binaryPanelState: this.binaryController.binary,
+            binaryDebug: this.binaryController.getDebugSnapshot(),
+            liveActionLog: this.getLiveActionLogForRun(run),
+            liveTranscript: this.getLiveTranscriptForRun(run),
+            recentMessages: messages,
+            suppressedAssistantArtifactText: this.suppressedAssistantArtifactText || null,
+        });
         await vscode.env.clipboard.writeText(payloadText);
         this.status = "Cutie debug report copied to clipboard.";
         await this.emitState();
@@ -2531,8 +2509,6 @@ class CutieSidebarProvider {
             },
             warmStartState: this.getWarmStartStateForView(),
             promptState: this.getPromptStateForView(),
-            canUndoPlayground: this.playgroundChatBridge.canUndoPlaygroundBatch(),
-            ideRuntime: (0, config_1.getBinaryIdeChatRuntime)(),
         };
         this.view.webview.postMessage({ type: "state", state });
     }

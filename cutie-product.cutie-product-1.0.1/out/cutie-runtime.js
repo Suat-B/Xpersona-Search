@@ -807,6 +807,36 @@ function buildVerificationOutcome(toolCall, toolResult) {
     }
     return undefined;
 }
+function isFastIntegrityMutationToolName(name) {
+    return name === "patch_file" || name === "write_file" || name === "edit_file";
+}
+function buildFastIntegrityProof(toolCall, toolResult) {
+    if (!toolResult.ok || toolResult.blocked)
+        return null;
+    if (!isFastIntegrityMutationToolName(toolCall.name))
+        return null;
+    const data = asRecord(toolResult.data);
+    const path = typeof data.path === "string" ? data.path.trim() : "";
+    const revisionId = typeof data.revisionId === "string" ? data.revisionId.trim() : "";
+    if (!path || !revisionId)
+        return null;
+    return `fast_integrity_proof:${toolCall.name}:${path}:${revisionId}`;
+}
+function buildFastIntegrityOutcomeMessage(fastIntegrityProof) {
+    return `Verified with fast integrity proof: ${fastIntegrityProof}`;
+}
+function buildFastIntegrityFinalMessage(input) {
+    const data = asRecord(input.toolResult.data);
+    const path = typeof data.path === "string" ? data.path.trim() : "";
+    const revisionId = typeof data.revisionId === "string" ? data.revisionId.trim() : "";
+    if (path && revisionId) {
+        return `Completed the requested edit in ${path}. Fast integrity check passed (${revisionId}).`;
+    }
+    if (path) {
+        return `Completed the requested edit in ${path}. Fast integrity check passed.`;
+    }
+    return `Completed the requested edit. ${buildFastIntegrityOutcomeMessage(input.fastIntegrityProof)}`;
+}
 function isVerificationFailure(toolCall, toolResult, run) {
     if (!(0, cutie_autonomy_controller_1.requiresCodeChangeVerification)(run))
         return false;
@@ -887,16 +917,27 @@ function createInitialRunState(sessionId, goal, budget, autonomyMode, preferredT
         lastActionSummary: "Cutie is collecting context.",
         lastStrategyShiftAtStep: 0,
         noProgressTurns: 0,
+        noToolPlanningCycles: 0,
         stallSinceStep: undefined,
         stallSinceSummary: undefined,
         stallLevel: "none",
         stallReason: undefined,
         stallNextAction: undefined,
+        fastIntegrityProof: null,
+        fastCompletionUsed: false,
         retryStrategy: "none",
         deadEndMemory: [],
+        modelTurnLatencyMs: {
+            count: 0,
+            total: 0,
+            average: 0,
+            last: 0,
+            max: 0,
+        },
     };
 }
 const OBJECTIVE_NO_PROGRESS_REPAIR_CAP = 3;
+const NO_TOOL_PLANNING_CYCLE_CAP = 2;
 function buildCapabilityShiftSummary(strategy, fallbackText) {
     switch (strategy) {
         case "force_mutation":
@@ -990,7 +1031,26 @@ function createStrategyShiftPatch(run, retryStrategy, strategyPhase, nextAction,
         ...extras,
     });
 }
+function accumulateModelTurnLatencySummary(existing, latencyMs) {
+    const safeLatency = Number.isFinite(latencyMs) ? Math.max(0, Math.round(latencyMs)) : 0;
+    const prevCount = Math.max(0, existing?.count ?? 0);
+    const prevTotal = Math.max(0, existing?.total ?? 0);
+    const prevMax = Math.max(0, existing?.max ?? 0);
+    const nextCount = prevCount + 1;
+    const nextTotal = prevTotal + safeLatency;
+    const average = nextCount > 0 ? Math.round(nextTotal / nextCount) : 0;
+    return {
+        count: nextCount,
+        total: nextTotal,
+        average,
+        last: safeLatency,
+        max: Math.max(prevMax, safeLatency),
+    };
+}
 function createModelTelemetryPatch(input) {
+    const modelTurnLatencySummary = input.run && typeof input.modelTurnLatencyMs === "number"
+        ? accumulateModelTurnLatencySummary(input.run.modelTurnLatencyMs, input.modelTurnLatencyMs)
+        : undefined;
     return {
         ...(input.modelAdapter ? { modelAdapter: input.modelAdapter } : {}),
         ...(input.modelCapabilities ? { modelCapabilities: input.modelCapabilities } : {}),
@@ -1013,6 +1073,7 @@ function createModelTelemetryPatch(input) {
         ...(input.suppressedToolRejectedReason ? { suppressedToolRejectedReason: input.suppressedToolRejectedReason } : {}),
         ...(input.mutationCoercionMode ? { mutationCoercionMode: input.mutationCoercionMode } : {}),
         ...(input.executedRecoveredArtifact !== undefined ? { executedRecoveredArtifact: input.executedRecoveredArtifact } : {}),
+        ...(modelTurnLatencySummary ? { modelTurnLatencyMs: modelTurnLatencySummary } : {}),
     };
 }
 function createPromptTelemetryPatch(context) {
@@ -2204,7 +2265,8 @@ class CutieRuntime {
         this.getContext = getContext;
     }
     async requestStructuredTurn(input) {
-        return this.modelAdapter.requestTurn({
+        const startedAtMs = Date.now();
+        const turn = await this.modelAdapter.requestTurn({
             auth: input.auth,
             signal: input.signal,
             messages: input.messages,
@@ -2214,6 +2276,10 @@ class CutieRuntime {
             stream: input.stream,
             onDelta: input.onDelta,
         });
+        return {
+            ...turn,
+            latencyMs: Math.max(0, Date.now() - startedAtMs),
+        };
     }
     async recoverFinalMessage(input) {
         await input.callbacks?.onStatusChanged?.("Cutie is finishing the response.", input.run);
@@ -2334,14 +2400,15 @@ class CutieRuntime {
             };
         }
         const maxRecBatch = Math.max(1, Math.min(8, input.context.cutieDynamicSettings?.maxToolsPerBatch ?? cutie_policy_1.CUTIE_MAX_TOOLS_PER_BATCH));
-        await input.callbacks?.onStatusChanged?.(shouldPushWorkspaceMutation && hasCompletedTool(input.run, "read_file")
-            ? "Cutie read the target file but did not choose an edit tool. Re-planning the next concrete action."
+        const shouldPreferDeterministicPostRead = shouldPushWorkspaceMutation && hasCompletedTool(input.run, "read_file");
+        await input.callbacks?.onStatusChanged?.(shouldPreferDeterministicPostRead
+            ? "Cutie is prioritizing deterministic post-inspection edit synthesis."
             : shouldPushVerification
                 ? "Cutie changed the file but still owes a verification step before it can finish."
                 : shouldPushDesktopAction
                     ? "Cutie did not choose a desktop action. Re-planning the next concrete step."
                     : "Cutie is re-planning because the last reply did not take action.", input.run);
-        const recoveryTurn = await this.requestStructuredTurn({
+        const requestRecoveryTurn = async () => this.requestStructuredTurn({
             auth: input.auth,
             signal: input.signal,
             tools: input.tools,
@@ -2380,8 +2447,15 @@ class CutieRuntime {
                 },
             ],
         }).catch(() => null);
-        const structured = recoveryTurn?.response || null;
-        const recoveryTelemetryPatch = recoveryTurn ? createModelTelemetryPatch(recoveryTurn) : {};
+        let recoveryTurn = shouldPreferDeterministicPostRead ? null : await requestRecoveryTurn();
+        let structured = recoveryTurn?.response || null;
+        let recoveryTelemetryPatch = recoveryTurn
+            ? createModelTelemetryPatch({
+                ...recoveryTurn,
+                run: input.run,
+                modelTurnLatencyMs: recoveryTurn.latencyMs,
+            })
+            : {};
         const postInspectionRecoveryPatch = shouldPushWorkspaceMutation && hasCompletedTool(input.run, "read_file")
             ? {
                 postInspectionRecoveryActive: true,
@@ -2604,7 +2678,13 @@ class CutieRuntime {
                         return {
                             response: forcedWriteStructured,
                             runPatch: {
-                                ...createModelTelemetryPatch(forcedWriteTurn || {}),
+                                ...(forcedWriteTurn
+                                    ? createModelTelemetryPatch({
+                                        ...forcedWriteTurn,
+                                        run: input.run,
+                                        modelTurnLatencyMs: forcedWriteTurn.latencyMs,
+                                    })
+                                    : {}),
                                 ...postInspectionRecoveryPatch,
                                 ...refinementPatch,
                                 currentRepairTactic: "full_rewrite",
@@ -2688,7 +2768,11 @@ class CutieRuntime {
                     return {
                         response: directStructured,
                         runPatch: {
-                            ...createModelTelemetryPatch(directEditTurn || {}),
+                            ...createModelTelemetryPatch({
+                                ...directEditTurn,
+                                run: input.run,
+                                modelTurnLatencyMs: directEditTurn.latencyMs,
+                            }),
                             ...postInspectionRecoveryPatch,
                             ...refinementPatch,
                             currentRepairTactic: "patch_mutation",
@@ -2718,7 +2802,13 @@ class CutieRuntime {
                     return {
                         response: lastResortWriteStructured,
                         runPatch: {
-                            ...createModelTelemetryPatch(lastResortWriteTurn || {}),
+                            ...(lastResortWriteTurn
+                                ? createModelTelemetryPatch({
+                                    ...lastResortWriteTurn,
+                                    run: input.run,
+                                    modelTurnLatencyMs: lastResortWriteTurn.latencyMs,
+                                })
+                                : {}),
                             ...postInspectionRecoveryPatch,
                             ...refinementPatch,
                             currentRepairTactic: "full_rewrite",
@@ -2727,6 +2817,42 @@ class CutieRuntime {
                             stallNextAction: `Rewrite ${readPath} directly to finish the task.`,
                             nextDeterministicAction: `Rewrite ${readPath} directly to finish the task.`,
                         },
+                    };
+                }
+            }
+            if (!recoveryTurn) {
+                recoveryTurn = await requestRecoveryTurn();
+                structured = recoveryTurn?.response || null;
+                recoveryTelemetryPatch = recoveryTurn
+                    ? createModelTelemetryPatch({
+                        ...recoveryTurn,
+                        run: input.run,
+                        modelTurnLatencyMs: recoveryTurn.latencyMs,
+                    })
+                    : {};
+                if (isStructuredTooling(structured) &&
+                    (() => {
+                        const batch = buildToolCallBatchFromStructured({
+                            structured,
+                            maxBatch: maxRecBatch,
+                            run: input.run,
+                            mentionContext: input.mentionContext,
+                            context: input.context,
+                            latestFileStates: input.latestFileStates,
+                        });
+                        if (!batch.length)
+                            return false;
+                        return (0, cutie_autonomy_controller_1.batchNeedsMoreAutonomy)({ goal: input.run.goal, run: input.run, batch }) === "ok";
+                    })()) {
+                    return {
+                        response: structured,
+                        runPatch: { ...recoveryTelemetryPatch, ...postInspectionRecoveryPatch, ...refinementPatch },
+                    };
+                }
+                if (structured?.type === "final" && !shouldRepairForMissingAction({ ...input, candidate: structured })) {
+                    return {
+                        response: structured,
+                        runPatch: { ...recoveryTelemetryPatch, ...postInspectionRecoveryPatch, ...refinementPatch },
                     };
                 }
             }
@@ -2799,7 +2925,13 @@ class CutieRuntime {
                     return {
                         response: verificationStructured,
                         runPatch: {
-                            ...createModelTelemetryPatch(verificationTurn || {}),
+                            ...(verificationTurn
+                                ? createModelTelemetryPatch({
+                                    ...verificationTurn,
+                                    run: input.run,
+                                    modelTurnLatencyMs: verificationTurn.latencyMs,
+                                })
+                                : {}),
                             currentRepairTactic: "verification",
                             targetAcquisitionPhase: "verification",
                             stallNextAction: "Use the verification result to finish only when the outcome is proven.",
@@ -2846,6 +2978,7 @@ class CutieRuntime {
             lastActionSummary: assistantMessage,
             status: "failed",
             phase: "failed",
+            ...(run.goal === "code_change" ? { completionPath: "blocked" } : {}),
             escalationState: "none",
             goalSatisfied: false,
             stuckReason: reason,
@@ -2901,6 +3034,7 @@ class CutieRuntime {
             status: "failed",
             phase: "failed",
             goalSatisfied: false,
+            ...(input.goal === "code_change" ? { completionPath: "blocked" } : {}),
             error: assistantMessage,
             stuckReason: assistantMessage,
             blockerCategory: "planning",
@@ -3238,6 +3372,42 @@ class CutieRuntime {
                         },
                     };
                 }
+                else if (run.goal === "code_change" && (run.noToolPlanningCycles ?? 0) >= NO_TOOL_PLANNING_CYCLE_CAP) {
+                    ({ session, run } = await this.updateRun(session, run, {
+                        ...createActionTrackingPatch(run, "Cutie hit the no-tool planning cap and is forcing deterministic recovery."),
+                        phase: "repairing",
+                        status: "running",
+                    }));
+                    await input.callbacks?.onStatusChanged?.("Cutie hit the no-tool planning cap and is forcing deterministic recovery.", run);
+                    const recovered = await this.recoverActionableTurn({
+                        auth: input.auth,
+                        signal: input.signal,
+                        prompt: input.prompt,
+                        transcript,
+                        contextMessage,
+                        run,
+                        mentionContext,
+                        context: mergedContext,
+                        tools: availableTools,
+                        latestFileStates,
+                        callbacks: input.callbacks,
+                    });
+                    if (recovered.runPatch) {
+                        ({ session, run } = await this.updateRun(session, run, recovered.runPatch));
+                    }
+                    if (!recovered.response) {
+                        return this.enterAutonomyTerminalFailure({
+                            session,
+                            run,
+                            reason: "Cutie reached the no-tool planning cap and deterministic recovery still could not produce a concrete action.",
+                            callbacks: input.callbacks,
+                        });
+                    }
+                    ({ session, run } = await this.updateRun(session, run, {
+                        noToolPlanningCycles: 0,
+                    }));
+                    structured = recovered.response;
+                }
                 else if (run.simpleTaskFastPath &&
                     run.goal === "code_change" &&
                     run.autonomyMode === "direct" &&
@@ -3322,7 +3492,11 @@ class CutieRuntime {
                             })
                             : null;
                         ({ session, run } = await this.updateRun(session, run, {
-                            ...createModelTelemetryPatch(turn),
+                            ...createModelTelemetryPatch({
+                                ...turn,
+                                run,
+                                modelTurnLatencyMs: turn.latencyMs,
+                            }),
                             ...(rescuedFromSuppressedArtifact && "structured" in rescuedFromSuppressedArtifact
                                 ? createModelTelemetryPatch({
                                     suppressedToolRescued: true,
@@ -3391,7 +3565,11 @@ class CutieRuntime {
                         })
                         : null;
                     ({ session, run } = await this.updateRun(session, run, {
-                        ...createModelTelemetryPatch(turn),
+                        ...createModelTelemetryPatch({
+                            ...turn,
+                            run,
+                            modelTurnLatencyMs: turn.latencyMs,
+                        }),
                         ...(rescuedFromSuppressedArtifact && "structured" in rescuedFromSuppressedArtifact
                             ? createModelTelemetryPatch({
                                 suppressedToolRescued: true,
@@ -3492,6 +3670,7 @@ class CutieRuntime {
                                     ? "Repeated final attempt without the proof needed to finish."
                                     : undefined,
                                 deadEndMemory: (0, cutie_autonomy_controller_1.appendDeadEndMemory)(run.deadEndMemory, deadEndSignature),
+                                noToolPlanningCycles: (run.noToolPlanningCycles ?? 0) + 1,
                             }));
                             transcript.push({
                                 role: "system",
@@ -3554,6 +3733,7 @@ class CutieRuntime {
                                 stallNextAction: nextAction,
                                 ...(simpleDirectRecoveryReady ? { nextDeterministicAction: nextAction } : {}),
                             }),
+                            noToolPlanningCycles: (run.noToolPlanningCycles ?? 0) + 1,
                         }));
                         transcript.push({ role: "system", content: objectiveCheck.repairMessage });
                         if (objectiveNeedsToolForcing) {
@@ -3639,6 +3819,11 @@ class CutieRuntime {
                             status: "completed",
                             phase: "completed",
                             goalSatisfied: run.goal === "conversation" ? true : (0, cutie_autonomy_controller_1.hasCodeChangeCompletionProof)(run) || run.goalSatisfied,
+                            ...(run.goal === "code_change"
+                                ? {
+                                    completionPath: run.fastCompletionUsed ? "fast_integrity" : "verified",
+                                }
+                                : {}),
                             endedAt: (0, cutie_policy_1.nowIso)(),
                             retryStrategy: "none",
                             blockerCategory: undefined,
@@ -3653,6 +3838,9 @@ class CutieRuntime {
                     if (emptyToolBatchCycles >= 3) {
                         throw new Error("Cutie could not normalize a usable structured tool action after repeated planning attempts.");
                     }
+                    ({ session, run } = await this.updateRun(session, run, {
+                        noToolPlanningCycles: (run.noToolPlanningCycles ?? 0) + 1,
+                    }));
                     continue mainLoop;
                 }
                 let batchToolCalls = [];
@@ -3686,6 +3874,7 @@ class CutieRuntime {
                             stuckReason: undefined,
                             suggestedNextAction: nextAction,
                             stallReason: "Inspection is not turning into a concrete edit yet.",
+                            noToolPlanningCycles: (run.noToolPlanningCycles ?? 0) + 1,
                         }));
                         transcript.push({
                             role: "system",
@@ -3795,9 +3984,17 @@ class CutieRuntime {
                         }
                         throw new Error("Cutie could not normalize a usable structured tool action after repeated planning attempts.");
                     }
+                    ({ session, run } = await this.updateRun(session, run, {
+                        noToolPlanningCycles: (run.noToolPlanningCycles ?? 0) + 1,
+                    }));
                     continue mainLoop;
                 }
                 emptyToolBatchCycles = 0;
+                if ((run.noToolPlanningCycles ?? 0) > 0) {
+                    ({ session, run } = await this.updateRun(session, run, {
+                        noToolPlanningCycles: 0,
+                    }));
+                }
                 if (run.objectivesPhase === "active" && run.objectives?.length) {
                     ({ session, run } = await this.updateRun(session, run, {
                         objectiveRepairCount: 0,
@@ -3985,6 +4182,7 @@ class CutieRuntime {
                         receipts: [...run.receipts, receipt],
                         workspaceMutationCount,
                         desktopMutationCount,
+                        noToolPlanningCycles: 0,
                         lastActionAtStep: receipt.step,
                         lastActionSummary: latestActionSummary,
                         ...(receipt.toolName !== "read_file"
@@ -4021,6 +4219,7 @@ class CutieRuntime {
                         ...(verificationOutcome
                             ? {
                                 lastVerifiedOutcome: verificationOutcome,
+                                completionPath: "verified",
                             }
                             : {}),
                         ...(toolResult.ok && (0, cutie_policy_1.isWorkspaceMutationTool)(effectiveToolCall.name)
@@ -4037,6 +4236,7 @@ class CutieRuntime {
                                 noOpConclusion,
                                 lastVerifiedOutcome: noOpConclusion,
                                 goalSatisfied: true,
+                                completionPath: "verified",
                                 progressConfidence: "high",
                                 currentRepairTactic: "verification",
                                 targetAcquisitionPhase: "verification",
@@ -4121,6 +4321,56 @@ class CutieRuntime {
                             ...(typeof payload.nextContent === "string" ? { nextContent: payload.nextContent } : {}),
                             ...(typeof payload.revisionId === "string" ? { revisionId: payload.revisionId } : {}),
                         });
+                    }
+                    const fastIntegrityProof = buildFastIntegrityProof(effectiveToolCall, toolResult);
+                    if (run.goal === "code_change" && fastIntegrityProof) {
+                        const fastIntegrityOutcome = buildFastIntegrityOutcomeMessage(fastIntegrityProof);
+                        ({ session, run } = await this.updateRun(session, run, {
+                            fastIntegrityProof,
+                            fastCompletionUsed: true,
+                            completionPath: "fast_integrity",
+                            lastVerifiedOutcome: fastIntegrityOutcome,
+                            goalSatisfied: true,
+                            noToolPlanningCycles: 0,
+                            strategyPhase: "verify",
+                            progressConfidence: "high",
+                            retryStrategy: "none",
+                            blockerCategory: undefined,
+                            loopPreventionTrigger: undefined,
+                            ...(run.objectivesPhase === "active" && run.objectives?.length
+                                ? {
+                                    objectives: run.objectives.map((objective) => ({
+                                        ...objective,
+                                        status: objective.status === "blocked" ? "blocked" : "done",
+                                    })),
+                                    objectivesPhase: "completed",
+                                }
+                                : {}),
+                        }));
+                        const finalText = buildFastIntegrityFinalMessage({
+                            toolResult,
+                            fastIntegrityProof,
+                        });
+                        if (!surfacedStreaming && finalText) {
+                            await input.callbacks?.onAssistantDelta?.(finalText, finalText);
+                        }
+                        session = await this.sessionStore.appendMessage(session, {
+                            role: "assistant",
+                            content: finalText,
+                            runId: run.id,
+                        });
+                        transcript.push({ role: "assistant", content: finalText });
+                        await input.callbacks?.onSessionChanged?.(session);
+                        ({ session, run } = await this.updateRun(session, run, {
+                            status: "completed",
+                            phase: "completed",
+                            endedAt: (0, cutie_policy_1.nowIso)(),
+                            retryStrategy: "none",
+                            blockerCategory: undefined,
+                            loopPreventionTrigger: undefined,
+                        }));
+                        await input.callbacks?.onStatusChanged?.("Cutie completed the run.", run);
+                        return { session, run };
                     }
                     if (verificationFailure && toolResult.ok && mutationGoalRepairCount < maxMutationGoalRepairs) {
                         mutationGoalRepairCount += 1;

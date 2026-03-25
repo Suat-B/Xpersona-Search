@@ -189,7 +189,12 @@ class ToolExecutor {
                     createdAt: new Date().toISOString(),
                 };
             }
-            if (toolCall.name === "edit" || toolCall.name === "write_file" || toolCall.name === "mkdir" || toolCall.name === "run_command") {
+            if (toolCall.name === "patch_file" ||
+                toolCall.name === "edit_file" ||
+                toolCall.name === "edit" ||
+                toolCall.name === "write_file" ||
+                toolCall.name === "mkdir" ||
+                toolCall.name === "run_command") {
                 const report = await this.runMutationTool({
                     name: toolCall.name,
                     args,
@@ -324,7 +329,7 @@ class ToolExecutor {
         const commandCategory = input.args.category === "implementation" || input.args.category === "validation"
             ? input.args.category
             : "implementation";
-        const action = input.name === "edit"
+        const action = input.name === "patch_file" || input.name === "edit_file" || input.name === "edit"
             ? {
                 type: "edit",
                 path: String(input.args.path || ""),
@@ -355,7 +360,7 @@ class ToolExecutor {
             sessionId: input.sessionId,
             workspaceFingerprint: input.workspaceFingerprint,
         });
-        const changedTarget = input.name === "edit" || input.name === "write_file"
+        const changedTarget = input.name === "patch_file" || input.name === "edit_file" || input.name === "edit" || input.name === "write_file"
             ? report.changedFiles.includes(String(input.args.path || ""))
             : input.name === "mkdir"
                 ? report.createdDirectories.includes(String(input.args.path || ""))

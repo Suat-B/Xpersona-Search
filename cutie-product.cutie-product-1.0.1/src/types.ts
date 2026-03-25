@@ -1,6 +1,5 @@
 import type { HostedAuthState } from "@xpersona/vscode-core";
 import type { BinaryPanelState } from "./binary-types";
-import type { BinaryIdeChatRuntime } from "./config";
 
 export type CutieToolName =
   | "list_files"
@@ -79,6 +78,16 @@ export type CutieMutationCoercionMode =
   | "force_write_file"
   | "patch_disabled_write_mode";
 export type CutieFallbackModeUsed = "none" | "text_extraction" | "tool_forcing" | "deterministic_bootstrap";
+
+export type CutieCompletionPath = "fast_integrity" | "verified" | "blocked";
+
+export type CutieModelTurnLatencySummary = {
+  count: number;
+  total: number;
+  average: number;
+  last: number;
+  max: number;
+};
 export type CutieTargetSource =
   | "mentioned_path"
   | "active_file"
@@ -420,6 +429,9 @@ export type CutieRunState = {
   currentRepairTactic?: CutieRepairTactic;
   lastNewEvidence?: string;
   noOpConclusion?: string;
+  fastIntegrityProof?: string | null;
+  fastCompletionUsed?: boolean;
+  completionPath?: CutieCompletionPath;
   modelAdapter?: CutieModelAdapterKind;
   modelCapabilities?: CutieModelCapabilityProfile;
   protocolMode?: CutieProtocolMode;
@@ -458,6 +470,7 @@ export type CutieRunState = {
   lastActionSummary?: string;
   lastStrategyShiftAtStep?: number;
   noProgressTurns?: number;
+  noToolPlanningCycles?: number;
   stallSinceStep?: number;
   stallSinceSummary?: string;
   stallLevel?: CutieStallLevel;
@@ -468,6 +481,7 @@ export type CutieRunState = {
   retryStrategy?: CutieRetryStrategy;
   loopPreventionTrigger?: string;
   deadEndMemory?: string[];
+  modelTurnLatencyMs?: CutieModelTurnLatencySummary;
 };
 
 export type CutieSessionRecord = {
@@ -565,9 +579,6 @@ export type CutieViewState = {
   composerPrefs: CutieComposerPrefs;
   warmStartState: CutieWarmStartViewState | null;
   promptState: CutiePromptViewState | null;
-  /** Hosted playground assist undo (ActionRunner batch) when runtime is playgroundApi. */
-  canUndoPlayground: boolean;
-  ideRuntime: BinaryIdeChatRuntime;
 };
 
 export type CutieProgressViewModel = {

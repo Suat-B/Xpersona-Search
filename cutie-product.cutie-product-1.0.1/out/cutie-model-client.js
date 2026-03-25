@@ -65,15 +65,7 @@ class CutieModelClient {
             if (!(error instanceof cutie_model_protocol_1.CutieStructuredProtocolError)) {
                 rethrowWithHostHttpHint(error);
             }
-            try {
-                return await factory();
-            }
-            catch (secondError) {
-                if (secondError instanceof cutie_model_protocol_1.CutieStructuredProtocolError) {
-                    throw new Error(`Cutie server returned an invalid cutie_tools_v2 response. ${secondError.message}`);
-                }
-                rethrowWithHostHttpHint(secondError);
-            }
+            throw new Error(`Cutie server returned an invalid cutie_tools_v2 response. ${error.message}`);
         }
     }
     async completeStructuredTurnOnce(input) {
