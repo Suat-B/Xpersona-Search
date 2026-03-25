@@ -86,6 +86,7 @@ export class CutieBinaryBundleController {
     private readonly deps: {
       getWorkspaceHash: () => string;
       getActiveSession: () => CutieSessionRecord | null;
+      getSessionById: (sessionId: string) => CutieSessionRecord | null;
       setActiveSession: (session: CutieSessionRecord | null) => void;
       emitState: () => void | Promise<void>;
       gatherBinaryContext: (intent: string) => Promise<GatheredBinaryContext>;
@@ -95,6 +96,20 @@ export class CutieBinaryBundleController {
 
   getLiveBubble(): CutieBinaryLiveBubbleView | null {
     return this.liveBubble;
+  }
+
+  getLiveSessionId(): string | null {
+    return this.liveBubble?.sessionId || null;
+  }
+
+  hasOngoingWork(): boolean {
+    return Boolean(
+      this.binaryStreamAbort ||
+      this.binary.streamConnected ||
+      this.binary.busy ||
+      this.liveBubble ||
+      (this.binary.activeBuild && isBinaryBuildPending(this.binary.activeBuild))
+    );
   }
 
   getDebugSnapshot(): CutieBinaryDebugSnapshot {
@@ -804,12 +819,19 @@ export class CutieBinaryBundleController {
     content: string,
     extra?: Partial<Pick<CutieChatMessage, "presentation" | "live">>
   ): Promise<void> {
-    let session = this.deps.getActiveSession();
+    const targetSessionId = String(this.liveBubble?.sessionId || this.deps.getActiveSession()?.id || "").trim();
+    let session = targetSessionId ? this.deps.getSessionById(targetSessionId) : this.deps.getActiveSession();
     if (!session) {
       session = await this.sessionStore.createSession(this.deps.getWorkspaceHash(), "App build");
       this.deps.setActiveSession(session);
     }
     const next = await this.sessionStore.appendMessage(session, { role, content, ...extra });
+    if (this.liveBubble) {
+      this.liveBubble = {
+        ...this.liveBubble,
+        sessionId: next.id,
+      };
+    }
     this.deps.setActiveSession(next);
   }
 
@@ -949,6 +971,7 @@ export class CutieBinaryBundleController {
     };
     this.liveBubble = {
       messageId,
+      sessionId: this.deps.getActiveSession()?.id ?? null,
       content: input.content || "",
       createdAt: ts,
       live,

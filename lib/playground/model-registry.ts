@@ -1,5 +1,6 @@
-export type PlaygroundModelProvider = "hf";
+export type PlaygroundModelProvider = "hf" | "openai_compatible";
 export type PlaygroundModelAdapter = "native_tools" | "text_actions" | "deterministic_batch";
+export type PlaygroundModelAuthSource = "hf_token" | "openai_api_key" | "playground_model_api_key" | "none";
 export type PlaygroundToolName =
   | "list_files"
   | "read_file"
@@ -47,6 +48,8 @@ export type PlaygroundModelRegistryEntry = {
   description: string;
   provider: PlaygroundModelProvider;
   model: string;
+  baseUrl: string;
+  authSource: PlaygroundModelAuthSource;
   capabilities: PlaygroundModelCapabilitySet;
   certification: PlaygroundModelCertification;
   enabled: boolean;
@@ -88,64 +91,195 @@ export const PLAYGROUND_TOOL_LOOP_TOOLS: PlaygroundToolName[] = [
   "desktop_wait",
 ];
 
-const DEFAULT_MODEL_ENTRY: PlaygroundModelRegistryEntry = {
+type PlaygroundModelRegistryEntryInput = {
+  alias: string;
+  displayName?: string;
+  description?: string;
+  provider?: PlaygroundModelProvider;
+  model?: string;
+  baseUrl?: string;
+  authSource?: PlaygroundModelAuthSource;
+  capabilities?: Partial<PlaygroundModelCapabilitySet>;
+  enabled?: boolean;
+};
+
+const DEFAULT_CAPABILITIES: PlaygroundModelCapabilitySet = {
+  maxContextTokens: 128_000,
+  supportsStreaming: true,
+  supportsTextActions: true,
+  supportsUnifiedDiff: true,
+  supportsWriteFile: true,
+  supportsMkdir: true,
+  supportsShellCommands: true,
+  supportsToolLoop: true,
+  supportsNativeToolCalls: false,
+  preferredAdapter: "text_actions",
+  supportedTools: [...PLAYGROUND_TOOL_LOOP_TOOLS],
+};
+
+const DEFAULT_MODEL_ENTRY: PlaygroundModelRegistryEntry = buildRegistryEntry({
   alias: DEFAULT_PLAYGROUND_MODEL_ALIAS,
-  displayName: "Playground",
-  description: "Server-owned default coding model for the minimal Playground agent loop.",
+  displayName: "Cutie Default",
+  description: "Server-owned default coding model for the hosted Binary IDE runtime.",
   provider: "hf",
-  model: String(process.env.PLAYGROUND_DEFAULT_MODEL || "Qwen/Qwen2.5-Coder-7B-Instruct:fastest").trim(),
+  model: String(process.env.PLAYGROUND_DEFAULT_MODEL || "Qwen/Qwen2.5-Coder-32B-Instruct:fastest").trim(),
+  baseUrl: String(process.env.PLAYGROUND_DEFAULT_BASE_URL || "https://router.huggingface.co/v1").trim(),
+  authSource: "hf_token",
   capabilities: {
-    maxContextTokens: 128_000,
-    supportsStreaming: true,
     supportsTextActions: true,
-    supportsUnifiedDiff: true,
-    supportsWriteFile: true,
-    supportsMkdir: true,
-    supportsShellCommands: true,
-    supportsToolLoop: true,
     supportsNativeToolCalls: false,
     preferredAdapter: "text_actions",
-    supportedTools: [...PLAYGROUND_TOOL_LOOP_TOOLS],
   },
-  certification: "tool_ready",
   enabled: true,
-};
+});
+
+const BUILTIN_MODEL_ENTRIES: PlaygroundModelRegistryEntry[] = [
+  DEFAULT_MODEL_ENTRY,
+  buildRegistryEntry({
+    alias: "qwen-next",
+    displayName: "Qwen Next",
+    description: "Legacy Qwen Code runtime model exposed as a hosted alias for migration.",
+    provider: "hf",
+    model: String(process.env.PLAYGROUND_QWEN_MODEL || "Qwen/Qwen3-Next-80B-A3B-Thinking:fastest").trim(),
+    baseUrl: String(process.env.PLAYGROUND_QWEN_BASE_URL || "https://router.huggingface.co/v1").trim(),
+    authSource: "hf_token",
+    capabilities: {
+      supportsTextActions: true,
+      supportsNativeToolCalls: false,
+      preferredAdapter: "text_actions",
+    },
+    enabled: true,
+  }),
+];
+
+function normalizeBaseUrl(value: string): string {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function buildRegistryEntry(input: PlaygroundModelRegistryEntryInput): PlaygroundModelRegistryEntry {
+  return {
+    alias: String(input.alias || "").trim(),
+    displayName: String(input.displayName || input.alias || "Model").trim(),
+    description: String(input.description || "Hosted coding model").trim(),
+    provider: input.provider || "hf",
+    model: String(input.model || "").trim(),
+    baseUrl: normalizeBaseUrl(input.baseUrl || "https://router.huggingface.co/v1"),
+    authSource: input.authSource || "hf_token",
+    capabilities: {
+      ...DEFAULT_CAPABILITIES,
+      ...(input.capabilities || {}),
+      supportedTools: Array.isArray(input.capabilities?.supportedTools)
+        ? [...input.capabilities.supportedTools]
+        : [...DEFAULT_CAPABILITIES.supportedTools],
+    },
+    certification: "tool_ready",
+    enabled: input.enabled !== false,
+  };
+}
 
 function cloneEntry(entry: PlaygroundModelRegistryEntry): PlaygroundModelRegistryEntry {
   return {
     ...entry,
-    capabilities: { ...entry.capabilities },
+    capabilities: {
+      ...entry.capabilities,
+      supportedTools: [...entry.capabilities.supportedTools],
+    },
   };
 }
 
+function parseEnvRegistry(): PlaygroundModelRegistryEntry[] {
+  const raw = String(process.env.PLAYGROUND_MODEL_REGISTRY_JSON || "").trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((entry): entry is PlaygroundModelRegistryEntryInput => Boolean(entry && typeof entry === "object"))
+      .map((entry) => buildRegistryEntry(entry))
+      .filter((entry) => Boolean(entry.alias && entry.model));
+  } catch {
+    return [];
+  }
+}
+
+function dedupeByAlias(entries: PlaygroundModelRegistryEntry[]): PlaygroundModelRegistryEntry[] {
+  const seen = new Set<string>();
+  const out: PlaygroundModelRegistryEntry[] = [];
+  for (const entry of entries) {
+    const alias = String(entry.alias || "").trim();
+    if (!alias || seen.has(alias)) continue;
+    seen.add(alias);
+    out.push(cloneEntry(entry));
+  }
+  return out;
+}
+
+function getRegistryEntries(): PlaygroundModelRegistryEntry[] {
+  return dedupeByAlias([...BUILTIN_MODEL_ENTRIES, ...parseEnvRegistry()]).filter((entry) => entry.enabled);
+}
+
+function findByRequestedValue(entries: PlaygroundModelRegistryEntry[], requested: string): PlaygroundModelRegistryEntry | null {
+  const normalizedRequested = String(requested || "").trim().toLowerCase();
+  if (!normalizedRequested) return null;
+  return (
+    entries.find((entry) => entry.alias.toLowerCase() === normalizedRequested) ||
+    entries.find((entry) => entry.model.toLowerCase() === normalizedRequested) ||
+    null
+  );
+}
+
 export function getDefaultPlaygroundModelEntry(): PlaygroundModelRegistryEntry {
-  return cloneEntry(DEFAULT_MODEL_ENTRY);
+  return cloneEntry(getRegistryEntries()[0] || DEFAULT_MODEL_ENTRY);
 }
 
 export function listPlaygroundModels(): PlaygroundModelRegistryEntry[] {
-  return [getDefaultPlaygroundModelEntry()];
+  return getRegistryEntries().map((entry) => cloneEntry(entry));
 }
 
 export function listPublicPlaygroundModels(): PlaygroundModelRegistryEntry[] {
   return listPlaygroundModels();
 }
 
-export function getPlaygroundModelEntry(_requested?: string): PlaygroundModelRegistryEntry {
-  return getDefaultPlaygroundModelEntry();
+export function getPlaygroundModelEntry(requested?: string): PlaygroundModelRegistryEntry {
+  const entries = getRegistryEntries();
+  const matched = findByRequestedValue(entries, String(requested || "").trim());
+  return cloneEntry(matched || entries[0] || DEFAULT_MODEL_ENTRY);
 }
 
 export function resolvePlaygroundModelSelection(input?: {
   requested?: string;
 }): PlaygroundResolvedModelSelection {
   const requested = String(input?.requested || DEFAULT_PLAYGROUND_MODEL_ALIAS).trim() || DEFAULT_PLAYGROUND_MODEL_ALIAS;
-  const resolvedEntry = getDefaultPlaygroundModelEntry();
+  const entries = getRegistryEntries();
+  const defaultEntry = entries[0] || DEFAULT_MODEL_ENTRY;
+  const matched = findByRequestedValue(entries, requested);
+  const resolvedEntry = matched || defaultEntry;
   return {
     requested,
-    requestedAlias: DEFAULT_PLAYGROUND_MODEL_ALIAS,
-    resolvedAlias: DEFAULT_PLAYGROUND_MODEL_ALIAS,
-    resolvedEntry,
-    fallbackChain: [resolvedEntry],
+    requestedAlias: requested,
+    resolvedAlias: resolvedEntry.alias,
+    resolvedEntry: cloneEntry(resolvedEntry),
+    fallbackChain: [cloneEntry(defaultEntry)],
   };
+}
+
+export function resolvePlaygroundModelToken(entry: PlaygroundModelRegistryEntry): string | null {
+  switch (entry.authSource) {
+    case "hf_token": {
+      const token =
+        process.env.HF_ROUTER_TOKEN ||
+        process.env.HF_TOKEN ||
+        process.env.HUGGINGFACE_TOKEN ||
+        "";
+      return token.trim() || null;
+    }
+    case "openai_api_key":
+      return String(process.env.OPENAI_API_KEY || "").trim() || null;
+    case "playground_model_api_key":
+      return String(process.env.PLAYGROUND_MODEL_API_KEY || "").trim() || null;
+    default:
+      return null;
+  }
 }
 
 export function serializePlaygroundModelEntry(entry: PlaygroundModelRegistryEntry) {
@@ -155,7 +289,9 @@ export function serializePlaygroundModelEntry(entry: PlaygroundModelRegistryEntr
     description: entry.description,
     provider: entry.provider,
     model: entry.model,
-    capabilities: { ...entry.capabilities },
+    baseUrl: entry.baseUrl,
+    authSource: entry.authSource,
+    capabilities: { ...entry.capabilities, supportedTools: [...entry.capabilities.supportedTools] },
     certification: entry.certification,
     enabled: entry.enabled,
     contractVersion: PLAYGROUND_CONTRACT_VERSION,

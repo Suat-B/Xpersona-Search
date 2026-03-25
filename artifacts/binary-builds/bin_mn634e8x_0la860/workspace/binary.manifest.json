@@ -1,0 +1,26 @@
+{
+  "buildId": "bin_mn634e8x_0la860",
+  "artifactKind": "package_bundle",
+  "name": "binary-hello-love",
+  "displayName": "TypeScript Service Workspace",
+  "description": "A portable TypeScript service workspace for Binary IDE. This workspace compiles with npm + TypeScript and can be directly runnable with Node.js after build. It uses CommonJS-compatible TypeScript and exports callable functions before starting any server.",
+  "intent": "hello love",
+  "runtime": "node18",
+  "platform": "portable",
+  "packageManager": "npm",
+  "entrypoint": "dist/src/index.js",
+  "installCommand": "npm install",
+  "buildCommand": "npm run build",
+  "startCommand": "npm start",
+  "sourceFiles": [
+    "config.yaml",
+    "package.json",
+    "src/index.ts",
+    "tsconfig.json"
+  ],
+  "outputFiles": [],
+  "warnings": [
+    "The intent is short, so the generated scaffold may need refinement."
+  ],
+  "createdAt": "2026-03-25T13:34:11.558Z"
+}

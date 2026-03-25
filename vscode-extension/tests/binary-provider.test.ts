@@ -34,6 +34,8 @@ const {
   configurationValues: {
     "xpersona.binary": {
       runtime: "qwenCode",
+      "agent.rollbackLocalRuntime": true,
+      "agent.modelAlias": "playground-default",
       baseApiUrl: "http://localhost:3000",
       "qwen.baseUrl": "http://localhost:3000/api/v1/hf",
       "qwen.model": "Qwen/Qwen3-Coder-30B-A3B-Instruct:featherless-ai",
@@ -550,22 +552,23 @@ function createProvider(options?: { persistedMode?: "auto" | "plan" }) {
   const indexManager = {
     query: vi.fn(async () => []),
   };
+  const qwenCodeRuntime = {
+    runPrompt: vi.fn(async () => ({
+      sessionId: "qwen_session",
+      assistantText: "Applied the requested edit.",
+      permissionDenials: [],
+      usedTools: [],
+      didMutate: true,
+      toolEvents: [],
+    })),
+  };
 
   const provider = new PlaygroundViewProvider(
     context as any,
     auth as any,
     historyService as any,
     qwenHistoryService as any,
-    {
-      runPrompt: vi.fn(async () => ({
-        sessionId: "qwen_session",
-        assistantText: "Applied the requested edit.",
-        permissionDenials: [],
-        usedTools: [],
-        didMutate: true,
-        toolEvents: [],
-      })),
-    } as any,
+    qwenCodeRuntime as any,
     contextCollector as any,
     actionRunner as any,
     toolExecutor as any,
@@ -578,6 +581,7 @@ function createProvider(options?: { persistedMode?: "auto" | "plan" }) {
     auth,
     historyService,
     qwenHistoryService,
+    qwenCodeRuntime,
     contextCollector,
   };
 }

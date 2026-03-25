@@ -12,6 +12,7 @@ import type {
 import {
   DEFAULT_PLAYGROUND_MODEL_ALIAS,
   PLAYGROUND_CONTRACT_VERSION,
+  resolvePlaygroundModelToken,
   resolvePlaygroundModelSelection,
   type PlaygroundModelProvider,
 } from "@/lib/playground/model-registry";
@@ -217,6 +218,8 @@ export type AssistResult = {
   memoryWrites: AssistMemoryWrite[];
   reviewState: AssistReviewState;
   orchestrationProtocol?: OrchestrationProtocol;
+  orchestrator?: "in_house" | "openhands";
+  orchestratorVersion?: string | null;
   runId?: string;
   loopState?: LoopStateContract | null;
   pendingToolCall?: PendingToolCallContract | null;
@@ -319,7 +322,10 @@ export function inferIntent(input: { mode: AssistMode; task: string; targetInfer
   if (input.mode === "plan") {
     return { type: "plan", confidence: 0.95, delta: 0.1, clarified: true };
   }
-  if (input.targetInference.path || /\b(edit|update|modify|patch|refactor|fix|implement|create|write)\b/i.test(input.task)) {
+  if (
+    input.targetInference.path ||
+    /\b(edit|update|modify|patch|refactor|fix|implement|create|write|add|build)\b/i.test(input.task)
+  ) {
     return { type: "code_edit", confidence: 0.88, delta: 0.18, clarified: Boolean(input.targetInference.path) };
   }
   if (looksLikeShellCommand(input.task) || /\b(run|test|lint|build|typecheck|command|execute)\b/i.test(input.task)) {
@@ -805,27 +811,23 @@ function buildModelUserPrompt(input: {
   ].join("\n\n");
 }
 
-function getHfRouterToken(): string | null {
-  const token =
-    process.env.HF_ROUTER_TOKEN ||
-    process.env.HF_TOKEN ||
-    process.env.HUGGINGFACE_TOKEN ||
-    "";
-  return token.trim() || null;
-}
-
 async function callDefaultModel(input: {
   prompt: string;
   mode: AssistMode;
   maxTokens: number;
+  requestedModel?: string;
 }): Promise<string | null> {
-  const token = getHfRouterToken();
+  const modelSelection = resolvePlaygroundModelSelection({ requested: input.requestedModel });
+  const token = resolvePlaygroundModelToken(modelSelection.resolvedEntry);
   if (!token) return null;
 
-  const modelSelection = resolvePlaygroundModelSelection();
-  const model = normalizeHfRouterModelId(modelSelection.resolvedEntry.model);
-  if (!model) throw new Error("HF router model is not configured.");
-  const response = await fetch(`${HF_ROUTER_BASE_URL}/chat/completions`, {
+  const model =
+    modelSelection.resolvedEntry.provider === "hf"
+      ? normalizeHfRouterModelId(modelSelection.resolvedEntry.model)
+      : String(modelSelection.resolvedEntry.model || "").trim();
+  if (!model) throw new Error("Hosted model is not configured.");
+  const baseUrl = String(modelSelection.resolvedEntry.baseUrl || HF_ROUTER_BASE_URL).replace(/\/+$/, "");
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1414,6 +1416,7 @@ export async function runAssist(request: AssistRuntimeInput): Promise<AssistResu
       prompt: modelPrompt,
       mode: request.mode,
       maxTokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
+      requestedModel: request.model,
     });
   } catch (error) {
     rawModelOutput = JSON.stringify({

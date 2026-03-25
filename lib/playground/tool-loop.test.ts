@@ -88,6 +88,16 @@ import { requestToolLoopTurn } from "@/lib/playground/tool-loop-adapters";
 import { continueAssistToolLoop, startAssistToolLoop } from "@/lib/playground/tool-loop";
 
 const mockedRequestToolLoopTurn = vi.mocked(requestToolLoopTurn);
+const openHandsTurn = <T extends Record<string, unknown>>(turn: T): T & {
+  orchestrator: "openhands";
+  orchestratorVersion: string;
+  orchestratorRunId: string;
+} => ({
+  ...turn,
+  orchestrator: "openhands",
+  orchestratorVersion: "test-gateway",
+  orchestratorRunId: "oh-run-test",
+});
 
 afterEach(() => {
   runs.clear();
@@ -97,7 +107,7 @@ afterEach(() => {
 describe("playground tool loop", () => {
   it("runs observation, injects a checkpoint before mutation, then completes", async () => {
     mockedRequestToolLoopTurn
-      .mockResolvedValueOnce({
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "",
         toolCall: {
@@ -109,8 +119,8 @@ describe("playground tool loop", () => {
         },
         logs: ["adapter=text_actions"],
         modelSelection: {} as any,
-      })
-      .mockResolvedValueOnce({
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "",
         toolCall: {
@@ -125,13 +135,13 @@ describe("playground tool loop", () => {
         },
         logs: ["adapter=text_actions"],
         modelSelection: {} as any,
-      })
-      .mockResolvedValueOnce({
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "Updated hello.py and verified the change.",
         logs: ["adapter=text_actions"],
         modelSelection: {} as any,
-      });
+      }));
 
     const started = await startAssistToolLoop({
       userId: "user-1",
@@ -206,9 +216,45 @@ describe("playground tool loop", () => {
     expect(completed.toolTrace?.some((entry) => entry.toolCall?.name === "create_checkpoint")).toBe(true);
   });
 
+  it("injects an observation tool when OpenHands returns only final on step 0 for a code edit", async () => {
+    mockedRequestToolLoopTurn.mockResolvedValueOnce(
+      openHandsTurn({
+        adapter: "text_actions",
+        final:
+          "To implement that, inspect your strategy file and add exit logic. I cannot see your code from here.",
+        logs: ["adapter=text_actions"],
+        modelSelection: {} as any,
+      })
+    );
+
+    const started = await startAssistToolLoop({
+      userId: "user-primer",
+      sessionId: "session-primer",
+      traceId: "trace-primer",
+      request: {
+        mode: "auto",
+        task: "please create a trailing stop loss in my strategy",
+        orchestrationProtocol: "tool_loop_v1",
+        clientCapabilities: {
+          toolLoop: true,
+          supportedTools: ["read_file", "list_files", "edit"],
+          autoExecute: true,
+        },
+        context: {
+          activeFile: { path: "trader/main.py", content: "class TraderApp: pass\n" },
+        },
+      },
+    });
+
+    expect(started.pendingToolCall?.toolCall.name).toBe("read_file");
+    expect(started.pendingToolCall?.toolCall.arguments.path).toBe("trader/main.py");
+    expect(started.final).not.toContain("cannot see your code");
+    expect(started.logs?.some((line) => line.includes("observation primer injected"))).toBe(true);
+  });
+
   it("keeps repairing blocked tool results until the longer repair budget is exhausted", async () => {
     mockedRequestToolLoopTurn
-      .mockResolvedValueOnce({
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "",
         toolCall: {
@@ -220,8 +266,8 @@ describe("playground tool loop", () => {
         },
         logs: ["adapter=text_actions"],
         modelSelection: {} as any,
-      })
-      .mockResolvedValueOnce({
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "",
         toolCall: {
@@ -233,8 +279,8 @@ describe("playground tool loop", () => {
         },
         logs: ["adapter=text_actions"],
         modelSelection: {} as any,
-      })
-      .mockResolvedValueOnce({
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "",
         toolCall: {
@@ -246,8 +292,8 @@ describe("playground tool loop", () => {
         },
         logs: ["adapter=text_actions"],
         modelSelection: {} as any,
-      })
-      .mockResolvedValueOnce({
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "",
         toolCall: {
@@ -259,8 +305,8 @@ describe("playground tool loop", () => {
         },
         logs: ["adapter=text_actions"],
         modelSelection: {} as any,
-      })
-      .mockResolvedValueOnce({
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "",
         toolCall: {
@@ -272,7 +318,7 @@ describe("playground tool loop", () => {
         },
         logs: ["adapter=text_actions"],
         modelSelection: {} as any,
-      });
+      }));
 
     const started = await startAssistToolLoop({
       userId: "user-2",
@@ -370,7 +416,7 @@ describe("playground tool loop", () => {
   });
 
   it("does not inject unsupported primer or checkpoint tools", async () => {
-    mockedRequestToolLoopTurn.mockResolvedValueOnce({
+    mockedRequestToolLoopTurn.mockResolvedValueOnce(openHandsTurn({
       adapter: "text_actions",
       final: "",
       toolCall: {
@@ -385,7 +431,7 @@ describe("playground tool loop", () => {
       },
       logs: ["adapter=text_actions"],
       modelSelection: {} as any,
-    });
+    }));
 
     const started = await startAssistToolLoop({
       userId: "user-3",
@@ -411,12 +457,12 @@ describe("playground tool loop", () => {
   });
 
   it("fails early when the hosted loop cannot produce a usable next action", async () => {
-    mockedRequestToolLoopTurn.mockResolvedValueOnce({
+    mockedRequestToolLoopTurn.mockResolvedValueOnce(openHandsTurn({
       adapter: "text_actions",
       final: "I read the request but have no concrete next step.",
       logs: ["adapter=text_actions"],
       modelSelection: {} as any,
-    });
+    }));
 
     const result = await startAssistToolLoop({
       userId: "user-4",
@@ -424,7 +470,8 @@ describe("playground tool loop", () => {
       traceId: "trace-11",
       request: {
         mode: "auto",
-        task: "Add a trailing stop to hello.py",
+        // Long prose so looksLikeShellCommand() does not misfire on short questions.
+        task: "Could you please describe what the hello.py file does in a single short sentence?",
         orchestrationProtocol: "tool_loop_v1",
         clientCapabilities: {
           toolLoop: true,
@@ -445,7 +492,7 @@ describe("playground tool loop", () => {
 
   it("blocks a change run when it inspects the target and still cannot produce a mutation", async () => {
     mockedRequestToolLoopTurn
-      .mockResolvedValueOnce({
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "",
         toolCall: {
@@ -457,19 +504,19 @@ describe("playground tool loop", () => {
         },
         logs: ["adapter=text_actions"],
         modelSelection: {} as any,
-      })
-      .mockResolvedValueOnce({
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "I inspected hello.py but I am still thinking.",
         logs: ["adapter=text_actions"],
         modelSelection: {} as any,
-      })
-      .mockResolvedValueOnce({
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "I still do not have a concrete mutation.",
         logs: ["adapter=text_actions", "repair_attempt=true"],
         modelSelection: {} as any,
-      });
+      }));
 
     const started = await startAssistToolLoop({
       userId: "user-5",
@@ -512,7 +559,7 @@ describe("playground tool loop", () => {
 
   it("escalates repeated pending tool signatures through repair before blocking", async () => {
     mockedRequestToolLoopTurn
-      .mockResolvedValueOnce({
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "",
         toolCall: {
@@ -524,8 +571,8 @@ describe("playground tool loop", () => {
         },
         logs: ["adapter=text_actions"],
         modelSelection: {} as any,
-      })
-      .mockResolvedValueOnce({
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "",
         toolCall: {
@@ -537,8 +584,8 @@ describe("playground tool loop", () => {
         },
         logs: ["adapter=text_actions"],
         modelSelection: {} as any,
-      })
-      .mockResolvedValueOnce({
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "Still thinking about the same command.",
         toolCall: {
@@ -550,8 +597,8 @@ describe("playground tool loop", () => {
         },
         logs: ["adapter=text_actions"],
         modelSelection: {} as any,
-      })
-      .mockResolvedValueOnce({
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "",
         toolCall: {
@@ -566,7 +613,7 @@ describe("playground tool loop", () => {
         },
         logs: ["adapter=text_actions", "repair_attempt=true"],
         modelSelection: {} as any,
-      });
+      }));
 
     const started = await startAssistToolLoop({
       userId: "user-6",
@@ -621,7 +668,7 @@ describe("playground tool loop", () => {
 
   it("reaches pine specialization before terminal failure on repeated no-content mutations", async () => {
     mockedRequestToolLoopTurn
-      .mockResolvedValueOnce({
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "",
         toolCall: {
@@ -636,8 +683,8 @@ describe("playground tool loop", () => {
         },
         logs: ["adapter=text_actions"],
         modelSelection: {} as any,
-      })
-      .mockResolvedValueOnce({
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "",
         toolCall: {
@@ -652,8 +699,8 @@ describe("playground tool loop", () => {
         },
         logs: ["adapter=text_actions", "repair_attempt=single_file_rewrite"],
         modelSelection: {} as any,
-      })
-      .mockResolvedValueOnce({
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "",
         toolCall: {
@@ -668,7 +715,7 @@ describe("playground tool loop", () => {
         },
         logs: ["adapter=text_actions", "repair_attempt=pine_specialization"],
         modelSelection: {} as any,
-      });
+      }));
 
     const started = await startAssistToolLoop({
       userId: "user-7",

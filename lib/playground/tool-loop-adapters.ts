@@ -9,6 +9,11 @@ import {
   resolvePlaygroundModelSelection,
   type PlaygroundResolvedModelSelection,
 } from "@/lib/playground/model-registry";
+import {
+  continueOpenHandsGatewayRun,
+  isOpenHandsGatewayEnabled,
+  startOpenHandsGatewayRun,
+} from "@/lib/playground/openhands-gateway";
 import type {
   AssistContextSelection,
   AssistConversationTurn,
@@ -44,6 +49,7 @@ export type ToolLoopTurnInput = {
   loopSummary: { stepCount: number; mutationCount: number; repairCount: number };
   availableTools: PlaygroundToolName[];
   latestToolResult?: ToolResultContract | null;
+  orchestratorRunId?: string | null;
   repairDirective?: {
     stage:
       | "post_inspection_mutation_required"
@@ -62,6 +68,9 @@ export type ToolLoopTurnOutput = {
   actions?: ExecuteAction[];
   logs: string[];
   modelSelection: PlaygroundResolvedModelSelection;
+  orchestrator?: "in_house" | "openhands";
+  orchestratorVersion?: string | null;
+  orchestratorRunId?: string | null;
 };
 
 function compactWhitespace(value: string): string {
@@ -296,7 +305,10 @@ function normalizeToolCall(value: unknown, availableTools: PlaygroundToolName[])
 export function parseToolLoopJson(
   raw: string,
   availableTools: PlaygroundToolName[]
-): Omit<ToolLoopTurnOutput, "adapter" | "logs" | "modelSelection"> | null {
+): Omit<
+  ToolLoopTurnOutput,
+  "adapter" | "logs" | "modelSelection" | "orchestrator" | "orchestratorVersion" | "orchestratorRunId"
+> | null {
   const parsed = parseJsonCandidate(raw);
   if (!parsed) return null;
 
@@ -313,6 +325,54 @@ export function parseToolLoopJson(
   const final = typeof parsed.final === "string" ? parsed.final.trim() : "";
   if (final) return { final };
   return null;
+}
+
+async function requestOpenHandsTurn(input: {
+  selection: PlaygroundResolvedModelSelection;
+  request: ToolLoopTurnInput["request"];
+  targetInference: ToolLoopTurnInput["targetInference"];
+  contextSelection: ToolLoopTurnInput["contextSelection"];
+  fallbackPlan: ToolLoopTurnInput["fallbackPlan"];
+  toolTrace: ToolLoopTurnInput["toolTrace"];
+  loopSummary: ToolLoopTurnInput["loopSummary"];
+  availableTools: PlaygroundToolName[];
+  latestToolResult?: ToolResultContract | null;
+  repairDirective?: ToolLoopTurnInput["repairDirective"];
+  orchestratorRunId?: string | null;
+}): Promise<ToolLoopTurnOutput> {
+  const payload = {
+    request: input.request,
+    targetInference: input.targetInference,
+    contextSelection: input.contextSelection,
+    fallbackPlan: input.fallbackPlan,
+    toolTrace: input.toolTrace,
+    loopSummary: input.loopSummary,
+    availableTools: input.availableTools,
+    latestToolResult: input.latestToolResult || null,
+    repairDirective: input.repairDirective || null,
+    modelSelection: input.selection,
+  };
+
+  const response = input.orchestratorRunId
+    ? await continueOpenHandsGatewayRun({
+        runId: input.orchestratorRunId,
+        payload,
+      })
+    : await startOpenHandsGatewayRun(payload);
+
+  return {
+    adapter: response.adapter,
+    final: response.final,
+    toolCall: response.toolCall,
+    logs: [
+      "adapter=openhands_gateway",
+      ...(response.logs || []),
+    ],
+    modelSelection: input.selection,
+    orchestrator: "openhands",
+    orchestratorVersion: response.version || null,
+    orchestratorRunId: response.runId,
+  };
 }
 
 function buildOpenAIToolSpec(name: PlaygroundToolName) {
@@ -778,72 +838,21 @@ export async function requestToolLoopTurn(input: ToolLoopTurnInput): Promise<Too
   );
   const fallbackPlan = input.fallbackPlan;
 
-  if (selection.adapter === "native_tools") {
-    try {
-      const response = await callNativeToolTurn(input, availableTools);
-      if (response.toolCall) {
-        return {
-          adapter: "native_tools",
-          final: "",
-          toolCall: response.toolCall,
-          logs: ["adapter=native_tools"],
-          modelSelection: selection.modelSelection,
-        };
-      }
-      return {
-        adapter: "native_tools",
-        final: response.final || "Tool loop completed.",
-        logs: ["adapter=native_tools", "native_tools=final_without_tool_call"],
-        modelSelection: selection.modelSelection,
-      };
-    } catch (error) {
-      if (!selection.modelSelection.resolvedEntry.capabilities.supportsTextActions) {
-        throw error;
-      }
-      const raw = await callTextActionsTurn(input, availableTools);
-      const parsed = parseToolLoopJson(raw || "", availableTools);
-      if (parsed) {
-        return {
-          adapter: "text_actions",
-          final: parsed.final || "",
-          toolCall: parsed.toolCall,
-          logs: [
-            "adapter=native_tools",
-            `native_tools_error=${error instanceof Error ? error.message : String(error)}`,
-            "adapter_fallback=text_actions",
-          ],
-          modelSelection: selection.modelSelection,
-        };
-      }
-      throw error;
-    }
+  if (!isOpenHandsGatewayEnabled()) {
+    throw new Error("OpenHands is not configured. Set OPENHANDS_GATEWAY_URL before using hosted coding orchestration.");
   }
 
-  if (selection.adapter === "text_actions") {
-    const raw = await callTextActionsTurn(input, availableTools);
-    const parsed = parseToolLoopJson(raw || "", availableTools);
-    if (parsed) {
-      return {
-        adapter: "text_actions",
-        final: parsed.final || "",
-        toolCall: parsed.toolCall,
-        logs: ["adapter=text_actions"],
-        modelSelection: selection.modelSelection,
-      };
-    }
-  }
-
-  const deterministic = parseStructuredAssistResponse({
-    raw: input.request.task,
-    mode: "yolo",
-    targetPath: input.targetInference.path,
+  return requestOpenHandsTurn({
+    selection: selection.modelSelection,
+    request: input.request,
+    targetInference: input.targetInference,
+    contextSelection: input.contextSelection,
     fallbackPlan,
+    toolTrace: input.toolTrace,
+    loopSummary: input.loopSummary,
+    availableTools,
+    latestToolResult: input.latestToolResult,
+    repairDirective: input.repairDirective,
+    orchestratorRunId: input.orchestratorRunId,
   });
-  return {
-    adapter: "deterministic_batch",
-    final: deterministic.final,
-    actions: deterministic.actions,
-    logs: ["adapter=deterministic_batch"],
-    modelSelection: selection.modelSelection,
-  };
 }

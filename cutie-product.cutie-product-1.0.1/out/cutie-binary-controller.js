@@ -59,6 +59,16 @@ class CutieBinaryBundleController {
     getLiveBubble() {
         return this.liveBubble;
     }
+    getLiveSessionId() {
+        return this.liveBubble?.sessionId || null;
+    }
+    hasOngoingWork() {
+        return Boolean(this.binaryStreamAbort ||
+            this.binary.streamConnected ||
+            this.binary.busy ||
+            this.liveBubble ||
+            (this.binary.activeBuild && (0, cutie_binary_helpers_1.isBinaryBuildPending)(this.binary.activeBuild)));
+    }
     getDebugSnapshot() {
         return this.debugTracker.getSnapshot();
     }
@@ -684,12 +694,19 @@ class CutieBinaryBundleController {
         this.binaryActivity = [...this.binaryActivity, line].slice(-80);
     }
     async appendSessionMessage(role, content, extra) {
-        let session = this.deps.getActiveSession();
+        const targetSessionId = String(this.liveBubble?.sessionId || this.deps.getActiveSession()?.id || "").trim();
+        let session = targetSessionId ? this.deps.getSessionById(targetSessionId) : this.deps.getActiveSession();
         if (!session) {
             session = await this.sessionStore.createSession(this.deps.getWorkspaceHash(), "App build");
             this.deps.setActiveSession(session);
         }
         const next = await this.sessionStore.appendMessage(session, { role, content, ...extra });
+        if (this.liveBubble) {
+            this.liveBubble = {
+                ...this.liveBubble,
+                sessionId: next.id,
+            };
+        }
         this.deps.setActiveSession(next);
     }
     stopBinaryStream() {
@@ -818,6 +835,7 @@ class CutieBinaryBundleController {
         };
         this.liveBubble = {
             messageId,
+            sessionId: this.deps.getActiveSession()?.id ?? null,
             content: input.content || "",
             createdAt: ts,
             live,

@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CutiePlaygroundChatBridge = void 0;
 const vscode = __importStar(require("vscode"));
+const vscode_core_1 = require("@xpersona/vscode-core");
 const assistant_ux_1 = require("./playground-ide/assistant-ux");
 const actions_1 = require("./playground-ide/actions");
 const context_1 = require("./playground-ide/context");
@@ -44,6 +45,11 @@ const qwen_prompt_1 = require("./playground-ide/qwen-prompt");
 const qwen_code_runtime_1 = require("./playground-ide/qwen-code-runtime");
 const tool_executor_1 = require("./playground-ide/tool-executor");
 const config_1 = require("./config");
+/** Playground API validates historySessionId as UUID; Cutie local session ids are not UUIDs. */
+function isPlaygroundHistorySessionUuid(value) {
+    const v = String(value || "").trim();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
 function cutieMessagesToPlaygroundChat(messages) {
     return messages
         .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
@@ -101,6 +107,28 @@ class CutiePlaygroundChatBridge {
         if (!this.actionRunner)
             return "Nothing to undo.";
         return this.actionRunner.undoLastBatch();
+    }
+    async getOpenHandsStatus() {
+        const auth = await this.auth.getRequestAuth();
+        if (!auth) {
+            return {
+                status: "unreachable",
+                message: "Sign in to verify OpenHands.",
+            };
+        }
+        const response = await (0, vscode_core_1.requestJson)("GET", `${(0, config_1.getBaseApiUrl)()}/api/v1/playground/openhands/health`, auth);
+        const health = (response &&
+            typeof response === "object" &&
+            "data" in response &&
+            response.data &&
+            typeof response.data === "object"
+            ? response.data
+            : response);
+        return {
+            status: health?.status === "healthy" ? "healthy" : health?.status === "missing_config" ? "missing_config" : health?.status === "unauthorized" ? "unauthorized" : "unreachable",
+            message: String(health?.message || "OpenHands unavailable"),
+            ...(typeof health?.details === "string" && health.details.trim() ? { details: health.details } : {}),
+        };
     }
     async runQwenTurn(input) {
         this.ensureServices();
@@ -172,6 +200,9 @@ class CutiePlaygroundChatBridge {
         });
         const workspaceHash = (0, config_1.getWorkspaceHash)();
         const extensionVersion = (0, config_1.getExtensionVersion)(this.context);
+        const serverHistoryId = input.historySessionId && isPlaygroundHistorySessionUuid(input.historySessionId)
+            ? input.historySessionId.trim()
+            : undefined;
         const requestBody = {
             mode: input.mode,
             task: taskText,
@@ -185,7 +216,7 @@ class CutiePlaygroundChatBridge {
                     autoExecute: true,
                     supportsNativeToolResults: false,
                 },
-            ...(input.historySessionId ? { historySessionId: input.historySessionId } : {}),
+            ...(serverHistoryId ? { historySessionId: serverHistoryId } : {}),
             context,
             retrievalHints,
             clientTrace: {
@@ -200,14 +231,23 @@ class CutiePlaygroundChatBridge {
                 initial,
                 toolExecutor: this.toolExecutor,
                 workspaceFingerprint: workspaceHash,
-                sessionId: input.historySessionId || undefined,
+                sessionId: serverHistoryId || initial.sessionId,
                 signal: input.signal,
             });
         }
+        const playgroundSessionId = typeof initial.sessionId === "string" && initial.sessionId.trim() ? initial.sessionId.trim() : undefined;
         if (input.mode === "plan" && initial.plan) {
-            return [initial.final || "Plan ready.", "", JSON.stringify(initial.plan, null, 2)].filter(Boolean).join("\n");
+            return {
+                assistantText: [initial.final || "Plan ready.", "", JSON.stringify(initial.plan, null, 2)]
+                    .filter(Boolean)
+                    .join("\n"),
+                ...(playgroundSessionId ? { playgroundSessionId } : {}),
+            };
         }
-        return String(initial.final || "No response from playground assist.");
+        return {
+            assistantText: String(initial.final || "No response from playground assist."),
+            ...(playgroundSessionId ? { playgroundSessionId } : {}),
+        };
     }
 }
 exports.CutiePlaygroundChatBridge = CutiePlaygroundChatBridge;

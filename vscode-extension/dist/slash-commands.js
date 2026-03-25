@@ -32,10 +32,6 @@ function parseSlashCommand(text) {
         return { kind: "undo" };
     if (lower === "/status")
         return { kind: "status" };
-    if (lower === "/runtime cutie")
-        return { kind: "runtime", runtime: "cutie" };
-    if (lower === "/runtime qwen")
-        return { kind: "runtime", runtime: "qwenCode" };
     if (lower === "/runtime hosted")
         return { kind: "runtime", runtime: "playgroundApi" };
     if (lower === "/runtime cloud")
@@ -49,9 +45,7 @@ function buildSlashCommandHelpMessage(prefix) {
         "- /new",
         "- /plan",
         "- /auto",
-        "- /runtime cutie",
         "- /runtime hosted",
-        "- /runtime qwen",
         "- /runtime cloud (alias for hosted)",
         "- /key",
         "- /signin",
@@ -70,9 +64,9 @@ function describeRuntimePhase(phase) {
         case "collecting_context":
             return "Collecting context";
         case "waiting_for_cutie":
-            return "Waiting for Cutie";
+            return "Waiting for local Cutie";
         case "waiting_for_qwen":
-            return "Waiting for Qwen";
+            return "Waiting for local Qwen";
         case "awaiting_approval":
             return "Awaiting tool approval";
         case "applying_result":
@@ -89,7 +83,11 @@ function describeRuntimePhase(phase) {
 }
 function buildSlashStatusMessage(input) {
     const sessionLabel = input.sessionId?.trim() || "New chat";
-    const runtimeLabel = input.runtime === "qwenCode" ? "Qwen Code" : input.runtime === "playgroundApi" ? "Hosted runtime" : "Cutie";
+    const runtimeLabel = input.runtime === "playgroundApi"
+        ? "Hosted OpenHands runtime"
+        : input.runtime === "qwenCode"
+            ? "Local Qwen Code (legacy)"
+            : "Local Cutie (legacy)";
     const lines = [
         "Binary IDE status:",
         `- Runtime: ${runtimeLabel}`,

@@ -86,12 +86,7 @@ function getBinaryStreamGatewayUrl() {
     return String(configured || "").trim().replace(/\/+$/, "");
 }
 function getBinaryIdeChatRuntime() {
-    const raw = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("binary.runtime", "cutie");
-    if (raw === "playgroundApi")
-        return "playgroundApi";
-    if (raw === "qwenCode")
-        return "qwenCode";
-    return "cutie";
+    return "playgroundApi";
 }
 function getQwenModel() {
     const configured = vscode.workspace

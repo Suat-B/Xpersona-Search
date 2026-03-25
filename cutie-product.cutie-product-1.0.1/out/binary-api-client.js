@@ -31,11 +31,18 @@ function buildAuthHeaders(auth) {
         headers["X-API-Key"] = auth.apiKey;
     return headers;
 }
+function normalizeHistorySessionId(historySessionId) {
+    const value = String(historySessionId || "").trim();
+    if (!value)
+        return null;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ? value : null;
+}
 function buildCreatePayload(input) {
+    const historySessionId = normalizeHistorySessionId(input.historySessionId);
     return {
         intent: input.intent,
         workspaceFingerprint: input.workspaceFingerprint,
-        ...(input.historySessionId ? { historySessionId: input.historySessionId } : {}),
+        ...(historySessionId ? { historySessionId } : {}),
         targetEnvironment: input.targetEnvironment,
         ...(input.context ? { context: input.context } : {}),
         ...(input.retrievalHints ? { retrievalHints: input.retrievalHints } : {}),

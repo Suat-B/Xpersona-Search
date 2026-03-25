@@ -42,7 +42,6 @@ const context_1 = require("./context");
 const config_1 = require("./config");
 const history_1 = require("./history");
 const indexer_1 = require("./indexer");
-const cutie_history_1 = require("./cutie-history");
 const qwen_history_1 = require("./qwen-history");
 const qwen_code_runtime_1 = require("./qwen-code-runtime");
 const selection_prefill_1 = require("./selection-prefill");
@@ -56,10 +55,9 @@ async function activate(context) {
     const toolExecutor = new tool_executor_1.ToolExecutor(actionRunner, indexManager);
     const contextCollector = new context_1.ContextCollector(indexManager);
     const historyService = new history_1.SessionHistoryService();
-    const cutieHistoryService = new cutie_history_1.CutieHistoryService(context);
     const qwenHistoryService = new qwen_history_1.QwenHistoryService(context);
     const qwenCodeRuntime = new qwen_code_runtime_1.QwenCodeRuntime();
-    const provider = new webview_provider_1.PlaygroundViewProvider(context, auth, historyService, cutieHistoryService, qwenHistoryService, qwenCodeRuntime, contextCollector, actionRunner, toolExecutor, indexManager);
+    const provider = new webview_provider_1.PlaygroundViewProvider(context, auth, historyService, qwenHistoryService, qwenCodeRuntime, contextCollector, actionRunner, toolExecutor, indexManager);
     context.subscriptions.push(vscode.window.registerWebviewViewProvider(config_1.WEBVIEW_VIEW_ID, provider), vscode.window.registerUriHandler(auth), vscode.commands.registerCommand("binary.generate", async () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
@@ -106,12 +104,18 @@ async function activate(context) {
         vscode.window.showInformationMessage(summary);
     }), vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration(`${config_1.EXTENSION_NAMESPACE}.runtime`) ||
+            event.affectsConfiguration(`${config_1.EXTENSION_NAMESPACE}.agent.modelAlias`) ||
+            event.affectsConfiguration(`${config_1.EXTENSION_NAMESPACE}.agent.rollbackLocalRuntime`) ||
             event.affectsConfiguration(`${config_1.EXTENSION_NAMESPACE}.baseApiUrl`) ||
+            event.affectsConfiguration(`${config_1.EXTENSION_NAMESPACE}.cutie.model`) ||
             event.affectsConfiguration(`${config_1.EXTENSION_NAMESPACE}.qwen.model`) ||
             event.affectsConfiguration(`${config_1.EXTENSION_NAMESPACE}.qwen.baseUrl`) ||
             event.affectsConfiguration(`${config_1.EXTENSION_NAMESPACE}.qwen.executable`) ||
             event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.runtime`) ||
+            event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.agent.modelAlias`) ||
+            event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.agent.rollbackLocalRuntime`) ||
             event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.baseApiUrl`) ||
+            event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.cutie.model`) ||
             event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.qwen.model`) ||
             event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.qwen.baseUrl`) ||
             event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.qwen.executable`)) {

@@ -87,7 +87,11 @@
     "sdk:publish:playground:python:dry": "node scripts/publish-playground-cli-python.mjs --dry-run",
     "deploy": "node scripts/deploy.mjs",
     "smoke:reliability": "node scripts/smoke-reliability.mjs",
-    "setup:prod": "node scripts/setup-production.mjs"
+    "setup:prod": "node scripts/setup-production.mjs",
+    "openhands:gateway": "tsx services/openhands-gateway/src/server.ts",
+    "openhands:gateway:setup": "python -m pip install -r services/openhands-gateway/requirements.txt",
+    "openhands:gateway:doctor": "python services/openhands-gateway/agent_turn.py --doctor",
+    "openhands:gateway:docker": "docker compose up -d openhands-gateway"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.7.2",

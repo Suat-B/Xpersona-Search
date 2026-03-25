@@ -39,6 +39,8 @@ exports.getQwenCliWrapperEnabled = getQwenCliWrapperEnabled;
 exports.migrateLegacyConfiguration = migrateLegacyConfiguration;
 exports.getBaseApiUrl = getBaseApiUrl;
 exports.getRuntimeBackend = getRuntimeBackend;
+exports.getAgentModelAlias = getAgentModelAlias;
+exports.getAgentRollbackLocalRuntime = getAgentRollbackLocalRuntime;
 exports.getCutieModel = getCutieModel;
 exports.getQwenModel = getQwenModel;
 exports.getQwenOpenAiBaseUrl = getQwenOpenAiBaseUrl;
@@ -78,6 +80,9 @@ exports.PENDING_PKCE_KEY = "xpersona.playground.pendingPkce";
 const MIGRATABLE_CONFIGURATION_KEYS = [
     "baseApiUrl",
     "runtime",
+    "agent.modelAlias",
+    "agent.rollbackLocalRuntime",
+    "cutie.model",
     "qwen.model",
     "qwen.baseUrl",
     "qwen.executable",
@@ -128,12 +133,45 @@ function getBaseApiUrl() {
     return value.replace(/\/+$/, "");
 }
 function getRuntimeBackend() {
-    const configured = getConfigurationValue("runtime", "qwenCode");
+    if (!getAgentRollbackLocalRuntime()) {
+        return "playgroundApi";
+    }
+    const configured = getConfigurationValue("runtime", "playgroundApi");
     if (configured === "playgroundApi")
         return "playgroundApi";
     if (configured === "cutie")
         return "cutie";
     return "qwenCode";
+}
+function getAgentModelAlias() {
+    const explicit = getExplicitConfigurationValue(exports.EXTENSION_NAMESPACE, "agent.modelAlias");
+    if (explicit !== undefined && String(explicit || "").trim()) {
+        return String(explicit).trim();
+    }
+    const legacyAgent = getExplicitConfigurationValue(exports.LEGACY_EXTENSION_NAMESPACE, "agent.modelAlias");
+    if (legacyAgent !== undefined && String(legacyAgent || "").trim()) {
+        return String(legacyAgent).trim();
+    }
+    const legacyQwenModel = getExplicitConfigurationValue(exports.EXTENSION_NAMESPACE, "qwen.model");
+    if (legacyQwenModel !== undefined && String(legacyQwenModel || "").trim()) {
+        return String(legacyQwenModel).trim();
+    }
+    const legacyNamespaceQwenModel = getExplicitConfigurationValue(exports.LEGACY_EXTENSION_NAMESPACE, "qwen.model");
+    if (legacyNamespaceQwenModel !== undefined && String(legacyNamespaceQwenModel || "").trim()) {
+        return String(legacyNamespaceQwenModel).trim();
+    }
+    const legacyCutieModel = getExplicitConfigurationValue(exports.EXTENSION_NAMESPACE, "cutie.model");
+    if (legacyCutieModel !== undefined && String(legacyCutieModel || "").trim()) {
+        return String(legacyCutieModel).trim();
+    }
+    const legacyNamespaceCutieModel = getExplicitConfigurationValue(exports.LEGACY_EXTENSION_NAMESPACE, "cutie.model");
+    if (legacyNamespaceCutieModel !== undefined && String(legacyNamespaceCutieModel || "").trim()) {
+        return String(legacyNamespaceCutieModel).trim();
+    }
+    return String(getConfigurationValue("agent.modelAlias", "playground-default") || "playground-default").trim();
+}
+function getAgentRollbackLocalRuntime() {
+    return getConfigurationValue("agent.rollbackLocalRuntime", false);
 }
 function getCutieModel() {
     const configured = getConfigurationValue("cutie.model", "Qwen/Qwen2.5-Coder-32B-Instruct:fastest");

@@ -31,6 +31,9 @@ export const PENDING_PKCE_KEY = "xpersona.playground.pendingPkce";
 const MIGRATABLE_CONFIGURATION_KEYS = [
   "baseApiUrl",
   "runtime",
+  "agent.modelAlias",
+  "agent.rollbackLocalRuntime",
+  "cutie.model",
   "qwen.model",
   "qwen.baseUrl",
   "qwen.executable",
@@ -92,10 +95,49 @@ export function getBaseApiUrl(): string {
 }
 
 export function getRuntimeBackend(): RuntimeBackend {
-  const configured = getConfigurationValue<string>("runtime", "qwenCode");
+  if (!getAgentRollbackLocalRuntime()) {
+    return "playgroundApi";
+  }
+  const configured = getConfigurationValue<string>("runtime", "playgroundApi");
   if (configured === "playgroundApi") return "playgroundApi";
   if (configured === "cutie") return "cutie";
   return "qwenCode";
+}
+
+export function getAgentModelAlias(): string {
+  const explicit = getExplicitConfigurationValue<string>(EXTENSION_NAMESPACE, "agent.modelAlias");
+  if (explicit !== undefined && String(explicit || "").trim()) {
+    return String(explicit).trim();
+  }
+
+  const legacyAgent = getExplicitConfigurationValue<string>(LEGACY_EXTENSION_NAMESPACE, "agent.modelAlias");
+  if (legacyAgent !== undefined && String(legacyAgent || "").trim()) {
+    return String(legacyAgent).trim();
+  }
+
+  const legacyQwenModel = getExplicitConfigurationValue<string>(EXTENSION_NAMESPACE, "qwen.model");
+  if (legacyQwenModel !== undefined && String(legacyQwenModel || "").trim()) {
+    return String(legacyQwenModel).trim();
+  }
+  const legacyNamespaceQwenModel = getExplicitConfigurationValue<string>(LEGACY_EXTENSION_NAMESPACE, "qwen.model");
+  if (legacyNamespaceQwenModel !== undefined && String(legacyNamespaceQwenModel || "").trim()) {
+    return String(legacyNamespaceQwenModel).trim();
+  }
+
+  const legacyCutieModel = getExplicitConfigurationValue<string>(EXTENSION_NAMESPACE, "cutie.model");
+  if (legacyCutieModel !== undefined && String(legacyCutieModel || "").trim()) {
+    return String(legacyCutieModel).trim();
+  }
+  const legacyNamespaceCutieModel = getExplicitConfigurationValue<string>(LEGACY_EXTENSION_NAMESPACE, "cutie.model");
+  if (legacyNamespaceCutieModel !== undefined && String(legacyNamespaceCutieModel || "").trim()) {
+    return String(legacyNamespaceCutieModel).trim();
+  }
+
+  return String(getConfigurationValue<string>("agent.modelAlias", "playground-default") || "playground-default").trim();
+}
+
+export function getAgentRollbackLocalRuntime(): boolean {
+  return getConfigurationValue<boolean>("agent.rollbackLocalRuntime", false);
 }
 
 export function getCutieModel(): string {

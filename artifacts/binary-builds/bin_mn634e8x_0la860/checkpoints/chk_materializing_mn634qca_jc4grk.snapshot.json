@@ -1,0 +1,300 @@
+{
+  "buildId": "bin_mn634e8x_0la860",
+  "checkpointId": "chk_materializing_mn634qca_jc4grk",
+  "savedAt": "2026-03-25T13:34:20.506Z",
+  "draftFiles": {
+    "config.yaml": "# Configuration file\nruntime: node18\nactiveFile: src/index.ts",
+    "package.json": "{\n  \"name\": \"typescript-service\",\n  \"version\": \"1.0.0\",\n  \"description\": \"A portable TypeScript service workspace\",\n  \"main\": \"dist/index.js\",\n  \"scripts\": {\n    \"build\": \"tsc --outDir dist --rootDir src\",\n    \"start\": \"node dist/index.js\"\n  },\n  \"dependencies\": {\n    \"typescript\": \"^4.5.2\"\n  }\n}",
+    "src/index.ts": "// Entry point of the TypeScript service\nimport { greet } from './greet';\n\n// Export callable function\nexport const runService = () => {\n  console.log(greet('love'));\n};"
+  },
+  "plan": {
+    "name": "binary-hello-love",
+    "displayName": "TypeScript Service Workspace",
+    "description": "A portable TypeScript service workspace for Binary IDE. This workspace compiles with npm + TypeScript and can be directly runnable with Node.js after build. It uses CommonJS-compatible TypeScript and exports callable functions before starting any server.",
+    "entrypoint": "dist/src/index.js",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "sourceFiles": [
+      "config.yaml",
+      "package.json",
+      "src/index.ts",
+      "tsconfig.json"
+    ],
+    "warnings": [
+      "The intent is short, so the generated scaffold may need refinement."
+    ]
+  },
+  "preview": {
+    "plan": {
+      "name": "binary-hello-love",
+      "displayName": "TypeScript Service Workspace",
+      "description": "A portable TypeScript service workspace for Binary IDE. This workspace compiles with npm + TypeScript and can be directly runnable with Node.js after build. It uses CommonJS-compatible TypeScript and exports callable functions before starting any server.",
+      "entrypoint": "dist/src/index.js",
+      "buildCommand": "npm run build",
+      "startCommand": "npm start",
+      "sourceFiles": [
+        "config.yaml",
+        "package.json",
+        "src/index.ts",
+        "tsconfig.json"
+      ],
+      "warnings": [
+        "The intent is short, so the generated scaffold may need refinement."
+      ]
+    },
+    "files": [
+      {
+        "path": "src/index.ts",
+        "language": "typescript",
+        "preview": "// Entry point of the TypeScript service\nimport { greet } from './greet';\n\n// Export callable function\nexport const runService = () => {\n  console.log(greet('love'));\n};",
+        "hash": "882a1063dd28b25c255b1c72dbd9b74513af865ae39f19a2152671e5076c8425",
+        "completed": true,
+        "updatedAt": "2026-03-25T13:34:13.942Z"
+      },
+      {
+        "path": "package.json",
+        "language": "json",
+        "preview": "{\n  \"name\": \"typescript-service\",\n  \"version\": \"1.0.0\",\n  \"description\": \"A portable TypeScript service workspace\",\n  \"main\": \"dist/index.js\",\n  \"scripts\": {\n    \"build\": \"tsc --outDir dist --rootDir src\",\n    \"start\": \"node dist/index.js\"\n  },\n  \"dependencies\": {\n    \"typescript\": \"^4.5.2\"\n  }\n}",
+        "hash": "a5cfb1d163fccd65503197eb664867dc0a7385add21b6fbafa3c9fb47fb0892c",
+        "completed": true,
+        "updatedAt": "2026-03-25T13:34:13.348Z"
+      },
+      {
+        "path": "config.yaml",
+        "preview": "# Configuration file\nruntime: node18\nactiveFile: src/index.ts",
+        "hash": "df722e87caeb3ca559ae03c04e6960addf015bd024db54106c3440f37fb10b9b",
+        "completed": true,
+        "updatedAt": "2026-03-25T13:34:11.935Z"
+      }
+    ],
+    "recentLogs": [
+      "Completed config.yaml",
+      "Completed package.json",
+      "Completed src/index.ts"
+    ]
+  },
+  "manifest": {
+    "buildId": "bin_mn634e8x_0la860",
+    "artifactKind": "package_bundle",
+    "name": "binary-hello-love",
+    "displayName": "TypeScript Service Workspace",
+    "description": "A portable TypeScript service workspace for Binary IDE. This workspace compiles with npm + TypeScript and can be directly runnable with Node.js after build. It uses CommonJS-compatible TypeScript and exports callable functions before starting any server.",
+    "intent": "hello love",
+    "runtime": "node18",
+    "platform": "portable",
+    "packageManager": "npm",
+    "entrypoint": "dist/src/index.js",
+    "installCommand": "npm install",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "sourceFiles": [
+      "config.yaml",
+      "package.json",
+      "src/index.ts",
+      "tsconfig.json"
+    ],
+    "outputFiles": [],
+    "warnings": [
+      "The intent is short, so the generated scaffold may need refinement."
+    ],
+    "createdAt": "2026-03-25T13:34:11.558Z"
+  },
+  "reliability": {
+    "status": "fail",
+    "score": 80,
+    "summary": "Live reliability snapshot found 3 blocking issues.",
+    "targetEnvironment": {
+      "runtime": "node18",
+      "platform": "portable",
+      "packageManager": "npm"
+    },
+    "issues": [
+      {
+        "code": "unresolved_dependency",
+        "severity": "warning",
+        "message": "Unresolved dependency from src/index.ts to src/greet.",
+        "detail": "import"
+      },
+      {
+        "code": "ts_2307",
+        "severity": "error",
+        "message": "Cannot find module './greet' or its corresponding type declarations.",
+        "detail": "src/index.ts"
+      },
+      {
+        "code": "runtime_stubbed",
+        "severity": "warning",
+        "message": "The live runtime is currently using generated stubs for execution."
+      }
+    ],
+    "warnings": [
+      "Binary IDE is exposing generated stub entry points until native execution is ready."
+    ],
+    "generatedAt": "2026-03-25T13:34:20.471Z"
+  },
+  "liveReliability": {
+    "score": 80,
+    "trend": "steady",
+    "warnings": [
+      "Binary IDE is exposing generated stub entry points until native execution is ready.",
+      "Unresolved dependency from src/index.ts to src/greet.",
+      "The live runtime is currently using generated stubs for execution."
+    ],
+    "blockers": [
+      {
+        "code": "ts_2307",
+        "severity": "error",
+        "message": "Cannot find module './greet' or its corresponding type declarations."
+      }
+    ],
+    "resolvedBlockers": [],
+    "updatedAt": "2026-03-25T13:34:20.471Z",
+    "source": "compat"
+  },
+  "artifactState": {
+    "coverage": 59,
+    "runnable": true,
+    "sourceFilesTotal": 1,
+    "sourceFilesReady": 1,
+    "outputFilesReady": 0,
+    "entryPoints": [
+      "src/index.ts#runService"
+    ],
+    "latestFile": "src/index.ts",
+    "updatedAt": "2026-03-25T13:34:20.471Z"
+  },
+  "sourceGraph": {
+    "coverage": 55,
+    "readyModules": 1,
+    "totalModules": 1,
+    "modules": [
+      {
+        "path": "src/index.ts",
+        "language": "typescript",
+        "imports": [
+          "./greet"
+        ],
+        "exports": [
+          "runService"
+        ],
+        "functions": [
+          {
+            "name": "runService",
+            "sourcePath": "src/index.ts",
+            "exported": true,
+            "async": false,
+            "callable": true,
+            "signature": "runService()"
+          }
+        ],
+        "completed": true,
+        "diagnosticCount": 1
+      }
+    ],
+    "dependencies": [
+      {
+        "from": "src/index.ts",
+        "to": "src/greet",
+        "kind": "import",
+        "resolved": false
+      },
+      {
+        "from": "package.json",
+        "to": "typescript",
+        "kind": "dependency",
+        "resolved": true
+      }
+    ],
+    "diagnostics": [
+      {
+        "path": "src/index.ts",
+        "code": "2307",
+        "severity": "error",
+        "message": "Cannot find module './greet' or its corresponding type declarations."
+      }
+    ],
+    "updatedAt": "2026-03-25T13:34:20.116Z"
+  },
+  "astState": {
+    "coverage": 55,
+    "moduleCount": 1,
+    "modules": [
+      {
+        "path": "src/index.ts",
+        "language": "typescript",
+        "nodeCount": 2,
+        "exportedSymbols": [
+          "runService"
+        ],
+        "callableFunctions": [
+          "runService"
+        ],
+        "completed": true
+      }
+    ],
+    "nodes": [
+      {
+        "id": "module:src/index.ts",
+        "kind": "module",
+        "label": "src/index.ts",
+        "path": "src/index.ts",
+        "completeness": 100
+      },
+      {
+        "id": "function:src/index.ts:runService",
+        "kind": "function",
+        "label": "runService",
+        "path": "src/index.ts",
+        "parentId": "module:src/index.ts",
+        "exported": true,
+        "callable": true,
+        "completeness": 100
+      }
+    ],
+    "updatedAt": "2026-03-25T13:34:20.116Z",
+    "source": "compat"
+  },
+  "execution": {
+    "runnable": true,
+    "mode": "stub",
+    "availableFunctions": [
+      {
+        "name": "runService",
+        "sourcePath": "src/index.ts",
+        "mode": "stub",
+        "callable": true,
+        "signature": "runService()"
+      }
+    ],
+    "lastRun": null,
+    "updatedAt": "2026-03-25T13:34:20.462Z"
+  },
+  "runtimeState": {
+    "runnable": true,
+    "engine": "stub",
+    "availableFunctions": [
+      {
+        "name": "runService",
+        "sourcePath": "src/index.ts",
+        "mode": "stub",
+        "callable": true,
+        "signature": "runService()"
+      }
+    ],
+    "patches": [],
+    "updatedAt": "2026-03-25T13:34:20.462Z",
+    "lastRun": null
+  },
+  "runtimePatches": [],
+  "prompt": "hello love",
+  "parentSnapshotId": "chk_materializing_mn634kwv_9wig23",
+  "snapshot": {
+    "id": "chk_materializing_mn634qca_jc4grk",
+    "checkpointId": "chk_materializing_mn634qca_jc4grk",
+    "parentSnapshotId": "chk_materializing_mn634kwv_9wig23",
+    "phase": "materializing",
+    "label": "Generated src/index.ts",
+    "savedAt": "2026-03-25T13:34:20.506Z",
+    "source": "compat"
+  }
+}

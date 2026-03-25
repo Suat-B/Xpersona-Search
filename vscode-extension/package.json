@@ -113,27 +113,37 @@
             "qwenCode"
           ],
           "enumItemLabels": [
-            "Cutie",
-            "Hosted runtime",
-            "Qwen runtime"
+            "Cutie (hosted OpenHands)",
+            "Hosted agentic runtime",
+            "Local Qwen runtime (legacy)"
           ],
           "enumDescriptions": [
-            "Use the local Cutie runtime inside Binary IDE.",
-            "Use the hosted Binary IDE API.",
-            "Use the local Qwen Code runtime."
+            "Same hosted Binary IDE API and OpenHands tool loop as the default runtime. Chat history is stored on the server. Only shown when rollbackLocalRuntime is enabled.",
+            "Use the hosted Binary IDE API with the shared agentic coding orchestrator (OpenHands).",
+            "Legacy local Qwen Code runtime. Only used when rollbackLocalRuntime is enabled."
           ],
-          "default": "qwenCode",
-          "description": "Choose whether Binary IDE uses the local Cutie runtime, the hosted Binary IDE API, or the local Qwen Code runtime."
+          "default": "playgroundApi",
+          "description": "Legacy runtime selector. By default Binary IDE uses the hosted agentic runtime and ignores this setting unless rollbackLocalRuntime is enabled."
+        },
+        "xpersona.binary.agent.modelAlias": {
+          "type": "string",
+          "default": "playground-default",
+          "description": "Hosted model alias (or raw model id matching lib/playground/model-registry). Resolved on the server and passed to OpenHands; change PLAYGROUND_MODEL_REGISTRY_JSON on the server to add models without code changes."
+        },
+        "xpersona.binary.agent.rollbackLocalRuntime": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow switching back to legacy local Cutie/Qwen runtimes for rollback and debugging."
         },
         "xpersona.binary.cutie.model": {
           "type": "string",
           "default": "Qwen/Qwen2.5-Coder-32B-Instruct:fastest",
-          "description": "Model name for Cutie runtime requests."
+          "description": "Legacy fallback for agent.modelAlias when unset. Cutie runtime uses the hosted registry; configure models on the server (PLAYGROUND_DEFAULT_MODEL / PLAYGROUND_MODEL_REGISTRY_JSON)."
         },
         "xpersona.binary.qwen.model": {
           "type": "string",
           "default": "Qwen/Qwen3-Next-80B-A3B-Thinking:fastest",
-          "description": "Model name for the Qwen Code runtime. Passed to the API when runtime is qwenCode."
+          "description": "Legacy model name for the local Qwen Code runtime. Also used as a migration fallback when agent.modelAlias is unset."
         },
         "xpersona.binary.qwen.baseUrl": {
           "type": "string",

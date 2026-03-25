@@ -148,8 +148,8 @@
 						"playgroundApi",
 						"qwenCode"
 					],
-					"default": "cutie",
-					"description": "Chat composer backend: Cutie agent (default), hosted Xpersona app-builder runtime, or local Qwen Code."
+					"default": "playgroundApi",
+					"description": "Hosted OpenHands-backed runtime for Cutie chat. Legacy local runtimes are debug-only and not used by the standard chat flow."
 				},
 				"cutie-product.binary.qwen.model": {
 					"type": "string",

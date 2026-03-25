@@ -5,7 +5,6 @@ import { ContextCollector } from "./context";
 import { LEGACY_EXTENSION_NAMESPACE, WEBVIEW_VIEW_ID, EXTENSION_NAMESPACE, migrateLegacyConfiguration, toWorkspaceRelativePath } from "./config";
 import { SessionHistoryService } from "./history";
 import { CloudIndexManager } from "./indexer";
-import { CutieHistoryService } from "./cutie-history";
 import { QwenHistoryService } from "./qwen-history";
 import { QwenCodeRuntime } from "./qwen-code-runtime";
 import { buildSelectionPrefill } from "./selection-prefill";
@@ -20,14 +19,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const toolExecutor = new ToolExecutor(actionRunner, indexManager);
   const contextCollector = new ContextCollector(indexManager);
   const historyService = new SessionHistoryService();
-  const cutieHistoryService = new CutieHistoryService(context);
   const qwenHistoryService = new QwenHistoryService(context);
   const qwenCodeRuntime = new QwenCodeRuntime();
   const provider = new PlaygroundViewProvider(
     context,
     auth,
     historyService,
-    cutieHistoryService,
     qwenHistoryService,
     qwenCodeRuntime,
     contextCollector,
@@ -99,12 +96,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (
         event.affectsConfiguration(`${EXTENSION_NAMESPACE}.runtime`) ||
+        event.affectsConfiguration(`${EXTENSION_NAMESPACE}.agent.modelAlias`) ||
+        event.affectsConfiguration(`${EXTENSION_NAMESPACE}.agent.rollbackLocalRuntime`) ||
         event.affectsConfiguration(`${EXTENSION_NAMESPACE}.baseApiUrl`) ||
+        event.affectsConfiguration(`${EXTENSION_NAMESPACE}.cutie.model`) ||
         event.affectsConfiguration(`${EXTENSION_NAMESPACE}.qwen.model`) ||
         event.affectsConfiguration(`${EXTENSION_NAMESPACE}.qwen.baseUrl`) ||
         event.affectsConfiguration(`${EXTENSION_NAMESPACE}.qwen.executable`) ||
         event.affectsConfiguration(`${LEGACY_EXTENSION_NAMESPACE}.runtime`) ||
+        event.affectsConfiguration(`${LEGACY_EXTENSION_NAMESPACE}.agent.modelAlias`) ||
+        event.affectsConfiguration(`${LEGACY_EXTENSION_NAMESPACE}.agent.rollbackLocalRuntime`) ||
         event.affectsConfiguration(`${LEGACY_EXTENSION_NAMESPACE}.baseApiUrl`) ||
+        event.affectsConfiguration(`${LEGACY_EXTENSION_NAMESPACE}.cutie.model`) ||
         event.affectsConfiguration(`${LEGACY_EXTENSION_NAMESPACE}.qwen.model`) ||
         event.affectsConfiguration(`${LEGACY_EXTENSION_NAMESPACE}.qwen.baseUrl`) ||
         event.affectsConfiguration(`${LEGACY_EXTENSION_NAMESPACE}.qwen.executable`)

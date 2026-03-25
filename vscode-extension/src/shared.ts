@@ -181,6 +181,9 @@ export type AssistResponsePayload = {
   contextSelection: AssistContextSelection;
   completionStatus: "complete" | "incomplete";
   missingRequirements: string[];
+  modelAlias?: string;
+  orchestrator?: "in_house" | "openhands";
+  orchestratorVersion?: string | null;
   runId?: string;
   orchestrationProtocol?: OrchestrationProtocol;
   adapter?: PlaygroundAdapter;

@@ -70,326 +70,11 @@ function formatPlan(plan) {
     ].filter(Boolean);
     return lines.join("\n\n");
 }
-function runtimeDisplayLabel(runtime) {
-    if (runtime === "qwenCode")
-        return "Qwen Code";
-    if (runtime === "playgroundApi")
-        return "Hosted runtime";
-    return "Cutie";
-}
-function isLocalRuntime(runtime) {
-    return runtime === "qwenCode" || runtime === "cutie";
+function isHostedOpenHandsRuntime(runtime) {
+    return runtime === "playgroundApi" || runtime === "cutie";
 }
 function stableStringify(value) {
     return JSON.stringify(value, null, 2);
-}
-function trimCutieText(value, limit) {
-    const text = String(value ?? "");
-    return text.length <= limit ? text : `${text.slice(0, limit)}\n...[truncated]`;
-}
-function buildCutieSystemPrompt(mode) {
-    const lines = [
-        "You are Cutie inside Binary IDE, a careful coding assistant focused on the user's workspace.",
-        "Prefer inspecting workspace context before changing files.",
-        "Use available tools when you need evidence from the codebase.",
-        "For code changes, do not claim completion until the requested edits are applied.",
-        "When feasible after a code edit, run one focused verification step such as diagnostics or a targeted command.",
-        "Keep final answers concise and practical.",
-    ];
-    if (mode === "plan") {
-        lines.push("The user is in plan mode. Do not mutate files or run implementation commands unless the user explicitly asks.");
-    }
-    return lines.join("\n");
-}
-function buildCutieToolDefinitions() {
-    return [
-        {
-            name: "list_files",
-            kind: "observe",
-            domain: "workspace",
-            description: "List workspace files filtered by an optional substring query.",
-            inputSchema: {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                    query: { type: "string" },
-                    limit: { type: "integer", minimum: 1, maximum: 200 },
-                },
-            },
-        },
-        {
-            name: "read_file",
-            kind: "observe",
-            domain: "workspace",
-            description: "Read a workspace-relative file and optionally limit the response to a line range.",
-            inputSchema: {
-                type: "object",
-                additionalProperties: false,
-                required: ["path"],
-                properties: {
-                    path: { type: "string" },
-                    startLine: { type: "integer", minimum: 1 },
-                    endLine: { type: "integer", minimum: 1 },
-                },
-            },
-        },
-        {
-            name: "search_workspace",
-            kind: "observe",
-            domain: "workspace",
-            description: "Search indexed workspace snippets for code or text.",
-            inputSchema: {
-                type: "object",
-                additionalProperties: false,
-                required: ["query"],
-                properties: {
-                    query: { type: "string" },
-                    limit: { type: "integer", minimum: 1, maximum: 12 },
-                },
-            },
-        },
-        {
-            name: "get_diagnostics",
-            kind: "observe",
-            domain: "workspace",
-            description: "Read workspace diagnostics, optionally for one file path.",
-            inputSchema: {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                    path: { type: "string" },
-                },
-            },
-        },
-        {
-            name: "git_status",
-            kind: "observe",
-            domain: "workspace",
-            description: "Inspect the current git status.",
-            inputSchema: {
-                type: "object",
-                additionalProperties: false,
-                properties: {},
-            },
-        },
-        {
-            name: "git_diff",
-            kind: "observe",
-            domain: "workspace",
-            description: "Inspect git diff statistics or a file-specific diff.",
-            inputSchema: {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                    path: { type: "string" },
-                },
-            },
-        },
-        {
-            name: "create_checkpoint",
-            kind: "mutate",
-            domain: "workspace",
-            description: "Create an undo checkpoint before a risky sequence of edits.",
-            inputSchema: {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                    reason: { type: "string" },
-                },
-            },
-        },
-        {
-            name: "patch_file",
-            kind: "mutate",
-            domain: "workspace",
-            description: "Apply a unified diff patch to a workspace-relative file.",
-            inputSchema: {
-                type: "object",
-                additionalProperties: false,
-                required: ["path", "patch"],
-                properties: {
-                    path: { type: "string" },
-                    patch: { type: "string" },
-                },
-            },
-        },
-        {
-            name: "write_file",
-            kind: "mutate",
-            domain: "workspace",
-            description: "Write full file contents to a workspace-relative path.",
-            inputSchema: {
-                type: "object",
-                additionalProperties: false,
-                required: ["path", "content"],
-                properties: {
-                    path: { type: "string" },
-                    content: { type: "string" },
-                    overwrite: { type: "boolean" },
-                },
-            },
-        },
-        {
-            name: "mkdir",
-            kind: "mutate",
-            domain: "workspace",
-            description: "Create a workspace directory.",
-            inputSchema: {
-                type: "object",
-                additionalProperties: false,
-                required: ["path"],
-                properties: {
-                    path: { type: "string" },
-                },
-            },
-        },
-        {
-            name: "run_command",
-            kind: "command",
-            domain: "workspace",
-            description: "Run a targeted workspace command when inspection or verification requires it.",
-            inputSchema: {
-                type: "object",
-                additionalProperties: false,
-                required: ["command"],
-                properties: {
-                    command: { type: "string" },
-                    timeoutMs: { type: "integer", minimum: 1000, maximum: 120000 },
-                    category: { type: "string", enum: ["implementation", "validation"] },
-                },
-            },
-        },
-    ];
-}
-function buildCutieContextMessage(input) {
-    return [
-        "Workspace context:",
-        stableStringify({
-            task: input.task,
-            intent: input.preview.intent,
-            confidence: input.preview.confidence,
-            activeFile: input.preview.activeFile || null,
-            resolvedFiles: input.preview.resolvedFiles,
-            selectedFiles: input.preview.selectedFiles,
-            candidateFiles: input.preview.candidateFiles,
-            context: input.context,
-        }),
-    ].join("\n");
-}
-function normalizeCutieToolName(value) {
-    const name = String(value || "").trim();
-    if (name === "edit_file")
-        return "patch_file";
-    const allowed = new Set([
-        "list_files",
-        "read_file",
-        "search_workspace",
-        "get_diagnostics",
-        "git_status",
-        "git_diff",
-        "create_checkpoint",
-        "patch_file",
-        "write_file",
-        "mkdir",
-        "run_command",
-    ]);
-    if (!allowed.has(name)) {
-        throw new Error(`Unknown Cutie tool "${name || "missing"}".`);
-    }
-    return name;
-}
-function normalizeCutieResponse(payload) {
-    const record = payload && typeof payload === "object" ? payload : {};
-    const nested = record.response && typeof record.response === "object"
-        ? record.response
-        : record;
-    const type = String(nested.type || "").trim();
-    if (type === "final") {
-        return {
-            type: "final",
-            final: String(nested.final || nested.text || "").trim(),
-        };
-    }
-    const firstTool = type === "tool_call"
-        ? (nested.tool_call && typeof nested.tool_call === "object"
-            ? nested.tool_call
-            : nested)
-        : type === "tool_calls"
-            ? (Array.isArray(nested.tool_calls) ? nested.tool_calls[0] : null)
-            : type === "tool_batch"
-                ? (Array.isArray(nested.toolCalls) ? nested.toolCalls[0] : null)
-                : null;
-    if (firstTool && typeof firstTool === "object") {
-        const toolCall = firstTool;
-        return {
-            type: "tool_call",
-            tool_call: {
-                name: normalizeCutieToolName(toolCall.name),
-                arguments: toolCall.arguments && typeof toolCall.arguments === "object"
-                    ? toolCall.arguments
-                    : {},
-                ...(typeof toolCall.summary === "string" && toolCall.summary.trim()
-                    ? { summary: toolCall.summary.trim() }
-                    : {}),
-            },
-        };
-    }
-    throw new Error(`Unknown Cutie response type "${type || "missing"}".`);
-}
-function summarizeCutieToolData(data) {
-    if (!data)
-        return {};
-    const summary = {};
-    for (const [key, value] of Object.entries(data)) {
-        if (key === "content" && typeof value === "string") {
-            summary.contentPreview = trimCutieText(value, 6000);
-            summary.contentLength = value.length;
-            continue;
-        }
-        if (key === "files" && Array.isArray(value)) {
-            summary.files = value.slice(0, 80);
-            summary.fileCount = value.length;
-            continue;
-        }
-        if (key === "matches" && Array.isArray(value)) {
-            summary.matches = value.slice(0, 24);
-            summary.matchCount = value.length;
-            continue;
-        }
-        if (key === "stdout" && typeof value === "string") {
-            summary.stdout = trimCutieText(value, 4000);
-            summary.stdoutLength = value.length;
-            continue;
-        }
-        if (key === "stderr" && typeof value === "string") {
-            summary.stderr = trimCutieText(value, 2000);
-            summary.stderrLength = value.length;
-            continue;
-        }
-        summary[key] = value;
-    }
-    return summary;
-}
-function buildCutieToolResultMessage(result) {
-    return stableStringify({
-        toolName: result.name,
-        ok: result.ok,
-        blocked: result.blocked || false,
-        summary: result.summary,
-        error: result.error || null,
-        data: summarizeCutieToolData(result.data),
-    });
-}
-function getCutieToolKind(name) {
-    if (name === "run_command")
-        return "command";
-    if (name === "patch_file" || name === "write_file" || name === "mkdir" || name === "create_checkpoint") {
-        return "mutate";
-    }
-    return "observe";
-}
-function isCutieMutationTool(name) {
-    return name === "patch_file" || name === "write_file" || name === "mkdir" || name === "create_checkpoint";
 }
 function createNonce() {
     return (0, crypto_1.randomUUID)().replace(/-/g, "");
@@ -751,11 +436,10 @@ function livePhaseFromRuntimePhase(phase) {
     }
 }
 class PlaygroundViewProvider {
-    constructor(context, auth, historyService, cutieHistoryService, qwenHistoryService, qwenCodeRuntime, contextCollector, actionRunner, toolExecutor, indexManager) {
+    constructor(context, auth, historyService, qwenHistoryService, qwenCodeRuntime, contextCollector, actionRunner, toolExecutor, indexManager) {
         this.context = context;
         this.auth = auth;
         this.historyService = historyService;
-        this.cutieHistoryService = cutieHistoryService;
         this.qwenHistoryService = qwenHistoryService;
         this.qwenCodeRuntime = qwenCodeRuntime;
         this.contextCollector = contextCollector;
@@ -791,7 +475,7 @@ class PlaygroundViewProvider {
             history: [],
             messages: [],
             busy: false,
-            canUndo: (0, config_1.getRuntimeBackend)() === "playgroundApi" && this.actionRunner.canUndo(),
+            canUndo: isHostedOpenHandsRuntime((0, config_1.getRuntimeBackend)()) && this.actionRunner.canUndo(),
             activity: [],
             selectedSessionId: null,
             contextSummary: createEmptyContextSummary(),
@@ -801,11 +485,14 @@ class PlaygroundViewProvider {
             followUpActions: [],
             draftText: "",
             liveChat: null,
+            orchestratorStatus: isHostedOpenHandsRuntime((0, config_1.getRuntimeBackend)())
+                ? { state: "checking", label: "Checking OpenHands..." }
+                : null,
             binary: createDefaultBinaryPanelState(),
         };
         this.auth.onDidChange(() => void this.handleAuthChange());
         this.actionRunner.onDidChangeUndo((canUndo) => {
-            this.state.canUndo = this.state.runtime === "playgroundApi" && canUndo;
+            this.state.canUndo = isHostedOpenHandsRuntime(this.state.runtime) && canUndo;
             this.postState();
         });
     }
@@ -850,20 +537,14 @@ class PlaygroundViewProvider {
     }
     async openBinaryConfiguration() {
         await this.show();
-        const runtimeLabel = runtimeDisplayLabel(this.state.runtime);
         const selection = await vscode.window.showQuickPick([
             { label: "Set Xpersona API key", detail: "Save or clear your Xpersona Binary IDE API key.", action: "apiKey" },
-            {
-                label: `Switch runtime from ${runtimeLabel}`,
-                detail: `Current runtime: ${runtimeLabel}.`,
-                action: "runtime",
-            },
             {
                 label: "Open Binary IDE settings",
                 detail: "Open the VS Code settings UI filtered to xpersona.binary.",
                 action: "settings",
             },
-            ...(this.state.runtime === "playgroundApi"
+            ...(isHostedOpenHandsRuntime(this.state.runtime)
                 ? [{ label: "Browser sign in", detail: "Authenticate the hosted Binary IDE API in the browser.", action: "signIn" }]
                 : []),
         ], {
@@ -877,21 +558,6 @@ class PlaygroundViewProvider {
             case "apiKey":
                 message = await this.performSetApiKey();
                 break;
-            case "runtime": {
-                const pickedRuntime = await vscode.window.showQuickPick([
-                    { label: "Cutie", runtime: "cutie" },
-                    { label: "Qwen Code", runtime: "qwenCode" },
-                    { label: "Hosted runtime", runtime: "playgroundApi" },
-                ], {
-                    title: "Choose Binary IDE Runtime",
-                    ignoreFocusOut: true,
-                });
-                if (!pickedRuntime)
-                    return;
-                await this.setRuntime(pickedRuntime.runtime);
-                message = `Binary IDE runtime switched to ${pickedRuntime.label}.`;
-                break;
-            }
             case "settings":
                 await vscode.commands.executeCommand("workbench.action.openSettings", "xpersona.binary");
                 message = "Opened Binary IDE settings.";
@@ -923,6 +589,9 @@ class PlaygroundViewProvider {
         await this.setDraftText("");
     }
     async setRuntime(runtime) {
+        if (runtime !== "playgroundApi") {
+            runtime = "playgroundApi";
+        }
         if (runtime === this.state.runtime)
             return;
         const target = vscode.workspace.workspaceFolders?.length
@@ -942,6 +611,7 @@ class PlaygroundViewProvider {
     async performSetApiKey() {
         await this.auth.setApiKeyInteractive();
         await this.refreshAuth();
+        await this.refreshOrchestratorStatus();
         await this.refreshHistory();
         return this.state.auth.kind === "none"
             ? "Xpersona Binary IDE API key cleared."
@@ -958,6 +628,7 @@ class PlaygroundViewProvider {
         await this.auth.signOut();
         await this.newChat();
         await this.refreshAuth();
+        await this.refreshOrchestratorStatus();
         await this.refreshHistory();
         return "Binary IDE auth cleared.";
     }
@@ -1026,8 +697,7 @@ class PlaygroundViewProvider {
                 this.postState();
                 return true;
             case "runtime":
-                await this.setRuntime(command.runtime);
-                this.appendMessage("system", `Runtime set to ${runtimeDisplayLabel(command.runtime)}.`);
+                this.appendMessage("system", "Hosted OpenHands orchestration is always on for Binary IDE chats.");
                 this.state.runtimePhase = this.getRuntimePhaseForDraft();
                 this.postState();
                 return true;
@@ -1075,7 +745,7 @@ class PlaygroundViewProvider {
         const runtime = (0, config_1.getRuntimeBackend)();
         const runtimeChanged = runtime !== this.state.runtime;
         this.state.runtime = runtime;
-        this.state.canUndo = runtime === "playgroundApi" && this.actionRunner.canUndo();
+        this.state.canUndo = isHostedOpenHandsRuntime(runtime) && this.actionRunner.canUndo();
         if (runtimeChanged) {
             this.stopBinaryStream();
             this.stopLiveHeartbeat();
@@ -1092,6 +762,7 @@ class PlaygroundViewProvider {
         }
         await this.loadDraftText();
         await this.refreshAuth();
+        await this.refreshOrchestratorStatus();
         await this.refreshHistory();
         await this.refreshDraftContext(this.draftText);
         await this.resumeBinaryBuildIfNeeded();
@@ -1123,11 +794,6 @@ class PlaygroundViewProvider {
             this.postState();
             return;
         }
-        if (this.state.runtime === "cutie") {
-            this.state.history = await this.cutieHistoryService.list().catch(() => []);
-            this.postState();
-            return;
-        }
         const auth = await this.auth.getRequestAuth();
         if (!auth) {
             this.state.history = [];
@@ -1148,7 +814,7 @@ class PlaygroundViewProvider {
         this.state.activity = [];
         this.state.selectedSessionId = null;
         this.state.busy = false;
-        this.state.canUndo = this.state.runtime === "playgroundApi" && this.actionRunner.canUndo();
+        this.state.canUndo = isHostedOpenHandsRuntime(this.state.runtime) && this.actionRunner.canUndo();
         this.state.followUpActions = [];
         this.state.binary = {
             ...createDefaultBinaryPanelState(),
@@ -1178,7 +844,7 @@ class PlaygroundViewProvider {
                 this.state.activity = [];
                 this.state.selectedSessionId = null;
                 this.state.busy = false;
-                this.state.canUndo = this.state.runtime === "playgroundApi" && this.actionRunner.canUndo();
+                this.state.canUndo = isHostedOpenHandsRuntime(this.state.runtime) && this.actionRunner.canUndo();
                 this.state.followUpActions = [];
                 this.state.runtimePhase = "idle";
                 this.lastPrompt = null;
@@ -1197,6 +863,7 @@ class PlaygroundViewProvider {
     }
     async handleAuthChange() {
         await this.refreshAuth();
+        await this.refreshOrchestratorStatus();
         await this.refreshHistory();
         this.postState();
     }
@@ -1209,18 +876,55 @@ class PlaygroundViewProvider {
             this.postState();
             return;
         }
-        if (this.state.runtime === "cutie") {
-            this.state.auth = await this.auth.getAuthState().catch(() => ({
-                kind: "none",
-                label: "Sign in or set an Xpersona API key to use Cutie",
-            }));
-            this.postState();
-            return;
-        }
         this.state.auth = await this.auth.getAuthState().catch(() => ({
             kind: "none",
             label: "Not signed in",
         }));
+        this.postState();
+    }
+    async refreshOrchestratorStatus() {
+        if (!isHostedOpenHandsRuntime(this.state.runtime)) {
+            this.state.orchestratorStatus = null;
+            this.postState();
+            return;
+        }
+        const auth = await this.auth.getRequestAuth();
+        if (!auth) {
+            this.state.orchestratorStatus = {
+                state: "unavailable",
+                label: "Sign in to verify OpenHands",
+            };
+            this.postState();
+            return;
+        }
+        this.state.orchestratorStatus = {
+            state: "checking",
+            label: "Checking OpenHands...",
+        };
+        this.postState();
+        try {
+            const response = await (0, api_client_1.requestJson)("GET", `${(0, config_1.getBaseApiUrl)()}/api/v1/playground/openhands/health`, auth);
+            const health = (response &&
+                typeof response === "object" &&
+                "data" in response &&
+                response.data &&
+                typeof response.data === "object"
+                ? response.data
+                : response);
+            const healthy = health?.status === "healthy";
+            this.state.orchestratorStatus = {
+                state: healthy ? "ready" : "unavailable",
+                label: healthy ? "OpenHands connected" : String(health?.message || "OpenHands unavailable"),
+                ...(typeof health?.details === "string" && health.details.trim() ? { detail: health.details } : {}),
+            };
+        }
+        catch (error) {
+            this.state.orchestratorStatus = {
+                state: "unavailable",
+                label: "OpenHands unavailable",
+                detail: error instanceof Error ? error.message : String(error),
+            };
+        }
         this.postState();
     }
     async openSession(sessionId) {
@@ -1246,18 +950,6 @@ class PlaygroundViewProvider {
             this.postState();
             return;
         }
-        if (this.state.runtime === "cutie") {
-            this.sessionId = sessionId;
-            this.state.selectedSessionId = sessionId;
-            this.state.messages = await this.cutieHistoryService.loadMessages(sessionId).catch(() => []);
-            this.state.activity = [];
-            this.state.followUpActions = [];
-            await this.loadDraftText();
-            this.state.runtimePhase = this.getRuntimePhaseForDraft();
-            await this.refreshDraftContext(this.draftText);
-            this.postState();
-            return;
-        }
         const auth = await this.auth.getRequestAuth();
         if (!auth)
             return;
@@ -1265,6 +957,7 @@ class PlaygroundViewProvider {
         this.state.selectedSessionId = sessionId;
         this.state.messages = await this.historyService.loadMessages(auth, sessionId).catch(() => []);
         this.state.activity = [];
+        this.state.followUpActions = [];
         await this.loadDraftText();
         this.postState();
     }
@@ -1339,12 +1032,9 @@ class PlaygroundViewProvider {
                 await this.performSetApiKey();
                 return;
             case "setRuntimeBackend": {
-                const runtime = String(message.runtime || "");
-                if (runtime === "cutie" || runtime === "qwenCode" || runtime === "playgroundApi") {
-                    await this.setRuntime(runtime);
-                    this.appendMessage("system", `Binary IDE runtime switched to ${runtimeDisplayLabel(runtime)}.`);
-                    this.postState();
-                }
+                await this.setRuntime("playgroundApi");
+                this.appendMessage("system", "Hosted OpenHands orchestration is always on for Binary IDE chats.");
+                this.postState();
                 return;
             }
             case "signIn":
@@ -1409,26 +1099,6 @@ class PlaygroundViewProvider {
             ...(input?.intent ? { intent: input.intent } : {}),
         };
     }
-    async getCutieContextOptions(input) {
-        const includeWorkspaceHints = input?.includeWorkspaceHints !== false;
-        const hints = includeWorkspaceHints
-            ? await this.cutieHistoryService.getWorkspaceHints().catch(() => ({
-                recentTargets: [],
-                recentIntents: [],
-            }))
-            : {
-                recentTargets: [],
-                recentIntents: [],
-            };
-        return {
-            recentTouchedPaths: this.actionRunner.getRecentTouchedPaths(),
-            attachedFiles: this.manualContext.attachedFiles,
-            attachedSelection: this.manualContext.attachedSelection,
-            memoryTargets: hints.recentTargets,
-            searchDepth: input?.searchDepth || "fast",
-            ...(input?.intent ? { intent: input.intent } : {}),
-        };
-    }
     applyPreviewState(preview) {
         this.state.intent = preview.intent;
         this.state.contextConfidence = preview.confidence;
@@ -1451,7 +1121,7 @@ class PlaygroundViewProvider {
     }
     queueDraftContextRefresh(text) {
         this.clearDraftPreviewTimer();
-        if (this.state.runtime !== "qwenCode" && this.state.runtime !== "cutie")
+        if (this.state.runtime !== "qwenCode")
             return;
         const draft = String(text || "");
         this.draftPreviewTimer = setTimeout(() => {
@@ -1459,7 +1129,7 @@ class PlaygroundViewProvider {
         }, draft.trim() ? 90 : 0);
     }
     async refreshDraftContext(text) {
-        if (this.state.runtime !== "qwenCode" && this.state.runtime !== "cutie")
+        if (this.state.runtime !== "qwenCode")
             return;
         const draft = String(text || "");
         if (!draft.trim() && !this.hasManualDraftContext()) {
@@ -1474,17 +1144,11 @@ class PlaygroundViewProvider {
         }
         const sequence = ++this.draftPreviewSequence;
         const includeWorkspaceHints = Boolean(this.sessionId || this.state.selectedSessionId);
-        const contextOptions = this.state.runtime === "cutie"
-            ? await this.getCutieContextOptions({
-                searchDepth: "fast",
-                intent: draft.trim() ? (0, assistant_ux_1.classifyIntent)(draft) : undefined,
-                includeWorkspaceHints,
-            })
-            : await this.getQwenContextOptions({
-                searchDepth: "fast",
-                intent: draft.trim() ? (0, assistant_ux_1.classifyIntent)(draft) : undefined,
-                includeWorkspaceHints,
-            });
+        const contextOptions = await this.getQwenContextOptions({
+            searchDepth: "fast",
+            intent: draft.trim() ? (0, assistant_ux_1.classifyIntent)(draft) : undefined,
+            includeWorkspaceHints,
+        });
         const preview = await this.contextCollector.preview(draft, contextOptions);
         if (sequence !== this.draftPreviewSequence)
             return;
@@ -2330,7 +1994,7 @@ class PlaygroundViewProvider {
         }
     }
     async resumeBinaryBuildIfNeeded() {
-        if (this.state.runtime !== "playgroundApi")
+        if (!isHostedOpenHandsRuntime(this.state.runtime))
             return;
         const buildId = this.context.workspaceState.get(BINARY_ACTIVE_BUILD_KEY);
         if (!buildId)
@@ -2853,11 +2517,16 @@ class PlaygroundViewProvider {
         }
         if (action.kind === "target" && action.targetPath && this.pendingClarification) {
             this.manualContext.attachedFiles = Array.from(new Set([action.targetPath, ...this.manualContext.attachedFiles].map((value) => String(value || "").trim()))).slice(0, 4);
-            await this.runQwenPrompt({
-                text: this.pendingClarification.text,
-                appendUser: false,
-                searchDepth: this.pendingClarification.searchDepth,
-            });
+            if (this.state.runtime === "qwenCode") {
+                await this.runQwenPrompt({
+                    text: this.pendingClarification.text,
+                    appendUser: false,
+                    searchDepth: this.pendingClarification.searchDepth,
+                });
+            }
+            else {
+                await this.sendPromptWithPlaygroundApi(this.pendingClarification.text, "", undefined, false);
+            }
             return;
         }
         if (action.kind === "rerun") {
@@ -2889,11 +2558,16 @@ class PlaygroundViewProvider {
                     }
                 }
             }
-            await this.runQwenPrompt({
-                text: base.text,
-                appendUser: false,
-                searchDepth: id === "search-deeper" ? "deep" : "fast",
-            });
+            if (this.state.runtime === "qwenCode") {
+                await this.runQwenPrompt({
+                    text: base.text,
+                    appendUser: false,
+                    searchDepth: id === "search-deeper" ? "deep" : "fast",
+                });
+            }
+            else {
+                await this.sendPromptWithPlaygroundApi(base.text, "", undefined, false);
+            }
         }
     }
     async sendPrompt(rawText, clientMessageId = "") {
@@ -2916,16 +2590,7 @@ class PlaygroundViewProvider {
                     });
                     return;
                 }
-                if (this.state.runtime === "cutie") {
-                    await this.runCutiePrompt({
-                        text: planTask,
-                        appendUser: true,
-                        searchDepth: "fast",
-                        clientMessageId,
-                    });
-                    return;
-                }
-                await this.sendPromptWithPlaygroundApi(planTask, clientMessageId);
+                await this.sendPromptWithPlaygroundApi(planTask, clientMessageId, undefined, true);
                 return;
             }
         }
@@ -2955,17 +2620,7 @@ class PlaygroundViewProvider {
             });
             return;
         }
-        if (this.state.runtime === "cutie") {
-            await this.runCutiePrompt({
-                text,
-                promptText,
-                appendUser: true,
-                searchDepth,
-                clientMessageId,
-            });
-            return;
-        }
-        await this.sendPromptWithPlaygroundApi(text, clientMessageId, promptText);
+        await this.sendPromptWithPlaygroundApi(text, clientMessageId, promptText, true);
     }
     buildClarificationMessage(preview) {
         if (preview.candidateFiles.length) {
@@ -3537,308 +3192,6 @@ class PlaygroundViewProvider {
             this.postState();
         }
     }
-    async requestCutieTurn(input) {
-        const response = await (0, api_client_1.requestJson)("POST", `${(0, config_1.getBaseApiUrl)()}/api/v1/cutie/model/chat`, input.auth, {
-            model: (0, config_1.getCutieModel)(),
-            protocol: "cutie_tools_v2",
-            protocolMode: "native_tools",
-            stream: false,
-            messages: input.messages,
-            tools: buildCutieToolDefinitions(),
-            maxToolsPerBatch: 1,
-        }, {
-            signal: input.signal,
-        });
-        return {
-            response: normalizeCutieResponse(response.response ?? response),
-            assistantText: typeof response.assistantText === "string" ? response.assistantText.trim() : "",
-            model: typeof response.model === "string" && response.model.trim() ? response.model.trim() : undefined,
-        };
-    }
-    async runCutiePrompt(input) {
-        const text = input.text.trim();
-        const taskText = String(input.promptText || input.text || "").trim() || text;
-        if (input.appendUser) {
-            this.appendMessage("user", text, undefined, input.clientMessageId);
-        }
-        const assistantMessageId = this.createLiveAssistantMessage({
-            transport: "cutie",
-            mode: "shell",
-            phase: "accepted",
-            latestActivity: "Prompt received",
-        });
-        this.state.followUpActions = [];
-        this.state.activity = [];
-        this.pushActivity("Collecting context");
-        this.state.runtimePhase = "collecting_context";
-        this.state.busy = true;
-        this.applyChatLiveEvent({
-            type: "phase",
-            phase: "collecting_context",
-            status: "pending",
-            progress: liveProgressForPhase("collecting_context"),
-            latestActivity: "Collecting context",
-        });
-        this.postState();
-        const workspaceRoot = (0, config_1.getWorkspaceRootPath)();
-        const workspaceHash = (0, config_1.getWorkspaceHash)();
-        const promptAbort = new AbortController();
-        this.promptAbort = promptAbort;
-        const hadExistingSession = Boolean(this.sessionId);
-        let localSessionId = this.sessionId || (0, crypto_1.randomUUID)();
-        let preview = null;
-        let resolvedModel = "";
-        try {
-            const auth = await this.auth.getRequestAuth();
-            if (!auth) {
-                throw new Error("Authenticate with browser sign-in or an Xpersona API key before using Cutie.");
-            }
-            localSessionId = this.sessionId || (0, crypto_1.randomUUID)();
-            this.sessionId = localSessionId;
-            this.state.selectedSessionId = localSessionId;
-            const intent = (0, assistant_ux_1.classifyIntent)(taskText);
-            preview = await this.contextCollector.preview(taskText, await this.getCutieContextOptions({
-                searchDepth: input.searchDepth,
-                intent,
-                includeWorkspaceHints: hadExistingSession,
-            }));
-            if (promptAbort.signal.aborted) {
-                throw new Error("Prompt aborted");
-            }
-            this.applyPreviewState(preview);
-            this.lastPrompt = {
-                text: taskText,
-                intent: preview.intent,
-                searchDepth: input.searchDepth,
-            };
-            if (this.shouldRequireEditClarification(preview)) {
-                this.pendingClarification = {
-                    text: taskText,
-                    intent: preview.intent,
-                    searchDepth: input.searchDepth,
-                };
-                this.resolveLiveAssistant({
-                    content: this.buildClarificationMessage(preview),
-                    status: "done",
-                    mode: "answer",
-                    phase: "completed",
-                });
-                this.state.followUpActions = (0, assistant_ux_1.buildClarificationActions)({
-                    candidateFiles: preview.candidateFiles,
-                });
-                this.state.runtimePhase = "clarify";
-                this.state.busy = false;
-                await this.cutieHistoryService.saveConversation({
-                    sessionId: localSessionId,
-                    mode: this.state.mode,
-                    title: taskText,
-                    messages: this.state.messages,
-                    targets: preview.resolvedFiles.length ? preview.resolvedFiles : preview.candidateFiles,
-                    intent: preview.intent,
-                });
-                await this.refreshHistory();
-                this.postState();
-                return;
-            }
-            this.pendingClarification = null;
-            const collected = await this.contextCollector.collect(text, await this.getCutieContextOptions({
-                searchDepth: input.searchDepth,
-                intent: preview.intent,
-                includeWorkspaceHints: hadExistingSession,
-            }));
-            if (promptAbort.signal.aborted) {
-                throw new Error("Prompt aborted");
-            }
-            const fullPreview = collected.preview;
-            this.applyPreviewState(fullPreview);
-            const attachedTargets = (fullPreview.selectedFiles.length ? fullPreview.selectedFiles : fullPreview.resolvedFiles).slice(0, 3);
-            if (attachedTargets.length) {
-                this.pushActivity(`Context attached: ${attachedTargets.join(", ")}`);
-            }
-            this.pushActivity("Waiting for Cutie");
-            this.state.runtimePhase = "waiting_for_cutie";
-            this.applyChatLiveEvent({
-                type: "phase",
-                phase: "connecting_runtime",
-                status: "pending",
-                progress: liveProgressForPhase("connecting_runtime"),
-                latestActivity: "Waiting for Cutie",
-            });
-            this.postState();
-            const transcript = [
-                {
-                    role: "system",
-                    content: buildCutieSystemPrompt(this.state.mode),
-                },
-                ...this.state.messages
-                    .filter((message) => message.id !== assistantMessageId)
-                    .map((message) => ({
-                    role: message.role,
-                    content: String(message.content || "").trim(),
-                }))
-                    .filter((message) => message.content),
-                {
-                    role: "system",
-                    content: buildCutieContextMessage({
-                        task: taskText,
-                        preview: fullPreview,
-                        context: collected.context,
-                    }),
-                },
-            ];
-            const usedTools = [];
-            const maxTurns = this.state.mode === "plan" ? 6 : 12;
-            for (let step = 1; step <= maxTurns; step += 1) {
-                const turn = await this.requestCutieTurn({
-                    auth,
-                    messages: transcript,
-                    signal: promptAbort.signal,
-                });
-                if (promptAbort.signal.aborted) {
-                    throw new Error("Prompt aborted");
-                }
-                if (turn.model) {
-                    resolvedModel = turn.model;
-                }
-                if (turn.response.type === "final") {
-                    const finalAssistantText = turn.response.final.trim() ||
-                        turn.assistantText.trim() ||
-                        "Cutie finished without a final message.";
-                    this.applyChatLiveEvent({
-                        type: "final",
-                        text: finalAssistantText,
-                    });
-                    this.state.followUpActions = (0, assistant_ux_1.buildFollowUpActions)({
-                        intent: fullPreview.intent,
-                        lastTask: taskText,
-                        preview: fullPreview,
-                        patchConfidence: (0, assistant_ux_1.buildPatchConfidence)({
-                            intent: fullPreview.intent,
-                            preview: fullPreview,
-                            didMutate: usedTools.some((toolName) => (0, qwen_runtime_utils_1.isMutationToolName)(toolName)),
-                        }),
-                    });
-                    this.pushActivity("Saving session");
-                    this.state.runtimePhase = "saving_session";
-                    this.applyChatLiveEvent({
-                        type: "phase",
-                        phase: "saving_session",
-                        status: "streaming",
-                        progress: liveProgressForPhase("saving_session"),
-                        latestActivity: "Saving session",
-                    });
-                    this.postState();
-                    await this.cutieHistoryService.saveConversation({
-                        sessionId: localSessionId,
-                        mode: this.state.mode,
-                        title: taskText,
-                        messages: this.state.messages,
-                        targets: fullPreview.resolvedFiles,
-                        intent: fullPreview.intent,
-                    });
-                    await this.refreshHistory();
-                    this.pushActivity("Done");
-                    this.state.runtimePhase = "done";
-                    this.postState();
-                    return;
-                }
-                const toolName = turn.response.tool_call.name;
-                usedTools.push(toolName);
-                const toolSummary = turn.response.tool_call.summary || `Step ${step}: ${toolName}`;
-                this.pushActivity(toolSummary);
-                this.applyChatLiveEvent({
-                    type: "tool_approval",
-                    activity: toolSummary,
-                });
-                this.postState();
-                const pendingToolCall = {
-                    step,
-                    adapter: "native_tools",
-                    requiresClientExecution: true,
-                    toolCall: {
-                        id: (0, crypto_1.randomUUID)(),
-                        name: toolName,
-                        arguments: turn.response.tool_call.arguments,
-                        kind: getCutieToolKind(toolName),
-                        ...(turn.response.tool_call.summary ? { summary: turn.response.tool_call.summary } : {}),
-                    },
-                    createdAt: nowIso(),
-                };
-                const toolResult = this.state.mode === "plan" && getCutieToolKind(toolName) !== "observe"
-                    ? {
-                        toolCallId: pendingToolCall.toolCall.id,
-                        name: pendingToolCall.toolCall.name,
-                        ok: false,
-                        blocked: true,
-                        summary: "Plan mode blocks Cutie from mutating the workspace or running commands.",
-                        error: "Plan mode blocks Cutie from mutating the workspace or running commands.",
-                        data: {},
-                        createdAt: nowIso(),
-                    }
-                    : await this.toolExecutor.executeToolCall({
-                        pendingToolCall,
-                        auth,
-                        sessionId: this.sessionId || undefined,
-                        workspaceFingerprint: workspaceHash,
-                    });
-                if (promptAbort.signal.aborted) {
-                    throw new Error("Prompt aborted");
-                }
-                this.pushActivity(toolResult.summary);
-                this.state.runtimePhase =
-                    toolResult.ok && isCutieMutationTool(toolName) ? "applying_result" : "waiting_for_cutie";
-                this.applyChatLiveEvent({
-                    type: "activity",
-                    activity: toolResult.summary,
-                    phase: livePhaseFromRuntimePhase(this.state.runtimePhase),
-                });
-                this.postState();
-                transcript.push({
-                    role: "system",
-                    content: buildCutieToolResultMessage(toolResult),
-                });
-            }
-            throw new Error("Cutie reached the local tool-step limit before finishing the request.");
-        }
-        catch (error) {
-            if (this.isPromptAbortError(error)) {
-                this.pushActivity("Canceled");
-                this.state.runtimePhase = "canceled";
-                this.applyChatLiveEvent({
-                    type: "canceled",
-                    text: "Canceled current response.",
-                    phase: "canceled",
-                });
-                return;
-            }
-            this.applyChatLiveEvent({
-                type: "failed",
-                text: `Cutie request failed: ${error instanceof Error ? error.message : String(error)}`,
-                phase: "failed",
-            });
-            this.pushActivity("Failed");
-            this.state.runtimePhase = "failed";
-            await this.cutieHistoryService.saveConversation({
-                sessionId: localSessionId,
-                mode: this.state.mode,
-                title: taskText,
-                messages: this.state.messages,
-                targets: preview?.resolvedFiles || [],
-                intent: preview?.intent || "ask",
-            });
-            await this.refreshHistory();
-            this.postState();
-        }
-        finally {
-            this.clearPromptAbort(promptAbort);
-            this.state.busy = false;
-            this.state.canUndo = false;
-            if (resolvedModel) {
-                this.pushActivity(`Cutie model: ${resolvedModel}`);
-            }
-            this.postState();
-        }
-    }
     buildDebugReport() {
         const lines = [
             "Binary IDE Debug Report",
@@ -3921,7 +3274,7 @@ class PlaygroundViewProvider {
             lines.push("");
         }
         if (!qwen && !hosted) {
-            lines.push("No debug snapshots captured yet. Send a prompt with Cutie, Qwen Code, or Hosted runtime to populate.");
+            lines.push("No debug snapshots captured yet. Send a prompt with local Qwen Code or the hosted OpenHands runtime to populate.");
         }
         return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
     }
@@ -3930,11 +3283,13 @@ class PlaygroundViewProvider {
         await vscode.env.clipboard.writeText(report);
         vscode.window.showInformationMessage("Copied Binary IDE debug report to clipboard.");
     }
-    async sendPromptWithPlaygroundApi(text, clientMessageId = "", promptText) {
+    async sendPromptWithPlaygroundApi(text, clientMessageId = "", promptText, appendUser = true) {
         this.state.busy = true;
         const promptAbort = new AbortController();
         this.promptAbort = promptAbort;
-        this.appendMessage("user", text, undefined, clientMessageId);
+        if (appendUser) {
+            this.appendMessage("user", text, undefined, clientMessageId);
+        }
         this.applyChatLiveEvent({
             type: "accepted",
             transport: "playground",
@@ -3979,6 +3334,7 @@ class PlaygroundViewProvider {
                 mode: this.state.mode,
                 task: taskText,
                 stream: true,
+                model: (0, config_1.getAgentModelAlias)(),
                 orchestrationProtocol: this.state.mode === "plan" ? "batch_v1" : "tool_loop_v1",
                 clientCapabilities: this.state.mode === "plan"
                     ? undefined
@@ -4004,10 +3360,20 @@ class PlaygroundViewProvider {
                 if (this.isPromptAbortError(error)) {
                     throw error;
                 }
-                this.pushActivity("Assist stream unavailable, falling back to standard response.");
+                const message = error instanceof Error ? error.message : String(error);
+                if (/openhands/i.test(message)) {
+                    this.state.orchestratorStatus = {
+                        state: "unavailable",
+                        label: "OpenHands unavailable",
+                        detail: message,
+                    };
+                    this.postState();
+                    throw error;
+                }
+                this.pushActivity("Assist stream unavailable, retrying over standard transport.");
                 this.applyChatLiveEvent({
                     type: "activity",
-                    activity: "Assist stream unavailable, falling back to standard response.",
+                    activity: "Assist stream unavailable, retrying over standard transport.",
                     phase: "connecting_runtime",
                 });
                 initial = await this.requestAssist(auth, {
@@ -4022,6 +3388,11 @@ class PlaygroundViewProvider {
                 this.sessionId = initial.sessionId;
                 this.state.selectedSessionId = initial.sessionId;
             }
+            this.state.orchestratorStatus = {
+                state: "ready",
+                label: "OpenHands connected",
+                ...(initial.orchestratorVersion ? { detail: `gateway ${initial.orchestratorVersion}` } : {}),
+            };
             this.pushActivity(initial.orchestrationProtocol === "tool_loop_v1"
                 ? `Started run ${initial.runId || "pending"} via ${initial.adapter || "tool loop"}.`
                 : "Prepared a batch response.");
@@ -4171,9 +3542,17 @@ class PlaygroundViewProvider {
                 });
                 return;
             }
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            if (/openhands/i.test(errorMessage)) {
+                this.state.orchestratorStatus = {
+                    state: "unavailable",
+                    label: "OpenHands unavailable",
+                    detail: errorMessage,
+                };
+            }
             this.applyChatLiveEvent({
                 type: "failed",
-                text: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
+                text: `Request failed: ${errorMessage}`,
                 phase: "failed",
             });
             this.state.runtimePhase = "failed";

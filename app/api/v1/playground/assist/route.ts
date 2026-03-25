@@ -13,6 +13,7 @@ import { zAssistRequest } from "@/lib/playground/contracts";
 import { ok, parseBody, unauthorized } from "@/lib/playground/http";
 import { getOrCreateRequestId } from "@/lib/api/request-meta";
 import { jsonError } from "@/lib/api/errors";
+import { OpenHandsGatewayError } from "@/lib/playground/openhands-gateway";
 import {
   buildAssistResponsePayload,
   buildConversationHistory,
@@ -205,15 +206,27 @@ export async function POST(request: NextRequest): Promise<Response> {
   };
 
   if (!body.stream) {
-    const result = await runTask();
-    return ok(
-      request,
-      buildAssistResponsePayload({
-        sessionId: session.id,
-        traceId,
-        result,
-      })
-    );
+    try {
+      const result = await runTask();
+      return ok(
+        request,
+        buildAssistResponsePayload({
+          sessionId: session.id,
+          traceId,
+          result,
+        })
+      );
+    } catch (error) {
+      if (error instanceof OpenHandsGatewayError) {
+        return jsonError(request, {
+          code: error.code,
+          message: error.message,
+          status: error.status,
+          details: error.details,
+        });
+      }
+      throw error;
+    }
   }
 
   const { readable, writable } = new TransformStream();
@@ -250,6 +263,9 @@ export async function POST(request: NextRequest): Promise<Response> {
         contextSelection: result.contextSelection,
         completionStatus: result.completionStatus,
         missingRequirements: result.missingRequirements,
+        modelAlias: result.modelMetadata.modelResolvedAlias,
+        orchestrator: result.orchestrator,
+        orchestratorVersion: result.orchestratorVersion,
         progressState: result.progressState,
         objectiveState: result.objectiveState,
         sessionId: session.id,

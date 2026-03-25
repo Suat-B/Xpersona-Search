@@ -117,6 +117,24 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       font-weight: 620;
       letter-spacing: 0.01em;
     }
+    .workspace-header-status {
+      flex: 0 1 auto;
+      max-width: min(44vw, 280px);
+      padding: 5px 10px;
+      border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line) 78%);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+      color: color-mix(in srgb, var(--text) 94%, var(--accent) 6%);
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .workspace-header-status.is-hidden {
+      display: none;
+    }
     .workspace-header-actions {
       display: flex;
       align-items: center;
@@ -2015,6 +2033,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
   <div class="workspace-shell" id="workspaceShell" data-history-open="false" data-artifacts-open="false">
       <aside class="utility-rail" aria-label="Cutie Product navigation">
       <div class="workspace-header-title" id="currentChatTitle">New chat</div>
+      <div class="workspace-header-status is-hidden" id="backgroundStatusPill"></div>
       <div class="workspace-header-actions">
         <button type="button" class="rail-button" id="newChatBtn" title="New chat">${plusIcon}</button>
         <button type="button" class="rail-button" id="historyToggle" aria-controls="historyDrawer" aria-expanded="false" title="Chats">${chatIcon}</button>
@@ -2161,6 +2180,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
     });
     const workspaceShell = document.getElementById('workspaceShell');
     const currentChatTitle = document.getElementById('currentChatTitle');
+    const backgroundStatusPill = document.getElementById('backgroundStatusPill');
     const historyToggle = document.getElementById('historyToggle');
     const artifactsToggle = document.getElementById('artifactsToggle');
     const historyDrawer = document.getElementById('historyDrawer');
@@ -2229,6 +2249,10 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       running: false,
       status: 'Ready',
       activeRun: null,
+      visibleSessionRun: null,
+      activeRunSessionId: null,
+      viewingActiveRun: false,
+      backgroundActivity: null,
       progress: null,
       binary: null,
       binaryActivity: [],
@@ -3286,10 +3310,17 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
     }
 
     function receiptsForActiveRunTimeline() {
-      const run = state.activeRun;
+      const run = state.viewingActiveRun ? state.activeRun : state.visibleSessionRun;
       if (!run || !Array.isArray(run.receipts) || !run.receipts.length) return [];
       if (state.activeSessionId && run.sessionId && run.sessionId !== state.activeSessionId) return [];
       return run.receipts;
+    }
+
+    function displayedRunForState(viewState) {
+      if (viewState && viewState.viewingActiveRun) {
+        return viewState.activeRun || null;
+      }
+      return (viewState && viewState.visibleSessionRun) || null;
     }
 
     function receiptStatusLabel(status) {
@@ -3687,8 +3718,10 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       const chatDiffs = Array.isArray(state.chatDiffs) ? state.chatDiffs : [];
       const liveActionLog = Array.isArray(state.liveActionLog) ? state.liveActionLog : [];
       const liveTranscript = Array.isArray(state.liveTranscript) ? state.liveTranscript : [];
-      const liveActionText = state.running ? formatLiveActionLogText(liveActionLog) : '';
-      const liveTranscriptText = state.running
+      const displayRun = displayedRunForState(state);
+      const showLiveSession = Boolean(state.viewingActiveRun && state.running && state.activeRun);
+      const liveActionText = showLiveSession ? formatLiveActionLogText(liveActionLog) : '';
+      const liveTranscriptText = showLiveSession
         ? formatLiveTranscriptText(liveTranscript, state.activeRun ? state.activeRun.goal : '')
         : '';
       const transcriptRunIds = new Set();
@@ -3699,7 +3732,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
         }
       }
       const activeTranscriptRunId =
-        state.running && state.activeRun && liveTranscriptText ? String(state.activeRun.id || '') : '';
+        showLiveSession && state.activeRun && liveTranscriptText ? String(state.activeRun.id || '') : '';
       if (activeTranscriptRunId) transcriptRunIds.add(activeTranscriptRunId);
       const timelineMessages = visibleMessages.filter(function (message) {
         const runId = String(message && message.runId ? message.runId : '');
@@ -3726,7 +3759,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
         merged.push({ kind: 'msg', sort: message.createdAt || '', seq: mergeSeq++, message: message });
       }
       const runReceipts = receiptsForActiveRunTimeline();
-      if (!state.running && state.activeRun && !transcriptRunIds.has(String(state.activeRun.id || ''))) {
+      if (!showLiveSession && displayRun && !transcriptRunIds.has(String(displayRun.id || ''))) {
         for (let r = 0; r < runReceipts.length; r += 1) {
           const receipt = runReceipts[r];
           merged.push({
@@ -3768,7 +3801,6 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
             meta.className = 'live-binary-meta';
             const lv = entry.message.live;
             const parts = [];
-            if (lv.transport === 'binary') parts.push('App build');
             if (lv.phase) parts.push(lv.phase);
             if (typeof lv.progress === 'number') parts.push(Math.round(lv.progress) + '%');
             meta.textContent = parts.join(' · ');
@@ -3825,7 +3857,11 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       } else if (liveActionText) {
         appendTranscriptBubble(chat, liveActionText);
       } else {
-        const progressText = buildLiveAssistantNarrationText(state.activeRun || null, state.progress || null, runReceipts);
+        const progressText = buildLiveAssistantNarrationText(
+          displayRun || null,
+          showLiveSession ? state.progress || null : null,
+          runReceipts
+        );
         if (progressText) {
           const div = document.createElement('div');
           div.className = 'bubble assistant';
@@ -3834,7 +3870,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
         }
       }
 
-      if (state.running && state.activeRun) {
+      if (showLiveSession && state.activeRun) {
         const activeRunDiffs = chatDiffsForRun(state.activeRun.id, chatDiffs);
         if (activeRunDiffs.length) {
           appendRunFilesSummaryCard(state.activeRun.id, chatDiffs);
@@ -4039,30 +4075,30 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       const warm = state.warmStartState || null;
       const promptState = state.promptState || null;
       if (!warm) {
-        runtimeLine.textContent = 'Natural-language streaming binary mode is on.';
+        runtimeLine.textContent = 'OpenHands orchestration is active.';
         return;
       }
       if (warm.warming && !warm.localReady) {
-        runtimeLine.textContent = 'Natural-language streaming binary mode is on. Cutie is warming up.';
+        runtimeLine.textContent = 'OpenHands orchestration is active. Warming supporting services.';
         return;
       }
       if (promptState && promptState.promptSource === 'external_fallback' && promptState.promptLoadError) {
-        runtimeLine.textContent = 'Natural-language streaming binary mode is on. Using the built-in prompt.';
+        runtimeLine.textContent = 'OpenHands orchestration is active. Using the built-in prompt.';
         return;
       }
       if (warm.localReady && warm.hostReady === false) {
-        runtimeLine.textContent = 'Natural-language streaming binary mode is on. Cutie is locally ready.';
+        runtimeLine.textContent = 'OpenHands orchestration is active, but the host is still unavailable.';
         return;
       }
       if (warm.localReady) {
-        runtimeLine.textContent = 'Natural-language streaming binary mode is on.';
+        runtimeLine.textContent = 'OpenHands orchestration is active.';
         return;
       }
       if (warm.warmFailureSummary) {
-        runtimeLine.textContent = 'Natural-language streaming binary mode is on. Warmup is still in progress.';
+        runtimeLine.textContent = 'OpenHands orchestration is active. Warmup is still in progress.';
         return;
       }
-      runtimeLine.textContent = 'Natural-language streaming binary mode is on.';
+      runtimeLine.textContent = 'OpenHands orchestration is active.';
     }
 
     function renderPromptQueue() {
@@ -4125,7 +4161,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       refreshComposerStatusLine();
       renderPromptQueue();
       renderMessages();
-      renderRuntime(state.activeRun || null);
+      renderRuntime(displayedRunForState(state));
     }
 
     function clearEphemeralConversationState() {
@@ -4137,7 +4173,7 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
       renderPromptQueue();
       refreshComposerStatusLine();
       renderMessages();
-      renderRuntime(state.activeRun || null);
+      renderRuntime(displayedRunForState(state));
     }
 
     function closeSettingsMenu() {
@@ -4206,9 +4242,19 @@ export function buildWebviewHtml(webview: vscode.Webview): string {
         }
       }
       currentChatTitle.textContent = chatTitle;
+      if (backgroundStatusPill) {
+        const backgroundActivity = next.backgroundActivity || null;
+        backgroundStatusPill.classList.toggle('is-hidden', !backgroundActivity);
+        backgroundStatusPill.textContent = backgroundActivity ? backgroundActivity.label || 'Working in background' : '';
+        backgroundStatusPill.title = backgroundActivity
+          ? [backgroundActivity.label || 'Working in background', backgroundActivity.sessionTitle || '', backgroundActivity.detail || '']
+              .filter(Boolean)
+              .join(' - ')
+          : '';
+      }
 
       renderDesktop(next.desktop || { platform: '', displays: [], recentSnapshots: [] });
-      renderRuntime(next.activeRun || null);
+      renderRuntime(displayedRunForState(next));
       renderBinaryPanel();
       refreshComposerStatusLine();
       renderPromptQueue();

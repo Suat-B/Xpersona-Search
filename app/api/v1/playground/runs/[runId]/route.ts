@@ -28,6 +28,9 @@ export async function GET(request: NextRequest, ctx: Ctx): Promise<Response> {
   return ok(request, {
     ...row,
     adapter: output.adapter ?? null,
+    orchestrator: output.orchestrator ?? null,
+    orchestratorVersion: output.orchestratorVersion ?? null,
+    orchestratorRunId: output.orchestratorRunId ?? null,
     loopState: output.loopState ?? null,
     progressState: output.progressState ?? null,
     objectiveState: output.objectiveState ?? null,

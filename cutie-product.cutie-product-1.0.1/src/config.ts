@@ -36,10 +36,7 @@ export function getBinaryStreamGatewayUrl(): string {
 export type BinaryIdeChatRuntime = "cutie" | "playgroundApi" | "qwenCode";
 
 export function getBinaryIdeChatRuntime(): BinaryIdeChatRuntime {
-  const raw = vscode.workspace.getConfiguration(EXTENSION_NAMESPACE).get<string>("binary.runtime", "cutie");
-  if (raw === "playgroundApi") return "playgroundApi";
-  if (raw === "qwenCode") return "qwenCode";
-  return "cutie";
+  return "playgroundApi";
 }
 
 export function getQwenModel(): string {

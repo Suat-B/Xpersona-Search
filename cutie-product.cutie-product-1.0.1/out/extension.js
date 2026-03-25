@@ -362,12 +362,13 @@ class CutieSidebarProvider {
         this.auth = auth;
         this.activeSessionId = null;
         this.activeSession = null;
-        this.status = "Ready for a local Cutie run.";
+        this.status = "OpenHands orchestration is ready.";
         this.submitState = "idle";
         this.webviewReady = false;
         this.webviewReadyTimeout = null;
         this.webviewBootNonce = 0;
         this.activeRun = null;
+        this.activeRunSessionId = null;
         this.currentAbortController = null;
         /** Monotonic guard so callbacks from an older aborted run cannot overwrite a newer conversation state. */
         this.runRequestVersion = 0;
@@ -426,9 +427,16 @@ class CutieSidebarProvider {
         this.binaryController = new cutie_binary_controller_1.CutieBinaryBundleController(this.context, this.auth, this.sessionStore, {
             getWorkspaceHash: () => (0, config_1.getWorkspaceHash)(),
             getActiveSession: () => this.activeSession,
+            getSessionById: (sessionId) => this.sessionStore.getSession((0, config_1.getWorkspaceHash)(), sessionId),
             setActiveSession: (session) => {
-                this.activeSession = session;
-                this.activeSessionId = session?.id ?? null;
+                if (!session) {
+                    if (!this.activeSessionId)
+                        this.activeSession = null;
+                    return;
+                }
+                if (this.activeSessionId === session.id) {
+                    this.activeSession = session;
+                }
             },
             emitState: () => this.emitState(),
             gatherBinaryContext: (intent) => this.gatherBinaryContextForPortableBundle(intent),
@@ -808,19 +816,17 @@ class CutieSidebarProvider {
         this.binaryController.stopStreamsAndLiveBubble();
     }
     async newChat() {
-        this.runRequestVersion += 1;
-        this.currentAbortController?.abort();
-        this.currentAbortController = null;
-        this.binaryController.stopStreamsAndLiveBubble();
-        this.binaryController.binaryActivity = [];
         this.activeSessionId = null;
         this.activeSession = null;
-        this.activeRun = null;
-        this.submitState = "idle";
-        this.streamingAssistantText = "";
-        this.suppressedAssistantArtifactText = "";
-        this.resetLiveActionLog();
-        this.status = "Ready for a new Cutie run.";
+        if (!this.currentAbortController && !this.binaryController.hasOngoingWork()) {
+            this.activeRun = null;
+            this.activeRunSessionId = null;
+            this.submitState = "idle";
+            this.streamingAssistantText = "";
+            this.suppressedAssistantArtifactText = "";
+            this.resetLiveActionLog();
+            this.status = "OpenHands connected. Cutie is ready.";
+        }
         await this.emitState();
         void this.prewarmFastStartState();
         await this.refreshDesktopState();
@@ -1326,6 +1332,48 @@ class CutieSidebarProvider {
             await this.emitState();
         }
     }
+    isViewingActiveRunSession() {
+        return Boolean(this.activeSessionId && this.activeRunSessionId && this.activeSessionId === this.activeRunSessionId);
+    }
+    getVisibleSessionRun() {
+        if (!this.activeSession)
+            return null;
+        return this.sessionStore.getLatestRun(this.activeSession);
+    }
+    getSessionTitleById(sessionId) {
+        const trimmed = String(sessionId || "").trim();
+        if (!trimmed)
+            return "another chat";
+        if (this.activeSession && this.activeSession.id === trimmed) {
+            return this.activeSession.title || "another chat";
+        }
+        const session = this.sessionStore.getSession((0, config_1.getWorkspaceHash)(), trimmed);
+        return session?.title || "another chat";
+    }
+    getBackgroundActivity() {
+        if (this.currentAbortController && this.activeRunSessionId && this.activeRunSessionId !== this.activeSessionId) {
+            return {
+                kind: "cutie",
+                sessionId: this.activeRunSessionId,
+                sessionTitle: this.getSessionTitleById(this.activeRunSessionId),
+                label: "Working in background",
+                detail: this.status || "Cutie is still responding.",
+            };
+        }
+        const binarySessionId = this.binaryController.getLiveSessionId();
+        if (this.binaryController.hasOngoingWork() && binarySessionId && binarySessionId !== this.activeSessionId) {
+            return {
+                kind: "binary",
+                sessionId: binarySessionId,
+                sessionTitle: this.getSessionTitleById(binarySessionId),
+                label: "Binary running in background",
+                detail: this.binaryController.binary.streamConnected
+                    ? "The build is still streaming."
+                    : "The build is still working.",
+            };
+        }
+        return null;
+    }
     getChatDiffsForActiveSession() {
         if (!this.activeSessionId)
             return [];
@@ -1716,7 +1764,7 @@ class CutieSidebarProvider {
             runtime === "qwenCode"
                 ? "Running Qwen Code…"
                 : runtime === "playgroundApi"
-                    ? "Running hosted playground assist…"
+                    ? "Thinking"
                     : "Running…";
         this.submitState = "submitting";
         await this.emitState();
@@ -1744,6 +1792,7 @@ class CutieSidebarProvider {
             this.activeSession = session;
             this.activeSessionId = session.id;
             this.activeRun = null;
+            this.activeRunSessionId = session.id;
             const runRequestVersion = ++this.runRequestVersion;
             this.currentAbortController?.abort();
             const abortController = new AbortController();
@@ -1772,22 +1821,31 @@ class CutieSidebarProvider {
                     });
                 }
                 else {
-                    assistantText = await this.playgroundChatBridge.runPlaygroundApiTurn({
+                    const health = await this.playgroundChatBridge.getOpenHandsStatus();
+                    if (health.status !== "healthy") {
+                        throw new Error(`OpenHands unavailable: ${health.message}`);
+                    }
+                    const playgroundTurn = await this.playgroundChatBridge.runPlaygroundApiTurn({
                         task,
                         mode: "auto",
-                        historySessionId: session.id,
+                        historySessionId: session.playgroundHistorySessionId ?? null,
                         history,
                         signal: abortController.signal,
                     });
+                    assistantText = playgroundTurn.assistantText;
+                    if (playgroundTurn.playgroundSessionId) {
+                        session = { ...session, playgroundHistorySessionId: playgroundTurn.playgroundSessionId };
+                    }
                 }
                 if (runRequestVersion !== this.runRequestVersion)
                     return;
                 session = await this.sessionStore.appendMessage(session, { role: "assistant", content: assistantText });
-                this.activeSession = session;
-                this.activeSessionId = session.id;
+                if (this.activeSessionId === session.id) {
+                    this.activeSession = session;
+                }
                 this.streamingAssistantText = "";
                 this.submitState = "settled";
-                this.status = "Done.";
+                this.status = "Done. OpenHands completed the run.";
             }
             catch (error) {
                 if (runRequestVersion !== this.runRequestVersion)
@@ -1910,9 +1968,6 @@ class CutieSidebarProvider {
         return auth;
     }
     async loadSession(sessionId) {
-        this.runRequestVersion += 1;
-        this.currentAbortController?.abort();
-        this.currentAbortController = null;
         const session = this.sessionStore.getSession((0, config_1.getWorkspaceHash)(), sessionId);
         if (!session) {
             this.status = "That local Cutie session is no longer available.";
@@ -1921,16 +1976,17 @@ class CutieSidebarProvider {
             await this.emitState();
             return;
         }
-        this.binaryController.stopStreamsAndLiveBubble();
-        this.binaryController.binaryActivity = [];
         this.hydrateChatDiffsFromRunReceipts(session);
         this.activeSession = session;
         this.activeSessionId = session.id;
-        this.activeRun = this.sessionStore.getLatestRun(session);
-        this.submitState = "idle";
-        this.streamingAssistantText = "";
-        this.suppressedAssistantArtifactText = "";
-        this.resetLiveActionLog();
+        if (!this.currentAbortController && !this.binaryController.hasOngoingWork()) {
+            this.activeRun = this.sessionStore.getLatestRun(session);
+            this.activeRunSessionId = this.activeRun?.sessionId || session.id;
+            this.submitState = "idle";
+            this.streamingAssistantText = "";
+            this.suppressedAssistantArtifactText = "";
+            this.resetLiveActionLog();
+        }
         this.status = "Loaded local Cutie session.";
         await this.emitState();
         await this.refreshDesktopState();
@@ -2092,51 +2148,7 @@ class CutieSidebarProvider {
         return [...fileItems, ...windowItems];
     }
     async runPrompt(prompt, mentions = []) {
-        const trimmedPrompt = String(prompt || "").trim();
-        if (!trimmedPrompt) {
-            await this.emitState();
-            return;
-        }
-        if (!this.isWarmSnapshotFresh()) {
-            void this.prewarmFastStartState();
-        }
-        const task = this.appendMentionsToPrompt(trimmedPrompt, mentions);
-        this.runRequestVersion += 1;
-        this.currentAbortController?.abort();
-        this.currentAbortController = null;
-        this.activeRun = null;
-        this.streamingAssistantText = "";
-        this.suppressedAssistantArtifactText = "";
-        this.resetLiveActionLog();
-        this.status = "Routing your prompt into natural-language streaming binary mode...";
-        this.submitState = "running";
-        await this.emitState();
-        try {
-            let session = await this.ensureSession(trimmedPrompt);
-            session = await this.sessionStore.appendMessage(session, {
-                role: "user",
-                content: task,
-            });
-            this.activeSession = session;
-            this.activeSessionId = session.id;
-            await this.emitState();
-            await this.binaryController.runNaturalLanguagePrompt(task);
-            const activeBuild = this.binaryController.binary.activeBuild;
-            this.status =
-                activeBuild && (activeBuild.status === "running" || activeBuild.status === "queued")
-                    ? "Binary build is streaming."
-                    : "Binary action completed.";
-        }
-        catch (error) {
-            this.status = `Binary action failed: ${error instanceof Error ? error.message : String(error)}`;
-            void vscode.window.showErrorMessage(this.status);
-        }
-        finally {
-            this.submitState = "settled";
-            await this.refreshDesktopState();
-            void this.prewarmFastStartState();
-            await this.emitState();
-        }
+        return this.runPromptLegacy(prompt, mentions);
     }
     async runPromptLegacy(prompt, mentions = []) {
         const trimmedPrompt = String(prompt || "").trim();
@@ -2171,6 +2183,7 @@ class CutieSidebarProvider {
             const abortController = new AbortController();
             this.currentAbortController = abortController;
             this.activeRun = null;
+            this.activeRunSessionId = session.id;
             this.streamingAssistantText = "";
             this.suppressedAssistantArtifactText = "";
             this.resetLiveActionLog();
@@ -2190,10 +2203,12 @@ class CutieSidebarProvider {
                         onSessionChanged: async (nextSession, maybeRun) => {
                             if (runRequestVersion !== this.runRequestVersion)
                                 return;
-                            this.activeSession = nextSession;
-                            this.activeSessionId = nextSession.id;
+                            if (this.activeSessionId === nextSession.id) {
+                                this.activeSession = nextSession;
+                            }
                             this.activeRun =
                                 maybeRun === undefined ? this.sessionStore.getLatestRun(nextSession) : maybeRun;
+                            this.activeRunSessionId = nextSession.id;
                             this.syncLiveActionReceipts(this.activeRun);
                             await this.emitState();
                             void this.refreshDesktopState().then(() => this.emitState());
@@ -2203,6 +2218,8 @@ class CutieSidebarProvider {
                                 return;
                             this.status = status;
                             this.activeRun = run;
+                            if (run?.sessionId)
+                                this.activeRunSessionId = run.sessionId;
                             if (this.submitState !== "stopping") {
                                 this.submitState =
                                     run?.status === "running"
@@ -2295,20 +2312,21 @@ class CutieSidebarProvider {
                 });
                 if (runRequestVersion !== this.runRequestVersion)
                     return;
-                this.activeSession = result.session;
-                this.activeSessionId = result.session.id;
+                if (this.activeSessionId === result.session.id) {
+                    this.activeSession = result.session;
+                }
                 this.hydrateChatDiffsFromRunReceipts(result.session);
                 this.activeRun = result.run;
+                this.activeRunSessionId = result.session.id;
                 this.syncLiveActionReceipts(result.run);
                 await this.persistUnifiedRunTranscript(result.run);
                 if (runRequestVersion !== this.runRequestVersion)
                     return;
-                const recapSession = await this.ensureRunChangeRecap(result.run, this.activeSession);
+                const recapSession = await this.ensureRunChangeRecap(result.run, result.session);
                 if (runRequestVersion !== this.runRequestVersion)
                     return;
-                if (recapSession) {
+                if (recapSession && this.activeSessionId === recapSession.id) {
                     this.activeSession = recapSession;
-                    this.activeSessionId = recapSession.id;
                 }
                 this.streamingAssistantText = "";
                 this.submitState = "settled";
@@ -2323,13 +2341,13 @@ class CutieSidebarProvider {
                 this.suppressedAssistantArtifactText = "";
                 this.status = isCancel ? "Cutie run cancelled." : `Cutie failed: ${message}`;
                 this.submitState = "settled";
-                if (this.activeSession && this.activeRun && isTerminalRunStatus(this.activeRun.status)) {
-                    const recapSession = await this.ensureRunChangeRecap(this.activeRun, this.activeSession);
+                const runSession = this.activeRunSessionId ? this.sessionStore.getSession((0, config_1.getWorkspaceHash)(), this.activeRunSessionId) : null;
+                if (runSession && this.activeRun && isTerminalRunStatus(this.activeRun.status)) {
+                    const recapSession = await this.ensureRunChangeRecap(this.activeRun, runSession);
                     if (runRequestVersion !== this.runRequestVersion)
                         return;
-                    if (recapSession) {
+                    if (recapSession && this.activeSessionId === recapSession.id) {
                         this.activeSession = recapSession;
-                        this.activeSessionId = recapSession.id;
                     }
                 }
                 if (!isCancel)
@@ -2399,14 +2417,14 @@ class CutieSidebarProvider {
         void vscode.window.showInformationMessage("Cutie debug report copied to your clipboard.");
     }
     getVisibleMessages() {
-        const activeRunId = String(this.activeRun?.id || "").trim();
+        const activeRunId = this.isViewingActiveRunSession() ? String(this.activeRun?.id || "").trim() : "";
         const messages = (this.activeSession?.messages || []).filter((message) => {
             if (!activeRunId || !isBusySubmitState(this.submitState))
                 return true;
             return !(message.role === "assistant" && message.runId === activeRunId);
         });
         const bubble = this.binaryController.getLiveBubble();
-        if (!bubble)
+        if (!bubble || (bubble.sessionId && bubble.sessionId !== this.activeSessionId))
             return messages;
         return [
             ...messages,
@@ -2472,6 +2490,22 @@ class CutieSidebarProvider {
             label: "Not signed in",
         }));
     }
+    async refreshOpenHandsStatus() {
+        if ((0, config_1.getBinaryIdeChatRuntime)() !== "playgroundApi")
+            return;
+        if (isBusySubmitState(this.submitState) || this.activeRun)
+            return;
+        try {
+            const health = await this.playgroundChatBridge.getOpenHandsStatus();
+            this.status =
+                health.status === "healthy"
+                    ? "OpenHands connected. Cutie is ready."
+                    : `OpenHands unavailable: ${health.message}`;
+        }
+        catch (error) {
+            this.status = `OpenHands unavailable: ${error instanceof Error ? error.message : String(error)}`;
+        }
+    }
     async refreshViewState() {
         await Promise.allSettled([
             this.refreshAuthState(),
@@ -2479,26 +2513,33 @@ class CutieSidebarProvider {
             this.refreshOperatingPromptState(false),
             this.refreshWarmStartSnapshot(false),
         ]);
+        await this.refreshOpenHandsStatus();
         await this.emitState();
     }
     async emitState() {
         if (!this.view)
             return;
         const workspaceHash = (0, config_1.getWorkspaceHash)();
+        const visibleSessionRun = this.getVisibleSessionRun();
+        const viewingActiveRun = this.isViewingActiveRunSession();
         const state = {
             authState: this.authState,
             sessions: this.sessionStore.listSessions(workspaceHash),
             activeSessionId: this.activeSessionId,
             messages: this.getVisibleMessages(),
             chatDiffs: this.getChatDiffsForActiveSession(),
-            liveActionLog: this.getLiveActionLogForRun(this.activeRun),
-            liveTranscript: this.getLiveTranscriptForRun(this.activeRun),
+            liveActionLog: viewingActiveRun ? this.getLiveActionLogForRun(this.activeRun) : [],
+            liveTranscript: viewingActiveRun ? this.getLiveTranscriptForRun(this.activeRun) : [],
             status: this.status,
             submitState: this.submitState,
             running: isBusySubmitState(this.submitState),
             activeRun: this.activeRun,
+            visibleSessionRun,
+            activeRunSessionId: this.activeRunSessionId,
+            viewingActiveRun,
+            backgroundActivity: this.getBackgroundActivity(),
             desktop: this.desktopState,
-            progress: buildProgressViewModel(this.activeRun),
+            progress: viewingActiveRun ? buildProgressViewModel(this.activeRun) : null,
             binary: this.binaryController.binary,
             binaryActivity: this.binaryController.binaryActivity,
             binaryLiveBubble: this.binaryController.getLiveBubble(),

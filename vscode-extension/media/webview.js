@@ -79,13 +79,11 @@
     currentChatTitle: document.getElementById("currentChatTitle"),
     historyToggle: document.getElementById("historyToggle"),
     artifactsToggle: document.getElementById("artifactsToggle"),
+    runtimeStatusPill: document.getElementById("runtimeStatusPill"),
     settingsToggle: document.getElementById("settingsToggle"),
     settingsMenu: document.getElementById("settingsMenu"),
     settingsSignIn: document.getElementById("settingsSignIn"),
     settingsSignOut: document.getElementById("settingsSignOut"),
-    settingsRuntimeCutie: document.getElementById("settingsRuntimeCutie"),
-    settingsRuntimeQwen: document.getElementById("settingsRuntimeQwen"),
-    settingsRuntimeHosted: document.getElementById("settingsRuntimeHosted"),
     settingsUndo: document.getElementById("settingsUndo"),
     historyDrawer: document.getElementById("historyDrawer"),
     historyScrim: document.getElementById("historyScrim"),
@@ -2147,6 +2145,28 @@
     if (elements.authStatusDot) {
       elements.authStatusDot.title = state.auth && state.auth.kind !== "none" ? "Xpersona API key ready" : "Xpersona API key not set";
     }
+    if (elements.runtimeStatusPill) {
+      const runtimeStatus = state.orchestratorStatus || null;
+      const busyLabel =
+        state.runtime === "playgroundApi" && (state.busy || state.runtimePhase === "awaiting_approval")
+          ? state.liveChat && state.liveChat.latestActivity
+            ? state.liveChat.latestActivity
+            : "OpenHands running"
+          : "";
+      const pillLabel = state.runtime === "playgroundApi" ? busyLabel || (runtimeStatus ? runtimeStatus.label : "Checking OpenHands...") : "";
+      const pillDetail =
+        state.runtime === "playgroundApi"
+          ? busyLabel || (runtimeStatus && runtimeStatus.detail ? runtimeStatus.detail : pillLabel)
+          : "";
+      elements.runtimeStatusPill.classList.toggle("is-hidden", !pillLabel);
+      elements.runtimeStatusPill.classList.toggle("is-ready", Boolean(runtimeStatus && runtimeStatus.state === "ready" && !busyLabel));
+      elements.runtimeStatusPill.classList.toggle(
+        "is-unavailable",
+        Boolean(runtimeStatus && runtimeStatus.state === "unavailable" && !busyLabel)
+      );
+      elements.runtimeStatusPill.textContent = pillLabel;
+      elements.runtimeStatusPill.title = pillDetail;
+    }
     if (elements.currentChatTitle) {
       const currentTitle = deriveCurrentChatTitle();
       elements.currentChatTitle.textContent = currentTitle;
@@ -2169,21 +2189,6 @@
     }
     setHidden(elements.settingsSignIn, state.runtime === "qwenCode");
     setHidden(elements.settingsSignOut, state.auth && state.auth.kind === "none");
-    if (elements.settingsRuntimeQwen) {
-      const isQwen = state.runtime === "qwenCode";
-      elements.settingsRuntimeQwen.classList.toggle("active", isQwen);
-      elements.settingsRuntimeQwen.disabled = isQwen;
-    }
-    if (elements.settingsRuntimeCutie) {
-      const isCutie = state.runtime === "cutie";
-      elements.settingsRuntimeCutie.classList.toggle("active", isCutie);
-      elements.settingsRuntimeCutie.disabled = isCutie;
-    }
-    if (elements.settingsRuntimeHosted) {
-      const isHosted = state.runtime === "playgroundApi";
-      elements.settingsRuntimeHosted.classList.toggle("active", isHosted);
-      elements.settingsRuntimeHosted.disabled = isHosted;
-    }
     if (elements.composer) {
       elements.composer.placeholder = "Ask Binary IDE anything.. @ for files, / for commands.";
     }
@@ -2316,18 +2321,6 @@
         return;
       case "toggleBinaryPanel":
         setBinaryPanelOpen(!state.binaryPanelOpen);
-        return;
-      case "runtimeQwen":
-        setSettingsMenuOpen(false);
-        vscode.postMessage({ type: "setRuntimeBackend", runtime: "qwenCode" });
-        return;
-      case "runtimeCutie":
-        setSettingsMenuOpen(false);
-        vscode.postMessage({ type: "setRuntimeBackend", runtime: "cutie" });
-        return;
-      case "runtimeHosted":
-        setSettingsMenuOpen(false);
-        vscode.postMessage({ type: "setRuntimeBackend", runtime: "playgroundApi" });
         return;
       case "configureBinary":
       case "copyDebugReport":

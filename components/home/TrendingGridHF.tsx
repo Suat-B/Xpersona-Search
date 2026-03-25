@@ -173,7 +173,7 @@ export async function TrendingGridHF() {
                         className={cardBase}
                       >
                         <div className="flex w-full items-center justify-between gap-3">
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-semibold text-white">
                               {agent.name}
                             </p>
@@ -181,7 +181,11 @@ export async function TrendingGridHF() {
                               {formatFreshness(agent)}
                             </p>
                           </div>
-                          <div className={`flex items-center gap-2 text-[11px] ${isAccent ? "text-white/90" : "text-white/60"}`}>
+                          <div
+                            className={`flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap text-[11px] ${
+                              isAccent ? "text-white/90" : "text-white/60"
+                            }`}
+                          >
                             <span
                               className={`rounded-full px-2 py-0.5 ${
                                 isAccent ? "bg-white/15 text-white" : "border border-white/10 bg-white/5"
@@ -211,13 +215,19 @@ export async function TrendingGridHF() {
                       className={cardBase}
                     >
                       <div className="flex w-full items-center justify-between gap-3">
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-semibold text-white">
                             {cap.name}
                           </p>
-                          <p className={`mt-1 text-[11px] ${isAccent ? "text-white/80" : "text-white/60"}`}>{freshness}</p>
+                          <p className={`mt-1 text-[11px] ${isAccent ? "text-white/80" : "text-white/60"}`}>
+                            {freshness}
+                          </p>
                         </div>
-                        <div className={`flex items-center gap-2 text-[11px] ${isAccent ? "text-white/90" : "text-white/60"}`}>
+                        <div
+                          className={`flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap text-[11px] ${
+                            isAccent ? "text-white/90" : "text-white/60"
+                          }`}
+                        >
                           <span
                             className={`rounded-full px-2 py-0.5 ${
                               isAccent ? "bg-white/15 text-white" : "border border-white/10 bg-white/5"

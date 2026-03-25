@@ -40,11 +40,18 @@ function buildAuthHeaders(auth: RequestAuth | null | undefined): Record<string, 
   return headers;
 }
 
+function normalizeHistorySessionId(historySessionId: string | null | undefined): string | null {
+  const value = String(historySessionId || "").trim();
+  if (!value) return null;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ? value : null;
+}
+
 function buildCreatePayload(input: BinaryBuildCreateInput): Record<string, unknown> {
+  const historySessionId = normalizeHistorySessionId(input.historySessionId);
   return {
     intent: input.intent,
     workspaceFingerprint: input.workspaceFingerprint,
-    ...(input.historySessionId ? { historySessionId: input.historySessionId } : {}),
+    ...(historySessionId ? { historySessionId } : {}),
     targetEnvironment: input.targetEnvironment,
     ...(input.context ? { context: input.context } : {}),
     ...(input.retrievalHints ? { retrievalHints: input.retrievalHints } : {}),

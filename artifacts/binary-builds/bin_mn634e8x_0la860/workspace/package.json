@@ -1,0 +1,13 @@
+{
+  "name": "typescript-service",
+  "version": "1.0.0",
+  "description": "A portable TypeScript service workspace",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc --outDir dist --rootDir src",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "typescript": "^4.5.2"
+  }
+}

@@ -37,13 +37,17 @@ describe("vscode manifest", () => {
       expect.arrayContaining([
         "xpersona.binary.baseApiUrl",
         "xpersona.binary.runtime",
+        "xpersona.binary.agent.modelAlias",
+        "xpersona.binary.agent.rollbackLocalRuntime",
         "xpersona.binary.qwen.model",
         "xpersona.binary.qwen.baseUrl",
         "xpersona.binary.qwen.executable",
       ])
     );
+    expect(properties["xpersona.binary.runtime"]?.default).toBe("playgroundApi");
+    expect(properties["xpersona.binary.agent.modelAlias"]?.default).toBe("playground-default");
     expect(properties["xpersona.binary.qwen.model"]?.default).toBe(
-      "meta-llama/Llama-3.1-8B-Instruct:fastest"
+      "Qwen/Qwen3-Next-80B-A3B-Thinking:fastest"
     );
     expect(properties["xpersona.binary.qwen.baseUrl"]?.default).toBe(
       "http://localhost:3000/api/v1/hf"

@@ -25,25 +25,25 @@ export function buildBinaryAstStateFromSourceGraph(sourceGraph: BinarySourceGrap
   if (!sourceGraph) return null;
 
   const nodes: BinaryAstNodeSummary[] = [];
-  for (const module of sourceGraph.modules) {
-    const moduleNodeId = `module:${module.path}`;
+  for (const mod of sourceGraph.modules) {
+    const moduleNodeId = `module:${mod.path}`;
     nodes.push({
       id: moduleNodeId,
       kind: "module",
-      label: module.path,
-      path: module.path,
-      completeness: module.completed ? 100 : 50,
+      label: mod.path,
+      path: mod.path,
+      completeness: mod.completed ? 100 : 50,
     });
-    for (const fn of module.functions) {
+    for (const fn of mod.functions) {
       nodes.push({
-        id: `function:${module.path}:${fn.name}`,
+        id: `function:${mod.path}:${fn.name}`,
         kind: "function",
         label: fn.name,
         path: fn.sourcePath,
         parentId: moduleNodeId,
         exported: fn.exported,
         callable: fn.callable,
-        completeness: module.completed ? 100 : 50,
+        completeness: mod.completed ? 100 : 50,
       });
     }
   }
@@ -51,13 +51,13 @@ export function buildBinaryAstStateFromSourceGraph(sourceGraph: BinarySourceGrap
   return {
     coverage: clampPercentage(sourceGraph.coverage),
     moduleCount: sourceGraph.modules.length,
-    modules: sourceGraph.modules.map((module) => ({
-      path: module.path,
-      language: module.language,
-      nodeCount: 1 + module.functions.length,
-      exportedSymbols: module.exports.slice(0, 512),
-      callableFunctions: module.functions.filter((fn) => fn.callable).map((fn) => fn.name).slice(0, 512),
-      completed: module.completed,
+    modules: sourceGraph.modules.map((sourceMod) => ({
+      path: sourceMod.path,
+      language: sourceMod.language,
+      nodeCount: 1 + sourceMod.functions.length,
+      exportedSymbols: sourceMod.exports.slice(0, 512),
+      callableFunctions: sourceMod.functions.filter((fn) => fn.callable).map((fn) => fn.name).slice(0, 512),
+      completed: sourceMod.completed,
     })),
     nodes: nodes.slice(0, 5_000),
     updatedAt: sourceGraph.updatedAt || nowIso(),
@@ -72,7 +72,7 @@ export function buildBinaryAstDeltaFromState(astState: BinaryAstState | null | u
     coverage: astState.coverage,
     source: astState.source,
     nodes: astState.nodes.slice(0, 512),
-    modulesTouched: astState.modules.map((module) => module.path).slice(0, 120),
+    modulesTouched: astState.modules.map((mod) => mod.path).slice(0, 120),
     updatedAt: astState.updatedAt,
   };
 }

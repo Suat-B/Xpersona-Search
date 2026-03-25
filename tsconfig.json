@@ -21,6 +21,7 @@
   "exclude": [
     "node_modules",
     "vscode-extension",
+    "artifacts",
     "cutie-product.cutie-product-1.0.1",
     "sdk/xpersona-vscode-core"
   ]

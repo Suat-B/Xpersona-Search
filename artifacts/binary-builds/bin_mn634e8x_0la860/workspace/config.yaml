@@ -1,0 +1,3 @@
+# Configuration file
+runtime: node18
+activeFile: src/index.ts

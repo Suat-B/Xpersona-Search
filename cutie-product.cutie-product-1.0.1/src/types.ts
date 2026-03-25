@@ -283,9 +283,18 @@ export type CutieBinaryLiveBubbleState = {
 
 export type CutieBinaryLiveBubbleView = {
   messageId: string;
+  sessionId?: string | null;
   content: string;
   createdAt: string;
   live: CutieBinaryLiveBubbleState;
+};
+
+export type CutieBackgroundActivityView = {
+  kind: "cutie" | "binary";
+  sessionId: string | null;
+  sessionTitle: string;
+  label: string;
+  detail?: string;
 };
 
 export type CutieChatMessage = {
@@ -493,6 +502,8 @@ export type CutieSessionRecord = {
   messages: CutieChatMessage[];
   runs: CutieRunState[];
   snapshots: DesktopSnapshotRef[];
+  /** Xpersona playground assist session id (UUID); local `id` is not accepted as historySessionId. */
+  playgroundHistorySessionId?: string;
 };
 
 export type CutieSessionSummary = {
@@ -569,6 +580,10 @@ export type CutieViewState = {
   submitState: CutieSubmitState;
   running: boolean;
   activeRun: CutieRunState | null;
+  visibleSessionRun: CutieRunState | null;
+  activeRunSessionId: string | null;
+  viewingActiveRun: boolean;
+  backgroundActivity: CutieBackgroundActivityView | null;
   desktop: DesktopContextState;
   progress: CutieProgressViewModel | null;
   /** Portable starter bundle (Binary IDE API) panel state. */

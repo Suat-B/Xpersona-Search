@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { RequestAuth } from "@xpersona/vscode-core";
+import { requestJson, type RequestAuth } from "@xpersona/vscode-core";
 import { classifyIntent } from "./playground-ide/assistant-ux";
 import { ActionRunner } from "./playground-ide/actions";
 import { ContextCollector } from "./playground-ide/context";
@@ -10,7 +10,13 @@ import { QwenCodeRuntime } from "./playground-ide/qwen-code-runtime";
 import type { AssistRunEnvelope, ChatMessage, Mode } from "./playground-ide/shared";
 import { ToolExecutor } from "./playground-ide/tool-executor";
 import type { CutieAuthManager } from "./auth";
-import { getBinaryIdeChatRuntime, getExtensionVersion, getQwenExecutablePath, getWorkspaceHash } from "./config";
+import { getBaseApiUrl, getBinaryIdeChatRuntime, getExtensionVersion, getQwenExecutablePath, getWorkspaceHash } from "./config";
+
+/** Playground API validates historySessionId as UUID; Cutie local session ids are not UUIDs. */
+function isPlaygroundHistorySessionUuid(value: string | null | undefined): boolean {
+  const v = String(value || "").trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
 
 function cutieMessagesToPlaygroundChat(messages: Array<{ role: string; content: string }>): ChatMessage[] {
   return messages
@@ -76,6 +82,47 @@ export class CutiePlaygroundChatBridge {
     return this.actionRunner.undoLastBatch();
   }
 
+  async getOpenHandsStatus(): Promise<{
+    status: "healthy" | "missing_config" | "unauthorized" | "unreachable";
+    message: string;
+    details?: string;
+  }> {
+    const auth: RequestAuth | null = await this.auth.getRequestAuth();
+    if (!auth) {
+      return {
+        status: "unreachable",
+        message: "Sign in to verify OpenHands.",
+      };
+    }
+    const response = await requestJson<{
+      data?: {
+        status?: "healthy" | "missing_config" | "unauthorized" | "unreachable";
+        message?: string;
+        details?: string;
+      };
+    }>("GET", `${getBaseApiUrl()}/api/v1/playground/openhands/health`, auth);
+    const health = (
+      response &&
+      typeof response === "object" &&
+      "data" in response &&
+      response.data &&
+      typeof response.data === "object"
+        ? response.data
+        : response
+    ) as
+      | {
+          status?: "healthy" | "missing_config" | "unauthorized" | "unreachable";
+          message?: string;
+          details?: string;
+        }
+      | undefined;
+    return {
+      status: health?.status === "healthy" ? "healthy" : health?.status === "missing_config" ? "missing_config" : health?.status === "unauthorized" ? "unauthorized" : "unreachable",
+      message: String(health?.message || "OpenHands unavailable"),
+      ...(typeof health?.details === "string" && health.details.trim() ? { details: health.details } : {}),
+    };
+  }
+
   async runQwenTurn(input: {
     task: string;
     history: Array<{ role: string; content: string }>;
@@ -132,10 +179,11 @@ export class CutiePlaygroundChatBridge {
   async runPlaygroundApiTurn(input: {
     task: string;
     mode: Mode;
+    /** Server playground session UUID from a prior assist response; omit for first turn in a Cutie session. */
     historySessionId?: string | null;
     history: Array<{ role: string; content: string }>;
     signal: AbortSignal;
-  }): Promise<string> {
+  }): Promise<{ assistantText: string; playgroundSessionId?: string }> {
     this.ensureServices();
     if (!this.contextCollector || !this.toolExecutor || !this.actionRunner) {
       throw new Error("Playground services not ready.");
@@ -154,6 +202,10 @@ export class CutiePlaygroundChatBridge {
     });
     const workspaceHash = getWorkspaceHash();
     const extensionVersion = getExtensionVersion(this.context);
+    const serverHistoryId =
+      input.historySessionId && isPlaygroundHistorySessionUuid(input.historySessionId)
+        ? input.historySessionId.trim()
+        : undefined;
     const requestBody: Record<string, unknown> = {
       mode: input.mode,
       task: taskText,
@@ -168,7 +220,7 @@ export class CutiePlaygroundChatBridge {
               autoExecute: true,
               supportsNativeToolResults: false,
             },
-      ...(input.historySessionId ? { historySessionId: input.historySessionId } : {}),
+      ...(serverHistoryId ? { historySessionId: serverHistoryId } : {}),
       context,
       retrievalHints,
       clientTrace: {
@@ -183,13 +235,23 @@ export class CutiePlaygroundChatBridge {
         initial,
         toolExecutor: this.toolExecutor,
         workspaceFingerprint: workspaceHash,
-        sessionId: input.historySessionId || undefined,
+        sessionId: serverHistoryId || initial.sessionId,
         signal: input.signal,
       });
     }
+    const playgroundSessionId =
+      typeof initial.sessionId === "string" && initial.sessionId.trim() ? initial.sessionId.trim() : undefined;
     if (input.mode === "plan" && initial.plan) {
-      return [initial.final || "Plan ready.", "", JSON.stringify(initial.plan, null, 2)].filter(Boolean).join("\n");
+      return {
+        assistantText: [initial.final || "Plan ready.", "", JSON.stringify(initial.plan, null, 2)]
+          .filter(Boolean)
+          .join("\n"),
+        ...(playgroundSessionId ? { playgroundSessionId } : {}),
+      };
     }
-    return String(initial.final || "No response from playground assist.");
+    return {
+      assistantText: String(initial.final || "No response from playground assist."),
+      ...(playgroundSessionId ? { playgroundSessionId } : {}),
+    };
   }
 }

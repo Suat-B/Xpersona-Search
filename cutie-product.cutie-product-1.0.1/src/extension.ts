@@ -42,6 +42,7 @@ import { CutieToolRegistry } from "./cutie-tool-registry";
 import { CutieWorkspaceAdapter } from "./cutie-workspace-adapter";
 import { createTwoFilesPatch } from "diff";
 import type {
+  CutieBackgroundActivityView,
   CutieChatDiffItem,
   CutieChatMessage,
   CutieMentionSuggestion,
@@ -466,12 +467,13 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private activeSessionId: string | null = null;
   private activeSession: CutieSessionRecord | null = null;
-  private status = "Ready for a local Cutie run.";
+  private status = "OpenHands orchestration is ready.";
   private submitState: CutieSubmitState = "idle";
   private webviewReady = false;
   private webviewReadyTimeout: NodeJS.Timeout | null = null;
   private webviewBootNonce = 0;
   private activeRun: CutieRunState | null = null;
+  private activeRunSessionId: string | null = null;
   private currentAbortController: AbortController | null = null;
   /** Monotonic guard so callbacks from an older aborted run cannot overwrite a newer conversation state. */
   private runRequestVersion = 0;
@@ -562,9 +564,15 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
     this.binaryController = new CutieBinaryBundleController(this.context, this.auth, this.sessionStore, {
       getWorkspaceHash: () => getWorkspaceHash(),
       getActiveSession: () => this.activeSession,
+      getSessionById: (sessionId) => this.sessionStore.getSession(getWorkspaceHash(), sessionId),
       setActiveSession: (session) => {
-        this.activeSession = session;
-        this.activeSessionId = session?.id ?? null;
+        if (!session) {
+          if (!this.activeSessionId) this.activeSession = null;
+          return;
+        }
+        if (this.activeSessionId === session.id) {
+          this.activeSession = session;
+        }
       },
       emitState: () => this.emitState(),
       gatherBinaryContext: (intent) => this.gatherBinaryContextForPortableBundle(intent),
@@ -975,19 +983,17 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   async newChat(): Promise<void> {
-    this.runRequestVersion += 1;
-    this.currentAbortController?.abort();
-    this.currentAbortController = null;
-    this.binaryController.stopStreamsAndLiveBubble();
-    this.binaryController.binaryActivity = [];
     this.activeSessionId = null;
     this.activeSession = null;
-    this.activeRun = null;
-    this.submitState = "idle";
-    this.streamingAssistantText = "";
-    this.suppressedAssistantArtifactText = "";
-    this.resetLiveActionLog();
-    this.status = "Ready for a new Cutie run.";
+    if (!this.currentAbortController && !this.binaryController.hasOngoingWork()) {
+      this.activeRun = null;
+      this.activeRunSessionId = null;
+      this.submitState = "idle";
+      this.streamingAssistantText = "";
+      this.suppressedAssistantArtifactText = "";
+      this.resetLiveActionLog();
+      this.status = "OpenHands connected. Cutie is ready.";
+    }
     await this.emitState();
     void this.prewarmFastStartState();
     await this.refreshDesktopState();
@@ -1524,6 +1530,52 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private isViewingActiveRunSession(): boolean {
+    return Boolean(this.activeSessionId && this.activeRunSessionId && this.activeSessionId === this.activeRunSessionId);
+  }
+
+  private getVisibleSessionRun(): CutieRunState | null {
+    if (!this.activeSession) return null;
+    return this.sessionStore.getLatestRun(this.activeSession);
+  }
+
+  private getSessionTitleById(sessionId: string | null | undefined): string {
+    const trimmed = String(sessionId || "").trim();
+    if (!trimmed) return "another chat";
+    if (this.activeSession && this.activeSession.id === trimmed) {
+      return this.activeSession.title || "another chat";
+    }
+    const session = this.sessionStore.getSession(getWorkspaceHash(), trimmed);
+    return session?.title || "another chat";
+  }
+
+  private getBackgroundActivity(): CutieBackgroundActivityView | null {
+    if (this.currentAbortController && this.activeRunSessionId && this.activeRunSessionId !== this.activeSessionId) {
+      return {
+        kind: "cutie",
+        sessionId: this.activeRunSessionId,
+        sessionTitle: this.getSessionTitleById(this.activeRunSessionId),
+        label: "Working in background",
+        detail: this.status || "Cutie is still responding.",
+      };
+    }
+
+    const binarySessionId = this.binaryController.getLiveSessionId();
+    if (this.binaryController.hasOngoingWork() && binarySessionId && binarySessionId !== this.activeSessionId) {
+      return {
+        kind: "binary",
+        sessionId: binarySessionId,
+        sessionTitle: this.getSessionTitleById(binarySessionId),
+        label: "Binary running in background",
+        detail: this.binaryController.binary.streamConnected
+          ? "The build is still streaming."
+          : "The build is still working.",
+      };
+    }
+
+    return null;
+  }
+
   private getChatDiffsForActiveSession(): CutieChatDiffItem[] {
     if (!this.activeSessionId) return [];
     return this.chatDiffsBySessionId.get(this.activeSessionId) ?? [];
@@ -1911,7 +1963,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       runtime === "qwenCode"
         ? "Running Qwen Code…"
         : runtime === "playgroundApi"
-          ? "Running hosted playground assist…"
+          ? "Thinking"
           : "Running…";
     this.submitState = "submitting";
     await this.emitState();
@@ -1940,6 +1992,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       this.activeSession = session;
       this.activeSessionId = session.id;
       this.activeRun = null;
+      this.activeRunSessionId = session.id;
 
       const runRequestVersion = ++this.runRequestVersion;
       this.currentAbortController?.abort();
@@ -1968,23 +2021,32 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
             },
           });
         } else {
-          assistantText = await this.playgroundChatBridge.runPlaygroundApiTurn({
+          const health = await this.playgroundChatBridge.getOpenHandsStatus();
+          if (health.status !== "healthy") {
+            throw new Error(`OpenHands unavailable: ${health.message}`);
+          }
+          const playgroundTurn = await this.playgroundChatBridge.runPlaygroundApiTurn({
             task,
             mode: "auto",
-            historySessionId: session.id,
+            historySessionId: session.playgroundHistorySessionId ?? null,
             history,
             signal: abortController.signal,
           });
+          assistantText = playgroundTurn.assistantText;
+          if (playgroundTurn.playgroundSessionId) {
+            session = { ...session, playgroundHistorySessionId: playgroundTurn.playgroundSessionId };
+          }
         }
 
         if (runRequestVersion !== this.runRequestVersion) return;
 
         session = await this.sessionStore.appendMessage(session, { role: "assistant", content: assistantText });
-        this.activeSession = session;
-        this.activeSessionId = session.id;
+        if (this.activeSessionId === session.id) {
+          this.activeSession = session;
+        }
         this.streamingAssistantText = "";
         this.submitState = "settled";
-        this.status = "Done.";
+        this.status = "Done. OpenHands completed the run.";
       } catch (error) {
         if (runRequestVersion !== this.runRequestVersion) return;
         const message = error instanceof Error ? error.message : String(error);
@@ -2116,9 +2178,6 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async loadSession(sessionId: string): Promise<void> {
-    this.runRequestVersion += 1;
-    this.currentAbortController?.abort();
-    this.currentAbortController = null;
     const session = this.sessionStore.getSession(getWorkspaceHash(), sessionId);
     if (!session) {
       this.status = "That local Cutie session is no longer available.";
@@ -2127,16 +2186,17 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       await this.emitState();
       return;
     }
-    this.binaryController.stopStreamsAndLiveBubble();
-    this.binaryController.binaryActivity = [];
     this.hydrateChatDiffsFromRunReceipts(session);
     this.activeSession = session;
     this.activeSessionId = session.id;
-    this.activeRun = this.sessionStore.getLatestRun(session);
-    this.submitState = "idle";
-    this.streamingAssistantText = "";
-    this.suppressedAssistantArtifactText = "";
-    this.resetLiveActionLog();
+    if (!this.currentAbortController && !this.binaryController.hasOngoingWork()) {
+      this.activeRun = this.sessionStore.getLatestRun(session);
+      this.activeRunSessionId = this.activeRun?.sessionId || session.id;
+      this.submitState = "idle";
+      this.streamingAssistantText = "";
+      this.suppressedAssistantArtifactText = "";
+      this.resetLiveActionLog();
+    }
     this.status = "Loaded local Cutie session.";
     await this.emitState();
     await this.refreshDesktopState();
@@ -2313,54 +2373,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async runPrompt(prompt: string, mentions: CutieMentionSuggestion[] = []): Promise<void> {
-    const trimmedPrompt = String(prompt || "").trim();
-    if (!trimmedPrompt) {
-      await this.emitState();
-      return;
-    }
-
-    if (!this.isWarmSnapshotFresh()) {
-      void this.prewarmFastStartState();
-    }
-
-    const task = this.appendMentionsToPrompt(trimmedPrompt, mentions);
-    this.runRequestVersion += 1;
-    this.currentAbortController?.abort();
-    this.currentAbortController = null;
-    this.activeRun = null;
-    this.streamingAssistantText = "";
-    this.suppressedAssistantArtifactText = "";
-    this.resetLiveActionLog();
-    this.status = "Routing your prompt into natural-language streaming binary mode...";
-    this.submitState = "running";
-    await this.emitState();
-
-    try {
-      let session = await this.ensureSession(trimmedPrompt);
-      session = await this.sessionStore.appendMessage(session, {
-        role: "user",
-        content: task,
-      });
-      this.activeSession = session;
-      this.activeSessionId = session.id;
-      await this.emitState();
-
-      await this.binaryController.runNaturalLanguagePrompt(task);
-
-      const activeBuild = this.binaryController.binary.activeBuild;
-      this.status =
-        activeBuild && (activeBuild.status === "running" || activeBuild.status === "queued")
-          ? "Binary build is streaming."
-          : "Binary action completed.";
-    } catch (error) {
-      this.status = `Binary action failed: ${error instanceof Error ? error.message : String(error)}`;
-      void vscode.window.showErrorMessage(this.status);
-    } finally {
-      this.submitState = "settled";
-      await this.refreshDesktopState();
-      void this.prewarmFastStartState();
-      await this.emitState();
-    }
+    return this.runPromptLegacy(prompt, mentions);
   }
 
   private async runPromptLegacy(prompt: string, mentions: CutieMentionSuggestion[] = []): Promise<void> {
@@ -2401,6 +2414,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       const abortController = new AbortController();
       this.currentAbortController = abortController;
       this.activeRun = null;
+      this.activeRunSessionId = session.id;
       this.streamingAssistantText = "";
       this.suppressedAssistantArtifactText = "";
       this.resetLiveActionLog();
@@ -2420,10 +2434,12 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
           callbacks: {
             onSessionChanged: async (nextSession, maybeRun) => {
               if (runRequestVersion !== this.runRequestVersion) return;
-              this.activeSession = nextSession;
-              this.activeSessionId = nextSession.id;
+              if (this.activeSessionId === nextSession.id) {
+                this.activeSession = nextSession;
+              }
               this.activeRun =
                 maybeRun === undefined ? this.sessionStore.getLatestRun(nextSession) : maybeRun;
+              this.activeRunSessionId = nextSession.id;
               this.syncLiveActionReceipts(this.activeRun);
               await this.emitState();
               void this.refreshDesktopState().then(() => this.emitState());
@@ -2432,6 +2448,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
               if (runRequestVersion !== this.runRequestVersion) return;
               this.status = status;
               this.activeRun = run;
+              if (run?.sessionId) this.activeRunSessionId = run.sessionId;
               if (this.submitState !== "stopping") {
                 this.submitState =
                   run?.status === "running"
@@ -2517,18 +2534,19 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
         });
 
         if (runRequestVersion !== this.runRequestVersion) return;
-        this.activeSession = result.session;
-        this.activeSessionId = result.session.id;
+        if (this.activeSessionId === result.session.id) {
+          this.activeSession = result.session;
+        }
         this.hydrateChatDiffsFromRunReceipts(result.session);
         this.activeRun = result.run;
+        this.activeRunSessionId = result.session.id;
         this.syncLiveActionReceipts(result.run);
         await this.persistUnifiedRunTranscript(result.run);
         if (runRequestVersion !== this.runRequestVersion) return;
-        const recapSession = await this.ensureRunChangeRecap(result.run, this.activeSession);
+        const recapSession = await this.ensureRunChangeRecap(result.run, result.session);
         if (runRequestVersion !== this.runRequestVersion) return;
-        if (recapSession) {
+        if (recapSession && this.activeSessionId === recapSession.id) {
           this.activeSession = recapSession;
-          this.activeSessionId = recapSession.id;
         }
         this.streamingAssistantText = "";
         this.submitState = "settled";
@@ -2541,12 +2559,13 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
         this.suppressedAssistantArtifactText = "";
         this.status = isCancel ? "Cutie run cancelled." : `Cutie failed: ${message}`;
         this.submitState = "settled";
-        if (this.activeSession && this.activeRun && isTerminalRunStatus(this.activeRun.status)) {
-          const recapSession = await this.ensureRunChangeRecap(this.activeRun, this.activeSession);
+        const runSession =
+          this.activeRunSessionId ? this.sessionStore.getSession(getWorkspaceHash(), this.activeRunSessionId) : null;
+        if (runSession && this.activeRun && isTerminalRunStatus(this.activeRun.status)) {
+          const recapSession = await this.ensureRunChangeRecap(this.activeRun, runSession);
           if (runRequestVersion !== this.runRequestVersion) return;
-          if (recapSession) {
+          if (recapSession && this.activeSessionId === recapSession.id) {
             this.activeSession = recapSession;
-            this.activeSessionId = recapSession.id;
           }
         }
         if (!isCancel) void vscode.window.showErrorMessage(this.status);
@@ -2614,13 +2633,13 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private getVisibleMessages(): CutieChatMessage[] {
-    const activeRunId = String(this.activeRun?.id || "").trim();
+    const activeRunId = this.isViewingActiveRunSession() ? String(this.activeRun?.id || "").trim() : "";
     const messages = (this.activeSession?.messages || []).filter((message) => {
       if (!activeRunId || !isBusySubmitState(this.submitState)) return true;
       return !(message.role === "assistant" && message.runId === activeRunId);
     });
     const bubble = this.binaryController.getLiveBubble();
-    if (!bubble) return messages;
+    if (!bubble || (bubble.sessionId && bubble.sessionId !== this.activeSessionId)) return messages;
     return [
       ...messages,
       {
@@ -2695,6 +2714,20 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
     );
   }
 
+  private async refreshOpenHandsStatus(): Promise<void> {
+    if (getBinaryIdeChatRuntime() !== "playgroundApi") return;
+    if (isBusySubmitState(this.submitState) || this.activeRun) return;
+    try {
+      const health = await this.playgroundChatBridge.getOpenHandsStatus();
+      this.status =
+        health.status === "healthy"
+          ? "OpenHands connected. Cutie is ready."
+          : `OpenHands unavailable: ${health.message}`;
+    } catch (error) {
+      this.status = `OpenHands unavailable: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
   private async refreshViewState(): Promise<void> {
     await Promise.allSettled([
       this.refreshAuthState(),
@@ -2702,6 +2735,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       this.refreshOperatingPromptState(false),
       this.refreshWarmStartSnapshot(false),
     ]);
+    await this.refreshOpenHandsStatus();
     await this.emitState();
   }
 
@@ -2709,20 +2743,26 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
     if (!this.view) return;
 
     const workspaceHash = getWorkspaceHash();
+    const visibleSessionRun = this.getVisibleSessionRun();
+    const viewingActiveRun = this.isViewingActiveRunSession();
     const state: CutieViewState = {
       authState: this.authState,
       sessions: this.sessionStore.listSessions(workspaceHash),
       activeSessionId: this.activeSessionId,
       messages: this.getVisibleMessages(),
       chatDiffs: this.getChatDiffsForActiveSession(),
-      liveActionLog: this.getLiveActionLogForRun(this.activeRun),
-      liveTranscript: this.getLiveTranscriptForRun(this.activeRun),
+      liveActionLog: viewingActiveRun ? this.getLiveActionLogForRun(this.activeRun) : [],
+      liveTranscript: viewingActiveRun ? this.getLiveTranscriptForRun(this.activeRun) : [],
       status: this.status,
       submitState: this.submitState,
       running: isBusySubmitState(this.submitState),
       activeRun: this.activeRun,
+      visibleSessionRun,
+      activeRunSessionId: this.activeRunSessionId,
+      viewingActiveRun,
+      backgroundActivity: this.getBackgroundActivity(),
       desktop: this.desktopState,
-      progress: buildProgressViewModel(this.activeRun),
+      progress: viewingActiveRun ? buildProgressViewModel(this.activeRun) : null,
       binary: this.binaryController.binary,
       binaryActivity: this.binaryController.binaryActivity,
       binaryLiveBubble: this.binaryController.getLiveBubble(),

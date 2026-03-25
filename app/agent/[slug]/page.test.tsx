@@ -82,6 +82,8 @@ vi.mock("next/link", () => ({
 
 vi.mock("next/image", () => ({
   default: ({ unoptimized: _unoptimized, ...props }: Record<string, unknown>) => (
+    // Test double: real Image outputs <img>; Next lint applies to test mocks too.
+    // eslint-disable-next-line @next/next/no-img-element -- mock for next/image
     <img {...props} alt={String(props.alt ?? "")} />
   ),
 }));

@@ -1,0 +1,173 @@
+{
+  "buildId": "bin_mn634e8x_0la860",
+  "checkpointId": "chk_materializing_mn634kr3_jy3zpx",
+  "savedAt": "2026-03-25T13:34:13.263Z",
+  "draftFiles": {
+    "config.yaml": "# Configuration file\nruntime: node18\nactiveFile: src/index.ts"
+  },
+  "plan": {
+    "name": "binary-hello-love",
+    "displayName": "TypeScript Service Workspace",
+    "description": "A portable TypeScript service workspace for Binary IDE. This workspace compiles with npm + TypeScript and can be directly runnable with Node.js after build. It uses CommonJS-compatible TypeScript and exports callable functions before starting any server.",
+    "entrypoint": "dist/src/index.js",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "sourceFiles": [
+      "config.yaml",
+      "package.json",
+      "src/index.ts",
+      "tsconfig.json"
+    ],
+    "warnings": [
+      "The intent is short, so the generated scaffold may need refinement."
+    ]
+  },
+  "preview": {
+    "plan": {
+      "name": "binary-hello-love",
+      "displayName": "TypeScript Service Workspace",
+      "description": "A portable TypeScript service workspace for Binary IDE. This workspace compiles with npm + TypeScript and can be directly runnable with Node.js after build. It uses CommonJS-compatible TypeScript and exports callable functions before starting any server.",
+      "entrypoint": "dist/src/index.js",
+      "buildCommand": "npm run build",
+      "startCommand": "npm start",
+      "sourceFiles": [
+        "config.yaml",
+        "package.json",
+        "src/index.ts",
+        "tsconfig.json"
+      ],
+      "warnings": [
+        "The intent is short, so the generated scaffold may need refinement."
+      ]
+    },
+    "files": [
+      {
+        "path": "config.yaml",
+        "preview": "# Configuration file\nruntime: node18\nactiveFile: src/index.ts",
+        "hash": "df722e87caeb3ca559ae03c04e6960addf015bd024db54106c3440f37fb10b9b",
+        "completed": true,
+        "updatedAt": "2026-03-25T13:34:11.935Z"
+      }
+    ],
+    "recentLogs": [
+      "Completed config.yaml"
+    ]
+  },
+  "manifest": {
+    "buildId": "bin_mn634e8x_0la860",
+    "artifactKind": "package_bundle",
+    "name": "binary-hello-love",
+    "displayName": "TypeScript Service Workspace",
+    "description": "A portable TypeScript service workspace for Binary IDE. This workspace compiles with npm + TypeScript and can be directly runnable with Node.js after build. It uses CommonJS-compatible TypeScript and exports callable functions before starting any server.",
+    "intent": "hello love",
+    "runtime": "node18",
+    "platform": "portable",
+    "packageManager": "npm",
+    "entrypoint": "dist/src/index.js",
+    "installCommand": "npm install",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "sourceFiles": [
+      "config.yaml",
+      "package.json",
+      "src/index.ts",
+      "tsconfig.json"
+    ],
+    "outputFiles": [],
+    "warnings": [
+      "The intent is short, so the generated scaffold may need refinement."
+    ],
+    "createdAt": "2026-03-25T13:34:11.558Z"
+  },
+  "reliability": {
+    "status": "warn",
+    "score": 82,
+    "summary": "Live reliability snapshot found 2 warnings.",
+    "targetEnvironment": {
+      "runtime": "node18",
+      "platform": "portable",
+      "packageManager": "npm"
+    },
+    "issues": [
+      {
+        "code": "incomplete_modules",
+        "severity": "warning",
+        "message": "Not all planned source modules are fully formed yet.",
+        "detail": "0/1 ready"
+      },
+      {
+        "code": "runtime_not_runnable",
+        "severity": "warning",
+        "message": "The live runtime is not callable yet."
+      }
+    ],
+    "warnings": [],
+    "generatedAt": "2026-03-25T13:34:11.947Z"
+  },
+  "liveReliability": {
+    "score": 82,
+    "trend": "steady",
+    "warnings": [
+      "Not all planned source modules are fully formed yet.",
+      "The live runtime is not callable yet."
+    ],
+    "blockers": [],
+    "resolvedBlockers": [],
+    "updatedAt": "2026-03-25T13:34:11.947Z",
+    "source": "compat"
+  },
+  "artifactState": {
+    "coverage": 17,
+    "runnable": false,
+    "sourceFilesTotal": 1,
+    "sourceFilesReady": 0,
+    "outputFilesReady": 0,
+    "entryPoints": [],
+    "latestFile": "config.yaml",
+    "updatedAt": "2026-03-25T13:34:11.947Z"
+  },
+  "sourceGraph": {
+    "coverage": 21,
+    "readyModules": 0,
+    "totalModules": 1,
+    "modules": [],
+    "dependencies": [],
+    "diagnostics": [],
+    "updatedAt": "2026-03-25T13:34:11.944Z"
+  },
+  "astState": {
+    "coverage": 21,
+    "moduleCount": 0,
+    "modules": [],
+    "nodes": [],
+    "updatedAt": "2026-03-25T13:34:11.944Z",
+    "source": "compat"
+  },
+  "execution": {
+    "runnable": false,
+    "mode": "none",
+    "availableFunctions": [],
+    "lastRun": null,
+    "updatedAt": "2026-03-25T13:34:11.945Z"
+  },
+  "runtimeState": {
+    "runnable": false,
+    "engine": "none",
+    "availableFunctions": [],
+    "patches": [],
+    "updatedAt": "2026-03-25T13:34:11.945Z",
+    "lastRun": null
+  },
+  "runtimePatches": [],
+  "prompt": "hello love",
+  "parentSnapshotId": "chk_planning_mn634jnh_jb8ub7",
+  "snapshot": {
+    "id": "chk_materializing_mn634kr3_jy3zpx",
+    "checkpointId": "chk_materializing_mn634kr3_jy3zpx",
+    "parentSnapshotId": "chk_planning_mn634jnh_jb8ub7",
+    "phase": "materializing",
+    "label": "Generated config.yaml",
+    "savedAt": "2026-03-25T13:34:13.263Z",
+    "source": "compat"
+  }
+}

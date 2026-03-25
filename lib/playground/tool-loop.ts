@@ -55,6 +55,9 @@ type ToolLoopRepairStage =
 type PersistedToolLoopState = {
   protocol: "tool_loop_v1";
   adapter: PlaygroundAdapter;
+  orchestrator: "in_house" | "openhands";
+  orchestratorVersion?: string | null;
+  orchestratorRunId?: string | null;
   loopState: LoopStateContract;
   pendingToolCall: PendingToolCallContract | null;
   toolTrace: ToolTraceEntryContract[];
@@ -767,12 +770,19 @@ function hydratePersistedState(record: AgentRunRecord): PersistedToolLoopState |
   const fallbackPlan = output.fallbackPlan as AssistPlan | undefined;
   const availableTools = (Array.isArray(output.availableTools) ? output.availableTools : []) as PlaygroundToolName[];
   const adapter = (output.adapter as PlaygroundAdapter | undefined) || "text_actions";
+  const orchestrator =
+    output.orchestrator === "openhands" || output.orchestrator === "in_house"
+      ? output.orchestrator
+      : "in_house";
   const progressState = output.progressState as ProgressStateContract | undefined;
   const objectiveState = output.objectiveState as ObjectiveStateContract | undefined;
   if (!loopState || !targetInference || !contextSelection || !fallbackPlan) return null;
   return {
     protocol: "tool_loop_v1",
     adapter,
+    orchestrator,
+    orchestratorVersion: typeof output.orchestratorVersion === "string" ? output.orchestratorVersion : null,
+    orchestratorRunId: typeof output.orchestratorRunId === "string" ? output.orchestratorRunId : null,
     loopState,
     pendingToolCall: pendingToolCall ?? null,
     toolTrace,
@@ -815,6 +825,9 @@ function buildPersistedOutput(input: {
   return {
     protocol: input.state.protocol,
     adapter: input.state.adapter,
+    orchestrator: input.state.orchestrator,
+    orchestratorVersion: input.state.orchestratorVersion ?? null,
+    orchestratorRunId: input.state.orchestratorRunId ?? null,
     loopState: input.state.loopState,
     pendingToolCall: input.state.pendingToolCall,
     toolTrace: input.state.toolTrace,
@@ -866,6 +879,8 @@ function buildToolLoopResult(input: {
   runId: string;
   traceId: string;
   adapter: PlaygroundAdapter;
+  orchestrator: "in_house" | "openhands";
+  orchestratorVersion?: string | null;
   targetInference: AssistTargetInference;
   contextSelection: AssistContextSelection;
   fallbackPlan: AssistPlan;
@@ -943,6 +958,8 @@ function buildToolLoopResult(input: {
     memoryWrites: artifacts.memoryWrites,
     reviewState: artifacts.reviewState,
     orchestrationProtocol: "tool_loop_v1",
+    orchestrator: input.orchestrator,
+    orchestratorVersion: input.orchestratorVersion ?? null,
     runId: input.runId,
     adapter: input.adapter,
     loopState: input.loopState,
@@ -952,7 +969,7 @@ function buildToolLoopResult(input: {
       ...base.toolState,
       strategy: "max_agentic",
       route: input.adapter === "deterministic_batch" ? "deterministic_synthesis" : input.adapter,
-      adapter: `${input.adapter}_v1`,
+      adapter: input.orchestrator === "openhands" ? `openhands_${input.adapter}_v1` : `${input.adapter}_v1`,
       actionSource: input.adapter === "deterministic_batch" ? "deterministic_synthesis" : "structured_json",
       recoveryStage: input.loopState.repairCount > 0 ? "repair" : "none",
       lastFailureCategory: traceHasFailure(input.toolTrace) ? "local_apply_failed" : null,
@@ -1085,11 +1102,52 @@ async function advanceWithCandidate(input: {
   traceId: string;
   candidate?: ToolCallContract;
   adapter: PlaygroundAdapter;
+  orchestrator?: "in_house" | "openhands";
+  orchestratorVersion?: string | null;
+  orchestratorRunId?: string | null;
   final?: string;
   actions?: ExecuteAction[];
   logs: string[];
 }): Promise<AssistResult> {
-  if (!input.candidate) {
+  let candidate = input.candidate;
+  let orchestratorFinal = input.final;
+  let logs = input.logs;
+
+  // OpenHands (and other adapters) sometimes return {"final":"..."} on step 0 instead of a tool call.
+  // Without a pending tool the IDE never executes tools. Force an observation step for agentic intents.
+  if (
+    !candidate &&
+    input.state.loopState.stepCount === 0 &&
+    input.state.toolTrace.length === 0 &&
+    !(input.actions && input.actions.length > 0)
+  ) {
+    const intent = inferIntent({
+      mode: input.request.mode,
+      task: input.request.task,
+      targetInference: input.state.targetInference,
+    });
+    const intentFromTaskWording = inferIntent({
+      mode: input.request.mode,
+      task: input.request.task,
+      targetInference: { ...input.state.targetInference, path: undefined, source: "unknown", confidence: 0.1 },
+    });
+    const shouldInjectObservation =
+      (intent.type === "code_edit" || intent.type === "command_run") &&
+      (intentFromTaskWording.type === "code_edit" || intentFromTaskWording.type === "command_run");
+    if (shouldInjectObservation) {
+      const primer = buildObservationPrimer(input.state.targetInference, input.state.availableTools);
+      if (primer) {
+        candidate = primer;
+        orchestratorFinal = undefined;
+        logs = [
+          ...logs,
+          "tool_loop: observation primer injected (orchestrator returned final without tool at step 0)",
+        ];
+      }
+    }
+  }
+
+  if (!candidate) {
     const finalActions = input.actions || actionsFromToolTrace(input.state.toolTrace);
     const finalIntent = inferIntent({
       mode: input.request.mode,
@@ -1105,6 +1163,8 @@ async function advanceWithCandidate(input: {
       runId: input.record.id,
       traceId: input.traceId,
       adapter: input.adapter,
+      orchestrator: input.orchestrator || input.state.orchestrator,
+      orchestratorVersion: input.orchestratorVersion ?? input.state.orchestratorVersion ?? null,
       targetInference: input.state.targetInference,
       contextSelection: input.state.contextSelection,
       fallbackPlan: input.state.fallbackPlan,
@@ -1114,7 +1174,7 @@ async function advanceWithCandidate(input: {
       },
       pendingToolCall: null,
       toolTrace: input.state.toolTrace,
-      logs: input.logs,
+      logs,
       final: input.final || "The tool loop completed.",
       actions: finalActions,
       missingRequirements: terminalMissingRequirements,
@@ -1132,6 +1192,9 @@ async function advanceWithCandidate(input: {
       state: {
         ...input.state,
         adapter: input.adapter,
+        orchestrator: input.orchestrator || input.state.orchestrator,
+        orchestratorVersion: input.orchestratorVersion ?? input.state.orchestratorVersion ?? null,
+        orchestratorRunId: input.orchestratorRunId ?? input.state.orchestratorRunId ?? null,
         loopState: finalResult.loopState || input.state.loopState,
         pendingToolCall: null,
         progressState: finalResult.progressState,
@@ -1145,7 +1208,7 @@ async function advanceWithCandidate(input: {
   }
 
   const safeguarded = enforceLoopSafeguards({
-    candidate: input.candidate,
+    candidate,
     state: input.state,
     request: input.request,
   });
@@ -1155,6 +1218,8 @@ async function advanceWithCandidate(input: {
       runId: input.record.id,
       traceId: input.traceId,
       adapter: input.adapter,
+      orchestrator: input.orchestrator || input.state.orchestrator,
+      orchestratorVersion: input.orchestratorVersion ?? input.state.orchestratorVersion ?? null,
       targetInference: input.state.targetInference,
       contextSelection: input.state.contextSelection,
       fallbackPlan: input.state.fallbackPlan,
@@ -1164,7 +1229,7 @@ async function advanceWithCandidate(input: {
       },
       pendingToolCall: null,
       toolTrace: input.state.toolTrace,
-      logs: input.logs,
+      logs,
       final: safeguarded.final || "The tool loop stopped before it could issue the next tool call.",
       actions: actionsFromToolTrace(input.state.toolTrace),
       missingRequirements: safeguarded.missingRequirements || ["tool_loop_failed"],
@@ -1182,6 +1247,9 @@ async function advanceWithCandidate(input: {
       state: {
         ...input.state,
         adapter: input.adapter,
+        orchestrator: input.orchestrator || input.state.orchestrator,
+        orchestratorVersion: input.orchestratorVersion ?? input.state.orchestratorVersion ?? null,
+        orchestratorRunId: input.orchestratorRunId ?? input.state.orchestratorRunId ?? null,
         loopState: failedResult.loopState || input.state.loopState,
         pendingToolCall: null,
         progressState: failedResult.progressState,
@@ -1216,15 +1284,17 @@ async function advanceWithCandidate(input: {
     runId: input.record.id,
     traceId: input.traceId,
     adapter: input.adapter,
+    orchestrator: input.orchestrator || safeguarded.state.orchestrator,
+    orchestratorVersion: input.orchestratorVersion ?? safeguarded.state.orchestratorVersion ?? null,
     targetInference: safeguarded.state.targetInference,
     contextSelection: safeguarded.state.contextSelection,
     fallbackPlan: safeguarded.state.fallbackPlan,
     loopState: safeguarded.state.loopState,
     pendingToolCall,
     toolTrace: pendingTrace,
-    logs: input.logs,
+    logs,
     final:
-      input.final ||
+      orchestratorFinal ||
       `Step ${pendingToolCall.step} ready: ${pendingToolCall.toolCall.name}${typeof pendingToolCall.toolCall.arguments.path === "string" ? ` ${pendingToolCall.toolCall.arguments.path}` : ""}.`,
     actions: actionsFromToolTrace(pendingTrace),
     previousProgressState: safeguarded.state.progressState,
@@ -1242,6 +1312,9 @@ async function advanceWithCandidate(input: {
     state: {
       ...safeguarded.state,
       adapter: input.adapter,
+      orchestrator: input.orchestrator || safeguarded.state.orchestrator,
+      orchestratorVersion: input.orchestratorVersion ?? safeguarded.state.orchestratorVersion ?? null,
+      orchestratorRunId: input.orchestratorRunId ?? safeguarded.state.orchestratorRunId ?? null,
       pendingToolCall,
       toolTrace: pendingTrace,
       progressState: pendingResult.progressState,
@@ -1301,6 +1374,9 @@ export async function startAssistToolLoop(input: StartToolLoopInput): Promise<As
   const initialState: PersistedToolLoopState = {
     protocol: "tool_loop_v1",
     adapter,
+    orchestrator: "in_house",
+    orchestratorVersion: null,
+    orchestratorRunId: null,
     loopState: initialLoopState,
     pendingToolCall: null,
     toolTrace: [],
@@ -1360,6 +1436,9 @@ export async function startAssistToolLoop(input: StartToolLoopInput): Promise<As
     traceId: input.traceId,
     candidate: turn.toolCall,
     adapter: turn.adapter,
+    orchestrator: turn.orchestrator,
+    orchestratorVersion: turn.orchestratorVersion ?? null,
+    orchestratorRunId: turn.orchestratorRunId ?? null,
     final: turn.final,
     actions: turn.actions as ExecuteAction[] | undefined,
     logs: turn.logs,
@@ -1378,6 +1457,9 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
   const persisted = hydratePersistedState(record);
   if (!persisted) {
     throw new Error("Run does not contain tool-loop state.");
+  }
+  if (persisted.orchestrator !== "openhands") {
+    throw new Error("This run was created before OpenHands was required. Start a new chat to continue with hosted orchestration.");
   }
 
   const request = asRecord(record.input) as AssistRuntimeInput;
@@ -1427,6 +1509,8 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
       runId: record.id,
       traceId: input.traceId,
       adapter: persisted.adapter,
+      orchestrator: nextState.orchestrator,
+      orchestratorVersion: nextState.orchestratorVersion ?? null,
       targetInference: persisted.targetInference,
       contextSelection: persisted.contextSelection,
       fallbackPlan: persisted.fallbackPlan,
@@ -1548,6 +1632,9 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
       traceId: input.traceId,
       candidate: deferred,
       adapter: persisted.adapter,
+      orchestrator: nextState.orchestrator,
+      orchestratorVersion: nextState.orchestratorVersion ?? null,
+      orchestratorRunId: nextState.orchestratorRunId ?? null,
       final: `Checkpoint created. Continuing with ${deferred.name}.`,
       logs: ["checkpoint_created=true", "next=deferred_tool_call"],
     });
@@ -1566,6 +1653,7 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
     },
     availableTools: nextState.availableTools,
     latestToolResult: input.toolResult,
+    orchestratorRunId: nextState.orchestratorRunId,
     repairDirective,
   });
 
@@ -1637,6 +1725,7 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
       },
       availableTools: nextState.availableTools,
       latestToolResult: input.toolResult,
+      orchestratorRunId: nextState.orchestratorRunId,
       repairDirective: {
         stage: repairStage,
         reason: `${guidance.reason} Next: ${guidance.nextDeterministicAction}`,
@@ -1685,10 +1774,16 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
       state: {
         ...nextState,
         adapter: repairedTurn.adapter,
+        orchestrator: repairedTurn.orchestrator ?? nextState.orchestrator,
+        orchestratorVersion: repairedTurn.orchestratorVersion ?? nextState.orchestratorVersion ?? null,
+        orchestratorRunId: repairedTurn.orchestratorRunId ?? nextState.orchestratorRunId ?? null,
       },
       traceId: input.traceId,
       candidate: repairedTurn.toolCall,
       adapter: repairedTurn.adapter,
+      orchestrator: repairedTurn.orchestrator,
+      orchestratorVersion: repairedTurn.orchestratorVersion ?? null,
+      orchestratorRunId: repairedTurn.orchestratorRunId ?? null,
       final: repairedTurn.final,
       actions: repairedTurn.actions as ExecuteAction[] | undefined,
       logs: repairedTurn.logs,
@@ -1749,6 +1844,7 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
       },
       availableTools: nextState.availableTools,
       latestToolResult: input.toolResult,
+      orchestratorRunId: nextState.orchestratorRunId,
       repairDirective: {
         stage: repairStage,
         reason: `${guidance.reason} Next: ${guidance.nextDeterministicAction}`,
@@ -1808,10 +1904,16 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
       state: {
         ...nextState,
         adapter: repairedTurn.adapter,
+        orchestrator: repairedTurn.orchestrator ?? nextState.orchestrator,
+        orchestratorVersion: repairedTurn.orchestratorVersion ?? nextState.orchestratorVersion ?? null,
+        orchestratorRunId: repairedTurn.orchestratorRunId ?? nextState.orchestratorRunId ?? null,
       },
       traceId: input.traceId,
       candidate: repairedTurn.toolCall,
       adapter: repairedTurn.adapter,
+      orchestrator: repairedTurn.orchestrator,
+      orchestratorVersion: repairedTurn.orchestratorVersion ?? null,
+      orchestratorRunId: repairedTurn.orchestratorRunId ?? null,
       final: repairedTurn.final,
       actions: repairedTurn.actions as ExecuteAction[] | undefined,
       logs: repairedTurn.logs,
@@ -1824,10 +1926,16 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
     state: {
       ...nextState,
       adapter: turn.adapter,
+      orchestrator: turn.orchestrator ?? nextState.orchestrator,
+      orchestratorVersion: turn.orchestratorVersion ?? nextState.orchestratorVersion ?? null,
+      orchestratorRunId: turn.orchestratorRunId ?? nextState.orchestratorRunId ?? null,
     },
     traceId: input.traceId,
     candidate: turn.toolCall,
     adapter: turn.adapter,
+    orchestrator: turn.orchestrator,
+    orchestratorVersion: turn.orchestratorVersion ?? null,
+    orchestratorRunId: turn.orchestratorRunId ?? null,
     final: turn.final,
     actions: turn.actions as ExecuteAction[] | undefined,
     logs: turn.logs,

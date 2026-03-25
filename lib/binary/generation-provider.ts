@@ -1,10 +1,12 @@
 import type { BinaryBuildRequest, BinaryManifest, BinaryPlanPreview } from "@/lib/binary/contracts";
 import { synthesizeBinaryWorkspaceSpec } from "@/lib/binary/template";
 import { resolvePlaygroundModelSelection } from "@/lib/playground/model-registry";
+import path from "node:path";
 
 const HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
 const DEFAULT_MAX_TOKENS = 2_000;
 const DEFAULT_DELTA_CHUNK_SIZE = 1_600;
+const LOCAL_CODE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"] as const;
 
 type ProviderChatResponse = {
   choices?: Array<{
@@ -231,6 +233,42 @@ function coerceGeneratedFiles(value: unknown): Record<string, string> {
   return out;
 }
 
+function listMissingLocalImports(files: Record<string, string>): string[] {
+  const missing = new Set<string>();
+  const sourceFiles = Object.keys(files).filter((filePath) => /\.(?:ts|tsx|js|jsx)$/i.test(filePath));
+  const importPatterns = [
+    /\bimport\s+(?:type\s+)?(?:[^"'`]+?\s+from\s+)?["']([^"']+)["']/g,
+    /\bexport\s+[^"'`]*?\s+from\s+["']([^"']+)["']/g,
+    /\brequire\(\s*["']([^"']+)["']\s*\)/g,
+    /\bimport\(\s*["']([^"']+)["']\s*\)/g,
+  ];
+
+  for (const sourcePath of sourceFiles) {
+    const content = String(files[sourcePath] || "");
+    for (const pattern of importPatterns) {
+      pattern.lastIndex = 0;
+      let match: RegExpExecArray | null = null;
+      while ((match = pattern.exec(content))) {
+        const specifier = String(match[1] || "").trim();
+        if (!specifier.startsWith(".")) continue;
+
+        const fromDir = path.posix.dirname(sourcePath);
+        const resolvedBase = path.posix.normalize(path.posix.join(fromDir, specifier));
+        const candidates = [
+          resolvedBase,
+          ...LOCAL_CODE_EXTENSIONS.map((extension) => `${resolvedBase}${extension}`),
+          ...LOCAL_CODE_EXTENSIONS.map((extension) => path.posix.join(resolvedBase, `index${extension}`)),
+        ];
+
+        if (candidates.some((candidate) => Object.prototype.hasOwnProperty.call(files, candidate))) continue;
+        missing.add(`${sourcePath} -> ${specifier}`);
+      }
+    }
+  }
+
+  return [...missing].sort((left, right) => left.localeCompare(right));
+}
+
 async function callHostedWorkspaceModel(input: BinaryBuildRequest): Promise<Record<string, unknown> | null> {
   const token = getHfRouterToken();
   if (!token) return null;
@@ -284,8 +322,25 @@ const hostedGenerationProvider: BinaryGenerationProvider = {
     if (!parsed) return null;
 
     const generatedFiles = coerceGeneratedFiles(parsed.files);
-    const files = mergeWorkspaceFiles(input.existingFiles, generatedFiles);
+    const files = mergeWorkspaceFiles(fallback.files, mergeWorkspaceFiles(input.existingFiles, generatedFiles));
     if (!Object.keys(files).length) return null;
+
+    const missingLocalImports = listMissingLocalImports(files);
+    if (missingLocalImports.length) {
+      const warnings = [
+        ...fallback.warnings,
+        `Hosted generation referenced missing local modules (${missingLocalImports.slice(0, 3).join("; ")}); Binary IDE used the deterministic starter instead.`,
+      ];
+      return {
+        ...fallback,
+        warnings,
+        plan: buildPlanPreview({
+          manifestBase: fallback.manifestBase,
+          files: fallback.files,
+          warnings,
+        }),
+      };
+    }
 
     const preferredEntrypoint =
       sanitizeWorkspaceCodePath(typeof parsed.entrypoint === "string" ? parsed.entrypoint : "") ||

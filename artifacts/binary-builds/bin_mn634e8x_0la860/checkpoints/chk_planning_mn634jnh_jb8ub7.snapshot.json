@@ -1,0 +1,117 @@
+{
+  "buildId": "bin_mn634e8x_0la860",
+  "checkpointId": "chk_planning_mn634jnh_jb8ub7",
+  "savedAt": "2026-03-25T13:34:11.837Z",
+  "draftFiles": {},
+  "plan": {
+    "name": "binary-hello-love",
+    "displayName": "TypeScript Service Workspace",
+    "description": "A portable TypeScript service workspace for Binary IDE. This workspace compiles with npm + TypeScript and can be directly runnable with Node.js after build. It uses CommonJS-compatible TypeScript and exports callable functions before starting any server.",
+    "entrypoint": "dist/src/index.js",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "sourceFiles": [
+      "config.yaml",
+      "package.json",
+      "src/index.ts",
+      "tsconfig.json"
+    ],
+    "warnings": [
+      "The intent is short, so the generated scaffold may need refinement."
+    ]
+  },
+  "preview": {
+    "plan": {
+      "name": "binary-hello-love",
+      "displayName": "TypeScript Service Workspace",
+      "description": "A portable TypeScript service workspace for Binary IDE. This workspace compiles with npm + TypeScript and can be directly runnable with Node.js after build. It uses CommonJS-compatible TypeScript and exports callable functions before starting any server.",
+      "entrypoint": "dist/src/index.js",
+      "buildCommand": "npm run build",
+      "startCommand": "npm start",
+      "sourceFiles": [
+        "config.yaml",
+        "package.json",
+        "src/index.ts",
+        "tsconfig.json"
+      ],
+      "warnings": [
+        "The intent is short, so the generated scaffold may need refinement."
+      ]
+    },
+    "files": [],
+    "recentLogs": []
+  },
+  "manifest": {
+    "buildId": "bin_mn634e8x_0la860",
+    "artifactKind": "package_bundle",
+    "name": "binary-hello-love",
+    "displayName": "TypeScript Service Workspace",
+    "description": "A portable TypeScript service workspace for Binary IDE. This workspace compiles with npm + TypeScript and can be directly runnable with Node.js after build. It uses CommonJS-compatible TypeScript and exports callable functions before starting any server.",
+    "intent": "hello love",
+    "runtime": "node18",
+    "platform": "portable",
+    "packageManager": "npm",
+    "entrypoint": "dist/src/index.js",
+    "installCommand": "npm install",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "sourceFiles": [
+      "config.yaml",
+      "package.json",
+      "src/index.ts",
+      "tsconfig.json"
+    ],
+    "outputFiles": [],
+    "warnings": [
+      "The intent is short, so the generated scaffold may need refinement."
+    ],
+    "createdAt": "2026-03-25T13:34:11.558Z"
+  },
+  "reliability": {
+    "status": "pass",
+    "score": 100,
+    "summary": "Pre-build reliability snapshot looks healthy.",
+    "targetEnvironment": {
+      "runtime": "node18",
+      "platform": "portable",
+      "packageManager": "npm"
+    },
+    "issues": [],
+    "warnings": [],
+    "generatedAt": "2026-03-25T13:34:04.964Z"
+  },
+  "liveReliability": {
+    "score": 100,
+    "trend": "steady",
+    "warnings": [],
+    "blockers": [],
+    "resolvedBlockers": [],
+    "updatedAt": "2026-03-25T13:34:04.964Z",
+    "source": "compat"
+  },
+  "artifactState": {
+    "coverage": 0,
+    "runnable": false,
+    "sourceFilesTotal": 0,
+    "sourceFilesReady": 0,
+    "outputFilesReady": 0,
+    "entryPoints": [],
+    "updatedAt": "2026-03-25T13:34:04.964Z"
+  },
+  "sourceGraph": null,
+  "astState": null,
+  "execution": null,
+  "runtimeState": null,
+  "runtimePatches": [],
+  "prompt": "hello love",
+  "parentSnapshotId": null,
+  "snapshot": {
+    "id": "chk_planning_mn634jnh_jb8ub7",
+    "checkpointId": "chk_planning_mn634jnh_jb8ub7",
+    "parentSnapshotId": null,
+    "phase": "planning",
+    "label": "Prepared streaming generation plan.",
+    "savedAt": "2026-03-25T13:34:11.837Z",
+    "source": "compat"
+  }
+}
