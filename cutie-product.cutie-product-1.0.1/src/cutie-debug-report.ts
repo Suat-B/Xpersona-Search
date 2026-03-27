@@ -535,9 +535,13 @@ function buildHeadline(
   suspectedProblemAreas: CutieDebugProblemArea[],
   run: CutieRunState | null | undefined,
   binary: BinaryPanelState,
-  binaryDebug: CutieBinaryDebugSnapshot | null | undefined
+  binaryDebug: CutieBinaryDebugSnapshot | null | undefined,
+  runtime: string
 ): string {
   if (!run && !binary.activeBuild) {
+    if (runtime === "playgroundApi") {
+      return "Hosted playground (OpenHands): no local Cutie run record (expected).";
+    }
     return "No Cutie run or streaming binary build has been captured yet.";
   }
   if (suspectedProblemAreas.includes("auth")) {
@@ -643,7 +647,13 @@ function deriveProblemAreas(input: CutieDebugReportInput, keySignals: string[]):
 
   if (areas.size === 0) {
     areas.add("unknown");
-    if (!run) keySignals.push("No active Cutie run was available.");
+    if (!run) {
+      keySignals.push(
+        input.runtime === "playgroundApi"
+          ? "Hosted playground: orchestration runs on the server; no local Cutie run record (expected)."
+          : "No active Cutie run was available."
+      );
+    }
     if (!binary) keySignals.push("No active binary build was available.");
   }
 
@@ -679,7 +689,7 @@ function buildSummary(input: CutieDebugReportInput, state: RedactionState): Cuti
   const run = input.activeRun;
   const binary = input.binaryPanelState.activeBuild;
   return {
-    headline: buildHeadline(suspectedProblemAreas, run, input.binaryPanelState, input.binaryDebug),
+    headline: buildHeadline(suspectedProblemAreas, run, input.binaryPanelState, input.binaryDebug, input.runtime),
     suspectedProblemAreas,
     keySignals: keySignals.map((line) => sanitizeScalarString(line, state)).slice(0, 12),
     recommendedInspectionOrder: buildInspectionOrder(suspectedProblemAreas),

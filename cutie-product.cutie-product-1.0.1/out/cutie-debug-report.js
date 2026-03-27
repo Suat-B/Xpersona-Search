@@ -352,8 +352,11 @@ function buildDesktopSummary(desktop, state) {
         capabilities: sanitizeUnknown(desktop.capabilities, state, "environment.desktop.capabilities"),
     };
 }
-function buildHeadline(suspectedProblemAreas, run, binary, binaryDebug) {
+function buildHeadline(suspectedProblemAreas, run, binary, binaryDebug, runtime) {
     if (!run && !binary.activeBuild) {
+        if (runtime === "playgroundApi") {
+            return "Hosted playground (OpenHands): no local Cutie run record (expected).";
+        }
         return "No Cutie run or streaming binary build has been captured yet.";
     }
     if (suspectedProblemAreas.includes("auth")) {
@@ -441,8 +444,11 @@ function deriveProblemAreas(input, keySignals) {
     }
     if (areas.size === 0) {
         areas.add("unknown");
-        if (!run)
-            keySignals.push("No active Cutie run was available.");
+        if (!run) {
+            keySignals.push(input.runtime === "playgroundApi"
+                ? "Hosted playground: orchestration runs on the server; no local Cutie run record (expected)."
+                : "No active Cutie run was available.");
+        }
         if (!binary)
             keySignals.push("No active binary build was available.");
     }
@@ -487,7 +493,7 @@ function buildSummary(input, state) {
     const run = input.activeRun;
     const binary = input.binaryPanelState.activeBuild;
     return {
-        headline: buildHeadline(suspectedProblemAreas, run, input.binaryPanelState, input.binaryDebug),
+        headline: buildHeadline(suspectedProblemAreas, run, input.binaryPanelState, input.binaryDebug, input.runtime),
         suspectedProblemAreas,
         keySignals: keySignals.map((line) => sanitizeScalarString(line, state)).slice(0, 12),
         recommendedInspectionOrder: buildInspectionOrder(suspectedProblemAreas),

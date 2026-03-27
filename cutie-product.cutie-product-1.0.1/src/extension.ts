@@ -525,7 +525,8 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
   private static readonly MAX_CHAT_DIFFS_PER_SESSION = 120;
   private static readonly MAX_PATCH_CHARS = 52_000;
   private static readonly MAX_FILE_CHARS_FOR_PATCH = 500_000;
-  private static readonly WEBVIEW_READY_TIMEOUT_MS = 10_000;
+  /** Large chat webview script; Cursor and other hosts may need extra time before late `ready`. */
+  private static readonly WEBVIEW_READY_TIMEOUT_MS = 60_000;
   private static readonly MAX_LIVE_ACTION_LINES = 120;
   private static readonly DESKTOP_CONTEXT_CACHE_TTL_MS = 8_000;
   private static readonly GIT_STATUS_CACHE_TTL_MS = 15_000;
@@ -1293,7 +1294,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), CutieSidebarProvider.HOST_PROBE_TIMEOUT_MS);
       try {
-        const response = await fetch(`${getBaseApiUrl()}/api/health`, {
+        const response = await fetch(`${getBaseApiUrl()}/api/v1/health`, {
           method: "GET",
           signal: controller.signal,
         });
@@ -1492,6 +1493,9 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   async stopAutomation(): Promise<void> {
+    if (this.submitState === "stopping") {
+      return;
+    }
     if (this.currentAbortController) {
       this.status = "Stopping the active Cutie run...";
       this.submitState = "stopping";
@@ -1785,6 +1789,22 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
     this.upsertChatDiffItem(sessionId, item);
   }
 
+  private async finishHostWorkspaceMutationUi(info: CutieWorkspaceMutationInfo): Promise<void> {
+    await this.emitState();
+    const cfg = vscode.workspace.getConfiguration("cutie-product");
+    const autoOpenDiff = cfg.get<boolean>("autoOpenDiff", false) !== false;
+    if (autoOpenDiff) {
+      await this.showCutieDiffEditor(info, { preserveFocus: true, preview: true });
+    } else {
+      rememberMutationBefore(info.relativePath, info.previousContent);
+    }
+    if (cfg.get<boolean>("showDiffToast", false)) {
+      void vscode.window.showInformationMessage(
+        `Cutie updated ${info.relativePath} — compare before and after in the diff editor.`
+      );
+    }
+  }
+
   private async initializeView(): Promise<void> {
     await this.emitState();
     void this.prewarmFastStartState();
@@ -1805,7 +1825,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
     this.webviewReadyTimeout = setTimeout(() => {
       if (this.webviewBootNonce !== bootNonce || this.webviewReady || this.view !== webviewView) return;
       const message =
-        "Cutie UI did not finish loading within 10 seconds. If you just updated the extension, fully restart Trae and open Cutie again.";
+        "Cutie UI did not finish loading in time. Quit and restart Cursor, run Developer: Reload Window, or reinstall the Cutie extension. If it persists, Help → Toggle Developer Tools → Console (look for errors from the webview).";
       this.status = `Cutie UI failed to load: ${message}`;
       webviewView.webview.html = buildWebviewFailureHtml(message);
       console.error("Cutie webview ready timeout", {
@@ -2021,7 +2041,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
             },
           });
         } else {
-          const health = await this.playgroundChatBridge.getOpenHandsStatus();
+          const health = await this.playgroundChatBridge.getOpenHandsStatus(abortController.signal);
           if (health.status !== "healthy") {
             throw new Error(`OpenHands unavailable: ${health.message}`);
           }
@@ -2036,14 +2056,46 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
           if (playgroundTurn.playgroundSessionId) {
             session = { ...session, playgroundHistorySessionId: playgroundTurn.playgroundSessionId };
           }
+
+          if (runRequestVersion !== this.runRequestVersion) return;
+
+          const playgroundRunId = playgroundTurn.playgroundRunId;
+          const fileMutations = playgroundTurn.fileMutations;
+          session = await this.sessionStore.appendMessage(session, {
+            role: "assistant",
+            content: assistantText,
+            ...(playgroundRunId && fileMutations.length ? { runId: playgroundRunId } : {}),
+          });
+          if (this.activeSessionId === session.id) {
+            this.activeSession = session;
+          }
+
+          if (playgroundRunId && fileMutations.length) {
+            for (const mutation of fileMutations) {
+              if (runRequestVersion !== this.runRequestVersion) return;
+              const info: CutieWorkspaceMutationInfo = {
+                sessionId: session.id,
+                runId: playgroundRunId,
+                relativePath: mutation.relativePath,
+                toolName: mutation.toolName,
+                previousContent: mutation.previousContent,
+                nextContent: mutation.nextContent,
+              };
+              await this.recordChatWorkspaceDiff(info);
+              await this.finishHostWorkspaceMutationUi(info);
+            }
+          }
         }
 
         if (runRequestVersion !== this.runRequestVersion) return;
 
-        session = await this.sessionStore.appendMessage(session, { role: "assistant", content: assistantText });
-        if (this.activeSessionId === session.id) {
-          this.activeSession = session;
+        if (runtime === "qwenCode") {
+          session = await this.sessionStore.appendMessage(session, { role: "assistant", content: assistantText });
+          if (this.activeSessionId === session.id) {
+            this.activeSession = session;
+          }
         }
+
         this.streamingAssistantText = "";
         this.submitState = "settled";
         this.status = "Done. OpenHands completed the run.";
@@ -2516,19 +2568,7 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
             onWorkspaceFileMutated: async (info) => {
               if (runRequestVersion !== this.runRequestVersion) return;
               await this.recordChatWorkspaceDiff(info);
-              await this.emitState();
-              const cfg = vscode.workspace.getConfiguration("cutie-product");
-              const autoOpenDiff = cfg.get<boolean>("autoOpenDiff", false) !== false;
-              if (autoOpenDiff) {
-                await this.showCutieDiffEditor(info, { preserveFocus: true, preview: true });
-              } else {
-                rememberMutationBefore(info.relativePath, info.previousContent);
-              }
-              if (cfg.get<boolean>("showDiffToast", false)) {
-                void vscode.window.showInformationMessage(
-                  `Cutie updated ${info.relativePath} — compare before and after in the diff editor.`
-                );
-              }
+              await this.finishHostWorkspaceMutationUi(info);
             },
           },
         });

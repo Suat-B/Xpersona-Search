@@ -1104,7 +1104,7 @@ class CutieSidebarProvider {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), CutieSidebarProvider.HOST_PROBE_TIMEOUT_MS);
             try {
-                const response = await fetch(`${(0, config_1.getBaseApiUrl)()}/api/health`, {
+                const response = await fetch(`${(0, config_1.getBaseApiUrl)()}/api/v1/health`, {
                     method: "GET",
                     signal: controller.signal,
                 });
@@ -1298,6 +1298,9 @@ class CutieSidebarProvider {
         await this.emitState();
     }
     async stopAutomation() {
+        if (this.submitState === "stopping") {
+            return;
+        }
         if (this.currentAbortController) {
             this.status = "Stopping the active Cutie run...";
             this.submitState = "stopping";
@@ -1584,6 +1587,20 @@ class CutieSidebarProvider {
         };
         this.upsertChatDiffItem(sessionId, item);
     }
+    async finishHostWorkspaceMutationUi(info) {
+        await this.emitState();
+        const cfg = vscode.workspace.getConfiguration("cutie-product");
+        const autoOpenDiff = cfg.get("autoOpenDiff", false) !== false;
+        if (autoOpenDiff) {
+            await this.showCutieDiffEditor(info, { preserveFocus: true, preview: true });
+        }
+        else {
+            (0, cutie_diff_1.rememberMutationBefore)(info.relativePath, info.previousContent);
+        }
+        if (cfg.get("showDiffToast", false)) {
+            void vscode.window.showInformationMessage(`Cutie updated ${info.relativePath} — compare before and after in the diff editor.`);
+        }
+    }
     async initializeView() {
         await this.emitState();
         void this.prewarmFastStartState();
@@ -1602,7 +1619,7 @@ class CutieSidebarProvider {
         this.webviewReadyTimeout = setTimeout(() => {
             if (this.webviewBootNonce !== bootNonce || this.webviewReady || this.view !== webviewView)
                 return;
-            const message = "Cutie UI did not finish loading within 10 seconds. If you just updated the extension, fully restart Trae and open Cutie again.";
+            const message = "Cutie UI did not finish loading in time. Quit and restart Cursor, run Developer: Reload Window, or reinstall the Cutie extension. If it persists, Help → Toggle Developer Tools → Console (look for errors from the webview).";
             this.status = `Cutie UI failed to load: ${message}`;
             webviewView.webview.html = buildWebviewFailureHtml(message);
             console.error("Cutie webview ready timeout", {
@@ -1821,7 +1838,7 @@ class CutieSidebarProvider {
                     });
                 }
                 else {
-                    const health = await this.playgroundChatBridge.getOpenHandsStatus();
+                    const health = await this.playgroundChatBridge.getOpenHandsStatus(abortController.signal);
                     if (health.status !== "healthy") {
                         throw new Error(`OpenHands unavailable: ${health.message}`);
                     }
@@ -1836,12 +1853,42 @@ class CutieSidebarProvider {
                     if (playgroundTurn.playgroundSessionId) {
                         session = { ...session, playgroundHistorySessionId: playgroundTurn.playgroundSessionId };
                     }
+                    if (runRequestVersion !== this.runRequestVersion)
+                        return;
+                    const playgroundRunId = playgroundTurn.playgroundRunId;
+                    const fileMutations = playgroundTurn.fileMutations;
+                    session = await this.sessionStore.appendMessage(session, {
+                        role: "assistant",
+                        content: assistantText,
+                        ...(playgroundRunId && fileMutations.length ? { runId: playgroundRunId } : {}),
+                    });
+                    if (this.activeSessionId === session.id) {
+                        this.activeSession = session;
+                    }
+                    if (playgroundRunId && fileMutations.length) {
+                        for (const mutation of fileMutations) {
+                            if (runRequestVersion !== this.runRequestVersion)
+                                return;
+                            const info = {
+                                sessionId: session.id,
+                                runId: playgroundRunId,
+                                relativePath: mutation.relativePath,
+                                toolName: mutation.toolName,
+                                previousContent: mutation.previousContent,
+                                nextContent: mutation.nextContent,
+                            };
+                            await this.recordChatWorkspaceDiff(info);
+                            await this.finishHostWorkspaceMutationUi(info);
+                        }
+                    }
                 }
                 if (runRequestVersion !== this.runRequestVersion)
                     return;
-                session = await this.sessionStore.appendMessage(session, { role: "assistant", content: assistantText });
-                if (this.activeSessionId === session.id) {
-                    this.activeSession = session;
+                if (runtime === "qwenCode") {
+                    session = await this.sessionStore.appendMessage(session, { role: "assistant", content: assistantText });
+                    if (this.activeSessionId === session.id) {
+                        this.activeSession = session;
+                    }
                 }
                 this.streamingAssistantText = "";
                 this.submitState = "settled";
@@ -2295,18 +2342,7 @@ class CutieSidebarProvider {
                             if (runRequestVersion !== this.runRequestVersion)
                                 return;
                             await this.recordChatWorkspaceDiff(info);
-                            await this.emitState();
-                            const cfg = vscode.workspace.getConfiguration("cutie-product");
-                            const autoOpenDiff = cfg.get("autoOpenDiff", false) !== false;
-                            if (autoOpenDiff) {
-                                await this.showCutieDiffEditor(info, { preserveFocus: true, preview: true });
-                            }
-                            else {
-                                (0, cutie_diff_1.rememberMutationBefore)(info.relativePath, info.previousContent);
-                            }
-                            if (cfg.get("showDiffToast", false)) {
-                                void vscode.window.showInformationMessage(`Cutie updated ${info.relativePath} — compare before and after in the diff editor.`);
-                            }
+                            await this.finishHostWorkspaceMutationUi(info);
                         },
                     },
                 });
@@ -2559,7 +2595,8 @@ CutieSidebarProvider.MENTION_QUERY_INDEX_WAIT_MS = 60;
 CutieSidebarProvider.MAX_CHAT_DIFFS_PER_SESSION = 120;
 CutieSidebarProvider.MAX_PATCH_CHARS = 52000;
 CutieSidebarProvider.MAX_FILE_CHARS_FOR_PATCH = 500000;
-CutieSidebarProvider.WEBVIEW_READY_TIMEOUT_MS = 10000;
+/** Large chat webview script; Cursor and other hosts may need extra time before late `ready`. */
+CutieSidebarProvider.WEBVIEW_READY_TIMEOUT_MS = 60000;
 CutieSidebarProvider.MAX_LIVE_ACTION_LINES = 120;
 CutieSidebarProvider.DESKTOP_CONTEXT_CACHE_TTL_MS = 8000;
 CutieSidebarProvider.GIT_STATUS_CACHE_TTL_MS = 15000;

@@ -27,6 +27,12 @@ describe("playground model registry", () => {
     expect(selection.resolvedEntry.model).toContain("Qwen/");
   });
 
+  it("resolves qwen-coder-32b alias", () => {
+    const selection = resolvePlaygroundModelSelection({ requested: "qwen-coder-32b" });
+    expect(selection.resolvedAlias).toBe("qwen-coder-32b");
+    expect(selection.resolvedEntry.model).toContain("Qwen/");
+  });
+
   it("returns a tool-ready default entry", () => {
     const entry = getDefaultPlaygroundModelEntry();
     expect(entry.enabled).toBe(true);

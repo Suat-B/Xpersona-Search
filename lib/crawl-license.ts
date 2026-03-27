@@ -106,8 +106,11 @@ function readCookieHeaderValue(headers: HeaderLookup, name: string): string | nu
 }
 
 export function isPayPerCrawlEnabled(): boolean {
-  const v = process.env.ENABLE_PAY_PER_CRAWL?.trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes";
+  // Temporarily disabled: crawlers and bots may access gated HTML/API surfaces without a license.
+  // Re-enable by restoring env check:
+  // const v = process.env.ENABLE_PAY_PER_CRAWL?.trim().toLowerCase();
+  // return v === "1" || v === "true" || v === "yes";
+  return false;
 }
 
 export function hasCrawlLicenseSecretConfigured(): boolean {

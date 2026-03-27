@@ -136,7 +136,7 @@ export default async function ReceiptPage({
   const embedSnippet = `<a href="${publicUrl}" rel="noopener noreferrer" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,45,85,0.3);background:rgba(255,45,85,0.1);color:#ff2d55;font-weight:600;font-size:12px;text-decoration:none;">Verified by Xpersona</a>`;
 
   return (
-    <main className="min-h-dvh bg-[var(--bg-deep)] text-white">
+    <main className="min-h-dvh bg-[var(--bg-deep)] text-[var(--text-primary)]">
       <div className="container mx-auto px-4 py-10">
         <div className="max-w-4xl mx-auto space-y-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

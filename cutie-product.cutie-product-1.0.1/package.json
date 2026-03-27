@@ -6,7 +6,7 @@
 		"type": "git",
 		"url": "https://github.com/cutie/product"
 	},
-  "version": "1.0.77",
+  "version": "1.0.79",
 	"publisher": "cutie-product",
 	"engines": {
 		"vscode": "^1.85.0"
@@ -173,8 +173,8 @@
 				},
 				"cutie-product.model": {
 					"type": "string",
-					"default": "Qwen/Qwen2.5-Coder-32B-Instruct:fastest",
-					"description": "Model id for the Cutie proxy. Use a \"fastest\" or small variant if your host exposes one—planning runs once per agent step, so a faster model noticeably shortens waits."
+					"default": "moonshotai/Kimi-K2.5:fastest",
+					"description": "Model id for hosted playground assist (HF Router id, e.g. moonshotai/Kimi-K2.5:fastest, openai/gpt-oss-120b:groq) or registry alias (playground-default, qwen-coder-32b). Requires HF_TOKEN on the server."
 				},
 				"cutie-product.reasoningLevel": {
 					"type": "string",

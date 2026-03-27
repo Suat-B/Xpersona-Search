@@ -90,7 +90,7 @@ export default async function RootLayout({
       <script
         suppressHydrationWarning
         dangerouslySetInnerHTML={{
-          __html: `(function(){var t=localStorage.getItem("xpersona-theme")||"system";if(t==="system")t=window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";if(t==="light")document.documentElement.classList.add("light-mode");})();`,
+          __html: `(function(){var t=localStorage.getItem("xpersona-theme");if(t===null||t==="")t="light";var eff=t;if(t==="system")eff=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";if(eff==="light")document.documentElement.classList.add("light-mode");else document.documentElement.classList.remove("light-mode");})();`,
         }}
       />
         {shouldLoadGoogleAdScripts ? (

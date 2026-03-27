@@ -65,7 +65,7 @@ function StrategyCard({ strategy }: { strategy: MarketplaceStrategy }) {
   return (
     <div className="rounded-2xl bg-[var(--bg-card)] border border-[var(--border)] p-5 group hover:bg-[var(--bg-card-hover)] hover:border-[var(--accent-heart)]/20 transition-all duration-300 h-full flex flex-col">
       <div className="flex items-start justify-between gap-3 mb-3">
-        <h3 className="font-semibold text-white group-hover:text-[var(--accent-heart)] transition-colors">
+        <h3 className="font-semibold text-[var(--text-primary)] group-hover:text-[var(--accent-heart)] transition-colors">
           {strategy.name}
         </h3>
         <span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] border border-[var(--accent-heart)]/20">
@@ -157,7 +157,7 @@ export function PublicMarketplace() {
   }, [query, strategies]);
 
   return (
-    <section className="min-h-dvh bg-[var(--bg-deep)] text-white">
+    <section className="min-h-dvh bg-[var(--bg-deep)] text-[var(--text-primary)]">
       <div className="container mx-auto px-4 sm:px-6 py-10 sm:py-14">
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
           <div>
@@ -167,9 +167,9 @@ export function PublicMarketplace() {
                 Public Marketplace
               </span>
             </div>
-            <h1 className="text-3xl sm:text-5xl font-bold text-white tracking-tight">
+            <h1 className="text-3xl sm:text-5xl font-bold text-[var(--text-primary)] tracking-tight">
               Discover{" "}
-              <span className="text-white">verified strategies</span>
+              <span className="text-[var(--text-primary)]">verified strategies</span>
             </h1>
             <p className="mt-3 text-base text-[var(--text-secondary)] max-w-xl leading-relaxed">
               Browse AI-driven strategies with verified performance. This page is optimized for agents:
@@ -257,7 +257,7 @@ export function PublicMarketplace() {
                 onClick={() => setActiveFilter(c.id)}
                 className={`px-4 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${activeFilter === c.id
                   ? "bg-[var(--accent-heart)] text-white shadow-lg shadow-[var(--accent-heart)]/20"
-                  : "bg-white/5 text-[var(--text-secondary)] hover:bg-white/10 hover:text-white"
+                  : "bg-white/5 text-[var(--text-secondary)] hover:bg-white/10 hover:text-[var(--text-primary)]"
                   }`}
               >
                 {c.label}
@@ -270,7 +270,7 @@ export function PublicMarketplace() {
               placeholder="Search strategies, devs, categories..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-full rounded-xl border border-[var(--border)] bg-black/40 px-5 py-3 text-sm text-white placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:border-[var(--accent-heart)]/50 transition-all"
+              className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] px-5 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:border-[var(--accent-heart)]/50 transition-all"
               aria-label="Search marketplace strategies"
             />
           </div>
@@ -284,7 +284,7 @@ export function PublicMarketplace() {
           </div>
         ) : error ? (
           <div className="rounded-2xl bg-[var(--bg-card)] border border-[var(--border)] p-12 text-center">
-            <h3 className="font-bold text-white mb-3 text-xl">Unable to load marketplace</h3>
+            <h3 className="font-bold text-[var(--text-primary)] mb-3 text-xl">Unable to load marketplace</h3>
             <p className="text-sm text-[var(--text-secondary)] mb-6">{error}</p>
             <button
               type="button"
@@ -297,7 +297,7 @@ export function PublicMarketplace() {
         ) : filtered.length === 0 ? (
           <div className="rounded-2xl bg-[var(--bg-card)] border border-[var(--border)] p-12 text-center">
             <div className="text-4xl mb-6 opacity-20">📊</div>
-            <h3 className="font-bold text-white mb-3 text-xl">No strategies yet</h3>
+            <h3 className="font-bold text-[var(--text-primary)] mb-3 text-xl">No strategies yet</h3>
             <p className="text-sm text-[var(--text-secondary)] mb-8 max-w-sm mx-auto">
               Be the first to list a strategy on the marketplace and start earning!
             </p>

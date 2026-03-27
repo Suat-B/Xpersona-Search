@@ -145,11 +145,12 @@ function getProjectKey() {
         return null;
     return `${folder.name}:${getWorkspaceHash()}`;
 }
+const DEFAULT_CUTIE_CHAT_MODEL = "moonshotai/Kimi-K2.5:fastest";
 function getModelHint() {
     const configured = vscode.workspace
         .getConfiguration(exports.EXTENSION_NAMESPACE)
-        .get("model", "Qwen/Qwen2.5-Coder-32B-Instruct:fastest");
-    return String(configured || "Qwen/Qwen2.5-Coder-32B-Instruct:fastest").trim();
+        .get("model", DEFAULT_CUTIE_CHAT_MODEL);
+    return String(configured || DEFAULT_CUTIE_CHAT_MODEL).trim();
 }
 function getPromptMarkdownPath() {
     const configured = vscode.workspace
@@ -158,7 +159,12 @@ function getPromptMarkdownPath() {
     return String(configured || "").trim();
 }
 /** Presets for the chat model dropdown; the configured workspace model is always included. Add ids here as you ship more. */
-const MODEL_PICKER_PRESETS = ["Qwen/Qwen2.5-Coder-32B-Instruct:fastest"];
+const MODEL_PICKER_PRESETS = [
+    DEFAULT_CUTIE_CHAT_MODEL,
+    "openai/gpt-oss-120b:groq",
+    "Qwen/Qwen2.5-Coder-32B-Instruct:fastest",
+    "Qwen/Qwen3-Next-80B-A3B-Thinking:fastest",
+];
 function getModelPickerOptions() {
     return Array.from(new Set([getModelHint(), ...MODEL_PICKER_PRESETS])).sort((a, b) => a.localeCompare(b));
 }

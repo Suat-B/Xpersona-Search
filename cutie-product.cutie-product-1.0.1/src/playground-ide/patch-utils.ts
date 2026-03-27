@@ -519,32 +519,6 @@ function hunkMatchesAt(sourceLines: string[], start: number, hunk: ParsedHunk): 
   return true;
 }
 
-function normalizeMatchLine(line: string): string {
-  return line.trim();
-}
-
-function hunkMatchesAtRelaxed(sourceLines: string[], start: number, hunk: ParsedHunk): boolean {
-  let idx = start;
-  for (const line of hunk.lines) {
-    if (line.kind === "+") continue;
-    if (idx >= sourceLines.length) return false;
-    if (normalizeMatchLine(sourceLines[idx]) !== normalizeMatchLine(line.text)) return false;
-    idx += 1;
-  }
-  return true;
-}
-
-function findRelaxedUniqueMatch(sourceLines: string[], from: number, to: number, hunk: ParsedHunk): number {
-  let matchIndex = -1;
-  for (let i = from; i <= to; i += 1) {
-    if (hunkMatchesAtRelaxed(sourceLines, i, hunk)) {
-      if (matchIndex !== -1) return -1;
-      matchIndex = i;
-    }
-  }
-  return matchIndex;
-}
-
 function locateHunkStart(sourceLines: string[], expectedStart: number, hunk: ParsedHunk, minStart: number): number {
   const boundedExpected = Math.max(minStart, expectedStart);
   if (hunkMatchesAt(sourceLines, boundedExpected, hunk)) return boundedExpected;
@@ -557,9 +531,23 @@ function locateHunkStart(sourceLines: string[], expectedStart: number, hunk: Par
   for (let i = minStart; i < sourceLines.length; i += 1) {
     if (hunkMatchesAt(sourceLines, i, hunk)) return i;
   }
-  const relaxedNearby = findRelaxedUniqueMatch(sourceLines, from, to, hunk);
-  if (relaxedNearby >= 0) return relaxedNearby;
-  return findRelaxedUniqueMatch(sourceLines, minStart, Math.max(minStart, sourceLines.length - 1), hunk);
+  return -1;
+}
+
+/**
+ * True when the patch has ---/+++ paths or every hunk uses line-numbered @@ headers.
+ * Bare @@ hunks default to line 1 and previously paired with trim-relaxed matching risks.
+ */
+export function isPatchSafelyAnchoredForExistingFile(patchText: string): boolean {
+  const wrapped = recoverUnifiedDiffFromWrappedPayload(patchText);
+  const leaked = recoverUnifiedDiffFromLeakedPatchArtifacts(wrapped || patchText);
+  const patchToApply = leaked || wrapped || patchText;
+  const normalized = normalizePatchText(patchToApply).trim();
+  if (!normalized) return false;
+  const parsed = parsePatch(normalized);
+  if (!parsed?.hunks.length) return false;
+  if (parsed.oldPath && parsed.newPath) return true;
+  return parsed.hunks.every((h) => h.hasExplicitStart);
 }
 
 export function extractPatchTargetPath(patchText: string): string | null {

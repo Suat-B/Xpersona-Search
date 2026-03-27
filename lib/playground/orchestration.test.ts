@@ -15,6 +15,7 @@ import {
   buildPlan,
   buildTargetInference,
   buildValidationPlan,
+  inferIntent,
   parseStructuredAssistResponse,
   runAssist,
   synthesizeDeterministicActions,
@@ -28,6 +29,24 @@ afterEach(() => {
 });
 
 describe("playground orchestration", () => {
+  it("classifies what-is questions about a file as unknown, not code_edit", () => {
+    const intent = inferIntent({
+      mode: "auto",
+      task: "what is my main.py about",
+      targetInference: { path: "main.py", confidence: 0.9, source: "mention" },
+    });
+    expect(intent.type).toBe("unknown");
+  });
+
+  it("still classifies explicit fix requests with a target path as code_edit", () => {
+    const intent = inferIntent({
+      mode: "auto",
+      task: "fix the import in main.py",
+      targetInference: { path: "main.py", confidence: 0.9, source: "mention" },
+    });
+    expect(intent.type).toBe("code_edit");
+  });
+
   it("infers the preferred target from retrieval hints first", () => {
     const target = buildTargetInference({
       task: "fix the route",

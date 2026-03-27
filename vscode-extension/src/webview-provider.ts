@@ -4208,10 +4208,12 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     auth: RequestAuth,
     runId: string,
     toolResult: ToolResult,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    sessionId?: string | null
   ): Promise<AssistRunEnvelope> {
     const url = `${getBaseApiUrl()}/api/v1/playground/runs/${encodeURIComponent(runId)}/continue`;
-    const body = { toolResult };
+    const sid = typeof sessionId === "string" && sessionId.trim() ? sessionId.trim() : "";
+    const body = sid ? { toolResult, sessionId: sid } : { toolResult };
     let lastError: Error | null = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) {
@@ -4310,11 +4312,15 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       });
       this.postState();
 
+      if (input.signal?.aborted) {
+        throw new Error("Prompt aborted");
+      }
       const toolResult = await this.toolExecutor.executeToolCall({
         pendingToolCall,
         auth: input.auth,
         sessionId: this.sessionId || undefined,
         workspaceFingerprint: input.workspaceFingerprint,
+        signal: input.signal,
       });
       if (input.signal?.aborted) {
         throw new Error("Prompt aborted");
@@ -4331,7 +4337,13 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         input.debugRef.runId = envelope.runId;
         input.debugRef.adapter = envelope.adapter;
       }
-      const nextEnvelope = await this.continueRun(input.auth, envelope.runId, toolResult, input.signal);
+      const nextEnvelope = await this.continueRun(
+        input.auth,
+        envelope.runId,
+        toolResult,
+        input.signal,
+        envelope.sessionId || this.sessionId
+      );
       const nextSignature = buildToolCallSignature(nextEnvelope.pendingToolCall?.toolCall || null);
       const currentFingerprint = buildHostedProgressFingerprint({
         envelope,

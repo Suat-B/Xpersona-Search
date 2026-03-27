@@ -1,11 +1,18 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { unwrapClientResponse } from "@/lib/api/client-response";
 
-type Tab = "overview" | "users" | "claims" | "claimed_agents" | "agent_submissions" | "custom_pages";
+type Tab =
+  | "overview"
+  | "users"
+  | "claims"
+  | "claimed_agents"
+  | "agent_submissions"
+  | "custom_pages"
+  | "dashboard_access";
 
 type OverviewData = {
   usersTotal: number;
@@ -72,6 +79,26 @@ type ClaimedAgentRow = {
   updatedAt: string | null;
 };
 
+type DashboardAccessRow = {
+  id: string;
+  path: string;
+  outcome: string;
+  userAgent: string;
+  clientIp: string | null;
+  referer: string | null;
+  botLabel: string | null;
+  createdAt: string | null;
+};
+
+type DashboardAccessSummary = {
+  totalInWindow: number;
+  sinceHours: number;
+  pathPrefix: string;
+  byPath: { path: string; count: number }[];
+  byBotLabel: { botLabel: string; count: number }[];
+  byOutcome: { outcome: string; count: number }[];
+};
+
 export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
@@ -84,6 +111,9 @@ export default function AdminPage() {
   const [claimedAgents, setClaimedAgents] = useState<ClaimedAgentRow[]>([]);
   const [submissions, setSubmissions] = useState<AgentSubmissionRow[]>([]);
   const [customPages, setCustomPages] = useState<CustomPageRow[]>([]);
+  const [dashboardAccessItems, setDashboardAccessItems] = useState<DashboardAccessRow[]>([]);
+  const [dashboardAccessSummary, setDashboardAccessSummary] = useState<DashboardAccessSummary | null>(null);
+  const [dashboardAccessOutcome, setDashboardAccessOutcome] = useState<"" | "redirect_signin" | "rendered">("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -143,6 +173,24 @@ export default function AdminPage() {
           const data = unwrapClientResponse<{ items?: CustomPageRow[] }>(json);
           if (isActive) setCustomPages(data.items ?? []);
         }
+        if (tab === "dashboard_access") {
+          const q = new URLSearchParams({
+            limit: "200",
+            sinceHours: "168",
+            pathPrefix: "/dashboard",
+          });
+          if (dashboardAccessOutcome) q.set("outcome", dashboardAccessOutcome);
+          const res = await fetch(`/api/v1/admin/dashboard-access?${q}`, { cache: "no-store" });
+          const json = await res.json();
+          const data = unwrapClientResponse<{
+            items?: DashboardAccessRow[];
+            summary?: DashboardAccessSummary;
+          }>(json);
+          if (isActive) {
+            setDashboardAccessItems(data.items ?? []);
+            setDashboardAccessSummary(data.summary ?? null);
+          }
+        }
         if (isActive) setLastUpdated(new Date());
       } catch {
         if (isActive) setError("Failed to load admin data");
@@ -156,7 +204,7 @@ export default function AdminPage() {
       isActive = false;
       clearInterval(interval);
     };
-  }, [isAdmin, tab]);
+  }, [isAdmin, tab, dashboardAccessOutcome]);
 
   async function handleClaimAction(claimId: string, action: "approve" | "reject") {
     const res = await fetch(`/api/v1/admin/claims/${claimId}/${action}`, { method: "POST" });
@@ -186,6 +234,7 @@ export default function AdminPage() {
     { id: "claimed_agents", label: "Claimed Agents" },
     { id: "agent_submissions", label: "Agent Submissions" },
     { id: "custom_pages", label: "Custom Pages" },
+    { id: "dashboard_access", label: "Dashboard access" },
   ];
 
   return (
@@ -355,6 +404,105 @@ export default function AdminPage() {
             <thead><tr className="text-left text-[var(--text-secondary)]"><th className="p-3">Agent</th><th className="p-3">Status</th><th className="p-3">Updated</th></tr></thead>
             <tbody>{customPages.map((c) => <tr key={c.id} className="border-t border-[var(--border)]"><td className="p-3">{c.agentName} ({c.agentSlug})</td><td className="p-3">{c.status}</td><td className="p-3">{c.updatedAt ? new Date(c.updatedAt).toLocaleString() : "-"}</td></tr>)}</tbody>
           </table>
+        </div>
+      )}
+
+      {tab === "dashboard_access" && dashboardAccessSummary && (
+        <div className="space-y-6">
+          <p className="text-sm text-[var(--text-secondary)]">
+            Logged requests to paths under <code className="text-[var(--text-primary)]">{dashboardAccessSummary.pathPrefix}</code> in the last{" "}
+            {dashboardAccessSummary.sinceHours} hours.{" "}
+            <span className="text-[var(--text-tertiary)]">
+              <code className="text-[var(--text-primary)]">redirect_signin</code> is an unauthenticated hit (often bots or scanners);{" "}
+              <code className="text-[var(--text-primary)]">rendered</code> reached the dashboard shell with a session or guest cookie.
+            </span>
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-[var(--text-tertiary)]">Outcome:</span>
+            {(["", "redirect_signin", "rendered"] as const).map((v) => (
+              <button
+                key={v || "all"}
+                type="button"
+                onClick={() => setDashboardAccessOutcome(v)}
+                className={cn(
+                  "rounded-lg px-3 py-1 text-xs font-medium transition-all",
+                  dashboardAccessOutcome === v
+                    ? "bg-[var(--accent-heart)]/20 text-[var(--accent-heart)]"
+                    : "text-[var(--text-secondary)] hover:bg-white/[0.04]"
+                )}
+              >
+                {v === "" ? "All" : v}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="agent-card p-4">
+              <p className="text-xs text-[var(--text-tertiary)]">Events (window)</p>
+              <p className="text-2xl font-semibold text-[var(--text-primary)]">{dashboardAccessSummary.totalInWindow}</p>
+            </div>
+            <div className="agent-card p-4 sm:col-span-2">
+              <p className="text-xs text-[var(--text-tertiary)] mb-2">By outcome</p>
+              <div className="flex flex-wrap gap-3 text-sm">
+                {dashboardAccessSummary.byOutcome.map((o) => (
+                  <span key={o.outcome} className="text-[var(--text-primary)]">
+                    <span className="text-[var(--text-secondary)]">{o.outcome}:</span> {o.count}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="agent-card p-4">
+              <p className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Top paths</p>
+              <ul className="space-y-1 text-sm">
+                {dashboardAccessSummary.byPath.map((r) => (
+                  <li key={r.path} className="flex justify-between gap-2">
+                    <span className="truncate text-[var(--text-primary)]" title={r.path}>{r.path}</span>
+                    <span className="shrink-0 text-[var(--text-tertiary)]">{r.count}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="agent-card p-4">
+              <p className="text-xs font-semibold text-[var(--text-secondary)] mb-2">By bot label (unknown = no UA match)</p>
+              <ul className="space-y-1 text-sm">
+                {dashboardAccessSummary.byBotLabel.map((r) => (
+                  <li key={r.botLabel} className="flex justify-between gap-2">
+                    <span className="text-[var(--text-primary)]">{r.botLabel}</span>
+                    <span className="text-[var(--text-tertiary)]">{r.count}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <div className="agent-card p-0 overflow-auto max-h-[min(70vh,720px)]">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[var(--text-secondary)]">
+                  <th className="p-3 sticky top-0 bg-[var(--bg-elevated)]">Time</th>
+                  <th className="p-3 sticky top-0 bg-[var(--bg-elevated)]">Path</th>
+                  <th className="p-3 sticky top-0 bg-[var(--bg-elevated)]">Outcome</th>
+                  <th className="p-3 sticky top-0 bg-[var(--bg-elevated)]">Bot</th>
+                  <th className="p-3 sticky top-0 bg-[var(--bg-elevated)]">IP</th>
+                  <th className="p-3 sticky top-0 bg-[var(--bg-elevated)]">User-Agent</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dashboardAccessItems.map((row) => (
+                  <tr key={row.id} className="border-t border-[var(--border)] align-top">
+                    <td className="p-3 whitespace-nowrap text-xs text-[var(--text-secondary)]">
+                      {row.createdAt ? new Date(row.createdAt).toLocaleString() : "-"}
+                    </td>
+                    <td className="p-3 text-xs break-all max-w-[200px]">{row.path}</td>
+                    <td className="p-3 text-xs">{row.outcome}</td>
+                    <td className="p-3 text-xs">{row.botLabel ?? "—"}</td>
+                    <td className="p-3 text-xs font-mono">{row.clientIp ?? "—"}</td>
+                    <td className="p-3 text-xs break-all max-w-[280px] text-[var(--text-secondary)]">{row.userAgent}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

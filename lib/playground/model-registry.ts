@@ -119,10 +119,10 @@ const DEFAULT_CAPABILITIES: PlaygroundModelCapabilitySet = {
 
 const DEFAULT_MODEL_ENTRY: PlaygroundModelRegistryEntry = buildRegistryEntry({
   alias: DEFAULT_PLAYGROUND_MODEL_ALIAS,
-  displayName: "Cutie Default",
-  description: "Server-owned default coding model for the hosted Binary IDE runtime.",
+  displayName: "GPT-OSS 120B (Groq)",
+  description: "Default hosted coding model via Hugging Face Router (Groq provider).",
   provider: "hf",
-  model: String(process.env.PLAYGROUND_DEFAULT_MODEL || "Qwen/Qwen2.5-Coder-32B-Instruct:fastest").trim(),
+  model: String(process.env.PLAYGROUND_DEFAULT_MODEL || "openai/gpt-oss-120b:groq").trim(),
   baseUrl: String(process.env.PLAYGROUND_DEFAULT_BASE_URL || "https://router.huggingface.co/v1").trim(),
   authSource: "hf_token",
   capabilities: {
@@ -135,6 +135,21 @@ const DEFAULT_MODEL_ENTRY: PlaygroundModelRegistryEntry = buildRegistryEntry({
 
 const BUILTIN_MODEL_ENTRIES: PlaygroundModelRegistryEntry[] = [
   DEFAULT_MODEL_ENTRY,
+  buildRegistryEntry({
+    alias: "qwen-coder-32b",
+    displayName: "Qwen 2.5 Coder 32B",
+    description: "Qwen 2.5 Coder on Hugging Face Router (previous default).",
+    provider: "hf",
+    model: String(process.env.PLAYGROUND_QWEN_CODER_MODEL || "Qwen/Qwen2.5-Coder-32B-Instruct:fastest").trim(),
+    baseUrl: String(process.env.PLAYGROUND_QWEN_CODER_BASE_URL || "https://router.huggingface.co/v1").trim(),
+    authSource: "hf_token",
+    capabilities: {
+      supportsTextActions: true,
+      supportsNativeToolCalls: false,
+      preferredAdapter: "text_actions",
+    },
+    enabled: true,
+  }),
   buildRegistryEntry({
     alias: "qwen-next",
     displayName: "Qwen Next",

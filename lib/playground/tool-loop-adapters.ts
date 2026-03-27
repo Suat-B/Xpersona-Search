@@ -148,17 +148,29 @@ function buildToolLoopUserPrompt(input: ToolLoopTurnInput, tools: PlaygroundTool
           .join("\n")
       : "none";
 
-  const resultSection = input.latestToolResult
-    ? [
-        "Latest tool result:",
-        `- tool: ${input.latestToolResult.name}`,
-        `- ok: ${input.latestToolResult.ok}`,
-        input.latestToolResult.blocked ? "- blocked: true" : "",
-        `- summary: ${input.latestToolResult.summary.slice(0, 3_000)}`,
-      ]
-        .filter(Boolean)
-        .join("\n")
-    : "Latest tool result: none.";
+  const resultSection = (() => {
+    const lr = input.latestToolResult;
+    if (!lr) return "Latest tool result: none.";
+    const lines = [
+      "Latest tool result:",
+      `- tool: ${lr.name}`,
+      `- ok: ${lr.ok}`,
+      lr.blocked ? "- blocked: true" : "",
+      `- summary: ${lr.summary.slice(0, 3_000)}`,
+    ];
+    if (lr.name === "read_file" && lr.ok && lr.data && typeof lr.data === "object") {
+      const record = lr.data as Record<string, unknown>;
+      const content = record.content;
+      if (typeof content === "string" && content.trim()) {
+        const maxChars = 100_000;
+        const body = content.length <= maxChars ? content : `${content.slice(0, maxChars)}\n… [truncated for prompt]`;
+        lines.push(
+          `- file_content (range=${String(record.range ?? "?")}, lineCount=${String(record.lineCount ?? "?")}):\n${body}`
+        );
+      }
+    }
+    return lines.filter(Boolean).join("\n");
+  })();
   const repairSection = input.repairDirective
     ? [
         "Repair directive:",

@@ -318,9 +318,45 @@ export function buildDecision(mode: AssistMode, task: string): AssistResult["dec
   };
 }
 
+/**
+ * Questions about what a file does / means should not be classified as code_edit: the tool loop
+ * requires a mutation after read_file when intent is code_edit, which breaks pure Q&A (e.g. "what is main.py about").
+ */
+function looksLikeInformationalQuestion(task: string): boolean {
+  const t = compactWhitespace(task);
+  if (!t) return false;
+  // Any explicit change / implementation ask → not read-only Q&A.
+  if (
+    /\b(edit|update|modify|patch|refactor|fix|implement|create|write|add|build|delete|remove|rename|migrate|replace)\b/i.test(
+      t
+    )
+  ) {
+    return false;
+  }
+  const lower = t.toLowerCase();
+  if (/^\s*what\s+(is|are|does|do)\b/i.test(lower)) return true;
+  if (/\bwhat\s+is\s+(my|the|this|that)\b/i.test(lower)) return true;
+  if (/\bexplain\b/i.test(lower)) return true;
+  if (/\bdescribe\b/i.test(lower)) return true;
+  if (/\btell me (about|what)\b/i.test(lower)) return true;
+  if (/\bhow does\b/i.test(lower)) return true;
+  if (/\bhow do (i|we)\b/i.test(lower)) return true;
+  if (/\bsummarize\b/i.test(lower)) return true;
+  if (/\bwhat'?s\s+(in|inside)\b/i.test(lower)) return true;
+  return false;
+}
+
 export function inferIntent(input: { mode: AssistMode; task: string; targetInference: AssistTargetInference }): AssistIntent {
   if (input.mode === "plan") {
     return { type: "plan", confidence: 0.95, delta: 0.1, clarified: true };
+  }
+  if (looksLikeInformationalQuestion(input.task)) {
+    return {
+      type: "unknown",
+      confidence: 0.78,
+      delta: 0.14,
+      clarified: Boolean(input.targetInference.path),
+    };
   }
   if (
     input.targetInference.path ||

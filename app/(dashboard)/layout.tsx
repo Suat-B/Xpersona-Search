@@ -1,5 +1,5 @@
 import { auth, type Session } from "@/lib/auth";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { isAdminEmail } from "@/lib/admin";
 import { db } from "@/lib/db";
@@ -7,12 +7,22 @@ import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { GameChrome } from "@/components/layout/GameChrome";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
+import { recordDashboardAccessEvent } from "@/lib/dashboard-access-log";
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const h = await headers();
+  const pathname = h.get("x-xp-pathname") ?? "";
+  const accessLogCtx = {
+    userAgent: h.get("user-agent"),
+    xForwardedFor: h.get("x-forwarded-for"),
+    referer: h.get("referer"),
+  };
+
   let session: Session | null = null;
   try {
     session = await auth();
@@ -26,7 +36,37 @@ export default async function DashboardLayout({
   const hasGuest = !!userIdFromCookie;
   const needsGuest = !hasSession && !hasGuest;
 
-  if (needsGuest) {
+  if (pathname.startsWith("/dashboard")) {
+    if (needsGuest) {
+      after(() =>
+        recordDashboardAccessEvent({
+          path: pathname,
+          outcome: "redirect_signin",
+          ...accessLogCtx,
+        })
+      );
+      if (process.env.NODE_ENV === "development") {
+        const nextAuthToken =
+          cookieStore.get("authjs.session-token")?.value ??
+          cookieStore.get("__Secure-authjs.session-token")?.value ??
+          cookieStore.get("next-auth.session-token")?.value ??
+          cookieStore.get("__Secure-next-auth.session-token")?.value;
+        console.warn("[dashboard layout] redirecting to sign-in: no session/user", {
+          hasSession,
+          hasGuest,
+          hasNextAuthCookie: Boolean(nextAuthToken),
+        });
+      }
+      redirect("/auth/signin?callbackUrl=/dashboard");
+    }
+    after(() =>
+      recordDashboardAccessEvent({
+        path: pathname,
+        outcome: "rendered",
+        ...accessLogCtx,
+      })
+    );
+  } else if (needsGuest) {
     if (process.env.NODE_ENV === "development") {
       const nextAuthToken =
         cookieStore.get("authjs.session-token")?.value ??

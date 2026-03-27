@@ -25,6 +25,8 @@
     "smoke:graph": "node scripts/smoke-graph.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:ensure-playground-schema": "node scripts/ensure-playground-schema.mjs",
+    "db:ensure-dashboard-access-schema": "node scripts/ensure-dashboard-access-schema.mjs",
     "db:push": "drizzle-kit push",
     "db:ans-migrate": "node scripts/ans-db-migrate.mjs",
     "db:ensure-agents-table": "node scripts/ensure-agents-table.mjs",

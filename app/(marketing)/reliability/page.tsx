@@ -100,7 +100,7 @@ export default async function ReliabilityPage() {
   ].filter(Boolean) as string[];
 
   return (
-    <section className="min-h-dvh bg-[var(--bg-deep)] text-white">
+    <section className="min-h-dvh bg-[var(--bg-deep)] text-[var(--text-primary)]">
       <div className="container mx-auto px-4 sm:px-6 py-10 sm:py-14">
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
           <div>
@@ -108,7 +108,7 @@ export default async function ReliabilityPage() {
               <div className="w-2 h-2 rounded-full bg-[var(--accent-heart)] animate-pulse shadow-[0_0_8px_var(--accent-heart)]" />
               <span className="text-xs font-semibold text-[var(--accent-heart)] uppercase tracking-widest">Reliability Layer</span>
             </div>
-            <h1 className="text-3xl sm:text-5xl font-bold text-white tracking-tight">Xpersona Reliability</h1>
+            <h1 className="text-3xl sm:text-5xl font-bold text-[var(--text-primary)] tracking-tight">Xpersona Reliability</h1>
             <p className="mt-3 text-base text-[var(--text-secondary)] max-w-2xl leading-relaxed">
               Machine-readable observability infrastructure so AI agents can measure, compare, and optimize
               themselves with live, signed telemetry.
@@ -117,7 +117,7 @@ export default async function ReliabilityPage() {
           <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
             <Link
               href="/api"
-              className="inline-flex items-center justify-center rounded-full border border-[var(--border)] bg-white/5 px-6 py-2.5 text-sm font-semibold text-white hover:bg-white hover:text-black transition-all active:scale-95"
+              className="inline-flex items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-6 py-2.5 text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] transition-all active:scale-95"
             >
               View API
             </Link>
@@ -179,7 +179,7 @@ export default async function ReliabilityPage() {
 
         <div className="mt-12 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-8">
           <div className="flex flex-col gap-3 mb-8">
-            <h2 className="text-3xl font-bold text-white tracking-tight">Agent-First Ops</h2>
+            <h2 className="text-3xl font-bold text-[var(--text-primary)] tracking-tight">Agent-First Ops</h2>
             <p className="text-base text-[var(--text-secondary)] max-w-3xl">
               Operational guidance intended for autonomous agents and orchestration layers.
             </p>
@@ -189,19 +189,19 @@ export default async function ReliabilityPage() {
 
         <div className="mt-12 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-8">
           <div className="flex flex-col gap-3 mb-8">
-            <h2 className="text-3xl font-bold text-white tracking-tight">New API Additions</h2>
+            <h2 className="text-3xl font-bold text-[var(--text-primary)] tracking-tight">New API Additions</h2>
             <p className="text-base text-[var(--text-secondary)] max-w-3xl">
               The latest machine endpoints now live for reliability-aware routing, metrics, and optimization.
             </p>
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
             {endpoints.map((item) => (
-              <div key={item.route + item.method} className="rounded-xl border border-[var(--border)] bg-black/40 p-4 hover:border-[var(--accent-heart)]/30 transition-colors">
-                <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-white">
+              <div key={item.route + item.method} className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 hover:border-[var(--accent-heart)]/30 transition-colors">
+                <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-[var(--text-primary)]">
                   <span className="bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] px-2 py-1 rounded">
                     {item.method}
                   </span>
-                  <span className="text-white">
+                  <span className="text-[var(--text-primary)]">
                     {item.route}
                   </span>
                 </div>
@@ -217,14 +217,14 @@ export default async function ReliabilityPage() {
 
         <div className="mt-12 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-8">
           <div className="flex flex-col gap-3 mb-8">
-            <h2 className="text-3xl font-bold text-white tracking-tight">API Quickstart</h2>
+            <h2 className="text-3xl font-bold text-[var(--text-primary)] tracking-tight">API Quickstart</h2>
             <p className="text-base text-[var(--text-secondary)] max-w-3xl">
               Direct machine endpoints for agents to query reliability and optimization guidance.
             </p>
           </div>
           <div className="grid gap-5 lg:grid-cols-3">
             {quickstart.map((item) => (
-              <div key={item.title} className="rounded-2xl border border-[var(--border)] bg-black/40 p-5 hover:border-[var(--accent-heart)]/30 transition-colors">
+              <div key={item.title} className="rounded-2xl border border-[var(--border)] bg-[var(--bg-elevated)] p-5 hover:border-[var(--accent-heart)]/30 transition-colors">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)]">{item.title}</p>
                   <span className="text-[10px] font-bold text-[var(--accent-heart)]">{item.method}</span>
@@ -241,18 +241,18 @@ export default async function ReliabilityPage() {
 
         <div className="mt-12 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-8">
           <div className="flex flex-col gap-3 mb-8">
-            <h2 className="text-3xl font-bold text-white tracking-tight">Reliability API Surface</h2>
+            <h2 className="text-3xl font-bold text-[var(--text-primary)] tracking-tight">Reliability API Surface</h2>
             <p className="text-base text-[var(--text-secondary)] max-w-3xl">Full endpoint surface detected in this codebase.</p>
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
             {apiCatalog.map((group) => (
-              <div key={group.group} className="rounded-2xl bg-black/20 p-6 border border-[var(--border)]">
+              <div key={group.group} className="rounded-2xl bg-[var(--bg-elevated)] p-6 border border-[var(--border)]">
                 <p className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-4">{group.group}</p>
                 <div className="space-y-3">
                   {group.items.map((item) => (
-                    <div key={item.label} className="rounded-xl border border-[var(--border)] bg-black/40 p-4">
+                    <div key={item.label} className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
                       <div className="flex flex-wrap items-center gap-3 text-xs font-mono">
-                        <span className="text-white">{item.label}</span>
+                        <span className="text-[var(--text-primary)]">{item.label}</span>
                         <span className="text-[10px] text-[var(--text-tertiary)]">
                           Auth: {item.auth}
                         </span>
@@ -267,14 +267,14 @@ export default async function ReliabilityPage() {
 
         <div className="mt-12 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-8">
           <div className="flex flex-col gap-3 mb-8">
-            <h2 className="text-3xl font-bold text-white tracking-tight">Reliability Capabilities</h2>
+            <h2 className="text-3xl font-bold text-[var(--text-primary)] tracking-tight">Reliability Capabilities</h2>
             <p className="text-base text-[var(--text-secondary)] max-w-3xl">
               Functionality available today based on the current reliability stack.
             </p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             {capabilities.map((item) => (
-              <div key={item} className="rounded-2xl border border-[var(--border)] bg-black/40 p-5 text-sm text-[var(--text-secondary)] hover:text-white transition-colors">
+              <div key={item} className="rounded-2xl border border-[var(--border)] bg-[var(--bg-elevated)] p-5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
                 {item}
               </div>
             ))}

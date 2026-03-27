@@ -96,7 +96,6 @@ function buildWebviewHtml(webview) {
       justify-content: space-between;
       gap: 10px;
       padding: 6px 10px;
-      border-bottom: 1px solid var(--line);
       background: color-mix(in srgb, var(--surface-elevated) 92%, transparent);
     }
     .workspace-header-title {
@@ -940,10 +939,12 @@ function buildWebviewHtml(webview) {
     }
     .bubble.cutie-diff {
       align-self: stretch;
+      width: 100%;
       max-width: 100%;
       min-width: 0;
+      box-sizing: border-box;
       padding: 0;
-      margin: 10px 0 8px;
+      margin: 10px 0 10px;
       border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line) 78%);
       border-radius: 12px;
       background: linear-gradient(
@@ -953,15 +954,21 @@ function buildWebviewHtml(webview) {
       );
       box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 12%, transparent);
       overflow: hidden;
+      white-space: normal;
     }
     .cutie-diff-head {
       display: flex;
       flex-wrap: wrap;
-      align-items: center;
-      gap: 8px 10px;
-      padding: 10px 12px;
+      align-items: flex-start;
+      gap: 10px 12px;
+      padding: 12px 12px 11px;
       border-bottom: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
-      background: transparent;
+      flex-shrink: 0;
+      background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--accent) 12%, var(--panel-elevated) 88%),
+        color-mix(in srgb, var(--panel-elevated) 94%, var(--canvas) 6%)
+      );
     }
     .cutie-diff-title-wrap {
       display: flex;
@@ -983,6 +990,7 @@ function buildWebviewHtml(webview) {
       font-weight: 700;
       color: var(--text);
       word-break: break-word;
+      overflow-wrap: anywhere;
       line-height: 1.35;
       letter-spacing: 0.01em;
     }
@@ -991,8 +999,9 @@ function buildWebviewHtml(webview) {
       align-items: center;
       justify-content: flex-end;
       flex-wrap: wrap;
-      gap: 6px;
-      flex: 0 1 auto;
+      gap: 6px 8px;
+      flex: 1 1 auto;
+      min-width: 0;
     }
     .cutie-diff-badge {
       flex: 0 0 auto;
@@ -1032,38 +1041,79 @@ function buildWebviewHtml(webview) {
       flex: 0 0 auto;
       font-size: 11px;
       font-weight: 600;
-      padding: 5px 11px;
-      border-radius: 6px;
+      padding: 6px 12px;
+      border-radius: 8px;
       border: 1px solid color-mix(in srgb, var(--line) 70%, var(--accent) 30%);
       background: color-mix(in srgb, var(--canvas) 16%, transparent);
       color: color-mix(in srgb, var(--text) 92%, var(--accent) 8%);
       cursor: pointer;
+      white-space: nowrap;
     }
     .cutie-diff-open:hover,
     .cutie-diff-open:focus-visible {
       border-color: color-mix(in srgb, var(--accent) 35%, var(--line) 65%);
       background: color-mix(in srgb, var(--accent) 8%, transparent);
       outline: none;
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
     }
     .cutie-diff-body {
-      max-height: 360px;
-      overflow: auto;
+      max-height: min(400px, 52vh);
+      min-height: 0;
+      overflow-x: auto;
+      overflow-y: auto;
+      overscroll-behavior: contain;
       scrollbar-gutter: stable;
+      background: color-mix(in srgb, var(--canvas) 34%, var(--panel-elevated) 66%);
+      border-top: 1px solid color-mix(in srgb, var(--line) 68%, transparent);
+    }
+    .cutie-diff-body.cutie-diff-body--expanded {
+      max-height: min(720px, 78vh);
+    }
+    .cutie-diff-foot {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 6px 10px 8px;
       border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-      background: color-mix(in srgb, var(--canvas) 30%, transparent);
+      background: color-mix(in srgb, var(--canvas) 22%, transparent);
+    }
+    .cutie-diff-expand {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid color-mix(in srgb, var(--line) 78%, var(--accent) 22%);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .cutie-diff-expand:hover,
+    .cutie-diff-expand:focus-visible {
+      color: var(--text);
+      border-color: var(--accent-line);
+      background: color-mix(in srgb, var(--accent) 8%, transparent);
+      outline: none;
     }
     .cutie-diff-patch {
       margin: 0;
-      padding: 8px 0 10px;
+      padding: 10px 12px 12px;
       font-family: var(--vscode-editor-font-family, ui-monospace, "Cascadia Code", Consolas, monospace);
       font-size: 11px;
-      line-height: 1.5;
+      line-height: 1.55;
+      tab-size: 2;
+      width: max-content;
+      min-width: 100%;
+      box-sizing: border-box;
     }
     .cutie-diff-patch .diff-line {
-      padding: 1px 10px 1px 8px;
-      white-space: pre-wrap;
-      word-break: break-word;
-      border-left: 2px solid transparent;
+      padding: 2px 12px 2px 10px;
+      white-space: pre;
+      word-break: normal;
+      overflow-wrap: normal;
+      border-left: 3px solid transparent;
     }
     .cutie-diff-patch .diff-line.ctx {
       color: color-mix(in srgb, var(--muted) 90%, var(--text) 10%);
@@ -1150,8 +1200,11 @@ function buildWebviewHtml(webview) {
       color: color-mix(in srgb, var(--text) 90%, var(--accent) 10%);
     }
     .cutie-files-summary-list {
-      max-height: 220px;
+      max-height: min(280px, 42vh);
+      min-height: 0;
       overflow: auto;
+      overflow-x: auto;
+      overscroll-behavior: contain;
       scrollbar-gutter: stable;
     }
     .cutie-files-summary-row {
@@ -1472,35 +1525,6 @@ function buildWebviewHtml(webview) {
       justify-content: flex-end;
       align-items: center;
       padding: 4px 8px 5px;
-    }
-    .composer-footer {
-      display: flex;
-      flex-direction: row;
-      flex-wrap: nowrap;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 4px 2px;
-      margin-top: 2px;
-      min-width: 0;
-    }
-    .composer-footer-select {
-      flex: 1 1 0;
-      min-width: 0;
-      max-width: none;
-      padding: 5px 8px;
-      border-radius: 8px;
-      border: none;
-      background: var(--panel-soft);
-      color: var(--text);
-      font-size: 11px;
-      line-height: 1.35;
-      cursor: pointer;
-      outline: none;
-      box-shadow: none;
-    }
-    .composer-footer-select:hover,
-    .composer-footer-select:focus-visible {
-      background: color-mix(in srgb, var(--panel-soft) 70%, var(--accent) 8%);
     }
     .chips {
       display: flex;
@@ -2020,6 +2044,23 @@ function buildWebviewHtml(webview) {
       .composer-row {
         align-items: flex-end;
       }
+      .cutie-diff-head {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .cutie-diff-meta {
+        justify-content: flex-start;
+      }
+      .cutie-diff-body {
+        max-height: min(300px, 46vh);
+      }
+      .cutie-diff-body.cutie-diff-body--expanded {
+        max-height: min(540px, 70vh);
+      }
+      .cutie-diff-patch {
+        padding: 8px 10px 10px;
+        font-size: 10px;
+      }
     }
   </style>
 </head>
@@ -2117,10 +2158,6 @@ function buildWebviewHtml(webview) {
             </div>
             <div class="status-line" id="runtimeLine"></div>
           </div>
-          <footer class="composer-footer" aria-label="Model and reasoning">
-            <select class="composer-footer-select" id="composerModelSelect" aria-label="Model"></select>
-            <select class="composer-footer-select" id="composerReasoningSelect" aria-label="Reasoning level"></select>
-          </footer>
         </div>
       </main>
     </div>
@@ -2172,6 +2209,18 @@ function buildWebviewHtml(webview) {
     window.addEventListener('unhandledrejection', function (event) {
       reportFatalError(event ? event.reason : event);
     });
+    let cutieReadyPosted = false;
+    function postReadyToHostOnce() {
+      if (cutieReadyPosted) return;
+      cutieReadyPosted = true;
+      try {
+        vscode.postMessage({ type: 'ready' });
+      } catch {
+        /* host may not be listening yet */
+      }
+    }
+    // Tell the extension host we're alive before the large init block runs (Cursor/slow webviews).
+    postReadyToHostOnce();
     const workspaceShell = document.getElementById('workspaceShell');
     const currentChatTitle = document.getElementById('currentChatTitle');
     const backgroundStatusPill = document.getElementById('backgroundStatusPill');
@@ -2202,8 +2251,6 @@ function buildWebviewHtml(webview) {
     const settingsToggle = document.getElementById('settingsToggle');
     const settingsMenu = document.getElementById('settingsMenu');
     const sendBtn = document.getElementById('sendBtn');
-    const composerModelSelect = document.getElementById('composerModelSelect');
-    const composerReasoningSelect = document.getElementById('composerReasoningSelect');
     const objectivesPanel = document.getElementById('objectivesPanel');
     const binaryPanel = document.getElementById('binaryPanel');
     const binaryPanelToggle = document.getElementById('binaryPanelToggle');
@@ -2279,41 +2326,12 @@ function buildWebviewHtml(webview) {
     let composerWatchTimer = null;
     let lastBareEnterIntentAt = 0;
 
-    if (composerForm) composerForm.addEventListener('submit', postSendOrStop, true);
-    if (composerModelSelect) {
-      composerModelSelect.addEventListener('change', function () {
-        vscode.postMessage({ type: 'setComposerModel', model: String(composerModelSelect.value || '').trim() });
-      });
-    }
-    if (composerReasoningSelect) {
-      composerReasoningSelect.addEventListener('change', function () {
-        vscode.postMessage({
-          type: 'setComposerReasoningLevel',
-          level: String(composerReasoningSelect.value || '').trim(),
-        });
-      });
-    }
-    if (sendBtn) {
-      sendBtn.addEventListener('click', postSendOrStop, true);
-      sendBtn.addEventListener('pointerup', postSendOrStop, true);
-      sendBtn.addEventListener('mouseup', postSendOrStop, true);
-      sendBtn.onclick = postSendOrStop;
-      sendBtn.onpointerup = postSendOrStop;
-      sendBtn.onmouseup = postSendOrStop;
-    }
     if (input) {
       input.addEventListener('keydown', onComposerKeydown, true);
       input.addEventListener('keypress', composerKeypressFallback, true);
       input.addEventListener('beforeinput', composerBeforeInput, true);
       input.addEventListener('input', composerInputFallback, true);
-      input.onkeydown = onComposerKeydown;
-      input.onkeypress = composerKeypressFallback;
-      input.onbeforeinput = composerBeforeInput;
-      input.oninput = composerInputFallback;
     }
-    document.addEventListener('keydown', onComposerKeydown, true);
-    document.addEventListener('keypress', composerKeypressFallback, true);
-    document.addEventListener('beforeinput', composerBeforeInput, true);
 
     function isHistoryOpen() {
       return workspaceShell.dataset.historyOpen === 'true';
@@ -2435,42 +2453,6 @@ function buildWebviewHtml(webview) {
       sendBtn.disabled = isSubmitting;
       sendBtn.classList.toggle('is-busy', isSubmitting);
       sendBtn.setAttribute('aria-label', 'Submit');
-    }
-
-    const REASONING_LEVELS = ['Low', 'Medium', 'High', 'Extra High'];
-
-    function renderComposerFooter() {
-      if (!composerModelSelect || !composerReasoningSelect) return;
-      const prefs = state.composerPrefs || {};
-      const models =
-        Array.isArray(prefs.modelOptions) && prefs.modelOptions.length > 0
-          ? prefs.modelOptions
-          : prefs.selectedModel
-            ? [prefs.selectedModel]
-            : [];
-      const currentModel = String(prefs.selectedModel || '').trim();
-      const level = String(prefs.reasoningLevel || 'Medium').trim();
-
-      composerModelSelect.innerHTML = '';
-      for (let mi = 0; mi < models.length; mi += 1) {
-        const m = models[mi];
-        const mOpt = document.createElement('option');
-        mOpt.value = m;
-        mOpt.textContent = m;
-        composerModelSelect.appendChild(mOpt);
-      }
-      if (currentModel && models.indexOf(currentModel) !== -1) composerModelSelect.value = currentModel;
-      else if (models.length) composerModelSelect.selectedIndex = 0;
-
-      composerReasoningSelect.innerHTML = '';
-      for (let ri = 0; ri < REASONING_LEVELS.length; ri += 1) {
-        const r = REASONING_LEVELS[ri];
-        const rOpt = document.createElement('option');
-        rOpt.value = r;
-        rOpt.textContent = r;
-        composerReasoningSelect.appendChild(rOpt);
-      }
-      composerReasoningSelect.value = REASONING_LEVELS.indexOf(level) !== -1 ? level : 'Medium';
     }
 
     function setComposerSubmitting(nextSubmitting) {
@@ -3047,6 +3029,10 @@ function buildWebviewHtml(webview) {
       wrap.className = 'bubble cutie-diff';
       wrap.setAttribute('role', 'region');
       wrap.setAttribute('aria-label', 'Cutie code change');
+      const pathHint = String(diff.relativePath || '').trim();
+      if (pathHint) {
+        wrap.title = pathHint;
+      }
 
       const head = document.createElement('div');
       head.className = 'cutie-diff-head';
@@ -3139,6 +3125,24 @@ function buildWebviewHtml(webview) {
       body.appendChild(patchEl);
       wrap.appendChild(head);
       wrap.appendChild(body);
+      const approxLines = lines.length;
+      const bigPatch = approxLines > 16 || raw.length > 1400;
+      if (bigPatch) {
+        const foot = document.createElement('div');
+        foot.className = 'cutie-diff-foot';
+        const expandBtn = document.createElement('button');
+        expandBtn.type = 'button';
+        expandBtn.className = 'cutie-diff-expand';
+        expandBtn.textContent = 'Larger preview';
+        expandBtn.setAttribute('aria-expanded', 'false');
+        expandBtn.addEventListener('click', function () {
+          const expanded = body.classList.toggle('cutie-diff-body--expanded');
+          expandBtn.textContent = expanded ? 'Smaller preview' : 'Larger preview';
+          expandBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        });
+        foot.appendChild(expandBtn);
+        wrap.appendChild(foot);
+      }
       chat.appendChild(wrap);
     }
 
@@ -4170,6 +4174,17 @@ function buildWebviewHtml(webview) {
       renderRuntime(displayedRunForState(state));
     }
 
+    /** Empty composer and the synthetic new-chat draft so “New chat” is a blank slate. */
+    function resetComposerForBlankNewChat() {
+      drafts.set('__new__', '');
+      draftMentions.set('__new__', []);
+      if (input) {
+        input.value = '';
+        syncLastInputValue();
+        autoSize();
+      }
+    }
+
     function closeSettingsMenu() {
       settingsMenu.classList.add('is-hidden');
       settingsToggle.setAttribute('aria-expanded', 'false');
@@ -4198,7 +4213,7 @@ function buildWebviewHtml(webview) {
 
     function applyStateInner(next) {
       const previousSessionId = state.activeSessionId;
-      const switchedConversation = Boolean(previousSessionId) && previousSessionId !== next.activeSessionId;
+      const switchedConversation = previousSessionId !== next.activeSessionId;
       const hasPendingEcho =
         pendingSubmission &&
         Array.isArray(next.messages) &&
@@ -4214,12 +4229,14 @@ function buildWebviewHtml(webview) {
       if (switchedConversation) {
         clearEphemeralConversationState();
         selectedArtifactsRunId = '';
+        if (!next.activeSessionId) {
+          resetComposerForBlankNewChat();
+        }
       }
 
       state = next;
       isSubmitting = false;
       updateComposerPrimaryButton();
-      renderComposerFooter();
 
       const authState = next.authState || { kind: 'none', label: 'Not signed in' };
       authLabel.textContent = authState.label || 'Not signed in';
@@ -4338,6 +4355,7 @@ function buildWebviewHtml(webview) {
     try {
       document.getElementById('newChatBtn').addEventListener('click', () => {
         saveDraft();
+        resetComposerForBlankNewChat();
         clearEphemeralConversationState();
         closeSettingsMenu();
         closeAllDrawers();
@@ -4405,6 +4423,17 @@ function buildWebviewHtml(webview) {
       } catch (error) {
         handleComposerSendError(error);
       }
+    }
+    if (composerForm) {
+      composerForm.addEventListener('submit', postSendOrStop, true);
+    }
+    if (sendBtn) {
+      sendBtn.addEventListener('click', postSendOrStop, true);
+      sendBtn.addEventListener('pointerup', postSendOrStop, true);
+      sendBtn.addEventListener('mouseup', postSendOrStop, true);
+      sendBtn.onclick = postSendOrStop;
+      sendBtn.onpointerup = postSendOrStop;
+      sendBtn.onmouseup = postSendOrStop;
     }
     function queueOrAcceptMention() {
       if (mentions.classList.contains('show') && mentionState.items.length) {
@@ -4490,16 +4519,24 @@ function buildWebviewHtml(webview) {
       if (!isComposerEvent(event)) return;
 
       if (mentions.classList.contains('show') && mentionState.items.length) {
-        if (event.key === 'ArrowDown') {
+        const down = event.key === 'ArrowDown' || event.code === 'ArrowDown';
+        const up = event.key === 'ArrowUp' || event.code === 'ArrowUp';
+        if (down) {
           event.preventDefault();
           event.stopPropagation();
+          if (typeof event.stopImmediatePropagation === 'function') {
+            event.stopImmediatePropagation();
+          }
           mentionState.activeIndex = (mentionState.activeIndex + 1) % mentionState.items.length;
           renderMentions();
           return;
         }
-        if (event.key === 'ArrowUp') {
+        if (up) {
           event.preventDefault();
           event.stopPropagation();
+          if (typeof event.stopImmediatePropagation === 'function') {
+            event.stopImmediatePropagation();
+          }
           mentionState.activeIndex = (mentionState.activeIndex - 1 + mentionState.items.length) % mentionState.items.length;
           renderMentions();
           return;
@@ -4654,7 +4691,16 @@ function buildWebviewHtml(webview) {
       if (event.key === 'Enter' || event.code === 'Enter' || event.code === 'NumpadEnter') {
         allowNextLineBreak = false;
       }
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      if (
+        event.key === 'ArrowLeft' ||
+        event.key === 'ArrowRight' ||
+        event.key === 'ArrowUp' ||
+        event.key === 'ArrowDown' ||
+        event.code === 'ArrowLeft' ||
+        event.code === 'ArrowRight' ||
+        event.code === 'ArrowUp' ||
+        event.code === 'ArrowDown'
+      ) {
         requestMentions();
       }
     }
@@ -4670,7 +4716,6 @@ function buildWebviewHtml(webview) {
       }, true);
       input.addEventListener('click', () => requestMentions());
       input.addEventListener('keyup', composerKeyupFallback, true);
-      input.onkeyup = composerKeyupFallback;
       input.addEventListener('focus', startComposerWatch, true);
       input.addEventListener('blur', () => {
         allowNextLineBreak = false;
@@ -4691,7 +4736,7 @@ function buildWebviewHtml(webview) {
 
       autoSize();
       closeSettingsMenu();
-      vscode.postMessage({ type: 'ready' });
+      postReadyToHostOnce();
     } catch (error) {
       reportFatalError(error);
     }

@@ -1,5 +1,6 @@
 import { requestJson } from "./api-client";
 import { getBaseApiUrl } from "./pg-config";
+import type { ActionRunnerFileMutationPayload } from "./actions";
 import type { AssistRunEnvelope, PendingToolCall, RequestAuth, ToolResult } from "./shared";
 import type { ToolExecutor } from "./tool-executor";
 
@@ -22,10 +23,12 @@ export async function playgroundContinueRun(
   auth: RequestAuth,
   runId: string,
   toolResult: ToolResult,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  sessionId?: string | null
 ): Promise<AssistRunEnvelope> {
   const url = `${getBaseApiUrl()}/api/v1/playground/runs/${encodeURIComponent(runId)}/continue`;
-  const body = { toolResult };
+  const sid = typeof sessionId === "string" && sessionId.trim() ? sessionId.trim() : "";
+  const body = sid ? { toolResult, sessionId: sid } : { toolResult };
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     if (attempt > 0) {
@@ -51,6 +54,7 @@ export async function runPlaygroundToolLoop(input: {
   workspaceFingerprint: string;
   sessionId?: string;
   signal?: AbortSignal;
+  onDidMutateFile?: (payload: ActionRunnerFileMutationPayload) => void | Promise<void>;
 }): Promise<AssistRunEnvelope> {
   let envelope = input.initial;
   const maxSteps = 64;
@@ -63,8 +67,16 @@ export async function runPlaygroundToolLoop(input: {
       auth: input.auth,
       sessionId: input.sessionId,
       workspaceFingerprint: input.workspaceFingerprint,
+      signal: input.signal,
+      onDidMutateFile: input.onDidMutateFile,
     });
-    envelope = await playgroundContinueRun(input.auth, envelope.runId, toolResult, input.signal);
+    envelope = await playgroundContinueRun(
+      input.auth,
+      envelope.runId,
+      toolResult,
+      input.signal,
+      input.sessionId || envelope.sessionId
+    );
   }
   return envelope;
 }

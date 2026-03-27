@@ -47,6 +47,13 @@ function clamp(value, min, max) {
 function asRecord(value) {
     return value && typeof value === "object" ? value : {};
 }
+/** Git exits non‑zero when cwd has no `.git`; tool loop must not treat that as a fatal mutation failure. */
+function isGitMissingRepositoryOutput(stdout, stderr) {
+    const blob = `${stderr}\n${stdout}`;
+    if (/not a git repository/i.test(blob))
+        return true;
+    return /in an unrelated working tree|fatal: Unable to read current working directory/i.test(blob);
+}
 function summarizeCommandFailure(result) {
     if (result.timedOut) {
         return `Command timed out: ${result.command}`;
@@ -93,6 +100,9 @@ class ToolExecutor {
         const toolCall = input.pendingToolCall.toolCall;
         const args = toolCall.arguments || {};
         try {
+            if (input.signal?.aborted) {
+                throw new Error("Prompt aborted");
+            }
             if (toolCall.name === "list_files") {
                 const result = await this.listFiles(String(args.query || ""), Number(args.limit || 30));
                 return {
@@ -153,6 +163,17 @@ class ToolExecutor {
             }
             if (toolCall.name === "git_status") {
                 const result = await this.runGitCommand("git status --short");
+                const noRepo = isGitMissingRepositoryOutput(result.stdout, result.stderr);
+                if (noRepo) {
+                    return {
+                        toolCallId: toolCall.id,
+                        name: toolCall.name,
+                        ok: true,
+                        summary: "Workspace is not a Git repository; no status to report.",
+                        data: result,
+                        createdAt: new Date().toISOString(),
+                    };
+                }
                 return {
                     toolCallId: toolCall.id,
                     name: toolCall.name,
@@ -168,6 +189,17 @@ class ToolExecutor {
                     ? `git diff -- ${args.path}`
                     : "git diff --stat";
                 const result = await this.runGitCommand(command);
+                const noRepo = isGitMissingRepositoryOutput(result.stdout, result.stderr);
+                if (noRepo) {
+                    return {
+                        toolCallId: toolCall.id,
+                        name: toolCall.name,
+                        ok: true,
+                        summary: "Workspace is not a Git repository; no diff to report.",
+                        data: result,
+                        createdAt: new Date().toISOString(),
+                    };
+                }
                 return {
                     toolCallId: toolCall.id,
                     name: toolCall.name,
@@ -196,6 +228,8 @@ class ToolExecutor {
                     auth: input.auth,
                     sessionId: input.sessionId,
                     workspaceFingerprint: input.workspaceFingerprint,
+                    signal: input.signal,
+                    onDidMutateFile: input.onDidMutateFile,
                 });
                 return {
                     toolCallId: toolCall.id,
@@ -209,7 +243,7 @@ class ToolExecutor {
                 };
             }
             if (toolCall.name === "get_workspace_memory") {
-                const response = await (0, api_client_1.requestJson)("GET", `${(0, pg_config_1.getBaseApiUrl)()}/api/v1/playground/memory/workspace?workspaceFingerprint=${encodeURIComponent(input.workspaceFingerprint)}`, input.auth);
+                const response = await (0, api_client_1.requestJson)("GET", `${(0, pg_config_1.getBaseApiUrl)()}/api/v1/playground/memory/workspace?workspaceFingerprint=${encodeURIComponent(input.workspaceFingerprint)}`, input.auth, undefined, { signal: input.signal });
                 const memory = response?.data?.memory || null;
                 return {
                     toolCallId: toolCall.id,
@@ -265,7 +299,10 @@ class ToolExecutor {
         const raw = await fs.readFile(absolutePath, "utf8");
         const lines = raw.replace(/\r\n/g, "\n").split("\n");
         const startLine = Number.isFinite(Number(startLineValue)) ? clamp(Number(startLineValue), 1, lines.length || 1) : 1;
-        const endLine = Number.isFinite(Number(endLineValue)) ? clamp(Number(endLineValue), startLine, lines.length || startLine) : Math.min(lines.length || 1, startLine + 199);
+        const defaultSpan = 800;
+        const endLine = Number.isFinite(Number(endLineValue))
+            ? clamp(Number(endLineValue), startLine, lines.length || startLine)
+            : Math.min(lines.length || 1, startLine + defaultSpan - 1);
         return {
             path: filePath,
             range: `${startLine}-${endLine}`,
@@ -354,6 +391,8 @@ class ToolExecutor {
             auth: input.auth,
             sessionId: input.sessionId,
             workspaceFingerprint: input.workspaceFingerprint,
+            signal: input.signal,
+            onDidMutateFile: input.onDidMutateFile,
         });
         const changedTarget = input.name === "edit" || input.name === "write_file"
             ? report.changedFiles.includes(String(input.args.path || ""))

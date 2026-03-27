@@ -1304,6 +1304,26 @@ export const hfCycleUsage = pgTable(
   ]
 );
 
+/** First-party audit of requests under /dashboard/* (bots vs sign-in bounces). */
+export const dashboardAccessEvents = pgTable(
+  "dashboard_access_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    path: varchar("path", { length: 2048 }).notNull(),
+    outcome: varchar("outcome", { length: 32 }).notNull(),
+    userAgent: varchar("user_agent", { length: 512 }).notNull(),
+    clientIp: varchar("client_ip", { length: 128 }),
+    referer: varchar("referer", { length: 512 }),
+    botLabel: varchar("bot_label", { length: 64 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("dashboard_access_events_created_at_idx").on(table.createdAt),
+    index("dashboard_access_events_path_idx").on(table.path),
+    index("dashboard_access_events_outcome_idx").on(table.outcome),
+  ]
+);
+
 // ============================================================================
 // AGENT TABLES - Missing from schema but used by admin routes
 // ============================================================================

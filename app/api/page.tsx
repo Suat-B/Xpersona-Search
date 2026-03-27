@@ -200,7 +200,7 @@ console.log(result.topAgents);`;
 
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
         <section className="mb-12">
-          <h2 className="text-lg font-semibold text-white mb-3">Overview</h2>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">Overview</h2>
           <div className="prose prose-invert max-w-none rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6 text-sm leading-relaxed text-[var(--text-secondary)]">
             <p>
               The Xpersona Search API lets AI agents and developers discover OpenClaw skills, A2A agents, and MCP
@@ -208,36 +208,36 @@ console.log(result.topAgents);`;
               the web UI.
             </p>
             <p className="mt-3">
-              <strong className="text-white">Base URL:</strong>{" "}
+              <strong className="text-[var(--text-primary)]">Base URL:</strong>{" "}
               <code className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-xs">{baseUrl}</code>
             </p>
             <p className="mt-3">
-              <strong className="text-white">Rate limits:</strong> 60 requests/minute (anonymous), 120/min (authenticated).
+              <strong className="text-[var(--text-primary)]">Rate limits:</strong> 60 requests/minute (anonymous), 120/min (authenticated).
               Returns <code className="rounded bg-white/10 px-1 font-mono text-xs">429 Too Many Requests</code> with{" "}
               <code className="rounded bg-white/10 px-1 font-mono text-xs">Retry-After</code> when exceeded.
             </p>
             <p className="mt-3">
-              <strong className="text-white">Caching:</strong> Responses include{" "}
+              <strong className="text-[var(--text-primary)]">Caching:</strong> Responses include{" "}
               <code className="rounded bg-white/10 px-1 font-mono text-xs">Cache-Control: public, s-maxage=30, stale-while-revalidate=60</code>.
             </p>
             <p className="mt-3">
-              <strong className="text-white">Prometheus metrics:</strong>{" "}
+              <strong className="text-[var(--text-primary)]">Prometheus metrics:</strong>{" "}
               <code className="rounded bg-white/10 px-1 font-mono text-xs">/api/metrics/prometheus</code>
               {" "}exports request counts and latency histograms.
             </p>
             <p className="mt-3">
-              <strong className="text-white">Observability setup:</strong>{" "}
+              <strong className="text-[var(--text-primary)]">Observability setup:</strong>{" "}
               <code className="rounded bg-white/10 px-1 font-mono text-xs">docs/OBSERVABILITY-SETUP.md</code>
             </p>
             <p className="mt-3">
-              <strong className="text-white">Required AI flow:</strong>{" "}
+              <strong className="text-[var(--text-primary)]">Required AI flow:</strong>{" "}
               <code className="rounded bg-white/10 px-1 font-mono text-xs">1) /search/ai -&gt; 2) /snapshot -&gt; 3) /contract + /trust -&gt; then decide</code>
             </p>
           </div>
         </section>
 
         <section className="mb-12">
-          <h2 className="text-lg font-semibold text-white mb-3">Quickstart in 3 Steps</h2>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">Quickstart in 3 Steps</h2>
           <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
             <p className="mb-3 text-xs font-mono text-[var(--accent-heart)]">
               1) /search/ai -&gt; 2) /snapshot -&gt; 3) /contract + /trust -&gt; then decide
@@ -275,7 +275,7 @@ console.log(result.topAgents);`;
         </section>
 
         <section className="mb-12">
-          <h2 className="text-lg font-semibold text-white mb-3">Playground</h2>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">Playground</h2>
           <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
             <p className="text-sm text-[var(--text-secondary)] mb-3">
               Use these copy-paste commands as a fast interactive playground.
@@ -312,15 +312,15 @@ console.log(result.topAgents);`;
         </section>
 
         <section className="mb-12">
-          <h2 className="text-lg font-semibold text-white mb-4">Endpoints</h2>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Endpoints</h2>
 
           <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] overflow-hidden mb-6">
             <div className="border-b border-white/5 p-5">
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded text-emerald-400">GET</span>
-                <code className="text-sm font-mono text-white/90">/api/v1/search</code>
+                <code className="text-sm font-mono text-[var(--text-primary)]/90">/api/v1/search</code>
               </div>
-              <p className="text-sm font-medium text-white mb-1">Search AI agents</p>
+              <p className="text-sm font-medium text-[var(--text-primary)] mb-1">Search AI agents</p>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-4">
                 Full-text search with filtering, sorting, and cursor-based pagination. Supports Google-like query syntax:
                 &quot;exact phrase&quot;, <code className="rounded bg-white/10 px-1 font-mono">-exclusion</code>, OR,
@@ -328,14 +328,14 @@ console.log(result.topAgents);`;
                 <code className="rounded bg-white/10 px-1 font-mono">lang:python</code>,{" "}
                 <code className="rounded bg-white/10 px-1 font-mono">safety:&gt;80</code>.
               </p>
-              <h3 className="text-xs font-semibold text-white mb-2">Query parameters</h3>
+              <h3 className="text-xs font-semibold text-[var(--text-primary)] mb-2">Query parameters</h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs text-[var(--text-secondary)]">
                   <thead>
                     <tr className="border-b border-white/5">
-                      <th className="text-left py-2 font-medium text-white">Parameter</th>
-                      <th className="text-left py-2 font-medium text-white">Type</th>
-                      <th className="text-left py-2 font-medium text-white">Description</th>
+                      <th className="text-left py-2 font-medium text-[var(--text-primary)]">Parameter</th>
+                      <th className="text-left py-2 font-medium text-[var(--text-primary)]">Type</th>
+                      <th className="text-left py-2 font-medium text-[var(--text-primary)]">Description</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -398,9 +398,9 @@ console.log(result.topAgents);`;
             <div className="border-b border-white/5 p-5">
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded text-emerald-400">GET</span>
-                <code className="text-sm font-mono text-white/90">/api/v1/search/suggest</code>
+                <code className="text-sm font-mono text-[var(--text-primary)]/90">/api/v1/search/suggest</code>
               </div>
-              <p className="text-sm font-medium text-white mb-1">Autocomplete suggestions</p>
+              <p className="text-sm font-medium text-[var(--text-primary)] mb-1">Autocomplete suggestions</p>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-4">
                 Returns query completions and agent suggestions. Min 2 characters in q.
               </p>
@@ -429,9 +429,9 @@ console.log(result.topAgents);`;
             <div className="border-b border-white/5 p-5">
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded text-emerald-400">GET</span>
-                <code className="text-sm font-mono text-white/90">/api/v1/search/trending</code>
+                <code className="text-sm font-mono text-[var(--text-primary)]/90">/api/v1/search/trending</code>
               </div>
-              <p className="text-sm font-medium text-white mb-1">Trending search queries</p>
+              <p className="text-sm font-medium text-[var(--text-primary)] mb-1">Trending search queries</p>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-4">
                 Returns popular searches from the last 30 days. Falls back to top agents if insufficient data.
               </p>
@@ -446,9 +446,9 @@ console.log(result.topAgents);`;
             <div className="border-b border-white/5 p-5">
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded text-amber-400">POST</span>
-                <code className="text-sm font-mono text-white/90">/api/v1/search/click</code>
+                <code className="text-sm font-mono text-[var(--text-primary)]/90">/api/v1/search/click</code>
               </div>
-              <p className="text-sm font-medium text-white mb-1">Record result click</p>
+              <p className="text-sm font-medium text-[var(--text-primary)] mb-1">Record result click</p>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-4">
                 Records which search result was clicked for learning-to-rank. Body:{" "}
                 <code className="rounded bg-white/10 px-1 font-mono">{"{ query, agentId, position }"}</code>.
@@ -464,9 +464,9 @@ console.log(result.topAgents);`;
             <div className="p-5">
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded text-emerald-400">GET</span>
-                <code className="text-sm font-mono text-white/90">/api/v1/agents/{"{slug}"}</code>
+                <code className="text-sm font-mono text-[var(--text-primary)]/90">/api/v1/agents/{"{slug}"}</code>
               </div>
-              <p className="text-sm font-medium text-white mb-1">Get agent by slug</p>
+              <p className="text-sm font-medium text-[var(--text-primary)] mb-1">Get agent by slug</p>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-4">
                 Returns full agent details including description, capabilities, protocols, and metadata.
               </p>
@@ -478,13 +478,13 @@ console.log(result.topAgents);`;
           </div>
 
           <div className="mt-6 rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
-            <h3 className="text-sm font-medium text-white mb-3">Full Search API Surface</h3>
+            <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Full Search API Surface</h3>
             <p className="text-xs text-[var(--text-secondary)] mb-4">
               Auto-detected endpoints under <code className="rounded bg-white/10 px-1 font-mono">/api/v1/search</code>.
             </p>
             <div className="grid gap-3 lg:grid-cols-2">
               {searchEndpoints.map((item) => (
-                <div key={item.route + item.method} className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2">
+                <div key={item.route + item.method} className="rounded-xl border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2">
                   <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
                     <span className="text-emerald-200">
                       {item.method} {item.route}
@@ -504,13 +504,13 @@ console.log(result.topAgents);`;
           </div>
 
           <div className="mt-6 rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
-            <h3 className="text-sm font-medium text-white mb-3">Full Agents API Surface</h3>
+            <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Full Agents API Surface</h3>
             <p className="text-xs text-[var(--text-secondary)] mb-4">
               Auto-detected endpoints under <code className="rounded bg-white/10 px-1 font-mono">/api/v1/agents</code>.
             </p>
             <div className="grid gap-3 lg:grid-cols-2">
               {agentEndpoints.map((item) => (
-                <div key={item.route + item.method} className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2">
+                <div key={item.route + item.method} className="rounded-xl border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2">
                   <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
                     <span className="text-emerald-200">
                       {item.method} {item.route}
@@ -531,22 +531,22 @@ console.log(result.topAgents);`;
         </section>
 
         <section className="mb-12">
-          <h2 className="text-lg font-semibold text-white mb-3">Graph (GPG) API Additions</h2>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">Graph (GPG) API Additions</h2>
           <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
-            <h3 className="text-sm font-medium text-white mb-2">Quickstart</h3>
+            <h3 className="text-sm font-medium text-[var(--text-primary)] mb-2">Quickstart</h3>
             <p className="text-xs text-[var(--text-secondary)] mb-4">
               Endpoints that power the Global Performance Graph planner and recommendations.
             </p>
             <div className="grid gap-3 lg:grid-cols-3">
               {gpgQuickstart.map((item) => (
-                <div key={item.title} className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
+                <div key={item.title} className="rounded-2xl border border-[var(--border)] bg-black/30 p-4">
                   <div className="flex items-center justify-between">
                     <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">{item.title}</p>
                     <span className="text-[10px] uppercase tracking-[0.2em] text-emerald-200">{item.method}</span>
                   </div>
                   <p className="mt-2 text-sm text-[var(--text-secondary)]">{item.description}</p>
                   <p className="mt-3 text-xs font-mono text-[var(--text-tertiary)]">{item.path}</p>
-                  <pre className="mt-3 text-xs text-[var(--text-secondary)] bg-black/40 border border-white/[0.08] rounded-lg p-3 overflow-x-auto">
+                  <pre className="mt-3 text-xs text-[var(--text-secondary)] bg-[var(--bg-matte)] border border-[var(--border)] rounded-lg p-3 overflow-x-auto">
                     {item.curl}
                   </pre>
                 </div>
@@ -555,10 +555,10 @@ console.log(result.topAgents);`;
           </div>
 
           <div className="mt-6 rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
-            <h3 className="text-sm font-medium text-white mb-3">Full GPG API Surface</h3>
+            <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Full GPG API Surface</h3>
             <div className="grid gap-3 lg:grid-cols-2">
               {gpgEndpoints.map((item) => (
-                <div key={item.route + item.method} className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2">
+                <div key={item.route + item.method} className="rounded-xl border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2">
                   <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
                     <span className="text-emerald-200">
                       {item.method} {item.route}
@@ -579,22 +579,22 @@ console.log(result.topAgents);`;
         </section>
 
         <section className="mb-12">
-          <h2 className="text-lg font-semibold text-white mb-3">Graph API (Public)</h2>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">Graph API (Public)</h2>
           <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
-            <h3 className="text-sm font-medium text-white mb-2">Quickstart</h3>
+            <h3 className="text-sm font-medium text-[var(--text-primary)] mb-2">Quickstart</h3>
             <p className="text-xs text-[var(--text-secondary)] mb-4">
               Public Graph endpoints that power planner recommendations and collaboration insights.
             </p>
             <div className="grid gap-3 lg:grid-cols-3">
               {graphQuickstart.map((item) => (
-                <div key={item.title} className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
+                <div key={item.title} className="rounded-2xl border border-[var(--border)] bg-black/30 p-4">
                   <div className="flex items-center justify-between">
                     <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">{item.title}</p>
                     <span className="text-[10px] uppercase tracking-[0.2em] text-emerald-200">{item.method}</span>
                   </div>
                   <p className="mt-2 text-sm text-[var(--text-secondary)]">{item.description}</p>
                   <p className="mt-3 text-xs font-mono text-[var(--text-tertiary)]">{item.path}</p>
-                  <pre className="mt-3 text-xs text-[var(--text-secondary)] bg-black/40 border border-white/[0.08] rounded-lg p-3 overflow-x-auto">
+                  <pre className="mt-3 text-xs text-[var(--text-secondary)] bg-[var(--bg-matte)] border border-[var(--border)] rounded-lg p-3 overflow-x-auto">
                     {item.curl}
                   </pre>
                 </div>
@@ -603,10 +603,10 @@ console.log(result.topAgents);`;
           </div>
 
           <div className="mt-6 rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
-            <h3 className="text-sm font-medium text-white mb-3">Full Graph API Surface</h3>
+            <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Full Graph API Surface</h3>
             <div className="grid gap-3 lg:grid-cols-2">
               {graphEndpoints.map((item) => (
-                <div key={item.route + item.method} className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2">
+                <div key={item.route + item.method} className="rounded-xl border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2">
                   <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
                     <span className="text-emerald-200">
                       {item.method} {item.route}
@@ -627,22 +627,22 @@ console.log(result.topAgents);`;
         </section>
 
         <section className="mb-12">
-          <h2 className="text-lg font-semibold text-white mb-3">Reliability API Additions</h2>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">Reliability API Additions</h2>
           <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
-            <h3 className="text-sm font-medium text-white mb-2">Quickstart</h3>
+            <h3 className="text-sm font-medium text-[var(--text-primary)] mb-2">Quickstart</h3>
             <p className="text-xs text-[var(--text-secondary)] mb-4">
               Machine-readable reliability endpoints for metrics, suggestions, and global performance graphs.
             </p>
             <div className="grid gap-3 lg:grid-cols-3">
               {reliabilityQuickstart.map((item) => (
-                <div key={item.title} className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
+                <div key={item.title} className="rounded-2xl border border-[var(--border)] bg-black/30 p-4">
                   <div className="flex items-center justify-between">
                     <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">{item.title}</p>
                     <span className="text-[10px] uppercase tracking-[0.2em] text-emerald-200">{item.method}</span>
                   </div>
                   <p className="mt-2 text-sm text-[var(--text-secondary)]">{item.description}</p>
                   <p className="mt-3 text-xs font-mono text-[var(--text-tertiary)]">{item.path}</p>
-                  <pre className="mt-3 text-xs text-[var(--text-secondary)] bg-black/40 border border-white/[0.08] rounded-lg p-3 overflow-x-auto">
+                  <pre className="mt-3 text-xs text-[var(--text-secondary)] bg-[var(--bg-matte)] border border-[var(--border)] rounded-lg p-3 overflow-x-auto">
                     {item.curl}
                   </pre>
                 </div>
@@ -651,10 +651,10 @@ console.log(result.topAgents);`;
           </div>
 
           <div className="mt-6 rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
-            <h3 className="text-sm font-medium text-white mb-3">Full Reliability API Surface</h3>
+            <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Full Reliability API Surface</h3>
             <div className="grid gap-3 lg:grid-cols-2">
               {reliabilityEndpoints.map((item) => (
-                <div key={item.route + item.method} className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2">
+                <div key={item.route + item.method} className="rounded-xl border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2">
                   <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
                     <span className="text-emerald-200">
                       {item.method} {item.route}
@@ -675,9 +675,9 @@ console.log(result.topAgents);`;
         </section>
 
         <section className="mb-12">
-          <h2 className="text-lg font-semibold text-white mb-3">Response format</h2>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">Response format</h2>
           <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
-            <h3 className="text-sm font-medium text-white mb-2">Search response</h3>
+            <h3 className="text-sm font-medium text-[var(--text-primary)] mb-2">Search response</h3>
             <p className="text-xs text-[var(--text-secondary)] mb-3">
               Each result includes <code className="rounded bg-white/10 px-1 font-mono">snippet</code> (description with{" "}
               <code className="rounded bg-white/10 px-1 font-mono">&lt;mark&gt;</code> highlighting) when a query is present.
@@ -692,7 +692,7 @@ console.log(result.topAgents);`;
         </section>
 
         <section className="mb-12">
-          <h2 className="text-lg font-semibold text-white mb-3">For AI agents</h2>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">For AI agents</h2>
           <div className="prose prose-invert max-w-none rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6 text-sm leading-relaxed text-[var(--text-secondary)]">
             <p>
               Call <code className="rounded bg-white/10 px-1 font-mono text-xs">GET /api/v1/search</code> with a
@@ -736,7 +736,7 @@ console.log(result.topAgents);`;
         </section>
 
         <section className="rounded-2xl border border-[var(--accent-heart)]/20 bg-[var(--accent-heart)]/5 p-8 text-center">
-          <h3 className="text-lg font-semibold text-white mb-2">Ready to integrate?</h3>
+          <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">Ready to integrate?</h3>
           <p className="text-sm text-[var(--text-secondary)] mb-4 max-w-md mx-auto">
             No API key needed. Start searching agents from your AI or application.
           </p>

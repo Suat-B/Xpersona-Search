@@ -80,6 +80,42 @@ export class OpenHandsGatewayError extends Error {
   }
 }
 
+/** Node/undici often throws `TypeError: fetch failed` with syscall detail on `cause`. */
+function extractFetchFailureDetail(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const parts: string[] = [];
+  if (error.message) parts.push(error.message);
+  const c = (error as Error & { cause?: unknown }).cause;
+  if (c instanceof Error && c.message && !parts.includes(c.message)) {
+    parts.push(c.message);
+  }
+  if (c && typeof c === "object" && c !== null && "code" in c) {
+    const code = (c as { code?: string }).code;
+    if (code) parts.push(`errno=${code}`);
+  }
+  return parts.length ? parts.join(" | ") : "unknown error";
+}
+
+function shortGatewayUrl(fullUrl: string): string {
+  try {
+    const u = new URL(fullUrl);
+    return `${u.protocol}//${u.host}${u.pathname}`;
+  } catch {
+    return fullUrl.slice(0, 160);
+  }
+}
+
+function describeGatewayFetchFailure(fullUrl: string, error: unknown): string {
+  const detail = extractFetchFailureDetail(error);
+  const target = shortGatewayUrl(fullUrl);
+  return [
+    `Could not connect to OpenHands gateway at ${target} (${detail}).`,
+    "Set OPENHANDS_GATEWAY_URL to the gateway base URL (no trailing slash). Try http://127.0.0.1:8010 if localhost misbehaves.",
+    "If the Next.js app runs inside Docker, use http://host.docker.internal:8010 (Windows/Mac) instead of localhost.",
+    "From repo root: npm run openhands:gateway:docker — then curl http://127.0.0.1:8010/health on the same machine as Next.",
+  ].join(" ");
+}
+
 function compactWhitespace(value: string): string {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
@@ -141,6 +177,21 @@ function getOpenHandsGatewayApiKey(): string | null {
   return value || null;
 }
 
+/** OpenHands runs LLM turns that can take minutes; avoid client-side fetch closing the socket early. */
+function getOpenHandsGatewayFetchTimeoutMs(): number {
+  const raw = String(process.env.OPENHANDS_GATEWAY_FETCH_TIMEOUT_MS || "").trim();
+  const n = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(n) && n >= 10_000) return Math.min(n, 600_000);
+  return 300_000;
+}
+
+function gatewayPostInit(): { signal: AbortSignal | undefined } {
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return { signal: AbortSignal.timeout(getOpenHandsGatewayFetchTimeoutMs()) };
+  }
+  return { signal: undefined };
+}
+
 function buildGatewayPayload(input: OpenHandsGatewayRunRequest): Record<string, unknown> {
   const token = resolvePlaygroundModelToken(input.modelSelection.resolvedEntry);
   return {
@@ -190,21 +241,49 @@ async function requestGatewayTurn(
     headers.Authorization = `Bearer ${apiKey}`;
   }
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
+  const { signal } = gatewayPostInit();
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      ...(signal ? { signal } : {}),
+    });
+  } catch (error) {
+    throw new OpenHandsGatewayError(
+      describeGatewayFetchFailure(url, error),
+      "OPENHANDS_GATEWAY_UNREACHABLE",
+      503,
+      extractFetchFailureDetail(error)
+    );
+  }
 
   if (!response.ok) {
     const raw = await response.text().catch(() => "");
-    const detail = raw || response.statusText || "request failed";
+    let detail = raw || response.statusText || "request failed";
     if (response.status === 401 || response.status === 403) {
       throw new OpenHandsGatewayError(
         "OpenHands is configured but rejected the gateway request. Check OPENHANDS_GATEWAY_API_KEY and gateway auth.",
         "OPENHANDS_GATEWAY_UNAUTHORIZED",
         response.status,
         detail
+      );
+    }
+    if (response.status === 502) {
+      try {
+        const parsed = JSON.parse(raw) as { error?: string; details?: string };
+        if (typeof parsed?.error === "string" && parsed.error.trim()) {
+          detail = parsed.details?.trim() ? `${parsed.error.trim()}: ${parsed.details.trim()}` : parsed.error.trim();
+        }
+      } catch {
+        /* keep raw */
+      }
+      throw new OpenHandsGatewayError(
+        `OpenHands gateway reported a turn error: ${detail}`,
+        "OPENHANDS_GATEWAY_INVALID_RESPONSE",
+        502,
+        raw
       );
     }
     throw new OpenHandsGatewayError(
@@ -323,11 +402,12 @@ export async function getOpenHandsGatewayHealth(): Promise<OpenHandsGatewayHealt
       details: raw || response.statusText,
     };
   } catch (error) {
+    const healthUrl = `${baseUrl}/health`;
     return {
       status: "unreachable",
-      message: "OpenHands could not be reached.",
+      message: describeGatewayFetchFailure(healthUrl, error),
       gatewayUrl: baseUrl,
-      details: error instanceof Error ? error.message : String(error),
+      details: extractFetchFailureDetail(error),
     };
   }
 }

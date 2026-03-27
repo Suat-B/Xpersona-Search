@@ -42,6 +42,14 @@ type ExecuteApprovalResponse = {
   }>;
 };
 
+function unwrapExecuteApprovalResponse(raw: unknown): ExecuteApprovalResponse {
+  if (raw && typeof raw === "object" && "data" in raw) {
+    const inner = (raw as { data?: unknown }).data;
+    if (inner && typeof inner === "object") return inner as ExecuteApprovalResponse;
+  }
+  return raw as ExecuteApprovalResponse;
+}
+
 function extractContentFromAddPatch(patch: string): string | null {
   const lines = patch.replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
@@ -145,6 +153,7 @@ export class ActionRunner {
     auth: RequestAuth;
     sessionId?: string;
     workspaceFingerprint: string;
+    signal?: AbortSignal;
   }): Promise<LocalApplyReport> {
     if (input.mode === "plan") {
       return {
@@ -172,7 +181,7 @@ export class ActionRunner {
     }
 
     const collapsed = collapseConflictingFileActions(input.actions);
-    const approval = await requestJson<ExecuteApprovalResponse>(
+    const approvalRaw = await requestJson<unknown>(
       "POST",
       `${getBaseApiUrl()}/api/v1/playground/execute`,
       input.auth,
@@ -180,8 +189,10 @@ export class ActionRunner {
         sessionId: input.sessionId,
         workspaceFingerprint: input.workspaceFingerprint,
         actions: collapsed.actions,
-      }
+      },
+      { signal: input.signal }
     );
+    const approval = unwrapExecuteApprovalResponse(approvalRaw);
 
     const approvedActions = (approval.results || [])
       .filter((result) => result.status === "approved" && result.action)

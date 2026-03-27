@@ -141,10 +141,7 @@ export async function TrendingGridHF() {
     <section className="w-full bg-[#0b0f14] py-12 sm:py-16">
       <div className="mx-auto w-full max-w-[1260px] px-4 sm:px-6">
         <div className="mb-8 text-center">
-          <p className="text-xs uppercase tracking-[0.35em] text-white/50">
-            Trending this week
-          </p>
-          <h2 className="mt-3 text-2xl sm:text-3xl font-semibold text-white">
+          <h2 className="text-2xl sm:text-3xl font-semibold text-white">
             What the community is building
           </h2>
         </div>

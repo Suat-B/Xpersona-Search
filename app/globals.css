@@ -218,10 +218,15 @@ html {
   scrollbar-gutter: stable both-edges;
 }
 
+html.light-mode {
+  color-scheme: light;
+}
+
 /* Fixed gradient background via pseudo-element — avoids background-attachment:fixed
    which triggers full-page repaints on scroll in Chrome (known performance bug) */
 body {
-  @apply bg-bg-deep text-[var(--text-primary)] antialiased overflow-x-hidden relative;
+  background-color: var(--bg-deep);
+  @apply text-[var(--text-primary)] antialiased overflow-x-hidden relative;
   font-family: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
   font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
   -webkit-font-smoothing: antialiased;
@@ -238,6 +243,10 @@ body::before {
     var(--bg-gradient-1),
     var(--bg-gradient-2),
     var(--bg-gradient-3);
+}
+
+.light-mode body::before {
+  opacity: 0.45;
 }
 
 /* Stable scroll root for app layouts — avoids nested-scroll flicker */
@@ -405,6 +414,26 @@ input[type="reset"] {
   --dash-text-secondary: #a0a0a0;
   --dash-btn-bg: #383838;
   --dash-radius: 10px;
+}
+
+.light-mode .dashboard-theme {
+  --dash-bg: var(--light-bg-secondary);
+  --dash-bg-card: var(--light-bg-card);
+  --dash-nav-active: var(--light-bg-hover);
+  --dash-divider: var(--light-border);
+  --dash-text-secondary: var(--light-text-secondary);
+  --dash-btn-bg: var(--light-bg-tertiary);
+}
+
+.light-mode .dashboard-theme .dash-btn,
+.light-mode .dashboard-theme .dash-btn:hover {
+  color: var(--light-text-primary);
+  border-color: var(--light-border);
+}
+
+.light-mode .dashboard-theme .dash-btn:hover {
+  background: var(--light-bg-hover);
+  color: var(--light-text-primary);
 }
 
 .dashboard-theme .agent-card {

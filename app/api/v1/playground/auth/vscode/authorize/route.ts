@@ -7,9 +7,23 @@ import { randomBytes } from "crypto";
 import { eq } from "drizzle-orm";
 
 const EXPECTED_CLIENT_IDS = new Set(["vscode", "cli"]);
-const VSCODE_REDIRECT_AUTHORITY = "playgroundai.xpersona-playground";
+/** URI authority segment after scheme:// — must match each extension's publisher.name (see package.json). */
+const DEFAULT_VSCODE_REDIRECT_AUTHORITIES = new Set([
+  "playgroundai.xpersona-playground",
+  "cutie-product.cutie-product",
+]);
 const DEFAULT_VSCODE_REDIRECT_SCHEMES = ["vscode", "vscode-insiders", "cursor", "windsurf", "vscodium", "code-oss"];
 const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
+
+function getAllowedVscodeRedirectAuthorities(): Set<string> {
+  const raw = String(process.env.PLAYGROUND_VSCODE_REDIRECT_AUTHORITIES || "").trim();
+  if (!raw) return DEFAULT_VSCODE_REDIRECT_AUTHORITIES;
+  const entries = raw
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  return new Set(entries.length ? entries : DEFAULT_VSCODE_REDIRECT_AUTHORITIES);
+}
 
 function getAllowedVscodeRedirectSchemes(): Set<string> {
   const raw = String(process.env.PLAYGROUND_VSCODE_REDIRECT_SCHEMES || "").trim();
@@ -48,7 +62,8 @@ export async function GET(request: NextRequest): Promise<Response> {
         const scheme = parsed.protocol.replace(/:$/, "").toLowerCase();
         const allowedSchemes = getAllowedVscodeRedirectSchemes();
         if (!allowedSchemes.has(scheme)) return false;
-        if (parsed.hostname !== VSCODE_REDIRECT_AUTHORITY) return false;
+        const allowedAuthorities = getAllowedVscodeRedirectAuthorities();
+        if (!allowedAuthorities.has(parsed.hostname.toLowerCase())) return false;
         if (parsed.pathname !== "/auth-callback") return false;
         if (parsed.search || parsed.hash || parsed.username || parsed.password || parsed.port) return false;
         return true;

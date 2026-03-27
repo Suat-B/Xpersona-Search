@@ -80,7 +80,7 @@ export default async function GraphPage() {
   ].filter(Boolean) as string[];
 
   return (
-    <section className="min-h-dvh bg-[var(--bg-deep)] text-white overflow-x-hidden">
+    <section className="min-h-dvh bg-[var(--bg-deep)] text-[var(--text-primary)] overflow-x-hidden">
       <div className="container mx-auto px-3 sm:px-6 py-6 sm:py-14">
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 sm:gap-6 mb-6 sm:mb-8">
           <div>
@@ -88,7 +88,7 @@ export default async function GraphPage() {
               <div className="w-2 h-2 rounded-full bg-[var(--accent-heart)] animate-pulse shadow-[0_0_8px_var(--accent-heart)]" />
               <span className="text-xs font-semibold text-[var(--accent-heart)] uppercase tracking-widest">Global Performance Graph</span>
             </div>
-            <h1 className="text-3xl sm:text-5xl font-bold text-white tracking-tight">
+            <h1 className="text-3xl sm:text-5xl font-bold text-[var(--text-primary)] tracking-tight">
               Global routing intelligence for autonomous agents.
             </h1>
             <p className="mt-3 text-base text-[var(--text-secondary)] max-w-2xl leading-relaxed">
@@ -99,7 +99,7 @@ export default async function GraphPage() {
           <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
             <Link
               href="/api"
-              className="inline-flex items-center justify-center rounded-full border border-[var(--border)] bg-white/5 px-6 py-2.5 text-sm font-semibold text-white hover:bg-white hover:text-black transition-all active:scale-95"
+              className="inline-flex items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-6 py-2.5 text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] transition-all active:scale-95"
             >
               View API
             </Link>
@@ -163,37 +163,37 @@ export default async function GraphPage() {
 
         <div className="mt-12 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-8">
           <div className="flex flex-col gap-3 mb-8">
-            <h2 className="text-3xl font-bold text-white tracking-tight">Graph API Additions</h2>
+            <h2 className="text-3xl font-bold text-[var(--text-primary)] tracking-tight">Graph API Additions</h2>
             <p className="text-base text-[var(--text-secondary)] max-w-3xl">
               Direct machine endpoints for querying the Global Performance Graph and planning pipelines.
             </p>
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-[var(--border)] bg-black/40 p-5 text-sm text-[var(--text-secondary)] hover:text-white transition-colors">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-elevated)] p-5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
               Use the Graph API when you need live routing inputs: success probability, latency distribution,
               cost estimates, and risk scores. These fields are designed to be machine-consumed by planners.
             </div>
-            <div className="rounded-2xl border border-[var(--border)] bg-black/40 p-5 text-sm text-[var(--text-secondary)] hover:text-white transition-colors">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-elevated)] p-5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
               Pair Graph API responses with capability contracts to build fail-safe routing: only choose agents
               that meet hard requirements, then optimize for cost, latency, or reliability.
             </div>
           </div>
 
           <div className="mt-12">
-            <h3 className="text-2xl font-bold text-white tracking-tight mb-2">API Quickstart</h3>
+            <h3 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight mb-2">API Quickstart</h3>
             <p className="text-base text-[var(--text-secondary)] max-w-3xl mb-8">
               Recommended endpoints to get up and running.
             </p>
             <div className="grid gap-4 lg:grid-cols-3 min-w-0">
               {gpgQuickstart.map((item) => (
-                <div key={item.title} className="rounded-2xl border border-[var(--border)] bg-black/40 p-5 hover:border-[var(--accent-heart)]/30 transition-colors">
+                <div key={item.title} className="rounded-2xl border border-[var(--border)] bg-[var(--bg-elevated)] p-5 hover:border-[var(--accent-heart)]/30 transition-colors">
                   <div className="flex items-center justify-between mb-3">
                     <p className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)]">{item.title}</p>
                     <span className="text-[10px] font-bold text-[var(--accent-heart)]">{item.method}</span>
                   </div>
                   <p className="text-sm text-[var(--text-secondary)] mb-4">{item.description}</p>
                   <code className="text-[11px] text-[var(--accent-heart)] block mb-4 break-all">{item.path}</code>
-                  <pre className="text-xs text-[var(--text-primary)] bg-black/60 border border-[var(--border)] rounded-xl p-4 overflow-x-auto">
+                  <pre className="text-xs text-[var(--text-primary)] bg-[var(--bg-matte)] border border-[var(--border)] rounded-xl p-4 overflow-x-auto">
                     {item.curl}
                   </pre>
                 </div>
@@ -202,18 +202,18 @@ export default async function GraphPage() {
           </div>
 
           <div className="mt-12">
-            <h3 className="text-2xl font-bold text-white tracking-tight mb-2">GPG API Surface</h3>
+            <h3 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight mb-2">GPG API Surface</h3>
             <p className="text-base text-[var(--text-secondary)] max-w-3xl mb-8">
               All available endpoints detected in this codebase.
             </p>
             <div className="grid gap-4 lg:grid-cols-2">
               {gpgEndpoints.map((item) => (
-                <div key={item.route + item.method} className="rounded-xl border border-[var(--border)] bg-black/40 p-4 hover:border-[var(--accent-heart)]/30 transition-colors">
-                  <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-white">
+                <div key={item.route + item.method} className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 hover:border-[var(--accent-heart)]/30 transition-colors">
+                  <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-[var(--text-primary)]">
                     <span className="bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] px-2 py-1 rounded">
                       {item.method}
                     </span>
-                    <span className="text-white">
+                    <span className="text-[var(--text-primary)]">
                       {item.route}
                     </span>
                   </div>
@@ -229,13 +229,13 @@ export default async function GraphPage() {
 
         {capabilities.length > 0 && (
             <div className="mt-12">
-              <h3 className="text-2xl font-bold text-white tracking-tight mb-2">GPG Capabilities</h3>
+              <h3 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight mb-2">GPG Capabilities</h3>
               <p className="text-base text-[var(--text-secondary)] max-w-3xl mb-8">
                 Functionality available today based on the current GPG stack.
               </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 {capabilities.map((item) => (
-                  <div key={item} className="rounded-2xl border border-[var(--border)] bg-black/40 p-5 text-sm text-[var(--text-secondary)] hover:text-white transition-colors">
+                  <div key={item} className="rounded-2xl border border-[var(--border)] bg-[var(--bg-elevated)] p-5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
                     {item}
                   </div>
                 ))}

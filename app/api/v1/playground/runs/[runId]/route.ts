@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { jsonError } from "@/lib/api/errors";
 import { authenticatePlaygroundRequest } from "@/lib/playground/auth";
 import { ok, unauthorized } from "@/lib/playground/http";
-import { getAgentRunById } from "@/lib/playground/store";
+import { resolveAgentRunRecord } from "@/lib/playground/store";
 
 type Ctx = { params: Promise<{ runId: string }> };
 
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest, ctx: Ctx): Promise<Response> {
   if (!auth) return unauthorized(request);
 
   const { runId } = await ctx.params;
-  const row = await getAgentRunById({ userId: auth.userId, runId });
+  const row = await resolveAgentRunRecord({ userId: auth.userId, runId });
   if (!row) {
     return jsonError(request, {
       code: "RUN_NOT_FOUND",

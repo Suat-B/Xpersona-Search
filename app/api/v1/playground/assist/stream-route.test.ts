@@ -58,6 +58,7 @@ import { POST } from "./route";
 
 describe("POST /api/v1/playground/assist stream", () => {
   beforeEach(() => {
+    process.env.OPENHANDS_GATEWAY_URL = "http://127.0.0.1:8010";
     authenticatePlaygroundRequest.mockReset();
     guardPlaygroundAccess.mockReset();
     runAssist.mockReset();
@@ -77,11 +78,22 @@ describe("POST /api/v1/playground/assist stream", () => {
     appendSessionMessage.mockResolvedValue(undefined);
     incrementUsage.mockResolvedValue(undefined);
     getOrCreateRequestId.mockReturnValue("trace-1");
-    runAssist.mockResolvedValue({
+    const streamAssistResult = {
       decision: { mode: "auto", reason: "direct", confidence: 0.92 },
       plan: null,
       actions: [],
       final: "Hosted stream answer.",
+      modelMetadata: {
+        contractVersion: "test",
+        adapter: "text_actions_v1",
+        modelRequested: "m",
+        modelRequestedAlias: "m",
+        modelResolved: "m",
+        modelResolvedAlias: "playground-default",
+        providerResolved: "hf" as const,
+        capabilities: {},
+        certification: "none",
+      },
       validationPlan: {
         scope: "targeted",
         checks: [],
@@ -112,12 +124,23 @@ describe("POST /api/v1/playground/assist stream", () => {
         observedProof: ["response_ready"],
         missingProof: [],
       },
-      orchestrationProtocol: "batch_v1",
-      adapter: "deterministic_batch",
+      orchestrationProtocol: "tool_loop_v1",
+      orchestrator: "openhands",
+      orchestratorVersion: null,
+      runId: "agent-run-stream-1",
+      adapter: "text_actions",
       loopState: null,
       pendingToolCall: null,
       toolTrace: [],
+    };
+    runAssist.mockResolvedValue({
+      ...streamAssistResult,
+      orchestrationProtocol: "batch_v1",
+      orchestrator: undefined,
+      runId: undefined,
+      adapter: "deterministic_batch",
     });
+    startAssistToolLoop.mockResolvedValue(streamAssistResult as any);
   });
 
   it("emits structured streaming lifecycle events before final output", async () => {
@@ -142,5 +165,7 @@ describe("POST /api/v1/playground/assist stream", () => {
     expect(text).toContain('"event":"partial"');
     expect(text).toContain('"event":"final"');
     expect(text).toContain("Hosted stream answer.");
+    expect(startAssistToolLoop).toHaveBeenCalledTimes(1);
+    expect(runAssist).not.toHaveBeenCalled();
   });
 });

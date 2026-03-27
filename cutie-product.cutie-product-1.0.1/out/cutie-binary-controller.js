@@ -242,7 +242,7 @@ class CutieBinaryBundleController {
                 auth,
                 intent,
                 workspaceFingerprint: this.deps.getWorkspaceHash(),
-                historySessionId: session?.id ?? undefined,
+                historySessionId: session?.playgroundHistorySessionId ?? undefined,
                 targetEnvironment: this.binary.targetEnvironment,
                 context: {
                     activeFile: context.activeFile,

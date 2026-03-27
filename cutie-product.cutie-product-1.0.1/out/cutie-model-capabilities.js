@@ -55,6 +55,19 @@ const MODEL_PROFILES = [
             textExtractionFallback: true,
         },
     },
+    {
+        pattern: /kimi|moonshot/i,
+        profile: {
+            profileId: "router-kimi-moonshot",
+            modelPattern: "kimi/moonshot*",
+            nativeTools: "partial",
+            streamStructured: "partial",
+            parallelTools: true,
+            assistantDeltaReliability: "medium",
+            maxToolsPerTurnPolicy: "prefer_serial",
+            textExtractionFallback: true,
+        },
+    },
 ];
 function getCutieModelAdapterKind() {
     return "canonical_portability_v1";

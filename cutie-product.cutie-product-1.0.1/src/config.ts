@@ -102,11 +102,13 @@ export function getProjectKey(): string | null {
   return `${folder.name}:${getWorkspaceHash()}`;
 }
 
+const DEFAULT_CUTIE_CHAT_MODEL = "moonshotai/Kimi-K2.5:fastest";
+
 export function getModelHint(): string {
   const configured = vscode.workspace
     .getConfiguration(EXTENSION_NAMESPACE)
-    .get<string>("model", "Qwen/Qwen2.5-Coder-32B-Instruct:fastest");
-  return String(configured || "Qwen/Qwen2.5-Coder-32B-Instruct:fastest").trim();
+    .get<string>("model", DEFAULT_CUTIE_CHAT_MODEL);
+  return String(configured || DEFAULT_CUTIE_CHAT_MODEL).trim();
 }
 
 export function getPromptMarkdownPath(): string {
@@ -117,7 +119,12 @@ export function getPromptMarkdownPath(): string {
 }
 
 /** Presets for the chat model dropdown; the configured workspace model is always included. Add ids here as you ship more. */
-const MODEL_PICKER_PRESETS: string[] = ["Qwen/Qwen2.5-Coder-32B-Instruct:fastest"];
+const MODEL_PICKER_PRESETS: string[] = [
+  DEFAULT_CUTIE_CHAT_MODEL,
+  "openai/gpt-oss-120b:groq",
+  "Qwen/Qwen2.5-Coder-32B-Instruct:fastest",
+  "Qwen/Qwen3-Next-80B-A3B-Thinking:fastest",
+];
 
 export function getModelPickerOptions(): string[] {
   return Array.from(new Set([getModelHint(), ...MODEL_PICKER_PRESETS])).sort((a, b) => a.localeCompare(b));

@@ -12,6 +12,59 @@ import {
 import { rankPlaygroundIndexRows, type PlaygroundIndexRetrievalHints } from "@/lib/playground/index-ranking";
 import { and, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
 
+/** Python gateway uses 16-byte hex; Node gateway (`server.ts`) uses `randomUUID()` dashed UUIDs. */
+function isLikelyOpenHandsGatewayRunId(value: string): boolean {
+  return /^[0-9a-f]{32}$/i.test(value);
+}
+
+function isUuidShape(value: string): boolean {
+  const v = value.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
+
+/** Value could be persisted `output.orchestratorRunId` (gateway) vs playground row `id` (also UUID). */
+function couldBeOrchestratorRunKey(value: string): boolean {
+  const v = value.trim();
+  return v.length > 0 && (isLikelyOpenHandsGatewayRunId(v) || isUuidShape(v));
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Mitigate read-replica / transaction visibility lag right after assist. */
+async function getAgentRunByIdWithLagRetry(input: { userId: string; runId: string }): Promise<AgentRunRecord | null> {
+  const delays = [0, 120, 240, 360] as const;
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i] > 0) await sleepMs(delays[i]);
+    const row = await getAgentRunById(input);
+    if (row) return row;
+  }
+  return null;
+}
+
+function upsertMemoryAgentRunCache(row: AgentRunRecord): void {
+  const existing = memory.runs.get(row.userId) ?? [];
+  const filtered = existing.filter((r) => r.id !== row.id);
+  memory.runs.set(row.userId, [row, ...filtered]);
+}
+
+function findAgentRunByOrchestratorRunIdFromMemory(
+  userId: string,
+  orchestratorRunId: string
+): AgentRunRecord | null {
+  const needle = orchestratorRunId.trim().toLowerCase();
+  const existing = memory.runs.get(userId) ?? [];
+  return (
+    existing.find((row) => {
+      const o = row.output;
+      if (!o || typeof o !== "object" || Array.isArray(o)) return false;
+      const rid = (o as Record<string, unknown>).orchestratorRunId;
+      return typeof rid === "string" && rid.trim().toLowerCase() === needle;
+    }) ?? null
+  );
+}
+
 type SessionRecord = {
   id: string;
   userId: string;
@@ -598,8 +651,13 @@ export async function createAgentRun(input: {
         createdAt: playgroundAgentRuns.createdAt,
         updatedAt: playgroundAgentRuns.updatedAt,
       });
+    upsertMemoryAgentRunCache(row);
     return row;
-  } catch {
+  } catch (err) {
+    // In serverless / multi-instance deployments, a memory-only row is invisible to the next request → RUN_NOT_FOUND on continue.
+    if (String(process.env.DATABASE_URL || "").trim()) {
+      throw err instanceof Error ? err : new Error(String(err));
+    }
     const row: AgentRunRecord = {
       id: crypto.randomUUID(),
       sessionId: input.sessionId,
@@ -700,11 +758,265 @@ export async function getAgentRunById(input: { userId: string; runId: string }):
       .where(and(eq(playgroundAgentRuns.userId, input.userId), eq(playgroundAgentRuns.id, input.runId)))
       .limit(1);
     const row = rows[0] ?? null;
-    if (row) return row;
+    if (row) {
+      upsertMemoryAgentRunCache(row);
+      return row;
+    }
     return fromMemory();
   } catch {
     return fromMemory();
   }
+}
+
+export async function findAgentRunByOrchestratorRunId(input: {
+  userId: string;
+  orchestratorRunId: string;
+}): Promise<AgentRunRecord | null> {
+  const orchestratorRunId = String(input.orchestratorRunId || "").trim();
+  if (!orchestratorRunId) return null;
+  const orchestratorKey = orchestratorRunId.toLowerCase();
+
+  const fromMemory = () => findAgentRunByOrchestratorRunIdFromMemory(input.userId, orchestratorRunId);
+
+  try {
+    const rows = await db
+      .select({
+        id: playgroundAgentRuns.id,
+        sessionId: playgroundAgentRuns.sessionId,
+        userId: playgroundAgentRuns.userId,
+        role: playgroundAgentRuns.role,
+        status: playgroundAgentRuns.status,
+        confidence: playgroundAgentRuns.confidence,
+        riskLevel: playgroundAgentRuns.riskLevel,
+        input: playgroundAgentRuns.input,
+        output: playgroundAgentRuns.output,
+        errorMessage: playgroundAgentRuns.errorMessage,
+        createdAt: playgroundAgentRuns.createdAt,
+        updatedAt: playgroundAgentRuns.updatedAt,
+      })
+      .from(playgroundAgentRuns)
+      .where(
+        and(
+          eq(playgroundAgentRuns.userId, input.userId),
+          sql`${playgroundAgentRuns.output} IS NOT NULL`,
+          sql`LOWER((${playgroundAgentRuns.output}->>'orchestratorRunId')) = ${orchestratorKey}`
+        )
+      )
+      .orderBy(desc(playgroundAgentRuns.updatedAt))
+      .limit(1);
+    const row = rows[0] ?? null;
+    if (row) {
+      upsertMemoryAgentRunCache(row);
+      return row;
+    }
+    return fromMemory();
+  } catch {
+    return fromMemory();
+  }
+}
+
+/**
+ * Resolve a playground agent run by primary id, or by OpenHands gateway run id stored in output.orchestratorRunId
+ * (32-char hex from the Python gateway, or dashed UUID from the Node gateway).
+ */
+export async function resolveAgentRunRecord(input: { userId: string; runId: string }): Promise<AgentRunRecord | null> {
+  const runId = String(input.runId || "").trim();
+  if (!runId) return null;
+  const byId = await getAgentRunByIdWithLagRetry({ userId: input.userId, runId });
+  if (byId) return byId;
+  if (!couldBeOrchestratorRunKey(runId)) return null;
+  const orchDelays = [0, 120, 240] as const;
+  for (let i = 0; i < orchDelays.length; i++) {
+    if (orchDelays[i] > 0) await sleepMs(orchDelays[i]);
+    const byOrch = await findAgentRunByOrchestratorRunId({ userId: input.userId, orchestratorRunId: runId });
+    if (byOrch) return byOrch;
+  }
+  return null;
+}
+
+function hasPendingToolOutput(output: unknown): boolean {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return false;
+  const p = (output as Record<string, unknown>).pendingToolCall;
+  return p !== null && p !== undefined && typeof p === "object" && !Array.isArray(p);
+}
+
+/** JS-side pending detection for continue fallback (avoids missing rows when SQL jsonb shape differs slightly). */
+function outputShowsPendingClientTool(output: unknown): boolean {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return false;
+  const p = (output as Record<string, unknown>).pendingToolCall;
+  if (p === null || p === undefined) return false;
+  if (typeof p !== "object" || Array.isArray(p)) return false;
+  const toolCall = (p as Record<string, unknown>).toolCall;
+  return toolCall !== null && toolCall !== undefined && typeof toolCall === "object" && !Array.isArray(toolCall);
+}
+
+function orchestratorRunIdFromOutput(output: unknown): string | null {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return null;
+  const v = (output as Record<string, unknown>).orchestratorRunId;
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
+function listResumableRunsFromMemory(userId: string, sessionId: string): AgentRunRecord[] {
+  return (memory.runs.get(userId) ?? [])
+    .filter(
+      (row) =>
+        row.sessionId === sessionId &&
+        row.status === "running" &&
+        hasPendingToolOutput(row.output)
+    )
+    .sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
+}
+
+function pickBestResumableRun(candidates: AgentRunRecord[], pathRunIdHint: string): AgentRunRecord | null {
+  if (!candidates.length) return null;
+  const hint = pathRunIdHint.trim();
+  if (!hint) return candidates[0];
+  const h = hint.toLowerCase();
+  for (const row of candidates) {
+    if (row.id.toLowerCase() === h) return row;
+    const orch = orchestratorRunIdFromOutput(row.output);
+    if (orch && orch.toLowerCase() === h) return row;
+  }
+  return candidates[0];
+}
+
+/**
+ * Running agent runs for this session whose persisted output still has a pending client tool call.
+ */
+export async function findResumableAgentRunsForSession(input: {
+  userId: string;
+  sessionId: string;
+  limit?: number;
+}): Promise<AgentRunRecord[]> {
+  const sessionId = String(input.sessionId || "").trim();
+  if (!sessionId) return [];
+  const limit = Math.min(12, Math.max(1, input.limit ?? 8));
+
+  const fromMemory = () => listResumableRunsFromMemory(input.userId, sessionId).slice(0, limit);
+
+  try {
+    const rows = await db
+      .select({
+        id: playgroundAgentRuns.id,
+        sessionId: playgroundAgentRuns.sessionId,
+        userId: playgroundAgentRuns.userId,
+        role: playgroundAgentRuns.role,
+        status: playgroundAgentRuns.status,
+        confidence: playgroundAgentRuns.confidence,
+        riskLevel: playgroundAgentRuns.riskLevel,
+        input: playgroundAgentRuns.input,
+        output: playgroundAgentRuns.output,
+        errorMessage: playgroundAgentRuns.errorMessage,
+        createdAt: playgroundAgentRuns.createdAt,
+        updatedAt: playgroundAgentRuns.updatedAt,
+      })
+      .from(playgroundAgentRuns)
+      .where(
+        and(
+          eq(playgroundAgentRuns.userId, input.userId),
+          eq(playgroundAgentRuns.sessionId, sessionId),
+          eq(playgroundAgentRuns.status, "running"),
+          sql`${playgroundAgentRuns.output} IS NOT NULL`,
+          sql`(
+            jsonb_typeof(${playgroundAgentRuns.output}->'pendingToolCall') = 'object'
+            OR (${playgroundAgentRuns.output} #> '{pendingToolCall,toolCall}') IS NOT NULL
+          )`
+        )
+      )
+      .orderBy(desc(playgroundAgentRuns.updatedAt))
+      .limit(limit);
+    if (rows.length) {
+      for (const row of rows) upsertMemoryAgentRunCache(row);
+      return rows;
+    }
+    return fromMemory();
+  } catch {
+    return fromMemory();
+  }
+}
+
+/**
+ * Running rows for session with non-null output; pending tool is detected in JS (backup when strict SQL misses).
+ */
+async function findResumableAgentRunsForSessionRelaxed(input: {
+  userId: string;
+  sessionId: string;
+  limit?: number;
+}): Promise<AgentRunRecord[]> {
+  const sessionId = String(input.sessionId || "").trim();
+  if (!sessionId) return [];
+  const fetchLimit = Math.min(48, Math.max(8, (input.limit ?? 12) * 3));
+
+  try {
+    const rows = await db
+      .select({
+        id: playgroundAgentRuns.id,
+        sessionId: playgroundAgentRuns.sessionId,
+        userId: playgroundAgentRuns.userId,
+        role: playgroundAgentRuns.role,
+        status: playgroundAgentRuns.status,
+        confidence: playgroundAgentRuns.confidence,
+        riskLevel: playgroundAgentRuns.riskLevel,
+        input: playgroundAgentRuns.input,
+        output: playgroundAgentRuns.output,
+        errorMessage: playgroundAgentRuns.errorMessage,
+        createdAt: playgroundAgentRuns.createdAt,
+        updatedAt: playgroundAgentRuns.updatedAt,
+      })
+      .from(playgroundAgentRuns)
+      .where(
+        and(
+          eq(playgroundAgentRuns.userId, input.userId),
+          eq(playgroundAgentRuns.sessionId, sessionId),
+          eq(playgroundAgentRuns.status, "running"),
+          sql`${playgroundAgentRuns.output} IS NOT NULL`
+        )
+      )
+      .orderBy(desc(playgroundAgentRuns.updatedAt))
+      .limit(fetchLimit);
+
+    const filtered = rows.filter((row) => outputShowsPendingClientTool(row.output));
+    const limit = Math.min(12, Math.max(1, input.limit ?? 8));
+    const slice = filtered.slice(0, limit);
+    for (const row of slice) upsertMemoryAgentRunCache(row);
+    return slice;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Resolve run for POST .../runs/:runId/continue: primary id, gateway id, then latest resumable run in session.
+ */
+export async function resolveAgentRunForContinue(input: {
+  userId: string;
+  runIdFromPath: string;
+  sessionId?: string | null;
+}): Promise<AgentRunRecord | null> {
+  const path = String(input.runIdFromPath || "").trim();
+  const direct = await resolveAgentRunRecord({ userId: input.userId, runId: path });
+  if (direct) return direct;
+  const sid = String(input.sessionId || "").trim();
+  if (!sid) return null;
+  const sessionDelays = [0, 200, 450, 700] as const;
+  for (let i = 0; i < sessionDelays.length; i++) {
+    if (sessionDelays[i] > 0) await sleepMs(sessionDelays[i]);
+    const candidates = await findResumableAgentRunsForSession({
+      userId: input.userId,
+      sessionId: sid,
+      limit: 8,
+    });
+    const picked = pickBestResumableRun(candidates, path);
+    if (picked) return picked;
+    const relaxed = await findResumableAgentRunsForSessionRelaxed({
+      userId: input.userId,
+      sessionId: sid,
+      limit: 8,
+    });
+    const relaxedPick = pickBestResumableRun(relaxed, path);
+    if (relaxedPick) return relaxedPick;
+  }
+  return null;
 }
 
 export async function logAction(input: {

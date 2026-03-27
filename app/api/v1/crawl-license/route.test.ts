@@ -25,7 +25,7 @@ describe("GET/POST /api/v1/crawl-license", () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.pay_per_crawl_enabled).toBe(true);
+    expect(body.pay_per_crawl_enabled).toBe(false);
     expect(body.secret_configured).toBe(true);
     expect(body.packages).toEqual(
       expect.arrayContaining([

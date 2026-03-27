@@ -50,6 +50,85 @@ function isPlaygroundHistorySessionUuid(value) {
     const v = String(value || "").trim();
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 }
+/** Strip OpenHands internal stall protocol lines from user-visible chat. */
+function stripPlaygroundStallProtocol(text) {
+    let s = String(text || "");
+    const cutAt = (marker) => {
+        const m = marker.exec(s);
+        if (m && m.index !== undefined) {
+            s = s.slice(0, m.index).trimEnd();
+        }
+    };
+    cutAt(/\n\nStall reason:/i);
+    cutAt(/\nStall reason:/i);
+    cutAt(/\n\nNext deterministic action:/i);
+    cutAt(/\nNext deterministic action:/i);
+    return s;
+}
+function unescapeJsonStringFragment(value) {
+    return value.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+}
+/**
+ * When the model emits `{"toolCall":...}` as assistant text, the `patch` argument often breaks
+ * strict JSON (unescaped quotes/newlines). Extract tool name + path from the opening keys only.
+ */
+function looseExtractToolCallSummaryForChat(raw) {
+    const trimmed = String(raw || "").replace(/^\uFEFF/, "").trimStart();
+    if (!trimmed.startsWith("{") || !/"toolCall"/.test(trimmed))
+        return null;
+    const i = trimmed.indexOf('"toolCall"');
+    const head = (i >= 0 ? trimmed.slice(i, i + 6000) : trimmed.slice(0, 6000));
+    const nameM = head.match(/"name"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    const pathM = head.match(/"path"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    const name = nameM?.[1] ? unescapeJsonStringFragment(nameM[1]).trim() : "";
+    const pathArg = pathM?.[1] ? unescapeJsonStringFragment(pathM[1]).trim() : "";
+    if (!name && !pathArg)
+        return null;
+    return { name: name || "tool", path: pathArg };
+}
+function formatToolCallSummaryMessage(name, pathArg) {
+    return stripPlaygroundStallProtocol([
+        `Applied **${name}** locally${pathArg ? ` on \`${pathArg}\`` : ""}.`,
+        "",
+        "Say what you want adjusted next, or open the file to review.",
+    ].join("\n"));
+}
+/**
+ * OpenHands sometimes leaves `final` as raw `{"toolCall":...}`; never paste that into the chat bubble.
+ */
+function sanitizePlaygroundAssistantChatText(text) {
+    const raw = String(text || "").replace(/^\uFEFF/, "").trimStart();
+    if (!raw.startsWith("{") || !raw.includes('"toolCall"')) {
+        return stripPlaygroundStallProtocol(String(text || ""));
+    }
+    try {
+        const parsed = JSON.parse(raw);
+        const tc = parsed?.toolCall;
+        if (!tc || typeof tc !== "object") {
+            const loose = looseExtractToolCallSummaryForChat(raw);
+            return loose ? formatToolCallSummaryMessage(loose.name, loose.path) : stripPlaygroundStallProtocol(String(text || ""));
+        }
+        const name = typeof tc.name === "string" ? tc.name : "tool";
+        const args = tc.arguments && typeof tc.arguments === "object" ? tc.arguments : {};
+        const pathArg = typeof args.path === "string" ? args.path : "";
+        return formatToolCallSummaryMessage(name, pathArg);
+    }
+    catch {
+        const loose = looseExtractToolCallSummaryForChat(raw);
+        if (loose)
+            return formatToolCallSummaryMessage(loose.name, loose.path);
+        return stripPlaygroundStallProtocol([
+            "Cutie received a tool call that could not be parsed for display.",
+            "If edits did not apply, try the request again or simplify the change.",
+        ].join("\n"));
+    }
+}
+function settlePlaygroundRunIdForChatDiffs(envelopeRunId, mutationCount) {
+    if (mutationCount === 0)
+        return undefined;
+    const trimmed = String(envelopeRunId || "").trim();
+    return trimmed || `cutie_pg_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+}
 function cutieMessagesToPlaygroundChat(messages) {
     return messages
         .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
@@ -108,7 +187,7 @@ class CutiePlaygroundChatBridge {
             return "Nothing to undo.";
         return this.actionRunner.undoLastBatch();
     }
-    async getOpenHandsStatus() {
+    async getOpenHandsStatus(signal) {
         const auth = await this.auth.getRequestAuth();
         if (!auth) {
             return {
@@ -116,7 +195,7 @@ class CutiePlaygroundChatBridge {
                 message: "Sign in to verify OpenHands.",
             };
         }
-        const response = await (0, vscode_core_1.requestJson)("GET", `${(0, config_1.getBaseApiUrl)()}/api/v1/playground/openhands/health`, auth);
+        const response = await (0, vscode_core_1.requestJson)("GET", `${(0, config_1.getBaseApiUrl)()}/api/v1/playground/openhands/health`, auth, undefined, { signal });
         const health = (response &&
             typeof response === "object" &&
             "data" in response &&
@@ -186,6 +265,9 @@ class CutiePlaygroundChatBridge {
         if (!this.contextCollector || !this.toolExecutor || !this.actionRunner) {
             throw new Error("Playground services not ready.");
         }
+        if (input.signal?.aborted) {
+            throw new Error("Prompt aborted");
+        }
         const auth = await this.auth.getRequestAuth();
         if (!auth) {
             throw new Error("Authenticate before using hosted playground assist.");
@@ -203,10 +285,12 @@ class CutiePlaygroundChatBridge {
         const serverHistoryId = input.historySessionId && isPlaygroundHistorySessionUuid(input.historySessionId)
             ? input.historySessionId.trim()
             : undefined;
+        const modelHint = String((0, config_1.getModelHint)() || "").trim();
         const requestBody = {
             mode: input.mode,
             task: taskText,
             stream: false,
+            ...(modelHint ? { model: modelHint } : {}),
             orchestrationProtocol: input.mode === "plan" ? "batch_v1" : "tool_loop_v1",
             clientCapabilities: input.mode === "plan"
                 ? undefined
@@ -224,29 +308,51 @@ class CutiePlaygroundChatBridge {
                 workspaceHash,
             },
         };
+        const fileMutations = [];
         let initial = await (0, playground_assist_runner_1.playgroundRequestAssist)(auth, requestBody, input.signal);
+        const playgroundUuidForContinue = serverHistoryId ||
+            (typeof initial.sessionId === "string" && initial.sessionId.trim() ? initial.sessionId.trim() : "");
         if (initial.pendingToolCall && initial.runId && input.mode !== "plan") {
+            if (!playgroundUuidForContinue) {
+                void vscode.window.showWarningMessage("CUTIE: Playground assist returned no session id; OpenHands tool steps may fail. Check API/response or update the extension.");
+            }
             initial = await (0, playground_assist_runner_1.runPlaygroundToolLoop)({
                 auth,
                 initial,
                 toolExecutor: this.toolExecutor,
                 workspaceFingerprint: workspaceHash,
-                sessionId: serverHistoryId || initial.sessionId,
+                sessionId: playgroundUuidForContinue || undefined,
                 signal: input.signal,
+                onDidMutateFile: (payload) => {
+                    fileMutations.push({
+                        relativePath: payload.relativePath,
+                        previousContent: payload.previousContent,
+                        nextContent: payload.nextContent,
+                        toolName: payload.toolName,
+                    });
+                },
             });
         }
         const playgroundSessionId = typeof initial.sessionId === "string" && initial.sessionId.trim() ? initial.sessionId.trim() : undefined;
+        const playgroundRunId = settlePlaygroundRunIdForChatDiffs(initial.runId, fileMutations.length);
         if (input.mode === "plan" && initial.plan) {
             return {
-                assistantText: [initial.final || "Plan ready.", "", JSON.stringify(initial.plan, null, 2)]
+                assistantText: [
+                    sanitizePlaygroundAssistantChatText(String(initial.final || "Plan ready.")),
+                    "",
+                    JSON.stringify(initial.plan, null, 2),
+                ]
                     .filter(Boolean)
                     .join("\n"),
                 ...(playgroundSessionId ? { playgroundSessionId } : {}),
+                fileMutations: [],
             };
         }
         return {
-            assistantText: String(initial.final || "No response from playground assist."),
+            assistantText: sanitizePlaygroundAssistantChatText(String(initial.final || "No response from playground assist.")),
             ...(playgroundSessionId ? { playgroundSessionId } : {}),
+            ...(playgroundRunId ? { playgroundRunId } : {}),
+            fileMutations,
         };
     }
 }

@@ -456,7 +456,7 @@ describe("playground tool loop", () => {
     expect(started.pendingToolCall?.availableTools).toEqual(["edit"]);
   });
 
-  it("fails early when the hosted loop cannot produce a usable next action", async () => {
+  it("completes without mutation requirements when the task is informational and the host returns final-only", async () => {
     mockedRequestToolLoopTurn.mockResolvedValueOnce(openHandsTurn({
       adapter: "text_actions",
       final: "I read the request but have no concrete next step.",
@@ -470,7 +470,7 @@ describe("playground tool loop", () => {
       traceId: "trace-11",
       request: {
         mode: "auto",
-        // Long prose so looksLikeShellCommand() does not misfire on short questions.
+        // "describe" is classified as informational (unknown intent), not code_edit — no forced tool/mutation gate.
         task: "Could you please describe what the hello.py file does in a single short sentence?",
         orchestrationProtocol: "tool_loop_v1",
         clientCapabilities: {
@@ -484,10 +484,9 @@ describe("playground tool loop", () => {
       },
     });
 
-    expect(result.loopState?.status).toBe("failed");
-    expect(result.completionStatus).toBe("incomplete");
-    expect(result.missingRequirements).toContain("no_usable_next_action");
-    expect(result.objectiveState.status).toBe("blocked");
+    expect(result.loopState?.status).toBe("completed");
+    expect(result.pendingToolCall).toBeNull();
+    expect(result.missingRequirements ?? []).not.toContain("no_usable_next_action");
   });
 
   it("blocks a change run when it inspects the target and still cannot produce a mutation", async () => {
@@ -778,5 +777,190 @@ describe("playground tool loop", () => {
     expect(failed.loopState?.status).toBe("failed");
     expect(failed.missingRequirements).toContain("tool_result_failed");
     expect(failed.missingRequirements).toContain("no_content_delta");
+  });
+
+  describe("PLAYGROUND_OPENHANDS_PRIMARY_ORCHESTRATION", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("skips observation primer when gateway returns final-only on step 0", async () => {
+      vi.stubEnv("PLAYGROUND_OPENHANDS_PRIMARY_ORCHESTRATION", "true");
+      mockedRequestToolLoopTurn.mockResolvedValueOnce(
+        openHandsTurn({
+          adapter: "text_actions",
+          final:
+            "To implement that, inspect your strategy file and add exit logic. I cannot see your code from here.",
+          logs: ["adapter=text_actions"],
+          modelSelection: {} as any,
+        })
+      );
+
+      const started = await startAssistToolLoop({
+        userId: "user-oh-primary",
+        sessionId: "session-oh-primary",
+        traceId: "trace-oh-1",
+        request: {
+          mode: "auto",
+          task: "please create a trailing stop loss in my strategy",
+          orchestrationProtocol: "tool_loop_v1",
+          clientCapabilities: {
+            toolLoop: true,
+            supportedTools: ["read_file", "list_files", "edit"],
+            autoExecute: true,
+          },
+          context: {
+            activeFile: { path: "trader/main.py", content: "class TraderApp: pass\n" },
+          },
+        },
+      });
+
+      expect(started.pendingToolCall).toBeNull();
+      expect(started.final).toContain("cannot see your code");
+      expect(started.logs?.some((line) => line.includes("observation primer injected"))).toBe(false);
+    });
+
+    it("does not fail mutation_required_after_inspection when the next turn is non-mutating", async () => {
+      vi.stubEnv("PLAYGROUND_OPENHANDS_PRIMARY_ORCHESTRATION", "true");
+      mockedRequestToolLoopTurn
+        .mockResolvedValueOnce(
+          openHandsTurn({
+            adapter: "text_actions",
+            final: "",
+            toolCall: {
+              id: "call_read",
+              name: "read_file",
+              arguments: { path: "hello.py" },
+              kind: "observe",
+              summary: "Inspect hello.py",
+            },
+            logs: [],
+            modelSelection: {} as any,
+          })
+        )
+        .mockResolvedValueOnce(
+          openHandsTurn({
+            adapter: "text_actions",
+            final: "",
+            toolCall: {
+              id: "call_list",
+              name: "list_files",
+              arguments: { query: "*.py", limit: 5 },
+              kind: "observe",
+              summary: "List Python files",
+            },
+            logs: [],
+            modelSelection: {} as any,
+          })
+        );
+
+      const started = await startAssistToolLoop({
+        userId: "user-oh-primary-2",
+        sessionId: "session-oh-primary-2",
+        traceId: "trace-oh-2",
+        request: {
+          mode: "auto",
+          task: "Update hello.py",
+          orchestrationProtocol: "tool_loop_v1",
+          clientCapabilities: {
+            toolLoop: true,
+            supportedTools: ["read_file", "list_files", "edit"],
+            autoExecute: true,
+          },
+          context: {
+            activeFile: { path: "hello.py", content: "print('hi')\n" },
+          },
+        },
+      });
+
+      const afterRead = await continueAssistToolLoop({
+        userId: "user-oh-primary-2",
+        traceId: "trace-oh-3",
+        runId: started.runId!,
+        toolResult: {
+          toolCallId: "call_read",
+          name: "read_file",
+          ok: true,
+          summary: "Read hello.py.",
+          data: { path: "hello.py", content: "print('hi')\n" },
+        },
+      });
+
+      expect(afterRead.loopState?.status).not.toBe("failed");
+      expect(afterRead.missingRequirements ?? []).not.toContain("mutation_required_after_inspection");
+      expect(afterRead.pendingToolCall?.toolCall.name).toBe("list_files");
+    });
+
+    it("does not fail on repeated pending tool signature", async () => {
+      vi.stubEnv("PLAYGROUND_OPENHANDS_PRIMARY_ORCHESTRATION", "true");
+      mockedRequestToolLoopTurn
+        .mockResolvedValueOnce(
+          openHandsTurn({
+            adapter: "text_actions",
+            final: "",
+            toolCall: {
+              id: "call_read_1",
+              name: "read_file",
+              arguments: { path: "hello.py" },
+              kind: "observe",
+              summary: "Read",
+            },
+            logs: [],
+            modelSelection: {} as any,
+          })
+        )
+        .mockResolvedValueOnce(
+          openHandsTurn({
+            adapter: "text_actions",
+            final: "",
+            toolCall: {
+              id: "call_read_2",
+              name: "read_file",
+              arguments: { path: "hello.py" },
+              kind: "observe",
+              summary: "Read again",
+            },
+            logs: [],
+            modelSelection: {} as any,
+          })
+        );
+
+      const started = await startAssistToolLoop({
+        userId: "user-oh-primary-3",
+        sessionId: "session-oh-primary-3",
+        traceId: "trace-oh-4",
+        request: {
+          mode: "auto",
+          task: "Update hello.py",
+          orchestrationProtocol: "tool_loop_v1",
+          clientCapabilities: {
+            toolLoop: true,
+            supportedTools: ["read_file", "edit"],
+            autoExecute: true,
+          },
+          context: {
+            activeFile: { path: "hello.py", content: "print('hi')\n" },
+          },
+        },
+      });
+
+      const afterRead = await continueAssistToolLoop({
+        userId: "user-oh-primary-3",
+        traceId: "trace-oh-5",
+        runId: started.runId!,
+        toolResult: {
+          toolCallId: "call_read_1",
+          name: "read_file",
+          ok: true,
+          summary: "Read hello.py.",
+          data: { path: "hello.py", content: "print('hi')\n" },
+        },
+      });
+
+      expect(afterRead.loopState?.status).not.toBe("failed");
+      expect(afterRead.missingRequirements ?? []).not.toContain("tool_repeat_without_progress");
+      expect(afterRead.pendingToolCall?.toolCall.name).toBe("read_file");
+      expect(afterRead.pendingToolCall?.toolCall.id).toBe("call_read_2");
+    });
   });
 });

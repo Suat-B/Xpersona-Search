@@ -1,7 +1,11 @@
 import { NextRequest } from "next/server";
 import { estimateMessagesTokens, incrementUsage } from "@/lib/hf-router/rate-limit";
 import { authenticatePlaygroundRequest } from "@/lib/playground/auth";
-import { guardPlaygroundAccess, runAssist } from "@/lib/playground/orchestration";
+import {
+  guardPlaygroundAccess,
+  runAssist,
+  type AssistResult,
+} from "@/lib/playground/orchestration";
 import { startAssistToolLoop } from "@/lib/playground/tool-loop";
 import {
   appendSessionMessage,
@@ -10,13 +14,14 @@ import {
   listSessionMessages,
 } from "@/lib/playground/store";
 import { zAssistRequest } from "@/lib/playground/contracts";
-import { ok, parseBody, unauthorized } from "@/lib/playground/http";
+import { ok, parseBody, serverError, unauthorized } from "@/lib/playground/http";
 import { getOrCreateRequestId } from "@/lib/api/request-meta";
 import { jsonError } from "@/lib/api/errors";
-import { OpenHandsGatewayError } from "@/lib/playground/openhands-gateway";
+import { isOpenHandsGatewayEnabled, OpenHandsGatewayError } from "@/lib/playground/openhands-gateway";
 import {
   buildAssistResponsePayload,
   buildConversationHistory,
+  isTrivialGreetingOnlyTask,
 } from "./route-helpers";
 
 const ASSIST_COST_PER_1K_TOKENS = 0.0005;
@@ -159,40 +164,76 @@ export async function POST(request: NextRequest): Promise<Response> {
   });
 
   const runTask = async () => {
-    const toolLoopRequested =
-      body.orchestrationProtocol === "tool_loop_v1" &&
-      mode !== "plan" &&
-      body.clientCapabilities?.toolLoop !== false;
-    const result = toolLoopRequested
-      ? await startAssistToolLoop({
-          userId: auth.userId,
-          sessionId: session.id,
-          traceId,
-          request: {
-            ...body,
-            mode,
-            orchestrationProtocol: "tool_loop_v1",
-            conversationHistory: persistedHistory,
-            maxTokens: Math.min(access.limits?.maxOutputTokens ?? 2048, 2048),
-          },
-        })
-      : await runAssist({
-          ...body,
-          mode,
-          conversationHistory: persistedHistory,
-          maxTokens: Math.min(access.limits?.maxOutputTokens ?? 2048, 2048),
-        });
+    const planMode = mode === "plan";
+    const maxOut = Math.min(access.limits?.maxOutputTokens ?? 2048, 2048);
 
-    if (!toolLoopRequested) {
-      const outputTokens = estimateOutputTokens(result.final);
+    let result: AssistResult;
+
+    if (
+      !planMode &&
+      mode === "auto" &&
+      isTrivialGreetingOnlyTask({
+        task: body.task,
+        mode,
+        retrievalHints: body.retrievalHints,
+      })
+    ) {
+      result = await runAssist({
+        ...body,
+        mode: "auto",
+        task: `The user only sent a short greeting with no code request. Reply with a brief friendly greeting in plain text (2–4 sentences). Do NOT output JSON, patches, unified diffs, file edits, or tool calls. Invite them to describe a task or @mention a file.\n\nUser message: ${body.task}`,
+        conversationHistory: persistedHistory,
+        maxTokens: maxOut,
+      });
       await appendSessionMessage({
         userId: auth.userId,
         sessionId: session.id,
         role: "assistant",
         content: result.final,
         payload: result,
-        tokenCount: outputTokens,
+        tokenCount: estimateOutputTokens(result.final),
       }).catch(() => null);
+    } else {
+      result = planMode
+        ? await runAssist({
+            ...body,
+            mode,
+            conversationHistory: persistedHistory,
+            maxTokens: maxOut,
+          })
+        : await (async () => {
+            if (!isOpenHandsGatewayEnabled()) {
+              throw new OpenHandsGatewayError(
+                "Hosted coding uses OpenHands only. Set OPENHANDS_GATEWAY_URL on the server.",
+                "OPENHANDS_GATEWAY_MISSING_CONFIG",
+                503
+              );
+            }
+            return startAssistToolLoop({
+              userId: auth.userId,
+              sessionId: session.id,
+              traceId,
+              request: {
+                ...body,
+                mode,
+                orchestrationProtocol: "tool_loop_v1",
+                conversationHistory: persistedHistory,
+                maxTokens: maxOut,
+              },
+            });
+          })();
+
+      if (planMode) {
+        const outputTokens = estimateOutputTokens(result.final);
+        await appendSessionMessage({
+          userId: auth.userId,
+          sessionId: session.id,
+          role: "assistant",
+          content: result.final,
+          payload: result,
+          tokenCount: outputTokens,
+        }).catch(() => null);
+      }
     }
 
     await incrementUsage(
@@ -225,7 +266,8 @@ export async function POST(request: NextRequest): Promise<Response> {
           details: error.details,
         });
       }
-      throw error;
+      console.error("[playground/assist] non-stream run failed", error);
+      return serverError(request, error);
     }
   }
 

@@ -38,6 +38,7 @@ import {
 } from "@/lib/playground/orchestration";
 import { attachAssistArtifactIdentifiers } from "@/lib/playground/agent-os";
 import { requestToolLoopTurn, selectToolLoopAdapter, type ToolLoopTurnInput } from "@/lib/playground/tool-loop-adapters";
+import { isOpenHandsPrimaryOrchestration } from "@/lib/playground/openhands-primary-orchestration";
 import type { ExecuteAction } from "@/lib/playground/policy";
 
 const MAX_TOOL_STEPS = 12;
@@ -773,7 +774,7 @@ function hydratePersistedState(record: AgentRunRecord): PersistedToolLoopState |
   const orchestrator =
     output.orchestrator === "openhands" || output.orchestrator === "in_house"
       ? output.orchestrator
-      : "in_house";
+      : "openhands";
   const progressState = output.progressState as ProgressStateContract | undefined;
   const objectiveState = output.objectiveState as ObjectiveStateContract | undefined;
   if (!loopState || !targetInference || !contextSelection || !fallbackPlan) return null;
@@ -1057,7 +1058,7 @@ async function persistAndReturn(input: {
   status: AgentRunRecord["status"];
   errorMessage?: string | null;
 }) {
-  await updateAgentRun({
+  const payload = {
     userId: input.record.userId,
     runId: input.record.id,
     status: input.status,
@@ -1068,7 +1069,19 @@ async function persistAndReturn(input: {
     errorMessage: input.errorMessage,
     confidence: input.result.confidence,
     riskLevel: input.result.risk.blastRadius,
-  }).catch(() => null);
+  };
+  let persisted: Awaited<ReturnType<typeof updateAgentRun>> = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    persisted = await updateAgentRun(payload).catch(() => null);
+    if (persisted) break;
+    await new Promise((r) => setTimeout(r, 90 * (attempt + 1)));
+  }
+  if (!persisted) {
+    console.error("[playground/tool-loop] updateAgentRun failed after retries", {
+      runId: input.record.id,
+      userId: input.record.userId,
+    });
+  }
 
   if (input.result.pendingToolCall) {
     await appendToolEvent({
@@ -1116,6 +1129,7 @@ async function advanceWithCandidate(input: {
   // OpenHands (and other adapters) sometimes return {"final":"..."} on step 0 instead of a tool call.
   // Without a pending tool the IDE never executes tools. Force an observation step for agentic intents.
   if (
+    !isOpenHandsPrimaryOrchestration() &&
     !candidate &&
     input.state.loopState.stepCount === 0 &&
     input.state.toolTrace.length === 0 &&
@@ -1155,7 +1169,9 @@ async function advanceWithCandidate(input: {
       targetInference: input.state.targetInference,
     });
     const terminalMissingRequirements =
-      finalIntent.type === "code_edit" && finalActions.length === 0
+      !isOpenHandsPrimaryOrchestration() &&
+      finalIntent.type === "code_edit" &&
+      finalActions.length === 0
         ? ["no_usable_next_action", "mutation_required_for_code_edit"]
         : [];
     const finalResult = buildToolLoopResult({
@@ -1374,7 +1390,7 @@ export async function startAssistToolLoop(input: StartToolLoopInput): Promise<As
   const initialState: PersistedToolLoopState = {
     protocol: "tool_loop_v1",
     adapter,
-    orchestrator: "in_house",
+    orchestrator: "openhands",
     orchestratorVersion: null,
     orchestratorRunId: null,
     loopState: initialLoopState,
@@ -1545,71 +1561,82 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
     });
 
   if (!input.toolResult.ok || input.toolResult.blocked) {
-    const failureCategory = classifyToolFailure(input.toolResult, pendingToolCall);
-    const repairStage = nextRepairStage({
-      targetPath: nextState.targetInference.path,
-      repairHistory: nextState.repairHistory,
-      failureCategory,
-      latestToolResult: input.toolResult,
-      pendingToolCall,
-    });
-    if (nextState.loopState.repairCount >= MAX_REPAIR_ROUNDS || !repairStage) {
-      const failedResult = buildBlockedResult({
-        final: input.toolResult.summary,
-        missingRequirements: ["tool_result_failed", failureCategory],
-        logs: ["repair_limit_exceeded", `failure_category=${failureCategory}`],
-        stallReason: input.toolResult.summary,
-        nextDeterministicAction: "Return a blocked terminal result with exact missing proof.",
-      });
-      const nextFingerprint = buildProgressFingerprint({
-        pendingSignature: "",
-        loopState: failedResult.loopState || nextState.loopState,
-        objectiveState: failedResult.objectiveState,
-        missingRequirements: failedResult.missingRequirements,
-        latestToolResult: input.toolResult,
-      });
-      return persistAndReturn({
-        record,
-        state: {
-          ...nextState,
-          loopState: failedResult.loopState || nextState.loopState,
-          progressState: failedResult.progressState,
-          objectiveState: failedResult.objectiveState,
-          lastProgressFingerprint: nextFingerprint,
+    if (isOpenHandsPrimaryOrchestration()) {
+      nextState = {
+        ...nextState,
+        loopState: {
+          ...nextState.loopState,
+          status: "running",
         },
-        result: failedResult,
-        status: "failed",
-        errorMessage: input.toolResult.summary,
+      };
+      repairDirective = null;
+    } else {
+      const failureCategory = classifyToolFailure(input.toolResult, pendingToolCall);
+      const repairStage = nextRepairStage({
+        targetPath: nextState.targetInference.path,
+        repairHistory: nextState.repairHistory,
+        failureCategory,
+        latestToolResult: input.toolResult,
+        pendingToolCall,
       });
+      if (nextState.loopState.repairCount >= MAX_REPAIR_ROUNDS || !repairStage) {
+        const failedResult = buildBlockedResult({
+          final: input.toolResult.summary,
+          missingRequirements: ["tool_result_failed", failureCategory],
+          logs: ["repair_limit_exceeded", `failure_category=${failureCategory}`],
+          stallReason: input.toolResult.summary,
+          nextDeterministicAction: "Return a blocked terminal result with exact missing proof.",
+        });
+        const nextFingerprint = buildProgressFingerprint({
+          pendingSignature: "",
+          loopState: failedResult.loopState || nextState.loopState,
+          objectiveState: failedResult.objectiveState,
+          missingRequirements: failedResult.missingRequirements,
+          latestToolResult: input.toolResult,
+        });
+        return persistAndReturn({
+          record,
+          state: {
+            ...nextState,
+            loopState: failedResult.loopState || nextState.loopState,
+            progressState: failedResult.progressState,
+            objectiveState: failedResult.objectiveState,
+            lastProgressFingerprint: nextFingerprint,
+          },
+          result: failedResult,
+          status: "failed",
+          errorMessage: input.toolResult.summary,
+        });
+      }
+      const guidance = buildRepairGuidance({
+        stage: repairStage,
+        targetPath: nextState.targetInference.path,
+        toolResult: input.toolResult,
+        failureCategory,
+      });
+      repairDirective = {
+        stage: repairStage,
+        reason: `${guidance.reason} Next: ${guidance.nextDeterministicAction}`,
+      };
+      nextState = {
+        ...nextState,
+        loopState: {
+          ...nextState.loopState,
+          repairCount: nextState.loopState.repairCount + 1,
+          status: "running",
+        },
+        repairHistory: [...nextState.repairHistory, repairStage],
+        progressState: {
+          ...nextState.progressState,
+          status: "repairing",
+          lastMeaningfulProgressAtStep: pendingToolCall.step,
+          lastMeaningfulProgressSummary: input.toolResult.summary,
+          stallCount: nextState.progressState.stallCount + 1,
+          stallReason: guidance.reason,
+          nextDeterministicAction: guidance.nextDeterministicAction,
+        },
+      };
     }
-    const guidance = buildRepairGuidance({
-      stage: repairStage,
-      targetPath: nextState.targetInference.path,
-      toolResult: input.toolResult,
-      failureCategory,
-    });
-    repairDirective = {
-      stage: repairStage,
-      reason: `${guidance.reason} Next: ${guidance.nextDeterministicAction}`,
-    };
-    nextState = {
-      ...nextState,
-      loopState: {
-        ...nextState.loopState,
-        repairCount: nextState.loopState.repairCount + 1,
-        status: "running",
-      },
-      repairHistory: [...nextState.repairHistory, repairStage],
-      progressState: {
-        ...nextState.progressState,
-        status: "repairing",
-        lastMeaningfulProgressAtStep: pendingToolCall.step,
-        lastMeaningfulProgressSummary: input.toolResult.summary,
-        stallCount: nextState.progressState.stallCount + 1,
-        stallReason: guidance.reason,
-        nextDeterministicAction: guidance.nextDeterministicAction,
-      },
-    };
   } else {
     nextState = {
       ...nextState,
@@ -1657,6 +1684,7 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
     repairDirective,
   });
 
+  if (!isOpenHandsPrimaryOrchestration()) {
   const changeIntent = inferIntent({
     mode: request.mode,
     task: request.task,
@@ -1918,6 +1946,7 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
       actions: repairedTurn.actions as ExecuteAction[] | undefined,
       logs: repairedTurn.logs,
     });
+  }
   }
 
   return advanceWithCandidate({

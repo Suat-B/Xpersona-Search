@@ -107,7 +107,7 @@ export const zAssistRequest = z.object({
   task: z.string().min(1).max(120_000),
   stream: z.boolean().optional(),
   model: z.string().min(1).max(256).optional(),
-  orchestrationProtocol: zOrchestrationProtocol.default("batch_v1").optional(),
+  orchestrationProtocol: zOrchestrationProtocol.default("tool_loop_v1").optional(),
   clientCapabilities: zClientCapabilities.optional(),
   historySessionId: z.string().uuid().optional(),
   conversationHistory: z.array(zConversationTurn).max(24).optional(),
@@ -213,6 +213,8 @@ export const zObjectiveState = z.object({
 
 export const zRunContinueRequest = z.object({
   toolResult: zToolResult,
+  /** Playground session UUID from assist; used to resume if URL runId is stale or mismatched. */
+  sessionId: z.string().uuid().optional(),
 });
 
 export const zRunControlRequest = z.object({

@@ -45,6 +45,15 @@ const validation_utils_1 = require("./validation-utils");
 const api_client_1 = require("./api-client");
 const pg_config_1 = require("./pg-config");
 const execAsync = (0, util_1.promisify)(child_process_1.exec);
+/** Playground `ok()` responses wrap the payload in `{ data: ... }`; unwrap like assist does. */
+function unwrapExecuteApprovalResponse(raw) {
+    if (raw && typeof raw === "object" && "data" in raw) {
+        const inner = raw.data;
+        if (inner && typeof inner === "object")
+            return inner;
+    }
+    return raw;
+}
 function extractContentFromAddPatch(patch) {
     const lines = patch.replace(/\r\n/g, "\n").split("\n");
     const out = [];
@@ -140,6 +149,11 @@ class ActionRunner {
         }
     }
     async apply(input) {
+        const notifyMutate = async (payload) => {
+            if (input.onDidMutateFile) {
+                await Promise.resolve(input.onDidMutateFile(payload));
+            }
+        };
         if (input.mode === "plan") {
             return {
                 summary: "Plan mode does not execute local actions.",
@@ -164,11 +178,12 @@ class ActionRunner {
             };
         }
         const collapsed = (0, apply_recovery_utils_1.collapseConflictingFileActions)(input.actions);
-        const approval = await (0, api_client_1.requestJson)("POST", `${(0, pg_config_1.getBaseApiUrl)()}/api/v1/playground/execute`, input.auth, {
+        const approvalRaw = await (0, api_client_1.requestJson)("POST", `${(0, pg_config_1.getBaseApiUrl)()}/api/v1/playground/execute`, input.auth, {
             sessionId: input.sessionId,
             workspaceFingerprint: input.workspaceFingerprint,
             actions: collapsed.actions,
-        });
+        }, { signal: input.signal });
+        const approval = unwrapExecuteApprovalResponse(approvalRaw);
         const approvedActions = (approval.results || [])
             .filter((result) => result.status === "approved" && result.action)
             .map((result) => result.action);
@@ -245,6 +260,17 @@ class ActionRunner {
                     await fs.writeFile(absolutePath, createdContent, "utf8");
                     changedFiles.push(action.path);
                     details.push(`Created ${action.path} from additive patch.`);
+                    const normCreate = (0, pg_config_1.normalizeWorkspaceRelativePath)(action.path) || action.path;
+                    await notifyMutate({
+                        relativePath: normCreate,
+                        previousContent: "",
+                        nextContent: createdContent,
+                        toolName: "patch_file",
+                    });
+                    continue;
+                }
+                if (!(0, patch_utils_1.isPatchSafelyAnchoredForExistingFile)(patch)) {
+                    details.push(`Skipped unsafe patch for ${action.path}: add ---/+++ file headers or @@ hunks with line numbers (example: @@ -10,6 +10,7 @@) so the edit cannot apply at the wrong location.`);
                     continue;
                 }
                 const result = (0, patch_utils_1.applyUnifiedDiff)(previous, patch);
@@ -259,6 +285,13 @@ class ActionRunner {
                 await fs.writeFile(absolutePath, result.content, "utf8");
                 changedFiles.push(action.path);
                 details.push(`Patched ${action.path}.`);
+                const normPatch = (0, pg_config_1.normalizeWorkspaceRelativePath)(action.path) || action.path;
+                await notifyMutate({
+                    relativePath: normPatch,
+                    previousContent: previous,
+                    nextContent: result.content,
+                    toolName: "patch_file",
+                });
             }
         }
         const commandActions = approvedActions.filter((action) => action.type === "command");

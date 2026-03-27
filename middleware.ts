@@ -133,6 +133,11 @@ export async function middleware(req: NextRequest) {
   const pathService = getServiceForPathname(url.pathname);
   const serviceForHeader = hostService === "hub" && pathService ? pathService : hostService;
   const requestHeadersForCrawl = new Headers(req.headers);
+  const pathWithSearch = `${url.pathname}${url.search}`;
+  requestHeadersForCrawl.set(
+    "x-xp-pathname",
+    pathWithSearch.length > 2048 ? pathWithSearch.slice(0, 2048) : pathWithSearch
+  );
   let crawlRewriteUrl: URL | null = null;
 
   if (hostService !== "hub") {

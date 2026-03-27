@@ -33,7 +33,7 @@ describe("api hard cutover middleware", () => {
     expect(res.status).toBe(200);
   });
 
-  it("returns 402 for gated crawler requests without a crawl token", async () => {
+  it("allows gated crawler API requests without a crawl token while pay-per-crawl is disabled in code", async () => {
     process.env.ENABLE_PAY_PER_CRAWL = "1";
     process.env.CRAWL_LICENSE_SECRET = "0123456789abcdef";
 
@@ -41,13 +41,11 @@ describe("api hard cutover middleware", () => {
       headers: { "user-agent": "GPTBot" },
     });
     const res = await middleware(req);
-    const json = await res.json();
 
-    expect(res.status).toBe(402);
-    expect(json.error.code).toBe("CRAWL_LICENSE_REQUIRED");
+    expect(res.status).toBe(200);
   });
 
-  it("returns 402 for gated agent detail pages without a crawl token", async () => {
+  it("allows gated agent detail pages for crawlers without a crawl token while pay-per-crawl is disabled in code", async () => {
     process.env.ENABLE_PAY_PER_CRAWL = "1";
     process.env.CRAWL_LICENSE_SECRET = "0123456789abcdef";
 
@@ -56,7 +54,7 @@ describe("api hard cutover middleware", () => {
     });
     const res = await middleware(req);
 
-    expect(res.status).toBe(402);
+    expect(res.status).toBe(200);
   });
 
   it("keeps public agent collection pages ungated for crawler requests", async () => {

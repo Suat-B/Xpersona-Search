@@ -24,6 +24,11 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
+function isGitMissingRepositoryOutput(stdout: string, stderr: string): boolean {
+  const blob = `${stderr}\n${stdout}`;
+  return /not a git repository/i.test(blob);
+}
+
 function summarizeCommandFailure(result: {
   command: string;
   exitCode: number;
@@ -100,11 +105,15 @@ export class ToolExecutor {
     auth: RequestAuth;
     sessionId?: string;
     workspaceFingerprint: string;
+    signal?: AbortSignal;
   }): Promise<ToolResult> {
     const toolCall = input.pendingToolCall.toolCall;
     const args = toolCall.arguments || {};
 
     try {
+      if (input.signal?.aborted) {
+        throw new Error("Prompt aborted");
+      }
       if (toolCall.name === "list_files") {
         const result = await this.listFiles(String(args.query || ""), Number(args.limit || 30));
         return {
@@ -169,6 +178,17 @@ export class ToolExecutor {
 
       if (toolCall.name === "git_status") {
         const result = await this.runGitCommand("git status --short");
+        const noRepo = isGitMissingRepositoryOutput(result.stdout, result.stderr);
+        if (noRepo) {
+          return {
+            toolCallId: toolCall.id,
+            name: toolCall.name,
+            ok: true,
+            summary: "Workspace is not a Git repository; no status to report.",
+            data: result,
+            createdAt: new Date().toISOString(),
+          };
+        }
         return {
           toolCallId: toolCall.id,
           name: toolCall.name,
@@ -186,6 +206,17 @@ export class ToolExecutor {
             ? `git diff -- ${args.path}`
             : "git diff --stat";
         const result = await this.runGitCommand(command);
+        const noRepo = isGitMissingRepositoryOutput(result.stdout, result.stderr);
+        if (noRepo) {
+          return {
+            toolCallId: toolCall.id,
+            name: toolCall.name,
+            ok: true,
+            summary: "Workspace is not a Git repository; no diff to report.",
+            data: result,
+            createdAt: new Date().toISOString(),
+          };
+        }
         return {
           toolCallId: toolCall.id,
           name: toolCall.name,
@@ -225,6 +256,7 @@ export class ToolExecutor {
           auth: input.auth,
           sessionId: input.sessionId,
           workspaceFingerprint: input.workspaceFingerprint,
+          signal: input.signal,
         });
         return {
           toolCallId: toolCall.id,
@@ -242,7 +274,9 @@ export class ToolExecutor {
         const response = await requestJson<WorkspaceMemoryResponse>(
           "GET",
           `${getBaseApiUrl()}/api/v1/playground/memory/workspace?workspaceFingerprint=${encodeURIComponent(input.workspaceFingerprint)}`,
-          input.auth
+          input.auth,
+          undefined,
+          { signal: input.signal }
         );
         const memory = response?.data?.memory || null;
         return {
@@ -374,6 +408,7 @@ export class ToolExecutor {
     auth: RequestAuth;
     sessionId?: string;
     workspaceFingerprint: string;
+    signal?: AbortSignal;
   }): Promise<{
     ok: boolean;
     blocked?: boolean;
@@ -417,6 +452,7 @@ export class ToolExecutor {
       auth: input.auth,
       sessionId: input.sessionId,
       workspaceFingerprint: input.workspaceFingerprint,
+      signal: input.signal,
     });
 
     const changedTarget =

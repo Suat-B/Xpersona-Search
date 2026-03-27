@@ -3,7 +3,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { applyUnifiedDiff } from "./patch-utils";
+import { applyUnifiedDiff, isPatchSafelyAnchoredForExistingFile } from "./patch-utils";
 import { collapseConflictingFileActions } from "./apply-recovery-utils";
 import { planQuickValidationForFile } from "./validation-utils";
 import { requestJson } from "./api-client";
@@ -42,6 +42,15 @@ type ExecuteApprovalResponse = {
   }>;
 };
 
+/** Playground `ok()` responses wrap the payload in `{ data: ... }`; unwrap like assist does. */
+function unwrapExecuteApprovalResponse(raw: unknown): ExecuteApprovalResponse {
+  if (raw && typeof raw === "object" && "data" in raw) {
+    const inner = (raw as { data?: unknown }).data;
+    if (inner && typeof inner === "object") return inner as ExecuteApprovalResponse;
+  }
+  return raw as ExecuteApprovalResponse;
+}
+
 function extractContentFromAddPatch(patch: string): string | null {
   const lines = patch.replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
@@ -66,6 +75,14 @@ function extractContentFromAddPatch(patch: string): string | null {
 function uniquePaths(paths: string[]): string[] {
   return Array.from(new Set(paths.map((value) => String(value || "").trim()).filter(Boolean)));
 }
+
+/** Fired after a successful workspace file write via `apply` (for chat diff / host UX). */
+export type ActionRunnerFileMutationPayload = {
+  relativePath: string;
+  previousContent: string;
+  nextContent: string;
+  toolName: "write_file" | "patch_file";
+};
 
 function summarizeCommandResult(result: CommandExecutionResult): string {
   const base = `${result.exitCode === 0 ? "OK" : "FAIL"} ${result.command}`;
@@ -145,7 +162,14 @@ export class ActionRunner {
     auth: RequestAuth;
     sessionId?: string;
     workspaceFingerprint: string;
+    signal?: AbortSignal;
+    onDidMutateFile?: (payload: ActionRunnerFileMutationPayload) => void | Promise<void>;
   }): Promise<LocalApplyReport> {
+    const notifyMutate = async (payload: ActionRunnerFileMutationPayload) => {
+      if (input.onDidMutateFile) {
+        await Promise.resolve(input.onDidMutateFile(payload));
+      }
+    };
     if (input.mode === "plan") {
       return {
         summary: "Plan mode does not execute local actions.",
@@ -172,7 +196,7 @@ export class ActionRunner {
     }
 
     const collapsed = collapseConflictingFileActions(input.actions);
-    const approval = await requestJson<ExecuteApprovalResponse>(
+    const approvalRaw = await requestJson<unknown>(
       "POST",
       `${getBaseApiUrl()}/api/v1/playground/execute`,
       input.auth,
@@ -180,8 +204,10 @@ export class ActionRunner {
         sessionId: input.sessionId,
         workspaceFingerprint: input.workspaceFingerprint,
         actions: collapsed.actions,
-      }
+      },
+      { signal: input.signal }
     );
+    const approval = unwrapExecuteApprovalResponse(approvalRaw);
 
     const approvedActions = (approval.results || [])
       .filter((result) => result.status === "approved" && result.action)
@@ -265,6 +291,20 @@ export class ActionRunner {
           await fs.writeFile(absolutePath, createdContent, "utf8");
           changedFiles.push(action.path);
           details.push(`Created ${action.path} from additive patch.`);
+          const normCreate = normalizeWorkspaceRelativePath(action.path) || action.path;
+          await notifyMutate({
+            relativePath: normCreate,
+            previousContent: "",
+            nextContent: createdContent,
+            toolName: "patch_file",
+          });
+          continue;
+        }
+
+        if (!isPatchSafelyAnchoredForExistingFile(patch)) {
+          details.push(
+            `Skipped unsafe patch for ${action.path}: add ---/+++ file headers or @@ hunks with line numbers (example: @@ -10,6 +10,7 @@) so the edit cannot apply at the wrong location.`
+          );
           continue;
         }
 
@@ -280,6 +320,13 @@ export class ActionRunner {
         await fs.writeFile(absolutePath, result.content, "utf8");
         changedFiles.push(action.path);
         details.push(`Patched ${action.path}.`);
+        const normPatch = normalizeWorkspaceRelativePath(action.path) || action.path;
+        await notifyMutate({
+          relativePath: normPatch,
+          previousContent: previous,
+          nextContent: result.content,
+          toolName: "patch_file",
+        });
       }
     }
 

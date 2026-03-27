@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import json
 import os
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
@@ -142,7 +143,20 @@ class OpenHandsGatewayHandler(BaseHTTPRequestHandler):
             )
             return
 
-        result = run_turn(body)
+        try:
+            result = run_turn(body)
+        except Exception as exc:
+            traceback.print_exc()
+            write_json(
+                self,
+                502,
+                {
+                    "error": "OpenHands gateway crashed while handling the request.",
+                    "details": f"{type(exc).__name__}: {exc}",
+                },
+            )
+            return
+
         if not result.get("ok"):
             write_json(
                 self,
