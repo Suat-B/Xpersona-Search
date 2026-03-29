@@ -1,33 +1,21 @@
-const FALSE_VALUES = new Set(["0", "false", "no", "off"]);
-const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
+export const ADSENSE_CLIENT_ID = "ca-pub-6090164906593135";
 
-function readBooleanEnv(name: string, defaultValue: boolean): boolean {
-  const raw = process.env[name]?.trim().toLowerCase();
-  if (!raw) return defaultValue;
-  if (TRUE_VALUES.has(raw)) return true;
-  if (FALSE_VALUES.has(raw)) return false;
-  return defaultValue;
-}
-
-/** Public flag: set to 0/false to disable AdSense rendering entirely. */
-export function isAdSenseEnabled(): boolean {
-  return readBooleanEnv("NEXT_PUBLIC_ADSENSE_ENABLED", true);
+export function getAdSenseClientId(): string {
+  return ADSENSE_CLIENT_ID;
 }
 
 /**
- * Public stress-test switch: when enabled, always render first-party/internal
- * ad inventory instead of Google-served units.
+ * Auto Ads only needs the AdSense script on human page loads.
+ * Crawlers continue to use our internal fallback inventory.
  */
-export function isAdStressModeEnabled(): boolean {
-  return readBooleanEnv("NEXT_PUBLIC_AD_STRESS_MODE", false);
+export function shouldLoadAdSenseForRequest(isBotRequest: boolean): boolean {
+  return !isBotRequest;
 }
 
 /**
- * Runtime decision for ad surfaces.
- * Bots always use internal inventory; stress mode and AdSense disablement force
- * internal inventory for all traffic.
+ * Bot requests keep the internal ad rendering path so crawlers never depend on
+ * client-side Google JavaScript.
  */
 export function shouldUseInternalAds(isBotRequest: boolean): boolean {
-  if (isBotRequest) return true;
-  return isAdStressModeEnabled() || !isAdSenseEnabled();
+  return isBotRequest;
 }

@@ -97,7 +97,12 @@ export type AssistRequest = {
   historySessionId?: string;
   context?: AssistContext;
   retrievalHints?: AssistRetrievalHints;
-  clientTrace?: { extensionVersion: string; workspaceHash: string };
+  clientTrace?: {
+    extensionVersion: string;
+    workspaceHash: string;
+    maxToolSteps?: number;
+    maxWorkspaceMutations?: number;
+  };
 };
 
 export type AssistRuntimeInput = AssistRequest & {

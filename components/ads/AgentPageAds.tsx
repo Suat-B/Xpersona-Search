@@ -3,10 +3,8 @@ import {
   buildAgentGamTargeting,
   getConfiguredAgentSlots,
   isGamEnabledForAgentPages,
-  shouldShowAdSenseAlongsideGamOnAgentPages,
 } from "@/lib/ads/gam-config";
 import { getAgentPageGamBotItems } from "@/lib/ads/gam-bot-renderer";
-import { AdUnit, DEFAULT_AD_SLOT } from "@/components/ads/AdUnit";
 import { AgentPageGAMAds } from "@/components/ads/AgentPageGAMAds";
 import { shouldUseInternalAds } from "@/lib/ads/adsense-config";
 
@@ -19,7 +17,8 @@ interface AgentPageAdsProps {
 
 /**
  * Ads for /agent/[slug]: humans get AdSense by default; GAM is opt-in via env.
- * With GAM on, optionally keep AdSense too via NEXT_PUBLIC_GAM_AGENT_PAGES_ADSENSE_ALSO.
+ * Human visitors now rely on AdSense Auto Ads globally; only GAM keeps
+ * explicit placements on agent pages.
  */
 export async function AgentPageAds({
   agentName,
@@ -102,22 +101,12 @@ export async function AgentPageAds({
       agentName,
       agentCategory,
     });
-    const adsenseAlso = shouldShowAdSenseAlongsideGamOnAgentPages();
     return (
       <div className="mx-auto w-full max-w-7xl space-y-4 px-4 py-4">
-        {adsenseAlso ? (
-          <div className="ad-slot-host-agent-adsense" data-ad-stack="adsense-with-gam">
-            <AdUnit slot={DEFAULT_AD_SLOT} format="auto" />
-          </div>
-        ) : null}
         <AgentPageGAMAds slots={slots} targeting={targeting} key={agentSlug} />
       </div>
     );
   }
 
-  return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-4">
-      <AdUnit slot={DEFAULT_AD_SLOT} format="auto" />
-    </div>
-  );
+  return null;
 }

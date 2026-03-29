@@ -45,6 +45,14 @@ const validation_utils_1 = require("./validation-utils");
 const api_client_1 = require("./api-client");
 const config_1 = require("./config");
 const execAsync = (0, util_1.promisify)(child_process_1.exec);
+function unwrapExecuteApprovalResponse(raw) {
+    if (raw && typeof raw === "object" && "data" in raw) {
+        const inner = raw.data;
+        if (inner && typeof inner === "object")
+            return inner;
+    }
+    return raw;
+}
 function extractContentFromAddPatch(patch) {
     const lines = patch.replace(/\r\n/g, "\n").split("\n");
     const out = [];
@@ -164,11 +172,12 @@ class ActionRunner {
             };
         }
         const collapsed = (0, apply_recovery_utils_1.collapseConflictingFileActions)(input.actions);
-        const approval = await (0, api_client_1.requestJson)("POST", `${(0, config_1.getBaseApiUrl)()}/api/v1/playground/execute`, input.auth, {
+        const approvalRaw = await (0, api_client_1.requestJson)("POST", `${(0, config_1.getBaseApiUrl)()}/api/v1/playground/execute`, input.auth, {
             sessionId: input.sessionId,
             workspaceFingerprint: input.workspaceFingerprint,
             actions: collapsed.actions,
-        });
+        }, { signal: input.signal });
+        const approval = unwrapExecuteApprovalResponse(approvalRaw);
         const approvedActions = (approval.results || [])
             .filter((result) => result.status === "approved" && result.action)
             .map((result) => result.action);

@@ -36,50 +36,93 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
-const auth_1 = require("./auth");
-const actions_1 = require("./actions");
-const context_1 = require("./context");
 const config_1 = require("./config");
-const history_1 = require("./history");
-const indexer_1 = require("./indexer");
-const qwen_history_1 = require("./qwen-history");
-const qwen_code_runtime_1 = require("./qwen-code-runtime");
-const selection_prefill_1 = require("./selection-prefill");
-const tool_executor_1 = require("./tool-executor");
-const webview_provider_1 = require("./webview-provider");
+class LazyPlaygroundViewProvider {
+    constructor(getServices) {
+        this.getServices = getServices;
+    }
+    resolveWebviewView(webviewView) {
+        return this.getServices().then(({ provider }) => provider.resolveWebviewView(webviewView));
+    }
+}
+class LazyUriHandler {
+    constructor(getServices) {
+        this.getServices = getServices;
+    }
+    async handleUri(uri) {
+        const { auth } = await this.getServices();
+        await auth.handleUri(uri);
+    }
+}
 async function activate(context) {
-    await (0, config_1.migrateLegacyConfiguration)().catch(() => undefined);
-    const auth = new auth_1.AuthManager(context);
-    const indexManager = new indexer_1.CloudIndexManager(context, () => auth.getRequestAuth());
-    const actionRunner = new actions_1.ActionRunner();
-    const toolExecutor = new tool_executor_1.ToolExecutor(actionRunner, indexManager);
-    const contextCollector = new context_1.ContextCollector(indexManager);
-    const historyService = new history_1.SessionHistoryService();
-    const qwenHistoryService = new qwen_history_1.QwenHistoryService(context);
-    const qwenCodeRuntime = new qwen_code_runtime_1.QwenCodeRuntime();
-    const provider = new webview_provider_1.PlaygroundViewProvider(context, auth, historyService, qwenHistoryService, qwenCodeRuntime, contextCollector, actionRunner, toolExecutor, indexManager);
-    context.subscriptions.push(vscode.window.registerWebviewViewProvider(config_1.WEBVIEW_VIEW_ID, provider), vscode.window.registerUriHandler(auth), vscode.commands.registerCommand("binary.generate", async () => {
+    const migrationPromise = (0, config_1.migrateLegacyConfiguration)().catch(() => undefined);
+    let servicesPromise = null;
+    const getServices = async () => {
+        if (!servicesPromise) {
+            servicesPromise = (async () => {
+                await migrationPromise;
+                const [{ AuthManager }, { ActionRunner }, { ContextCollector }, { SessionHistoryService }, { CloudIndexManager }, { QwenHistoryService }, { QwenCodeRuntime }, { ToolExecutor }, { PlaygroundViewProvider },] = await Promise.all([
+                    Promise.resolve().then(() => __importStar(require("./auth"))),
+                    Promise.resolve().then(() => __importStar(require("./actions"))),
+                    Promise.resolve().then(() => __importStar(require("./context"))),
+                    Promise.resolve().then(() => __importStar(require("./history"))),
+                    Promise.resolve().then(() => __importStar(require("./indexer"))),
+                    Promise.resolve().then(() => __importStar(require("./qwen-history"))),
+                    Promise.resolve().then(() => __importStar(require("./qwen-code-runtime"))),
+                    Promise.resolve().then(() => __importStar(require("./tool-executor"))),
+                    Promise.resolve().then(() => __importStar(require("./webview-provider"))),
+                ]);
+                const auth = new AuthManager(context);
+                const indexManager = new CloudIndexManager(context, () => auth.getRequestAuth());
+                const actionRunner = new ActionRunner();
+                const toolExecutor = new ToolExecutor(actionRunner, indexManager);
+                const contextCollector = new ContextCollector(indexManager);
+                const historyService = new SessionHistoryService();
+                const qwenHistoryService = new QwenHistoryService(context);
+                const qwenCodeRuntime = new QwenCodeRuntime();
+                const provider = new PlaygroundViewProvider(context, auth, historyService, qwenHistoryService, qwenCodeRuntime, contextCollector, actionRunner, toolExecutor, indexManager);
+                toolExecutor.setBinaryToolContextProvider(() => provider.getBinaryToolContext());
+                indexManager.start();
+                return {
+                    auth,
+                    actionRunner,
+                    provider,
+                    indexManager,
+                };
+            })().catch((error) => {
+                servicesPromise = null;
+                throw error;
+            });
+        }
+        return await servicesPromise;
+    };
+    const withProvider = async (run) => {
+        const { provider } = await getServices();
+        return await run(provider);
+    };
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider(config_1.WEBVIEW_VIEW_ID, new LazyPlaygroundViewProvider(getServices)), vscode.window.registerUriHandler(new LazyUriHandler(getServices)), vscode.commands.registerCommand("binary.generate", async () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
-            await provider.runBinaryGenerate();
+            await withProvider((provider) => provider.runBinaryGenerate());
             return;
         }
         const selected = editor.selection.isEmpty
             ? editor.document.lineAt(editor.selection.active.line).text
             : editor.document.getText(editor.selection);
-        await provider.runBinaryGenerate((0, selection_prefill_1.buildSelectionPrefill)({
+        const { buildSelectionPrefill } = await Promise.resolve().then(() => __importStar(require("./selection-prefill")));
+        await withProvider((provider) => provider.runBinaryGenerate(buildSelectionPrefill({
             path: (0, config_1.toWorkspaceRelativePath)(editor.document.uri),
             line: editor.selection.start.line + 1,
             selectedText: selected.trim(),
-        }));
+        })));
     }), vscode.commands.registerCommand("binary.validate", async () => {
-        await provider.runBinaryValidate();
+        await withProvider((provider) => provider.runBinaryValidate());
     }), vscode.commands.registerCommand("binary.deploy", async () => {
-        await provider.runBinaryDeploy();
+        await withProvider((provider) => provider.runBinaryDeploy());
     }), vscode.commands.registerCommand("binary.configure", async () => {
-        await provider.openBinaryConfiguration();
+        await withProvider((provider) => provider.openBinaryConfiguration());
     }), vscode.commands.registerCommand("xpersona.playground.prompt", async () => {
-        await provider.show();
+        await withProvider((provider) => provider.show());
     }), vscode.commands.registerCommand("xpersona.playground.openWithSelection", async () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor)
@@ -87,19 +130,23 @@ async function activate(context) {
         const selected = editor.selection.isEmpty
             ? editor.document.lineAt(editor.selection.active.line).text
             : editor.document.getText(editor.selection);
-        await provider.show((0, selection_prefill_1.buildSelectionPrefill)({
+        const { buildSelectionPrefill } = await Promise.resolve().then(() => __importStar(require("./selection-prefill")));
+        await withProvider((provider) => provider.show(buildSelectionPrefill({
             path: (0, config_1.toWorkspaceRelativePath)(editor.document.uri),
             line: editor.selection.start.line + 1,
             selectedText: selected.trim(),
-        }));
+        })));
     }), vscode.commands.registerCommand("xpersona.playground.setApiKey", async () => {
-        await provider.openBinaryConfiguration();
+        await withProvider((provider) => provider.openBinaryConfiguration());
     }), vscode.commands.registerCommand("xpersona.playground.signIn", async () => {
+        const { auth } = await getServices();
         await auth.signInWithBrowser();
     }), vscode.commands.registerCommand("xpersona.playground.signOut", async () => {
+        const { auth, provider } = await getServices();
         await auth.signOut();
         await provider.newChat();
     }), vscode.commands.registerCommand("xpersona.playground.undoLastChanges", async () => {
+        const { actionRunner } = await getServices();
         const summary = await actionRunner.undoLastBatch();
         vscode.window.showInformationMessage(summary);
     }), vscode.workspace.onDidChangeConfiguration((event) => {
@@ -119,27 +166,52 @@ async function activate(context) {
             event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.qwen.model`) ||
             event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.qwen.baseUrl`) ||
             event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.qwen.executable`)) {
-            void provider.refreshConfiguration();
+            if (!servicesPromise)
+                return;
+            void servicesPromise.then(({ provider }) => provider.refreshConfiguration()).catch(() => undefined);
         }
     }), vscode.workspace.onDidSaveTextDocument((document) => {
-        if (!indexManager.shouldTrackUri(document.uri))
+        if (!servicesPromise)
             return;
-        indexManager.scheduleRebuild();
+        void servicesPromise
+            .then(({ indexManager }) => {
+            if (!indexManager.shouldTrackUri(document.uri))
+                return;
+            indexManager.scheduleRebuild();
+        })
+            .catch(() => undefined);
     }), vscode.workspace.onDidCreateFiles((event) => {
-        if (!event.files.some((uri) => indexManager.shouldTrackUri(uri)))
+        if (!servicesPromise)
             return;
-        indexManager.scheduleRebuild();
+        void servicesPromise
+            .then(({ indexManager }) => {
+            if (!event.files.some((uri) => indexManager.shouldTrackUri(uri)))
+                return;
+            indexManager.scheduleRebuild();
+        })
+            .catch(() => undefined);
     }), vscode.workspace.onDidDeleteFiles((event) => {
-        if (!event.files.some((uri) => indexManager.shouldTrackUri(uri)))
+        if (!servicesPromise)
             return;
-        indexManager.scheduleRebuild();
+        void servicesPromise
+            .then(({ indexManager }) => {
+            if (!event.files.some((uri) => indexManager.shouldTrackUri(uri)))
+                return;
+            indexManager.scheduleRebuild();
+        })
+            .catch(() => undefined);
     }), vscode.workspace.onDidRenameFiles((event) => {
-        const touchedTrackedUri = event.files.some((entry) => indexManager.shouldTrackUri(entry.oldUri) || indexManager.shouldTrackUri(entry.newUri));
-        if (!touchedTrackedUri)
+        if (!servicesPromise)
             return;
-        indexManager.scheduleRebuild();
+        void servicesPromise
+            .then(({ indexManager }) => {
+            const touchedTrackedUri = event.files.some((entry) => indexManager.shouldTrackUri(entry.oldUri) || indexManager.shouldTrackUri(entry.newUri));
+            if (!touchedTrackedUri)
+                return;
+            indexManager.scheduleRebuild();
+        })
+            .catch(() => undefined);
     }));
-    indexManager.start();
 }
 function deactivate() { }
 //# sourceMappingURL=extension.js.map

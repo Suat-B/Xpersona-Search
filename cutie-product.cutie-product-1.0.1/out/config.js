@@ -38,6 +38,10 @@ exports.getBaseApiUrl = getBaseApiUrl;
 exports.getBinaryApiBaseUrl = getBinaryApiBaseUrl;
 exports.getBinaryStreamGatewayUrl = getBinaryStreamGatewayUrl;
 exports.getBinaryIdeChatRuntime = getBinaryIdeChatRuntime;
+exports.getOpenCodeServerUrl = getOpenCodeServerUrl;
+exports.getOpenCodeAutoStart = getOpenCodeAutoStart;
+exports.getOpenCodeModel = getOpenCodeModel;
+exports.getOpenCodeConfigPath = getOpenCodeConfigPath;
 exports.getQwenModel = getQwenModel;
 exports.getQwenOpenAiBaseUrl = getQwenOpenAiBaseUrl;
 exports.getQwenExecutablePath = getQwenExecutablePath;
@@ -56,6 +60,8 @@ exports.getWorkspaceRootPath = getWorkspaceRootPath;
 exports.getWorkspaceHash = getWorkspaceHash;
 exports.toWorkspaceRelativePath = toWorkspaceRelativePath;
 exports.getExtensionVersion = getExtensionVersion;
+exports.getMaxToolStepsForPlayground = getMaxToolStepsForPlayground;
+exports.getMaxWorkspaceMutationsForPlayground = getMaxWorkspaceMutationsForPlayground;
 const vscode = __importStar(require("vscode"));
 const crypto_1 = require("crypto");
 const path = __importStar(require("path"));
@@ -86,7 +92,33 @@ function getBinaryStreamGatewayUrl() {
     return String(configured || "").trim().replace(/\/+$/, "");
 }
 function getBinaryIdeChatRuntime() {
-    return "playgroundApi";
+    const raw = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("binary.runtime", "cutie");
+    const v = String(raw || "").trim();
+    if (v === "cutie" || v === "playgroundApi" || v === "qwenCode" || v === "openCode") {
+        return v;
+    }
+    return "cutie";
+}
+function getOpenCodeServerUrl() {
+    const configured = vscode.workspace
+        .getConfiguration(exports.EXTENSION_NAMESPACE)
+        .get("opencode.serverUrl", "http://127.0.0.1:4096");
+    return String(configured || "http://127.0.0.1:4096").trim().replace(/\/+$/, "");
+}
+function getOpenCodeAutoStart() {
+    return vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("opencode.autoStart", true) === true;
+}
+function getOpenCodeModel() {
+    const configured = vscode.workspace
+        .getConfiguration(exports.EXTENSION_NAMESPACE)
+        .get("opencode.model", getModelHint());
+    return String(configured || getModelHint()).trim();
+}
+function getOpenCodeConfigPath() {
+    const configured = vscode.workspace
+        .getConfiguration(exports.EXTENSION_NAMESPACE)
+        .get("opencode.configPath", "opencode.json");
+    return String(configured || "opencode.json").trim();
 }
 function getQwenModel() {
     const configured = vscode.workspace
@@ -199,5 +231,14 @@ function toWorkspaceRelativePath(uri) {
 }
 function getExtensionVersion(context) {
     return String(context.extension.packageJSON.version || "0.0.0");
+}
+/** Sent on playground assist so the server tool loop matches Cutie workspace settings. */
+function getMaxToolStepsForPlayground() {
+    const cfg = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE);
+    return Math.max(8, Math.min(128, cfg.get("maxToolSteps", 18)));
+}
+function getMaxWorkspaceMutationsForPlayground() {
+    const cfg = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE);
+    return Math.max(2, Math.min(64, cfg.get("maxWorkspaceMutations", 8)));
 }
 //# sourceMappingURL=config.js.map

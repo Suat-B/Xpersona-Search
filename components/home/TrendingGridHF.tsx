@@ -1,9 +1,6 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import {
-  capabilityTokenToLabel,
-  normalizeCapabilityToken,
-} from "@/lib/search/capability-tokens";
+import { normalizeCapabilityToken } from "@/lib/search/capability-tokens";
 import { buildTrendingCapabilities } from "@/lib/search/trending-capabilities";
 
 type SearchAgent = {
@@ -81,7 +78,7 @@ function formatFreshness(item: SearchAgent) {
 }
 
 function metricLabel(value: number | null | undefined) {
-  if (value == null) return "—";
+  if (value == null) return "-";
   return `${Math.round(value)}`;
 }
 
@@ -129,19 +126,12 @@ export async function TrendingGridHF() {
     { title: "Trending Tool Packs", items: toolPacks.slice(0, 5) },
     { title: "Trending Capabilities", items: capabilities.slice(0, 5) },
   ] as const;
-  const gradients = [
-    "from-[#7c3aed] via-[#6d28d9] to-[#4f46e5]",
-    "from-[#ec4899] via-[#f97316] to-[#f59e0b]",
-    "from-[#f97316] via-[#f43f5e] to-[#ec4899]",
-    "from-[#0ea5e9] via-[#14b8a6] to-[#22c55e]",
-    "from-[#6366f1] via-[#8b5cf6] to-[#ec4899]",
-  ] as const;
 
   return (
-    <section className="w-full bg-[#0b0f14] py-12 sm:py-16">
+    <section className="w-full bg-white py-12 sm:py-16">
       <div className="mx-auto w-full max-w-[1260px] px-4 sm:px-6">
         <div className="mb-8 text-center">
-          <h2 className="text-2xl sm:text-3xl font-semibold text-white">
+          <h2 className="text-2xl font-semibold text-black sm:text-3xl">
             What the community is building
           </h2>
         </div>
@@ -149,17 +139,13 @@ export async function TrendingGridHF() {
           {columns.map((column, columnIndex) => (
             <div key={column.title} className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-white/80">{column.title}</h3>
+                <h3 className="text-sm font-semibold text-black/70">{column.title}</h3>
               </div>
               <div className="space-y-3">
                 {column.items.map((item, rowIndex) => {
-                  const isAccent = columnIndex === 1;
-                  const gradient = gradients[rowIndex % gradients.length];
-                  const cardBase = `flex min-h-[56px] items-center rounded-lg border px-3 py-1.5 transition ${
-                    isAccent
-                      ? `border-transparent bg-gradient-to-r ${gradient} text-white shadow-[0_10px_28px_rgba(124,58,237,0.35)] hover:opacity-95`
-                      : "border-white/10 bg-white/5 text-white hover:border-white/20"
-                  }`;
+                  const cardBase =
+                    "flex min-h-[56px] items-center rounded-lg border border-black/10 bg-white px-3 py-1.5 text-black shadow-[0_10px_28px_rgba(15,23,42,0.06)] transition hover:border-black/20 hover:shadow-[0_14px_32px_rgba(15,23,42,0.09)]";
+
                   if ("name" in item) {
                     const agent = item as SearchAgent;
                     const itemKey = agent.id || agent.slug || `${agent.name}-${rowIndex}`;
@@ -171,30 +157,18 @@ export async function TrendingGridHF() {
                       >
                         <div className="flex w-full items-center justify-between gap-3">
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold text-white">
+                            <p className="truncate text-sm font-semibold text-black">
                               {agent.name}
                             </p>
-                            <p className={`mt-1 text-[11px] ${isAccent ? "text-white/80" : "text-white/60"}`}>
+                            <p className="mt-1 text-[11px] text-black/55">
                               {formatFreshness(agent)}
                             </p>
                           </div>
-                          <div
-                            className={`flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap text-[11px] ${
-                              isAccent ? "text-white/90" : "text-white/60"
-                            }`}
-                          >
-                            <span
-                              className={`rounded-full px-2 py-0.5 ${
-                                isAccent ? "bg-white/15 text-white" : "border border-white/10 bg-white/5"
-                              }`}
-                            >
+                          <div className="flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap text-[11px] text-black/55">
+                            <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-black/70">
                               Pop {metricLabel(agent.popularityScore ?? agent.overallRank)}
                             </span>
-                            <span
-                              className={`rounded-full px-2 py-0.5 ${
-                                isAccent ? "bg-white/15 text-white" : "border border-white/10 bg-white/5"
-                              }`}
-                            >
+                            <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-black/70">
                               Safe {metricLabel(agent.safetyScore)}
                             </span>
                           </div>
@@ -202,8 +176,14 @@ export async function TrendingGridHF() {
                       </Link>
                     );
                   }
+
                   const cap = item as CapabilitySummary;
-                  const freshness = cap.count >= 6 ? "Freshness: High" : cap.count >= 3 ? "Freshness: Medium" : "Freshness: Low";
+                  const freshness =
+                    cap.count >= 6
+                      ? "Freshness: High"
+                      : cap.count >= 3
+                        ? "Freshness: Medium"
+                        : "Freshness: Low";
                   const capKey = `${columnIndex}-${cap.name}-${rowIndex}`;
                   return (
                     <Link
@@ -213,31 +193,19 @@ export async function TrendingGridHF() {
                     >
                       <div className="flex w-full items-center justify-between gap-3">
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-white">
+                          <p className="truncate text-sm font-semibold text-black">
                             {cap.name}
                           </p>
-                          <p className={`mt-1 text-[11px] ${isAccent ? "text-white/80" : "text-white/60"}`}>
+                          <p className="mt-1 text-[11px] text-black/55">
                             {freshness}
                           </p>
                         </div>
-                        <div
-                          className={`flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap text-[11px] ${
-                            isAccent ? "text-white/90" : "text-white/60"
-                          }`}
-                        >
-                          <span
-                            className={`rounded-full px-2 py-0.5 ${
-                              isAccent ? "bg-white/15 text-white" : "border border-white/10 bg-white/5"
-                            }`}
-                          >
+                        <div className="flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap text-[11px] text-black/55">
+                          <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-black/70">
                             Pop {cap.count}
                           </span>
-                          <span
-                            className={`rounded-full px-2 py-0.5 ${
-                              isAccent ? "bg-white/15 text-white" : "border border-white/10 bg-white/5"
-                            }`}
-                          >
-                            Safe —
+                          <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-black/70">
+                            Safe -
                           </span>
                         </div>
                       </div>

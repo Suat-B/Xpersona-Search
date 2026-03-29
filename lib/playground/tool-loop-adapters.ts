@@ -119,6 +119,19 @@ function buildToolCatalog(tools: PlaygroundToolName[]): string {
     mkdir: "Create a directory. Args: { path: string }",
     run_command: "Run a workspace command. Args: { command: string, timeoutMs?: number, category?: string }",
     get_workspace_memory: "Return persisted workspace memory/summary. Args: {}",
+    binary_start_build:
+      "Start a streaming binary build. Args: { intent: string, runtime?: 'node18' | 'node20' }",
+    binary_refine_build: "Refine the active or specified binary build. Args: { buildId?: string, intent: string }",
+    binary_cancel_build: "Cancel the active or specified binary build. Args: { buildId?: string }",
+    binary_branch_build:
+      "Create a branch from the active or specified binary build. Args: { buildId?: string, checkpointId?: string, intent?: string }",
+    binary_rewind_build:
+      "Rewind the active or specified binary build to a checkpoint. Args: { buildId?: string, checkpointId?: string }",
+    binary_validate_build:
+      "Validate the active or specified binary build. Args: { buildId?: string, runtime?: 'node18' | 'node20' }",
+    binary_execute_build:
+      "Execute an entrypoint on the active or specified binary build. Args: { buildId?: string, entryPoint?: string, args?: unknown[] }",
+    binary_publish_build: "Publish the active or specified binary build. Args: { buildId?: string }",
     desktop_capture_screen: "Capture the current desktop and upload a snapshot. Args: { displayId?: string }",
     desktop_get_active_window: "Return the currently focused desktop window. Args: {}",
     desktop_list_windows: "List currently visible desktop windows. Args: {}",
@@ -512,6 +525,135 @@ function buildOpenAIToolSpec(name: PlaygroundToolName) {
             category: { type: "string" },
           },
           required: ["command"],
+        },
+      },
+    };
+  }
+
+  if (name === "binary_start_build") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: "Start a streaming binary build.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            intent: { type: "string" },
+            runtime: { type: "string" },
+          },
+          required: ["intent"],
+        },
+      },
+    };
+  }
+
+  if (name === "binary_refine_build") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: "Refine the active or specified binary build.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            buildId: { type: "string" },
+            intent: { type: "string" },
+          },
+          required: ["intent"],
+        },
+      },
+    };
+  }
+
+  if (name === "binary_cancel_build" || name === "binary_publish_build") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: name === "binary_cancel_build" ? "Cancel the active or specified binary build." : "Publish the active or specified binary build.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            buildId: { type: "string" },
+          },
+        },
+      },
+    };
+  }
+
+  if (name === "binary_branch_build") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: "Create a branch from the active or specified binary build.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            buildId: { type: "string" },
+            checkpointId: { type: "string" },
+            intent: { type: "string" },
+          },
+        },
+      },
+    };
+  }
+
+  if (name === "binary_rewind_build") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: "Rewind the active or specified binary build to a checkpoint.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            buildId: { type: "string" },
+            checkpointId: { type: "string" },
+          },
+        },
+      },
+    };
+  }
+
+  if (name === "binary_validate_build") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: "Validate the active or specified binary build.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            buildId: { type: "string" },
+            runtime: { type: "string" },
+          },
+        },
+      },
+    };
+  }
+
+  if (name === "binary_execute_build") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: "Execute an entrypoint on the active or specified binary build.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            buildId: { type: "string" },
+            entryPoint: { type: "string" },
+            args: { type: "array", items: {} },
+          },
         },
       },
     };

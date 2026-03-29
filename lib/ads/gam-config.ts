@@ -48,16 +48,6 @@ export function shouldLoadPublisherTagScript(): boolean {
   return isGamEnabledForAgentPages();
 }
 
-/**
- * When GAM is on for agent pages, also render one normal AdSense AdUnit above the GAM stack.
- * Off by default; avoid stacking duplicate identical AdSense slots elsewhere on the same page.
- */
-export function shouldShowAdSenseAlongsideGamOnAgentPages(): boolean {
-  if (!isGamEnabledForAgentPages()) return false;
-  const v = trimEnv("NEXT_PUBLIC_GAM_AGENT_PAGES_ADSENSE_ALSO").toLowerCase();
-  return v === "1" || v === "true" || v === "yes";
-}
-
 function slot(
   key: GamAgentSlotKey,
   envKey: string,

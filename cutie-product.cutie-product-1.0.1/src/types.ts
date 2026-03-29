@@ -504,6 +504,8 @@ export type CutieSessionRecord = {
   snapshots: DesktopSnapshotRef[];
   /** Xpersona playground assist session id (UUID); local `id` is not accepted as historySessionId. */
   playgroundHistorySessionId?: string;
+  /** OpenCode session id for the current workspace chat when the OpenCode runtime is active. */
+  openCodeSessionId?: string;
 };
 
 export type CutieSessionSummary = {

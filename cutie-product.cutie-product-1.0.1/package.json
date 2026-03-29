@@ -16,7 +16,6 @@
 		"Machine Learning"
 	],
 	"activationEvents": [
-		"onStartupFinished",
 		"onUri",
 		"onView:cutie-product.chat",
 		"onCommand:cutie-product.startChat",
@@ -30,7 +29,7 @@
 		"onCommand:cutie-product.binary.deploy",
 		"onCommand:cutie-product.binary.configure"
 	],
-	"main": "./out/extension.js",
+	"main": "./out/extension-entry.js",
 	"contributes": {
 		"viewsContainers": {
 			"activitybar": [
@@ -146,10 +145,11 @@
 					"enum": [
 						"cutie",
 						"playgroundApi",
-						"qwenCode"
+						"qwenCode",
+						"openCode"
 					],
-					"default": "playgroundApi",
-					"description": "Hosted OpenHands-backed runtime for Cutie chat. Legacy local runtimes are debug-only and not used by the standard chat flow."
+					"default": "cutie",
+					"description": "Cutie chat runtime. `cutie`, `playgroundApi`, and `qwenCode` all use the hosted OpenHands-backed path; `openCode` uses a local OpenCode sidecar."
 				},
 				"cutie-product.binary.qwen.model": {
 					"type": "string",
@@ -170,6 +170,26 @@
 					"type": "boolean",
 					"default": false,
 					"description": "Use CLI wrapper to reduce path leak into model context (experimental)."
+				},
+				"cutie-product.opencode.serverUrl": {
+					"type": "string",
+					"default": "http://127.0.0.1:4096",
+					"description": "OpenCode server URL. Cutie uses this when binary.runtime is openCode."
+				},
+				"cutie-product.opencode.autoStart": {
+					"type": "boolean",
+					"default": true,
+					"description": "Automatically launch `opencode serve` for local URLs when the OpenCode runtime is selected."
+				},
+				"cutie-product.opencode.model": {
+					"type": "string",
+					"default": "moonshotai/Kimi-K2.5:fastest",
+					"description": "Default model id Cutie asks OpenCode to use. Written into the generated OpenCode config when missing."
+				},
+				"cutie-product.opencode.configPath": {
+					"type": "string",
+					"default": "opencode.json",
+					"description": "Workspace-relative or absolute path for the generated OpenCode config template."
 				},
 				"cutie-product.model": {
 					"type": "string",
@@ -271,6 +291,13 @@
 					"maximum": 64,
 					"description": "Maximum successful workspace mutations (edit/write/mkdir/run_command) per run."
 				},
+				"cutie-product.webviewReadyTimeoutMs": {
+					"type": "number",
+					"default": 60000,
+					"minimum": 5000,
+					"maximum": 300000,
+					"description": "How long to wait for the Cutie chat webview to post `ready` before showing a load failure (ms). Increase on slow machines or very large workspaces; the UI loads a separate script after a minimal bootstrap."
+				},
 				"cutie-product.unlimitedAutonomy": {
 					"type": "boolean",
 					"default": false,
@@ -288,7 +315,7 @@
 		"vendor:vscode-core": "node scripts/vendor-xpersona-core.cjs",
 		"package": "vsce package",
 		"test:binary-sse": "npm run compile && node --test tests/binary-sse.test.cjs",
-		"test:cutie-native": "npm run compile && node --test tests/binary-sse.test.cjs tests/cutie-file-patch.test.cjs tests/cutie-model-protocol.test.cjs tests/cutie-model-capabilities.test.cjs tests/cutie-operating-prompt.test.cjs tests/cutie-native-autonomy.test.cjs tests/cutie-autonomy-controller.test.cjs tests/cutie-code-intelligence.test.cjs tests/cutie-edit-synthesis.test.cjs tests/cutie-runtime-mutation.test.cjs tests/cutie-binary-controller-router.test.cjs tests/cutie-binary-debug.test.cjs tests/cutie-debug-report.test.cjs"
+		"test:cutie-native": "npm run compile && node --test tests/binary-sse.test.cjs tests/cutie-file-patch.test.cjs tests/cutie-model-protocol.test.cjs tests/cutie-model-capabilities.test.cjs tests/cutie-operating-prompt.test.cjs tests/cutie-native-autonomy.test.cjs tests/cutie-autonomy-controller.test.cjs tests/cutie-code-intelligence.test.cjs tests/cutie-edit-synthesis.test.cjs tests/cutie-runtime-mutation.test.cjs tests/cutie-binary-controller-router.test.cjs tests/cutie-binary-debug.test.cjs tests/cutie-debug-report.test.cjs tests/cutie-opencode-utils.test.cjs"
 	},
 	"devDependencies": {
 		"@types/node": "^20.10.0",

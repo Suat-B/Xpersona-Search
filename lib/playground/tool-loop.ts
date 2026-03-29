@@ -41,8 +41,9 @@ import { requestToolLoopTurn, selectToolLoopAdapter, type ToolLoopTurnInput } fr
 import { isOpenHandsPrimaryOrchestration } from "@/lib/playground/openhands-primary-orchestration";
 import type { ExecuteAction } from "@/lib/playground/policy";
 
-const MAX_TOOL_STEPS = 12;
-const MAX_MUTATING_STEPS = 4;
+/** Defaults when the client omits `clientTrace` limits (aligned with Cutie extension defaults). */
+const DEFAULT_MAX_TOOL_STEPS = 18;
+const DEFAULT_MAX_MUTATING_STEPS = 8;
 const MAX_REPAIR_ROUNDS = 3;
 const MAX_IDENTICAL_CALLS = 2;
 
@@ -96,7 +97,25 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
-function buildInitialLoopState(): LoopStateContract {
+function clampLoopInt(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.floor(value)));
+}
+
+function resolveLoopLimits(request: AssistRuntimeInput): { maxSteps: number; maxMutations: number } {
+  const ct = request.clientTrace;
+  const maxSteps =
+    ct && typeof ct.maxToolSteps === "number" && Number.isFinite(ct.maxToolSteps)
+      ? clampLoopInt(ct.maxToolSteps, 8, 128)
+      : DEFAULT_MAX_TOOL_STEPS;
+  const maxMutations =
+    ct && typeof ct.maxWorkspaceMutations === "number" && Number.isFinite(ct.maxWorkspaceMutations)
+      ? clampLoopInt(ct.maxWorkspaceMutations, 2, 64)
+      : DEFAULT_MAX_MUTATING_STEPS;
+  return { maxSteps, maxMutations };
+}
+
+function buildInitialLoopState(request: AssistRuntimeInput): LoopStateContract {
+  const { maxSteps, maxMutations } = resolveLoopLimits(request);
   return {
     protocol: "tool_loop_v1",
     status: "running",
@@ -104,8 +123,8 @@ function buildInitialLoopState(): LoopStateContract {
     mutationCount: 0,
     repeatedCallCount: 0,
     repairCount: 0,
-    maxSteps: MAX_TOOL_STEPS,
-    maxMutations: MAX_MUTATING_STEPS,
+    maxSteps,
+    maxMutations,
   };
 }
 
@@ -129,6 +148,11 @@ function isMutatingTool(name: PlaygroundToolName): boolean {
     name === "desktop_scroll" ||
     name === "desktop_wait"
   );
+}
+
+/** Only file/folder writes count toward maxMutations (not run_command / desktop / checkpoints). */
+function countsTowardMutationBudget(name: PlaygroundToolName): boolean {
+  return name === "edit" || name === "write_file" || name === "mkdir";
 }
 
 function isObservationTool(name: PlaygroundToolName): boolean {
@@ -1359,7 +1383,7 @@ export async function startAssistToolLoop(input: StartToolLoopInput): Promise<As
     targetInference,
     contextSelection,
   });
-  const initialLoopState = buildInitialLoopState();
+  const initialLoopState = buildInitialLoopState(input.request);
   const initialObjectiveState = buildToolLoopObjectiveState({
     request: {
       ...input.request,

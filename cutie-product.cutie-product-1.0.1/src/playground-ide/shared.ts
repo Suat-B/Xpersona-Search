@@ -1,5 +1,5 @@
 export type Mode = "auto" | "plan" | "yolo";
-export type RuntimeBackend = "cutie" | "playgroundApi" | "qwenCode";
+export type RuntimeBackend = "cutie" | "playgroundApi" | "qwenCode" | "openCode";
 export type IntentKind = "ask" | "explain" | "find" | "change";
 export type ContextConfidence = "high" | "medium" | "low";
 export type RuntimePhase =

@@ -15,7 +15,7 @@ import { HFChrome } from "@/components/layout/HFChrome";
 import { BotAdBanner } from "@/components/ads/BotAdBanner";
 import { serializeSponsoredJsonLd } from "@/lib/ads/structured-ad";
 import { shouldLoadPublisherTagScript } from "@/lib/ads/gam-config";
-import { isAdSenseEnabled, isAdStressModeEnabled } from "@/lib/ads/adsense-config";
+import { getAdSenseClientId, shouldLoadAdSenseForRequest } from "@/lib/ads/adsense-config";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -65,9 +65,8 @@ export default async function RootLayout({
   const headerStore = await headers();
   const isBot = headerStore.get("x-is-bot") === "1";
   const botPath = headerStore.get("x-bot-path") || "/";
-  const adsenseEnabled = isAdSenseEnabled();
-  const stressMode = isAdStressModeEnabled();
-  const shouldLoadGoogleAdScripts = !isBot && adsenseEnabled && !stressMode;
+  const adsenseClientId = getAdSenseClientId();
+  const shouldLoadGoogleAdScripts = shouldLoadAdSenseForRequest(isBot);
   const loadGpt = shouldLoadGoogleAdScripts && shouldLoadPublisherTagScript();
   let isAuthenticated = false;
 
@@ -87,6 +86,7 @@ export default async function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <meta name="google-site-verification" content="QaienwEGkQUMEF1bEtVsycCAMSuzYCJRsWv2eCUGgGA" />
+        <meta name="google-adsense-account" content={adsenseClientId} />
       <script
         suppressHydrationWarning
         dangerouslySetInnerHTML={{
@@ -97,7 +97,7 @@ export default async function RootLayout({
           <>
             <script
               async
-              src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6090164906593135"
+              src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsenseClientId}`}
               crossOrigin="anonymous"
             />
             {loadGpt ? (

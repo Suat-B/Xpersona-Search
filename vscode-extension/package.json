@@ -13,7 +13,6 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished",
     "onUri",
     "onView:xpersona.playgroundView",
     "onCommand:binary.generate",
@@ -115,15 +114,15 @@
           "enumItemLabels": [
             "Cutie (hosted OpenHands)",
             "Hosted agentic runtime",
-            "Local Qwen runtime (legacy)"
+            "Qwen profile (hosted OpenHands)"
           ],
           "enumDescriptions": [
-            "Same hosted Binary IDE API and OpenHands tool loop as the default runtime. Chat history is stored on the server. Only shown when rollbackLocalRuntime is enabled.",
+            "Use the hosted Binary IDE API with the shared OpenHands orchestration stack while preserving the legacy Cutie runtime label for compatibility.",
             "Use the hosted Binary IDE API with the shared agentic coding orchestrator (OpenHands).",
-            "Legacy local Qwen Code runtime. Only used when rollbackLocalRuntime is enabled."
+            "Use the hosted Binary IDE API with the shared OpenHands orchestration stack while preserving the legacy Qwen runtime label for compatibility."
           ],
-          "default": "playgroundApi",
-          "description": "Legacy runtime selector. By default Binary IDE uses the hosted agentic runtime and ignores this setting unless rollbackLocalRuntime is enabled."
+          "default": "cutie",
+          "description": "Compatibility runtime selector for hosted OpenHands orchestration profiles."
         },
         "xpersona.binary.agent.modelAlias": {
           "type": "string",
@@ -133,7 +132,7 @@
         "xpersona.binary.agent.rollbackLocalRuntime": {
           "type": "boolean",
           "default": false,
-          "description": "Allow switching back to legacy local Cutie/Qwen runtimes for rollback and debugging."
+          "description": "Legacy rollback flag retained for compatibility with older settings and migration paths."
         },
         "xpersona.binary.cutie.model": {
           "type": "string",

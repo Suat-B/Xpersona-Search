@@ -14,6 +14,14 @@ export type PlaygroundToolName =
   | "mkdir"
   | "run_command"
   | "get_workspace_memory"
+  | "binary_start_build"
+  | "binary_refine_build"
+  | "binary_cancel_build"
+  | "binary_branch_build"
+  | "binary_rewind_build"
+  | "binary_validate_build"
+  | "binary_execute_build"
+  | "binary_publish_build"
   | "desktop_capture_screen"
   | "desktop_get_active_window"
   | "desktop_list_windows"
@@ -78,6 +86,14 @@ export const PLAYGROUND_TOOL_LOOP_TOOLS: PlaygroundToolName[] = [
   "mkdir",
   "run_command",
   "get_workspace_memory",
+  "binary_start_build",
+  "binary_refine_build",
+  "binary_cancel_build",
+  "binary_branch_build",
+  "binary_rewind_build",
+  "binary_validate_build",
+  "binary_execute_build",
+  "binary_publish_build",
   "desktop_capture_screen",
   "desktop_get_active_window",
   "desktop_list_windows",

@@ -27,10 +27,11 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
   const playgroundMarketing = useOptionalPlaygroundMarketing();
   const isPlaygroundPage = pathname === "/playground" || pathname.startsWith("/playground/");
   const isSearchPage = pathname === "/search" || pathname.startsWith("/search/");
-  const isLightHeaderPage = isSearchPage;
+  const isHomePage = pathname === "/";
+  const isLightHeaderPage = isSearchPage || isHomePage;
   const headerSurfaceClass = isPlaygroundPage
     ? "border-b border-[#005EB8] bg-[#005EB8]"
-    : isSearchPage
+    : isLightHeaderPage
       ? "border-b border-[#ffffff] bg-[#ffffff]"
       : "border-b border-[var(--border)] bg-[var(--bg-matte)]";
   const navLinkClass = isLightHeaderPage
@@ -60,6 +61,18 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
   const mobileMenuAuthButtonClass = isLightHeaderPage
     ? "block rounded-lg px-3 py-2 text-sm font-medium bg-black text-white hover:bg-black/90 transition-colors"
     : "block rounded-lg px-3 py-2 text-sm font-medium bg-white text-black hover:bg-white/90 transition-colors";
+  const statusBadgeClass = isLightHeaderPage
+    ? "rounded-full border border-black/10 bg-black/[0.04] px-2.5 py-1 text-xs font-medium text-black/75"
+    : "rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-200";
+  const planBadgeClass = isLightHeaderPage
+    ? "rounded-full border border-black/10 bg-black/[0.04] px-2.5 py-1 text-xs font-medium text-black/75"
+    : "rounded-full border border-cyan-300/40 bg-cyan-500/15 px-2.5 py-1 text-xs font-medium text-cyan-100";
+  const mobileStatusBadgeClass = isLightHeaderPage
+    ? "rounded-lg border border-black/10 bg-black/[0.04] px-3 py-2 text-xs font-medium text-black/75"
+    : "rounded-lg px-3 py-2 text-xs font-medium text-emerald-200 bg-emerald-500/15 border border-emerald-300/40";
+  const mobilePlanBadgeClass = isLightHeaderPage
+    ? "rounded-lg border border-black/10 bg-black/[0.04] px-3 py-2 text-xs font-medium text-black/75"
+    : "rounded-lg px-3 py-2 text-xs font-medium text-cyan-100 bg-cyan-500/15 border border-cyan-300/40";
 
   useEffect(() => {
     setMenuOpen(false);
@@ -256,11 +269,11 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
           {isAuthenticated ? (
             <>
               {planBadge ? (
-                <span className="rounded-full border border-cyan-300/40 bg-cyan-500/15 px-2.5 py-1 text-xs font-medium text-cyan-100">
+                <span className={planBadgeClass}>
                   {planBadge}
                 </span>
               ) : null}
-              <span className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-200">
+              <span className={statusBadgeClass}>
                 Signed in
               </span>
               <Link
@@ -327,11 +340,11 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
               {isAuthenticated ? (
                 <>
                   {planBadge ? (
-                    <div className="rounded-lg px-3 py-2 text-xs font-medium text-cyan-100 bg-cyan-500/15 border border-cyan-300/40">
+                    <div className={mobilePlanBadgeClass}>
                       {planBadge}
                     </div>
                   ) : null}
-                  <div className="rounded-lg px-3 py-2 text-xs font-medium text-emerald-200 bg-emerald-500/15 border border-emerald-300/40">
+                  <div className={mobileStatusBadgeClass}>
                     Signed in
                   </div>
                   <Link

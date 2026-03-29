@@ -90,6 +90,23 @@ const PYTHON_BIN = String(process.env.OPENHANDS_GATEWAY_PYTHON || "python");
 const RUNNER_PATH = path.resolve(process.cwd(), "services/openhands-gateway/agent_turn.py");
 const GATEWAY_API_KEY = String(process.env.OPENHANDS_GATEWAY_API_KEY || "").trim();
 const JSON_BODY_LIMIT_BYTES = 1_500_000;
+const parsedRunTtlMs = Number(process.env.OPENHANDS_GATEWAY_RUN_TTL_MS);
+const RUN_TTL_MS = Number.isFinite(parsedRunTtlMs) ? Math.max(60_000, parsedRunTtlMs) : 30 * 60 * 1000;
+
+type GatewayRunState = {
+  runId: string;
+  createdAt: number;
+  updatedAt: number;
+  requestFingerprint: string;
+  payload: GatewayPayload;
+  turns: Array<{
+    recordedAt: string;
+    toolName?: string;
+    finalPreview?: string;
+  }>;
+};
+
+const runState = new Map<string, GatewayRunState>();
 
 function writeJson(
   res: ServerResponse,
@@ -143,6 +160,75 @@ function isAuthorized(req: IncomingMessage): boolean {
 function parseRunId(pathname: string): string | null {
   const match = /^\/v1\/runs\/([^/]+)\/continue$/i.exec(pathname);
   return match ? decodeURIComponent(match[1]) : null;
+}
+
+function compactWhitespace(value: unknown): string {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function clonePayload(payload: GatewayPayload): GatewayPayload {
+  return JSON.parse(JSON.stringify(payload)) as GatewayPayload;
+}
+
+function buildRequestFingerprint(payload: GatewayPayload): string {
+  return JSON.stringify({
+    task: payload.request?.task || "",
+    session: payload.request?.conversationHistory?.slice(-4) || [],
+    targetPath: payload.targetInference?.path || "",
+    toolTraceSize: Array.isArray(payload.toolTrace) ? payload.toolTrace.length : 0,
+  });
+}
+
+function pruneExpiredRuns(): void {
+  const cutoff = Date.now() - RUN_TTL_MS;
+  for (const [key, value] of runState.entries()) {
+    if (value.updatedAt < cutoff) {
+      runState.delete(key);
+    }
+  }
+}
+
+function getRunState(runId: string): GatewayRunState | null {
+  pruneExpiredRuns();
+  return runState.get(runId) || null;
+}
+
+function upsertRunState(input: {
+  runId: string;
+  payload: GatewayPayload;
+  result?: PythonTurnResult;
+  rehydrated?: boolean;
+}): GatewayRunState {
+  pruneExpiredRuns();
+  const previous = runState.get(input.runId);
+  const now = Date.now();
+  const next: GatewayRunState = {
+    runId: input.runId,
+    createdAt: previous?.createdAt || now,
+    updatedAt: now,
+    requestFingerprint: buildRequestFingerprint(input.payload),
+    payload: clonePayload(input.payload),
+    turns: [
+      ...(previous?.turns || []),
+      ...(input.result
+        ? [
+            {
+              recordedAt: new Date(now).toISOString(),
+              toolName: input.result.toolCall?.name,
+              finalPreview: compactWhitespace(String(input.result.final || "")).slice(0, 280),
+            },
+          ]
+        : []),
+    ].slice(-24),
+  };
+  if (input.rehydrated && !previous) {
+    next.turns.unshift({
+      recordedAt: new Date(now).toISOString(),
+      finalPreview: "Gateway run state rehydrated from Xpersona request history.",
+    });
+  }
+  runState.set(input.runId, next);
+  return next;
 }
 
 function validateGatewayPayload(body: Record<string, unknown>): body is GatewayPayload {
@@ -276,12 +362,23 @@ const server = createServer(async (req, res) => {
         return;
       }
 
+      const runId = randomUUID();
+      const state = upsertRunState({
+        runId,
+        payload: body,
+        result,
+      });
       writeJson(res, 200, {
-        runId: randomUUID(),
+        runId,
         adapter: "text_actions",
         final: String(result.final || ""),
         toolCall: result.toolCall || undefined,
-        logs: ["engine=openhands_sdk", ...(result.logs || [])],
+        logs: [
+          "engine=openhands_sdk",
+          `gateway_run=persisted`,
+          `gateway_turns=${state.turns.length}`,
+          ...(result.logs || []),
+        ],
         version: result.version || null,
       });
       return;
@@ -306,7 +403,35 @@ const server = createServer(async (req, res) => {
         return;
       }
 
-      const result = await invokePythonTurn({ payload: body });
+      const existing = getRunState(runId);
+      const payload = clonePayload(body);
+      const effectiveState =
+        existing ||
+        upsertRunState({
+          runId,
+          payload,
+          rehydrated: true,
+        });
+
+      const mergedPayload = clonePayload(payload);
+      const existingHistory = Array.isArray(mergedPayload.request.conversationHistory)
+        ? mergedPayload.request.conversationHistory
+        : [];
+      if (effectiveState.turns.length > 0) {
+        mergedPayload.request.conversationHistory = [
+          ...existingHistory,
+          ...effectiveState.turns
+            .filter((turn) => turn.toolName || turn.finalPreview)
+            .map((turn) => ({
+              role: "assistant",
+              content: turn.toolName
+                ? `Gateway turn used tool ${turn.toolName}.${turn.finalPreview ? ` ${turn.finalPreview}` : ""}`
+                : String(turn.finalPreview || ""),
+            })),
+        ].slice(-12);
+      }
+
+      const result = await invokePythonTurn({ payload: mergedPayload });
       if (!result.ok) {
         writeJson(res, 502, {
           error: result.error || "OpenHands failed to continue the run.",
@@ -315,12 +440,22 @@ const server = createServer(async (req, res) => {
         return;
       }
 
+      const state = upsertRunState({
+        runId,
+        payload,
+        result,
+      });
       writeJson(res, 200, {
         runId,
         adapter: "text_actions",
         final: String(result.final || ""),
         toolCall: result.toolCall || undefined,
-        logs: ["engine=openhands_sdk", ...(result.logs || [])],
+        logs: [
+          "engine=openhands_sdk",
+          existing ? "gateway_run=resumed" : "gateway_run=rehydrated",
+          `gateway_turns=${state.turns.length}`,
+          ...(result.logs || []),
+        ],
         version: result.version || null,
       });
       return;

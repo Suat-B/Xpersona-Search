@@ -15,6 +15,14 @@ export const zPlaygroundToolName = z.enum([
   "mkdir",
   "run_command",
   "get_workspace_memory",
+  "binary_start_build",
+  "binary_refine_build",
+  "binary_cancel_build",
+  "binary_branch_build",
+  "binary_rewind_build",
+  "binary_validate_build",
+  "binary_execute_build",
+  "binary_publish_build",
   "desktop_capture_screen",
   "desktop_get_active_window",
   "desktop_list_windows",
@@ -138,6 +146,8 @@ export const zAssistRequest = z.object({
     .object({
       extensionVersion: z.string().max(64),
       workspaceHash: z.string().max(128),
+      maxToolSteps: z.number().int().min(8).max(128).optional(),
+      maxWorkspaceMutations: z.number().int().min(2).max(64).optional(),
     })
     .optional(),
 });

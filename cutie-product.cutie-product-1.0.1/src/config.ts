@@ -33,10 +33,40 @@ export function getBinaryStreamGatewayUrl(): string {
 }
 
 /** Composer backend: Cutie agent (default) or Binary IDE–compatible hosted / Qwen runtimes. */
-export type BinaryIdeChatRuntime = "cutie" | "playgroundApi" | "qwenCode";
+export type BinaryIdeChatRuntime = "cutie" | "playgroundApi" | "qwenCode" | "openCode";
 
 export function getBinaryIdeChatRuntime(): BinaryIdeChatRuntime {
-  return "playgroundApi";
+  const raw = vscode.workspace.getConfiguration(EXTENSION_NAMESPACE).get<string>("binary.runtime", "cutie");
+  const v = String(raw || "").trim();
+  if (v === "cutie" || v === "playgroundApi" || v === "qwenCode" || v === "openCode") {
+    return v;
+  }
+  return "cutie";
+}
+
+export function getOpenCodeServerUrl(): string {
+  const configured = vscode.workspace
+    .getConfiguration(EXTENSION_NAMESPACE)
+    .get<string>("opencode.serverUrl", "http://127.0.0.1:4096");
+  return String(configured || "http://127.0.0.1:4096").trim().replace(/\/+$/, "");
+}
+
+export function getOpenCodeAutoStart(): boolean {
+  return vscode.workspace.getConfiguration(EXTENSION_NAMESPACE).get<boolean>("opencode.autoStart", true) === true;
+}
+
+export function getOpenCodeModel(): string {
+  const configured = vscode.workspace
+    .getConfiguration(EXTENSION_NAMESPACE)
+    .get<string>("opencode.model", getModelHint());
+  return String(configured || getModelHint()).trim();
+}
+
+export function getOpenCodeConfigPath(): string {
+  const configured = vscode.workspace
+    .getConfiguration(EXTENSION_NAMESPACE)
+    .get<string>("opencode.configPath", "opencode.json");
+  return String(configured || "opencode.json").trim();
 }
 
 export function getQwenModel(): string {
@@ -167,4 +197,15 @@ export function toWorkspaceRelativePath(uri: vscode.Uri): string | null {
 
 export function getExtensionVersion(context: vscode.ExtensionContext): string {
   return String(context.extension.packageJSON.version || "0.0.0");
+}
+
+/** Sent on playground assist so the server tool loop matches Cutie workspace settings. */
+export function getMaxToolStepsForPlayground(): number {
+  const cfg = vscode.workspace.getConfiguration(EXTENSION_NAMESPACE);
+  return Math.max(8, Math.min(128, cfg.get<number>("maxToolSteps", 18)));
+}
+
+export function getMaxWorkspaceMutationsForPlayground(): number {
+  const cfg = vscode.workspace.getConfiguration(EXTENSION_NAMESPACE);
+  return Math.max(2, Math.min(64, cfg.get<number>("maxWorkspaceMutations", 8)));
 }

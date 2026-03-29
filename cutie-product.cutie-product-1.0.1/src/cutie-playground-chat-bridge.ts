@@ -10,10 +10,13 @@ import { QwenCodeRuntime } from "./playground-ide/qwen-code-runtime";
 import type { AssistRunEnvelope, ChatMessage, Mode } from "./playground-ide/shared";
 import { ToolExecutor } from "./playground-ide/tool-executor";
 import type { CutieAuthManager } from "./auth";
+import { CutieOpenCodeClient } from "./cutie-opencode-client";
 import {
   getBaseApiUrl,
   getBinaryIdeChatRuntime,
   getExtensionVersion,
+  getMaxToolStepsForPlayground,
+  getMaxWorkspaceMutationsForPlayground,
   getModelHint,
   getQwenExecutablePath,
   getWorkspaceHash,
@@ -125,11 +128,15 @@ export class CutiePlaygroundChatBridge {
   private toolExecutor: ToolExecutor | null = null;
   private contextCollector: ContextCollector | null = null;
   private readonly qwenRuntime = new QwenCodeRuntime();
+  private readonly openCodeClient: CutieOpenCodeClient;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly auth: CutieAuthManager
-  ) {}
+  ) {
+    this.openCodeClient = new CutieOpenCodeClient(context);
+    this.context.subscriptions.push(this.openCodeClient);
+  }
 
   private ensureServices(): void {
     if (this.indexManager) return;
@@ -214,6 +221,18 @@ export class CutiePlaygroundChatBridge {
     };
   }
 
+  async getOpenCodeStatus(signal?: AbortSignal): Promise<{
+    status: "healthy" | "missing_config" | "unreachable";
+    message: string;
+    details?: string;
+  }> {
+    const auth = await this.auth.getRequestAuth().catch(() => null);
+    return this.openCodeClient.getStatus({
+      signal,
+      apiKey: auth?.apiKey || null,
+    });
+  }
+
   async runQwenTurn(input: {
     task: string;
     history: Array<{ role: string; content: string }>;
@@ -274,6 +293,8 @@ export class CutiePlaygroundChatBridge {
     historySessionId?: string | null;
     history: Array<{ role: string; content: string }>;
     signal: AbortSignal;
+    /** Full accumulated plain-text progress for the chat bubble (paragraphs joined with blank lines). */
+    onPlaygroundProgress?: (text: string) => void;
   }): Promise<{
     assistantText: string;
     playgroundSessionId?: string;
@@ -292,6 +313,14 @@ export class CutiePlaygroundChatBridge {
       throw new Error("Authenticate before using hosted playground assist.");
     }
     const taskText = String(input.task || "").trim();
+    const narrationLines: string[] = [];
+    const pushNarrationLine = (line: string) => {
+      const t = String(line || "").trim();
+      if (!t) return;
+      narrationLines.push(t);
+      input.onPlaygroundProgress?.(narrationLines.join("\n\n"));
+    };
+    pushNarrationLine("Collecting workspace context for the hosted assistant.");
     const { context, retrievalHints, preview } = await this.contextCollector.collect(taskText, {
       recentTouchedPaths: this.actionRunner.getRecentTouchedPaths(),
       attachedFiles: [],
@@ -327,6 +356,8 @@ export class CutiePlaygroundChatBridge {
       clientTrace: {
         extensionVersion,
         workspaceHash,
+        maxToolSteps: getMaxToolStepsForPlayground(),
+        maxWorkspaceMutations: getMaxWorkspaceMutationsForPlayground(),
       },
     };
     const fileMutations: ActionRunnerFileMutationPayload[] = [];
@@ -340,6 +371,7 @@ export class CutiePlaygroundChatBridge {
           "CUTIE: Playground assist returned no session id; OpenHands tool steps may fail. Check API/response or update the extension."
         );
       }
+      pushNarrationLine("The model requested workspace tools; I'll run each step here and report what happened.");
       initial = await runPlaygroundToolLoop({
         auth,
         initial,
@@ -355,7 +387,10 @@ export class CutiePlaygroundChatBridge {
             toolName: payload.toolName,
           });
         },
+        onProgressLine: pushNarrationLine,
       });
+    } else if (input.mode !== "plan") {
+      pushNarrationLine("The model answered without asking for more workspace tools.");
     }
     const playgroundSessionId =
       typeof initial.sessionId === "string" && initial.sessionId.trim() ? initial.sessionId.trim() : undefined;
@@ -380,6 +415,31 @@ export class CutiePlaygroundChatBridge {
       ...(playgroundSessionId ? { playgroundSessionId } : {}),
       ...(playgroundRunId ? { playgroundRunId } : {}),
       fileMutations,
+    };
+  }
+
+  async runOpenCodeTurn(input: {
+    task: string;
+    history: Array<{ role: string; content: string }>;
+    sessionId?: string | null;
+    signal: AbortSignal;
+    onOpenCodeProgress?: (text: string) => void;
+  }): Promise<{
+    assistantText: string;
+    openCodeSessionId: string;
+  }> {
+    const auth = await this.auth.getRequestAuth().catch(() => null);
+    const result = await this.openCodeClient.runTurn({
+      task: input.task,
+      history: input.history,
+      sessionId: input.sessionId,
+      apiKey: auth?.apiKey || null,
+      signal: input.signal,
+      onProgress: input.onOpenCodeProgress,
+    });
+    return {
+      assistantText: result.assistantText,
+      openCodeSessionId: result.sessionId,
     };
   }
 }

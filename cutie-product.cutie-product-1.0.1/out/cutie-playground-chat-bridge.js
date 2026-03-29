@@ -44,6 +44,7 @@ const playground_assist_runner_1 = require("./playground-ide/playground-assist-r
 const qwen_prompt_1 = require("./playground-ide/qwen-prompt");
 const qwen_code_runtime_1 = require("./playground-ide/qwen-code-runtime");
 const tool_executor_1 = require("./playground-ide/tool-executor");
+const cutie_opencode_client_1 = require("./cutie-opencode-client");
 const config_1 = require("./config");
 /** Playground API validates historySessionId as UUID; Cutie local session ids are not UUIDs. */
 function isPlaygroundHistorySessionUuid(value) {
@@ -147,6 +148,8 @@ class CutiePlaygroundChatBridge {
         this.toolExecutor = null;
         this.contextCollector = null;
         this.qwenRuntime = new qwen_code_runtime_1.QwenCodeRuntime();
+        this.openCodeClient = new cutie_opencode_client_1.CutieOpenCodeClient(context);
+        this.context.subscriptions.push(this.openCodeClient);
     }
     ensureServices() {
         if (this.indexManager)
@@ -208,6 +211,13 @@ class CutiePlaygroundChatBridge {
             message: String(health?.message || "OpenHands unavailable"),
             ...(typeof health?.details === "string" && health.details.trim() ? { details: health.details } : {}),
         };
+    }
+    async getOpenCodeStatus(signal) {
+        const auth = await this.auth.getRequestAuth().catch(() => null);
+        return this.openCodeClient.getStatus({
+            signal,
+            apiKey: auth?.apiKey || null,
+        });
     }
     async runQwenTurn(input) {
         this.ensureServices();
@@ -273,6 +283,15 @@ class CutiePlaygroundChatBridge {
             throw new Error("Authenticate before using hosted playground assist.");
         }
         const taskText = String(input.task || "").trim();
+        const narrationLines = [];
+        const pushNarrationLine = (line) => {
+            const t = String(line || "").trim();
+            if (!t)
+                return;
+            narrationLines.push(t);
+            input.onPlaygroundProgress?.(narrationLines.join("\n\n"));
+        };
+        pushNarrationLine("Collecting workspace context for the hosted assistant.");
         const { context, retrievalHints, preview } = await this.contextCollector.collect(taskText, {
             recentTouchedPaths: this.actionRunner.getRecentTouchedPaths(),
             attachedFiles: [],
@@ -306,6 +325,8 @@ class CutiePlaygroundChatBridge {
             clientTrace: {
                 extensionVersion,
                 workspaceHash,
+                maxToolSteps: (0, config_1.getMaxToolStepsForPlayground)(),
+                maxWorkspaceMutations: (0, config_1.getMaxWorkspaceMutationsForPlayground)(),
             },
         };
         const fileMutations = [];
@@ -316,6 +337,7 @@ class CutiePlaygroundChatBridge {
             if (!playgroundUuidForContinue) {
                 void vscode.window.showWarningMessage("CUTIE: Playground assist returned no session id; OpenHands tool steps may fail. Check API/response or update the extension.");
             }
+            pushNarrationLine("The model requested workspace tools; I'll run each step here and report what happened.");
             initial = await (0, playground_assist_runner_1.runPlaygroundToolLoop)({
                 auth,
                 initial,
@@ -331,7 +353,11 @@ class CutiePlaygroundChatBridge {
                         toolName: payload.toolName,
                     });
                 },
+                onProgressLine: pushNarrationLine,
             });
+        }
+        else if (input.mode !== "plan") {
+            pushNarrationLine("The model answered without asking for more workspace tools.");
         }
         const playgroundSessionId = typeof initial.sessionId === "string" && initial.sessionId.trim() ? initial.sessionId.trim() : undefined;
         const playgroundRunId = settlePlaygroundRunIdForChatDiffs(initial.runId, fileMutations.length);
@@ -353,6 +379,21 @@ class CutiePlaygroundChatBridge {
             ...(playgroundSessionId ? { playgroundSessionId } : {}),
             ...(playgroundRunId ? { playgroundRunId } : {}),
             fileMutations,
+        };
+    }
+    async runOpenCodeTurn(input) {
+        const auth = await this.auth.getRequestAuth().catch(() => null);
+        const result = await this.openCodeClient.runTurn({
+            task: input.task,
+            history: input.history,
+            sessionId: input.sessionId,
+            apiKey: auth?.apiKey || null,
+            signal: input.signal,
+            onProgress: input.onOpenCodeProgress,
+        });
+        return {
+            assistantText: result.assistantText,
+            openCodeSessionId: result.sessionId,
         };
     }
 }

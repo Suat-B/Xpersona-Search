@@ -4,10 +4,22 @@ import * as path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { ActionRunner } from "./actions";
+import {
+  branchBinaryBuild as requestBinaryBranch,
+  cancelBinaryBuild as requestBinaryCancel,
+  createBinaryBuild as requestBinaryBuild,
+  executeBinaryBuild as requestBinaryExecute,
+  publishBinaryBuild as requestBinaryPublish,
+  refineBinaryBuild as requestBinaryRefine,
+  rewindBinaryBuild as requestBinaryRewind,
+  validateBinaryBuild as requestBinaryValidate,
+} from "./binary-client";
 import { requestJson } from "./api-client";
 import { getBaseApiUrl, getWorkspaceRootPath, toAbsoluteWorkspacePath, toWorkspaceRelativePath } from "./config";
 import { CloudIndexManager } from "./indexer";
 import type {
+  BinaryBuildRecord,
+  BinaryTargetEnvironment,
   PendingToolCall,
   PlaygroundToolName,
   RequestAuth,
@@ -77,11 +89,35 @@ type WorkspaceMemoryResponse = {
   };
 };
 
+type BinaryToolContext = {
+  activeBuild: BinaryBuildRecord | null;
+  targetEnvironment: BinaryTargetEnvironment;
+};
+
+type BinaryToolContextProvider = () => BinaryToolContext;
+
 export class ToolExecutor {
+  private binaryToolContextProvider: BinaryToolContextProvider | null = null;
+
   constructor(
     private readonly actionRunner: ActionRunner,
     private readonly indexManager: CloudIndexManager
   ) {}
+
+  setBinaryToolContextProvider(provider: BinaryToolContextProvider): void {
+    this.binaryToolContextProvider = provider;
+  }
+
+  private getBinaryToolContext(): BinaryToolContext {
+    return this.binaryToolContextProvider?.() || {
+      activeBuild: null,
+      targetEnvironment: {
+        runtime: "node18",
+        platform: "portable",
+        packageManager: "npm",
+      },
+    };
+  }
 
   getSupportedTools(): PlaygroundToolName[] {
     return [
@@ -97,6 +133,14 @@ export class ToolExecutor {
       "mkdir",
       "run_command",
       "get_workspace_memory",
+      "binary_start_build",
+      "binary_refine_build",
+      "binary_cancel_build",
+      "binary_branch_build",
+      "binary_rewind_build",
+      "binary_validate_build",
+      "binary_execute_build",
+      "binary_publish_build",
     ];
   }
 
@@ -289,6 +333,35 @@ export class ToolExecutor {
           data: {
             memory,
           },
+          createdAt: new Date().toISOString(),
+        };
+      }
+
+      if (
+        toolCall.name === "binary_start_build" ||
+        toolCall.name === "binary_refine_build" ||
+        toolCall.name === "binary_cancel_build" ||
+        toolCall.name === "binary_branch_build" ||
+        toolCall.name === "binary_rewind_build" ||
+        toolCall.name === "binary_validate_build" ||
+        toolCall.name === "binary_execute_build" ||
+        toolCall.name === "binary_publish_build"
+      ) {
+        const result = await this.runBinaryTool({
+          name: toolCall.name,
+          args,
+          auth: input.auth,
+          sessionId: input.sessionId,
+          workspaceFingerprint: input.workspaceFingerprint,
+        });
+        return {
+          toolCallId: toolCall.id,
+          name: toolCall.name,
+          ok: result.ok,
+          blocked: result.blocked,
+          summary: result.summary,
+          data: result.data,
+          error: result.error,
           createdAt: new Date().toISOString(),
         };
       }
@@ -486,5 +559,252 @@ export class ToolExecutor {
       },
       error: blocked || firstFailure ? String(firstFailure) : undefined,
     };
+  }
+
+  private resolveBinaryBuildId(args: Record<string, unknown>): string | null {
+    const explicit = typeof args.buildId === "string" ? args.buildId.trim() : "";
+    if (explicit) return explicit;
+    return this.getBinaryToolContext().activeBuild?.id || null;
+  }
+
+  private resolveBinaryRuntime(args: Record<string, unknown>): BinaryTargetEnvironment {
+    const current = this.getBinaryToolContext().targetEnvironment;
+    const runtime = args.runtime === "node20" ? "node20" : current.runtime;
+    return {
+      ...current,
+      runtime,
+    };
+  }
+
+  private summarizeBinaryBuild(build: BinaryBuildRecord): string {
+    const parts = [
+      `Build ${build.id}`,
+      `${build.status}`,
+      build.phase ? `phase=${build.phase}` : "",
+      typeof build.progress === "number" ? `progress=${build.progress}` : "",
+      build.publish?.downloadUrl ? "published" : "",
+    ].filter(Boolean);
+    return parts.join(", ");
+  }
+
+  private async runBinaryTool(input: {
+    name:
+      | "binary_start_build"
+      | "binary_refine_build"
+      | "binary_cancel_build"
+      | "binary_branch_build"
+      | "binary_rewind_build"
+      | "binary_validate_build"
+      | "binary_execute_build"
+      | "binary_publish_build";
+    args: Record<string, unknown>;
+    auth: RequestAuth;
+    sessionId?: string;
+    workspaceFingerprint: string;
+  }): Promise<{
+    ok: boolean;
+    blocked?: boolean;
+    summary: string;
+    data: Record<string, unknown>;
+    error?: string;
+  }> {
+    const activeBuild = this.getBinaryToolContext().activeBuild;
+    let resolvedBuildId: string | null = null;
+    try {
+      if (input.name === "binary_start_build") {
+        const intent = String(input.args.intent || "").trim();
+        if (!intent) {
+          return {
+            ok: false,
+            summary: "Binary build start requires an intent.",
+            data: {},
+            error: "Missing intent.",
+          };
+        }
+        const build = await requestBinaryBuild({
+          auth: input.auth,
+          intent,
+          workspaceFingerprint: input.workspaceFingerprint,
+          historySessionId: input.sessionId || null,
+          targetEnvironment: this.resolveBinaryRuntime(input.args),
+        });
+        return {
+          ok: true,
+          summary: `Started binary build. ${this.summarizeBinaryBuild(build)}`,
+          data: { buildId: build.id, build },
+        };
+      }
+
+      if (input.name === "binary_publish_build") {
+        resolvedBuildId = this.resolveBinaryBuildId(input.args);
+        if (!resolvedBuildId) {
+          return {
+            ok: false,
+            summary: "No active binary build is available to publish.",
+            data: {},
+            error: "Missing buildId.",
+          };
+        }
+        const approved = await vscode.window.showWarningMessage(
+          `Publish binary build ${resolvedBuildId}? This creates an external download URL.`,
+          { modal: true },
+          "Publish"
+        );
+        if (approved !== "Publish") {
+          return {
+            ok: false,
+            blocked: true,
+            summary: `Publish canceled for build ${resolvedBuildId}.`,
+            data: { buildId: resolvedBuildId },
+            error: "User canceled publish.",
+          };
+        }
+        const build = await requestBinaryPublish({
+          auth: input.auth,
+          buildId: resolvedBuildId,
+        });
+        return {
+          ok: true,
+          summary: `Published binary build. ${this.summarizeBinaryBuild(build)}`,
+          data: { buildId: build.id, build },
+        };
+      }
+
+      resolvedBuildId = this.resolveBinaryBuildId(input.args);
+      if (!resolvedBuildId) {
+        return {
+          ok: false,
+          summary: `No active binary build is available for ${input.name}.`,
+          data: {},
+          error: "Missing buildId.",
+        };
+      }
+
+      if (input.name === "binary_refine_build") {
+        const intent = String(input.args.intent || "").trim();
+        if (!intent) {
+          return {
+            ok: false,
+            summary: "Binary refinement requires an intent.",
+            data: { buildId: resolvedBuildId },
+            error: "Missing intent.",
+          };
+        }
+        const build = await requestBinaryRefine({
+          auth: input.auth,
+          buildId: resolvedBuildId!,
+          intent,
+        });
+        return {
+          ok: true,
+          summary: `Queued binary refinement. ${this.summarizeBinaryBuild(build)}`,
+          data: { buildId: build.id, build },
+        };
+      }
+
+      if (input.name === "binary_cancel_build") {
+        const build = await requestBinaryCancel({
+          auth: input.auth,
+          buildId: resolvedBuildId!,
+        });
+        return {
+          ok: true,
+          summary: `Canceled binary build. ${this.summarizeBinaryBuild(build)}`,
+          data: { buildId: build.id, build },
+        };
+      }
+
+      if (input.name === "binary_branch_build") {
+        const build = await requestBinaryBranch({
+          auth: input.auth,
+          buildId: resolvedBuildId!,
+          checkpointId: typeof input.args.checkpointId === "string" ? input.args.checkpointId : undefined,
+          intent: typeof input.args.intent === "string" ? input.args.intent.trim() || undefined : undefined,
+        });
+        return {
+          ok: true,
+          summary: `Created binary branch. ${this.summarizeBinaryBuild(build)}`,
+          data: { buildId: build.id, build },
+        };
+      }
+
+      if (input.name === "binary_rewind_build") {
+        const checkpointId =
+          typeof input.args.checkpointId === "string" && input.args.checkpointId.trim()
+            ? input.args.checkpointId.trim()
+            : activeBuild?.checkpointId || activeBuild?.checkpoints?.[0]?.id || "";
+        if (!checkpointId) {
+          return {
+            ok: false,
+            summary: `No checkpoint is available to rewind build ${resolvedBuildId}.`,
+            data: { buildId: resolvedBuildId },
+            error: "Missing checkpointId.",
+          };
+        }
+        const build = await requestBinaryRewind({
+          auth: input.auth,
+          buildId: resolvedBuildId!,
+          checkpointId,
+        });
+        return {
+          ok: true,
+          summary: `Rewound binary build. ${this.summarizeBinaryBuild(build)}`,
+          data: { buildId: build.id, build },
+        };
+      }
+
+      if (input.name === "binary_validate_build") {
+        const build = await requestBinaryValidate({
+          auth: input.auth,
+          buildId: resolvedBuildId!,
+          targetEnvironment: this.resolveBinaryRuntime(input.args),
+        });
+        return {
+          ok: true,
+          summary: `Validated binary build. ${this.summarizeBinaryBuild(build)}`,
+          data: { buildId: build.id, build },
+        };
+      }
+
+      if (input.name === "binary_execute_build") {
+        const entryPoint =
+          typeof input.args.entryPoint === "string" && input.args.entryPoint.trim()
+            ? input.args.entryPoint.trim()
+            : activeBuild?.manifest?.entrypoint || "";
+        if (!entryPoint) {
+          return {
+            ok: false,
+            summary: `No entrypoint is available to execute for build ${resolvedBuildId}.`,
+            data: { buildId: resolvedBuildId },
+            error: "Missing entryPoint.",
+          };
+        }
+        const build = await requestBinaryExecute({
+          auth: input.auth,
+          buildId: resolvedBuildId!,
+          entryPoint,
+          args: Array.isArray(input.args.args) ? input.args.args : undefined,
+        });
+        return {
+          ok: true,
+          summary: `Executed binary build entrypoint. ${this.summarizeBinaryBuild(build)}`,
+          data: { buildId: build.id, build },
+        };
+      }
+
+      return {
+        ok: false,
+        summary: `Unsupported binary tool ${input.name}.`,
+        data: {},
+        error: `Unsupported binary tool ${input.name}.`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        summary: error instanceof Error ? error.message : String(error),
+        data: resolvedBuildId ? { buildId: resolvedBuildId } : {},
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 }

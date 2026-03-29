@@ -71,7 +71,10 @@ function formatPlan(plan) {
     return lines.join("\n\n");
 }
 function isHostedOpenHandsRuntime(runtime) {
-    return runtime === "playgroundApi" || runtime === "cutie";
+    return runtime === "playgroundApi" || runtime === "cutie" || runtime === "qwenCode";
+}
+function isBinaryLifecycleToolName(toolName) {
+    return /^binary_/.test(String(toolName || "").trim());
 }
 function stableStringify(value) {
     return JSON.stringify(value, null, 2);
@@ -275,14 +278,14 @@ function getObjectiveGoalType(intent, mode) {
     return "unknown";
 }
 function hasMutationProofFromTools(toolCallsUsed, envelope) {
-    if (toolCallsUsed.some((tool) => (0, qwen_runtime_utils_1.isMutationToolName)(tool)))
+    if (toolCallsUsed.some((tool) => (0, qwen_runtime_utils_1.isMutationToolName)(tool) || isBinaryLifecycleToolName(tool)))
         return true;
     if (Array.isArray(envelope.actions) && envelope.actions.length > 0)
         return true;
     if (Array.isArray(envelope.toolTrace) &&
         envelope.toolTrace.some((entry) => entry.status === "completed" &&
             Boolean(entry.toolCall?.name) &&
-            (0, qwen_runtime_utils_1.isMutationToolName)(entry.toolCall?.name || ""))) {
+            ((0, qwen_runtime_utils_1.isMutationToolName)(entry.toolCall?.name || "") || isBinaryLifecycleToolName(entry.toolCall?.name || "")))) {
         return true;
     }
     return false;
@@ -618,9 +621,6 @@ class PlaygroundViewProvider {
             : "Xpersona Binary IDE API key updated.";
     }
     async performSignIn() {
-        if (this.state.runtime === "qwenCode") {
-            return "Qwen Code uses your Xpersona Binary IDE API key. Use /key or the Key button instead of browser sign-in.";
-        }
         await this.auth.signInWithBrowser();
         return "Browser sign-in opened.";
     }
@@ -633,9 +633,6 @@ class PlaygroundViewProvider {
         return "Binary IDE auth cleared.";
     }
     async performUndo() {
-        if (this.state.runtime === "qwenCode") {
-            return "Undo is only available for hosted Binary IDE runs. For Qwen Code sessions, use source control or Qwen checkpoints.";
-        }
         return this.actionRunner.undoLastBatch();
     }
     async waitForBinaryBuildCompletion(auth, initialBuild) {
@@ -789,11 +786,6 @@ class PlaygroundViewProvider {
         this.postState();
     }
     async refreshHistory() {
-        if (this.state.runtime === "qwenCode") {
-            this.state.history = await this.qwenHistoryService.list().catch(() => []);
-            this.postState();
-            return;
-        }
         const auth = await this.auth.getRequestAuth();
         if (!auth) {
             this.state.history = [];
@@ -868,14 +860,6 @@ class PlaygroundViewProvider {
         this.postState();
     }
     async refreshAuth() {
-        if (this.state.runtime === "qwenCode") {
-            const apiKey = await this.auth.getApiKey().catch(() => null);
-            this.state.auth = apiKey
-                ? { kind: "apiKey", label: "Qwen Code via Xpersona Binary IDE API key" }
-                : { kind: "none", label: "Qwen Code needs an Xpersona Binary IDE API key" };
-            this.postState();
-            return;
-        }
         this.state.auth = await this.auth.getAuthState().catch(() => ({
             kind: "none",
             label: "Not signed in",
@@ -935,21 +919,6 @@ class PlaygroundViewProvider {
         this.clearBinaryEventTracking();
         this.setActiveBinaryBuild(null);
         this.state.liveChat = null;
-        if (this.state.runtime === "qwenCode") {
-            this.sessionId = sessionId;
-            this.state.selectedSessionId = sessionId;
-            this.state.messages = await this.qwenHistoryService.loadMessages(sessionId).catch(() => []);
-            this.state.activity = [];
-            this.state.followUpActions = [];
-            const historyItem = this.state.history.find((item) => item.id === sessionId);
-            if (historyItem)
-                this.state.mode = normalizeMode(historyItem.mode);
-            await this.loadDraftText();
-            this.state.runtimePhase = this.getRuntimePhaseForDraft();
-            await this.refreshDraftContext(this.draftText);
-            this.postState();
-            return;
-        }
         const auth = await this.auth.getRequestAuth();
         if (!auth)
             return;
@@ -2517,16 +2486,7 @@ class PlaygroundViewProvider {
         }
         if (action.kind === "target" && action.targetPath && this.pendingClarification) {
             this.manualContext.attachedFiles = Array.from(new Set([action.targetPath, ...this.manualContext.attachedFiles].map((value) => String(value || "").trim()))).slice(0, 4);
-            if (this.state.runtime === "qwenCode") {
-                await this.runQwenPrompt({
-                    text: this.pendingClarification.text,
-                    appendUser: false,
-                    searchDepth: this.pendingClarification.searchDepth,
-                });
-            }
-            else {
-                await this.sendPromptWithPlaygroundApi(this.pendingClarification.text, "", undefined, false);
-            }
+            await this.sendPromptWithPlaygroundApi(this.pendingClarification.text, "", undefined, false);
             return;
         }
         if (action.kind === "rerun") {
@@ -2558,16 +2518,7 @@ class PlaygroundViewProvider {
                     }
                 }
             }
-            if (this.state.runtime === "qwenCode") {
-                await this.runQwenPrompt({
-                    text: base.text,
-                    appendUser: false,
-                    searchDepth: id === "search-deeper" ? "deep" : "fast",
-                });
-            }
-            else {
-                await this.sendPromptWithPlaygroundApi(base.text, "", undefined, false);
-            }
+            await this.sendPromptWithPlaygroundApi(base.text, "", undefined, false);
         }
     }
     async sendPrompt(rawText, clientMessageId = "") {
@@ -2581,15 +2532,6 @@ class PlaygroundViewProvider {
             if (planTask) {
                 await this.setMode("plan");
                 await this.clearCurrentDraft();
-                if (this.state.runtime === "qwenCode") {
-                    await this.runQwenPrompt({
-                        text: planTask,
-                        appendUser: true,
-                        searchDepth: "fast",
-                        clientMessageId,
-                    });
-                    return;
-                }
                 await this.sendPromptWithPlaygroundApi(planTask, clientMessageId, undefined, true);
                 return;
             }
@@ -2610,17 +2552,62 @@ class PlaygroundViewProvider {
             this.pendingClarification = null;
         }
         await this.clearCurrentDraft();
-        if (this.state.runtime === "qwenCode") {
-            await this.runQwenPrompt({
-                text,
-                promptText,
-                appendUser: true,
-                searchDepth,
-                clientMessageId,
-            });
+        await this.sendPromptWithPlaygroundApi(text, clientMessageId, promptText, true);
+    }
+    getBinaryToolContext() {
+        return {
+            activeBuild: this.state.binary.activeBuild,
+            targetEnvironment: this.state.binary.targetEnvironment,
+        };
+    }
+    async handleBinaryToolResult(input) {
+        if (!input.toolResult.ok || !isBinaryLifecycleToolName(input.toolResult.name)) {
             return;
         }
-        await this.sendPromptWithPlaygroundApi(text, clientMessageId, promptText, true);
+        const data = input.toolResult.data;
+        const build = data && typeof data === "object" && data.build && typeof data.build === "object"
+            ? data.build
+            : null;
+        if (!build?.id)
+            return;
+        const switchingBuild = this.state.binary.activeBuild?.id && this.state.binary.activeBuild.id !== build.id;
+        if (switchingBuild) {
+            this.stopBinaryStream();
+            this.clearBinaryEventTracking();
+        }
+        this.setActiveBinaryBuild(build);
+        if (input.toolResult.name === "binary_start_build" || input.toolResult.name === "binary_branch_build") {
+            this.applyChatLiveEvent({
+                type: "build_attached",
+                buildId: build.id,
+                phase: build.phase || "queued",
+                progress: typeof build.progress === "number" ? build.progress : undefined,
+            });
+        }
+        else {
+            this.applyChatLiveEvent({
+                type: "build_event",
+                eventType: build.status === "completed"
+                    ? "build.completed"
+                    : build.status === "failed"
+                        ? "build.failed"
+                        : build.status === "canceled"
+                            ? "build.canceled"
+                            : "phase.changed",
+                phase: build.phase || this.state.liveChat?.phase,
+                progress: typeof build.progress === "number" ? build.progress : this.state.liveChat?.progress,
+                latestLog: Array.isArray(build.logs) && build.logs.length > 0 ? build.logs[build.logs.length - 1] : undefined,
+                latestFile: build.artifactState?.latestFile,
+            });
+        }
+        if (isBinaryBuildPending(build) && (!this.binaryStreamAbort || this.binaryStreamBuildId !== build.id)) {
+            void this.followBinaryBuildStream({
+                auth: input.auth,
+                buildId: build.id,
+            }).catch(() => undefined);
+            return;
+        }
+        this.postState();
     }
     buildClarificationMessage(preview) {
         if (preview.candidateFiles.length) {
@@ -3241,9 +3228,14 @@ class PlaygroundViewProvider {
         }
         const hosted = this.lastHostedDebugSnapshot;
         if (hosted) {
-            lines.push("=== Hosted API (last run) ===");
+            lines.push(hosted.runtime === "cutie"
+                ? "=== Cutie (hosted OpenHands, last run) ==="
+                : hosted.runtime === "qwenCode"
+                    ? "=== Qwen Profile (hosted OpenHands, last run) ==="
+                    : "=== Hosted API (last run) ===");
             lines.push(`Captured: ${hosted.timestamp}`);
             lines.push(`Task: ${hosted.task}`);
+            lines.push(`Runtime: ${hosted.runtime}`);
             lines.push(`Mode: ${hosted.mode}`);
             lines.push(`Intent: ${hosted.intent}`);
             lines.push(`Context confidence: ${hosted.confidence}`);
@@ -3274,7 +3266,7 @@ class PlaygroundViewProvider {
             lines.push("");
         }
         if (!qwen && !hosted) {
-            lines.push("No debug snapshots captured yet. Send a prompt with local Qwen Code or the hosted OpenHands runtime to populate.");
+            lines.push("No debug snapshots captured yet. Send a prompt with Cutie, Qwen Code, or the hosted OpenHands runtime to populate.");
         }
         return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
     }
@@ -3326,6 +3318,21 @@ class PlaygroundViewProvider {
                 intent: (0, assistant_ux_1.classifyIntent)(taskText),
             });
             hostedPreview = preview;
+            this.lastHostedDebugSnapshot = {
+                timestamp: nowIso(),
+                task: taskText,
+                runtime: this.state.runtime,
+                mode: this.state.mode,
+                intent: preview.intent,
+                confidence: preview.confidence,
+                workspaceRoot: (0, config_1.getWorkspaceRootPath)() || null,
+                activeFile: String(preview.activeFile || ""),
+                resolvedFiles: [...preview.resolvedFiles],
+                selectedFiles: [...preview.selectedFiles],
+                runtimePhase: this.state.runtimePhase,
+                recentActivity: [...this.state.activity].slice(-12),
+                toolCallsUsed: [...hostedToolCallsUsed],
+            };
             if (promptAbort.signal.aborted) {
                 throw new Error("Prompt aborted");
             }
@@ -3350,6 +3357,8 @@ class PlaygroundViewProvider {
                 clientTrace: {
                     extensionVersion: String(vscode.extensions.getExtension("playgroundai.xpersona-playground")?.packageJSON?.version || "0.0.0"),
                     workspaceHash,
+                    maxToolSteps: (0, config_1.getMaxToolStepsForPlayground)(),
+                    maxWorkspaceMutations: (0, config_1.getMaxWorkspaceMutationsForPlayground)(),
                 },
             };
             let initial;
@@ -3507,6 +3516,7 @@ class PlaygroundViewProvider {
             this.lastHostedDebugSnapshot = {
                 timestamp: nowIso(),
                 task: taskText,
+                runtime: this.state.runtime,
                 mode: this.state.mode,
                 intent: preview.intent,
                 confidence: preview.confidence,
@@ -3559,6 +3569,7 @@ class PlaygroundViewProvider {
             this.lastHostedDebugSnapshot = {
                 timestamp: nowIso(),
                 task: taskText,
+                runtime: this.state.runtime,
                 mode: this.state.mode,
                 intent: hostedPreview?.intent ?? "ask",
                 confidence: hostedPreview?.confidence ?? "low",
@@ -3683,9 +3694,10 @@ class PlaygroundViewProvider {
         }
         return envelope;
     }
-    async continueRun(auth, runId, toolResult, signal) {
+    async continueRun(auth, runId, toolResult, signal, sessionId) {
         const url = `${(0, config_1.getBaseApiUrl)()}/api/v1/playground/runs/${encodeURIComponent(runId)}/continue`;
-        const body = { toolResult };
+        const sid = typeof sessionId === "string" && sessionId.trim() ? sessionId.trim() : "";
+        const body = sid ? { toolResult, sessionId: sid } : { toolResult };
         let lastError = null;
         for (let attempt = 0; attempt < 3; attempt++) {
             if (attempt > 0) {
@@ -3768,11 +3780,19 @@ class PlaygroundViewProvider {
                 activity: `Step ${pendingToolCall.step}: ${pendingToolCall.toolCall.name}`,
             });
             this.postState();
+            if (input.signal?.aborted) {
+                throw new Error("Prompt aborted");
+            }
             const toolResult = await this.toolExecutor.executeToolCall({
                 pendingToolCall,
                 auth: input.auth,
                 sessionId: this.sessionId || undefined,
                 workspaceFingerprint: input.workspaceFingerprint,
+                signal: input.signal,
+            });
+            await this.handleBinaryToolResult({
+                toolResult,
+                auth: input.auth,
             });
             if (input.signal?.aborted) {
                 throw new Error("Prompt aborted");
@@ -3788,7 +3808,7 @@ class PlaygroundViewProvider {
                 input.debugRef.runId = envelope.runId;
                 input.debugRef.adapter = envelope.adapter;
             }
-            const nextEnvelope = await this.continueRun(input.auth, envelope.runId, toolResult, input.signal);
+            const nextEnvelope = await this.continueRun(input.auth, envelope.runId, toolResult, input.signal, envelope.sessionId || this.sessionId);
             const nextSignature = buildToolCallSignature(nextEnvelope.pendingToolCall?.toolCall || null);
             const currentFingerprint = buildHostedProgressFingerprint({
                 envelope,

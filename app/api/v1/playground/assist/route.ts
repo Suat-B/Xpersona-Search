@@ -17,6 +17,10 @@ import { zAssistRequest } from "@/lib/playground/contracts";
 import { ok, parseBody, serverError, unauthorized } from "@/lib/playground/http";
 import { getOrCreateRequestId } from "@/lib/api/request-meta";
 import { jsonError } from "@/lib/api/errors";
+import {
+  isPlaygroundAssistGreetingViaGateway,
+  isPlaygroundAssistPlanViaGateway,
+} from "@/lib/playground/assist-openhands-routing";
 import { isOpenHandsGatewayEnabled, OpenHandsGatewayError } from "@/lib/playground/openhands-gateway";
 import {
   buildAssistResponsePayload,
@@ -163,28 +167,61 @@ export async function POST(request: NextRequest): Promise<Response> {
     tokenCount: estimatedInputTokens,
   });
 
+  // Orchestration matrix: docs/cutie-openhands-orchestration.md (default: greeting + plan use runAssist; auto coding uses OpenHands tool loop).
   const runTask = async () => {
     const planMode = mode === "plan";
     const maxOut = Math.min(access.limits?.maxOutputTokens ?? 2048, 2048);
 
     let result: AssistResult;
 
-    if (
+    const gatewayOk = isOpenHandsGatewayEnabled();
+
+    const startHostedToolLoop = (overrides: Partial<(typeof body) & { task?: string; mode?: typeof mode }>) => {
+      if (!gatewayOk) {
+        throw new OpenHandsGatewayError(
+          "Hosted coding uses OpenHands only. Set OPENHANDS_GATEWAY_URL on the server.",
+          "OPENHANDS_GATEWAY_MISSING_CONFIG",
+          503
+        );
+      }
+      return startAssistToolLoop({
+        userId: auth.userId,
+        sessionId: session.id,
+        traceId,
+        request: {
+          ...body,
+          mode,
+          orchestrationProtocol: "tool_loop_v1",
+          conversationHistory: persistedHistory,
+          maxTokens: maxOut,
+          ...overrides,
+        },
+      });
+    };
+
+    const trivialGreeting =
       !planMode &&
       mode === "auto" &&
       isTrivialGreetingOnlyTask({
         task: body.task,
         mode,
         retrievalHints: body.retrievalHints,
-      })
-    ) {
-      result = await runAssist({
-        ...body,
-        mode: "auto",
-        task: `The user only sent a short greeting with no code request. Reply with a brief friendly greeting in plain text (2–4 sentences). Do NOT output JSON, patches, unified diffs, file edits, or tool calls. Invite them to describe a task or @mention a file.\n\nUser message: ${body.task}`,
-        conversationHistory: persistedHistory,
-        maxTokens: maxOut,
       });
+
+    const greetingTask = `The user only sent a short greeting with no code request. Reply with a brief friendly greeting in plain text (2–4 sentences). Do NOT output JSON, patches, unified diffs, file edits, or tool calls. Invite them to describe a task or @mention a file.\n\nUser message: ${body.task}`;
+
+    if (trivialGreeting) {
+      if (isPlaygroundAssistGreetingViaGateway() && gatewayOk) {
+        result = await startHostedToolLoop({ mode: "auto", task: greetingTask });
+      } else {
+        result = await runAssist({
+          ...body,
+          mode: "auto",
+          task: greetingTask,
+          conversationHistory: persistedHistory,
+          maxTokens: maxOut,
+        });
+      }
       await appendSessionMessage({
         userId: auth.userId,
         sessionId: session.id,
@@ -195,33 +232,15 @@ export async function POST(request: NextRequest): Promise<Response> {
       }).catch(() => null);
     } else {
       result = planMode
-        ? await runAssist({
-            ...body,
-            mode,
-            conversationHistory: persistedHistory,
-            maxTokens: maxOut,
-          })
-        : await (async () => {
-            if (!isOpenHandsGatewayEnabled()) {
-              throw new OpenHandsGatewayError(
-                "Hosted coding uses OpenHands only. Set OPENHANDS_GATEWAY_URL on the server.",
-                "OPENHANDS_GATEWAY_MISSING_CONFIG",
-                503
-              );
-            }
-            return startAssistToolLoop({
-              userId: auth.userId,
-              sessionId: session.id,
-              traceId,
-              request: {
-                ...body,
-                mode,
-                orchestrationProtocol: "tool_loop_v1",
-                conversationHistory: persistedHistory,
-                maxTokens: maxOut,
-              },
-            });
-          })();
+        ? isPlaygroundAssistPlanViaGateway() && gatewayOk
+          ? await startHostedToolLoop({ mode: "plan" })
+          : await runAssist({
+              ...body,
+              mode,
+              conversationHistory: persistedHistory,
+              maxTokens: maxOut,
+            })
+        : await startHostedToolLoop({ mode });
 
       if (planMode) {
         const outputTokens = estimateOutputTokens(result.final);

@@ -49,6 +49,8 @@ exports.getBinaryStreamGatewayUrl = getBinaryStreamGatewayUrl;
 exports.getWorkspaceFolder = getWorkspaceFolder;
 exports.getWorkspaceRootPath = getWorkspaceRootPath;
 exports.getWorkspaceHash = getWorkspaceHash;
+exports.getMaxToolStepsForPlayground = getMaxToolStepsForPlayground;
+exports.getMaxWorkspaceMutationsForPlayground = getMaxWorkspaceMutationsForPlayground;
 exports.getProjectKey = getProjectKey;
 exports.normalizeWorkspaceRelativePath = normalizeWorkspaceRelativePath;
 exports.toWorkspaceRelativePath = toWorkspaceRelativePath;
@@ -133,10 +135,7 @@ function getBaseApiUrl() {
     return value.replace(/\/+$/, "");
 }
 function getRuntimeBackend() {
-    if (!getAgentRollbackLocalRuntime()) {
-        return "playgroundApi";
-    }
-    const configured = getConfigurationValue("runtime", "playgroundApi");
+    const configured = getConfigurationValue("runtime", "cutie");
     if (configured === "playgroundApi")
         return "playgroundApi";
     if (configured === "cutie")
@@ -209,6 +208,12 @@ function getWorkspaceHash() {
     if (!root)
         return "no-workspace";
     return (0, crypto_1.createHash)("sha1").update(root, "utf8").digest("hex");
+}
+function getMaxToolStepsForPlayground() {
+    return Math.max(8, Math.min(128, getConfigurationValue("maxToolSteps", 18)));
+}
+function getMaxWorkspaceMutationsForPlayground() {
+    return Math.max(2, Math.min(64, getConfigurationValue("maxWorkspaceMutations", 8)));
 }
 function getProjectKey() {
     const folder = getWorkspaceFolder();

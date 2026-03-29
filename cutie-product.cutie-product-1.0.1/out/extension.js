@@ -373,6 +373,8 @@ class CutieSidebarProvider {
         /** Monotonic guard so callbacks from an older aborted run cannot overwrite a newer conversation state. */
         this.runRequestVersion = 0;
         this.streamingAssistantText = "";
+        /** Ephemeral hosted-playground progress paragraphs (plain text), shown as an assistant bubble while the IDE runtime is busy. */
+        this.playgroundLiveNarration = "";
         this.suppressedAssistantArtifactText = "";
         this.liveActionLog = [];
         this.liveActionLogRunId = null;
@@ -781,10 +783,10 @@ class CutieSidebarProvider {
         this.webviewReady = false;
         webviewView.webview.options = { enableScripts: true };
         try {
-            webviewView.webview.html = (0, webview_html_1.buildWebviewHtml)(webviewView.webview);
             webviewView.webview.onDidReceiveMessage((message) => {
                 void this.handleMessage(message);
             });
+            webviewView.webview.html = (0, webview_html_1.buildWebviewHtml)(webviewView.webview, this.context.extensionUri);
             this.armWebviewReadyTimeout(webviewView);
             void this.initializeView();
         }
@@ -823,6 +825,7 @@ class CutieSidebarProvider {
             this.activeRunSessionId = null;
             this.submitState = "idle";
             this.streamingAssistantText = "";
+            this.playgroundLiveNarration = "";
             this.suppressedAssistantArtifactText = "";
             this.resetLiveActionLog();
             this.status = "OpenHands connected. Cutie is ready.";
@@ -1305,6 +1308,7 @@ class CutieSidebarProvider {
             this.status = "Stopping the active Cutie run...";
             this.submitState = "stopping";
             this.streamingAssistantText = "";
+            this.playgroundLiveNarration = "";
             this.suppressedAssistantArtifactText = "";
             this.currentAbortController.abort();
             await this.emitState();
@@ -1321,6 +1325,7 @@ class CutieSidebarProvider {
         this.status = "Stopping the active binary build...";
         this.submitState = "stopping";
         this.streamingAssistantText = "";
+        this.playgroundLiveNarration = "";
         this.suppressedAssistantArtifactText = "";
         await this.emitState();
         try {
@@ -1607,27 +1612,47 @@ class CutieSidebarProvider {
         void this.refreshViewState();
         void this.binaryController.resumeBinaryBuildIfNeeded();
     }
+    /** Saves live playground step text as a normal assistant message so it remains after the run settles. */
+    async persistPlaygroundLiveNarrationToSession(session) {
+        const text = this.playgroundLiveNarration.trim();
+        if (!text || (0, config_1.getBinaryIdeChatRuntime)() !== "playgroundApi") {
+            return session;
+        }
+        const next = await this.sessionStore.appendMessage(session, { role: "assistant", content: text });
+        if (this.activeSessionId === next.id) {
+            this.activeSession = next;
+        }
+        return next;
+    }
     clearWebviewReadyTimeout() {
         if (this.webviewReadyTimeout) {
             clearTimeout(this.webviewReadyTimeout);
             this.webviewReadyTimeout = null;
         }
     }
+    /** Reads `cutie-product.webviewReadyTimeoutMs` (default 60s). Older packaged builds used 10s; reinstall from a fresh compile if you still hit that limit. */
+    getWebviewReadyTimeoutMs() {
+        const raw = vscode.workspace.getConfiguration(config_1.EXTENSION_NAMESPACE).get("webviewReadyTimeoutMs");
+        const n = typeof raw === "number" && Number.isFinite(raw) ? Math.floor(raw) : CutieSidebarProvider.WEBVIEW_READY_TIMEOUT_DEFAULT_MS;
+        return Math.max(CutieSidebarProvider.WEBVIEW_READY_TIMEOUT_MIN_MS, Math.min(CutieSidebarProvider.WEBVIEW_READY_TIMEOUT_MAX_MS, n));
+    }
     armWebviewReadyTimeout(webviewView) {
         this.clearWebviewReadyTimeout();
         const bootNonce = ++this.webviewBootNonce;
+        const timeoutMs = this.getWebviewReadyTimeoutMs();
         this.webviewReadyTimeout = setTimeout(() => {
             if (this.webviewBootNonce !== bootNonce || this.webviewReady || this.view !== webviewView)
                 return;
-            const message = "Cutie UI did not finish loading in time. Quit and restart Cursor, run Developer: Reload Window, or reinstall the Cutie extension. If it persists, Help → Toggle Developer Tools → Console (look for errors from the webview).";
+            const message = "Cutie UI did not finish loading in time. Quit and restart Cursor, run Developer: Reload Window, or reinstall the Cutie extension. If it persists, Help → Toggle Developer Tools → Console (look for errors from the webview). You can raise `cutie-product.webviewReadyTimeoutMs` if the UI is slow to parse on first open.";
             this.status = `Cutie UI failed to load: ${message}`;
             webviewView.webview.html = buildWebviewFailureHtml(message);
             console.error("Cutie webview ready timeout", {
                 version: (0, config_1.getExtensionVersion)(this.context),
                 workspaceHash: (0, config_1.getWorkspaceHash)(),
+                timeoutMs,
             });
             void vscode.window.showErrorMessage(this.status);
-        }, CutieSidebarProvider.WEBVIEW_READY_TIMEOUT_MS);
+        }, timeoutMs);
     }
     async handleMessage(message) {
         if (message.type === "ready") {
@@ -1815,6 +1840,7 @@ class CutieSidebarProvider {
             const abortController = new AbortController();
             this.currentAbortController = abortController;
             this.streamingAssistantText = "";
+            this.playgroundLiveNarration = "";
             this.suppressedAssistantArtifactText = "";
             this.resetLiveActionLog();
             this.submitState = "running";
@@ -1848,6 +1874,14 @@ class CutieSidebarProvider {
                         historySessionId: session.playgroundHistorySessionId ?? null,
                         history,
                         signal: abortController.signal,
+                        onPlaygroundProgress: (text) => {
+                            if (runRequestVersion !== this.runRequestVersion)
+                                return;
+                            if (abortController.signal.aborted)
+                                return;
+                            this.playgroundLiveNarration = text;
+                            void this.emitState();
+                        },
                     });
                     assistantText = playgroundTurn.assistantText;
                     if (playgroundTurn.playgroundSessionId) {
@@ -1855,6 +1889,7 @@ class CutieSidebarProvider {
                     }
                     if (runRequestVersion !== this.runRequestVersion)
                         return;
+                    session = await this.persistPlaygroundLiveNarrationToSession(session);
                     const playgroundRunId = playgroundTurn.playgroundRunId;
                     const fileMutations = playgroundTurn.fileMutations;
                     session = await this.sessionStore.appendMessage(session, {
@@ -1891,6 +1926,7 @@ class CutieSidebarProvider {
                     }
                 }
                 this.streamingAssistantText = "";
+                this.playgroundLiveNarration = "";
                 this.submitState = "settled";
                 this.status = "Done. OpenHands completed the run.";
             }
@@ -1900,6 +1936,13 @@ class CutieSidebarProvider {
                 const message = error instanceof Error ? error.message : String(error);
                 const isCancel = /aborted|abort|cancelled|canceled/i.test(message);
                 this.streamingAssistantText = "";
+                try {
+                    session = await this.persistPlaygroundLiveNarrationToSession(session);
+                }
+                catch {
+                    /* ignore persistence errors */
+                }
+                this.playgroundLiveNarration = "";
                 this.status = isCancel ? "Run cancelled." : `Failed: ${message}`;
                 this.submitState = "settled";
                 if (!isCancel)
@@ -1911,6 +1954,7 @@ class CutieSidebarProvider {
                 }
                 if (runRequestVersion === this.runRequestVersion) {
                     this.streamingAssistantText = "";
+                    this.playgroundLiveNarration = "";
                     this.submitState = "settled";
                 }
                 await this.refreshDesktopState();
@@ -2031,6 +2075,7 @@ class CutieSidebarProvider {
             this.activeRunSessionId = this.activeRun?.sessionId || session.id;
             this.submitState = "idle";
             this.streamingAssistantText = "";
+            this.playgroundLiveNarration = "";
             this.suppressedAssistantArtifactText = "";
             this.resetLiveActionLog();
         }
@@ -2459,20 +2504,35 @@ class CutieSidebarProvider {
                 return true;
             return !(message.role === "assistant" && message.runId === activeRunId);
         });
+        let out = messages;
         const bubble = this.binaryController.getLiveBubble();
-        if (!bubble || (bubble.sessionId && bubble.sessionId !== this.activeSessionId))
-            return messages;
-        return [
-            ...messages,
-            {
-                id: bubble.messageId,
-                role: "assistant",
-                content: bubble.content,
-                createdAt: bubble.createdAt,
-                presentation: "live_binary",
-                live: bubble.live,
-            },
-        ];
+        if (bubble && (!bubble.sessionId || bubble.sessionId === this.activeSessionId)) {
+            out = [
+                ...out,
+                {
+                    id: bubble.messageId,
+                    role: "assistant",
+                    content: bubble.content,
+                    createdAt: bubble.createdAt,
+                    presentation: "live_binary",
+                    live: bubble.live,
+                },
+            ];
+        }
+        if ((0, config_1.getBinaryIdeChatRuntime)() === "playgroundApi" &&
+            isBusySubmitState(this.submitState) &&
+            this.playgroundLiveNarration.trim()) {
+            out = [
+                ...out,
+                {
+                    id: "__cutie_playground_progress__",
+                    role: "assistant",
+                    content: this.playgroundLiveNarration.trim(),
+                    createdAt: new Date().toISOString(),
+                },
+            ];
+        }
+        return out;
     }
     async refreshDesktopState() {
         this.desktopState = await this.desktop.getDesktopContext().catch(() => this.desktopState || buildDefaultDesktopState());
@@ -2595,8 +2655,13 @@ CutieSidebarProvider.MENTION_QUERY_INDEX_WAIT_MS = 60;
 CutieSidebarProvider.MAX_CHAT_DIFFS_PER_SESSION = 120;
 CutieSidebarProvider.MAX_PATCH_CHARS = 52000;
 CutieSidebarProvider.MAX_FILE_CHARS_FOR_PATCH = 500000;
-/** Large chat webview script; Cursor and other hosts may need extra time before late `ready`. */
-CutieSidebarProvider.WEBVIEW_READY_TIMEOUT_MS = 60000;
+/**
+ * Default when setting `cutie-product.webviewReadyTimeoutMs` is unset.
+ * Large chat webview (external script); Cursor and other hosts may need extra time before `ready`.
+ */
+CutieSidebarProvider.WEBVIEW_READY_TIMEOUT_DEFAULT_MS = 60000;
+CutieSidebarProvider.WEBVIEW_READY_TIMEOUT_MIN_MS = 5000;
+CutieSidebarProvider.WEBVIEW_READY_TIMEOUT_MAX_MS = 300000;
 CutieSidebarProvider.MAX_LIVE_ACTION_LINES = 120;
 CutieSidebarProvider.DESKTOP_CONTEXT_CACHE_TTL_MS = 8000;
 CutieSidebarProvider.GIT_STATUS_CACHE_TTL_MS = 15000;

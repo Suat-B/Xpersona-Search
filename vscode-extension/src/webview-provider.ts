@@ -29,6 +29,8 @@ import {
   EXTENSION_NAMESPACE,
   getAgentModelAlias,
   getBaseApiUrl,
+  getMaxToolStepsForPlayground,
+  getMaxWorkspaceMutationsForPlayground,
   getQwenExecutablePath,
   getQwenModel,
   getQwenOpenAiBaseUrl,
@@ -74,6 +76,7 @@ import type {
   BinaryBuildEvent,
   BinaryBuildPhase,
   BinaryBuildRecord,
+  BinaryTargetEnvironment,
   BinaryAstState,
   BinaryLiveReliabilityState,
   BinaryPanelState,
@@ -167,6 +170,7 @@ type QwenDebugSnapshot = {
 type HostedDebugSnapshot = {
   timestamp: string;
   task: string;
+  runtime: RuntimeBackend;
   mode: Mode;
   intent: IntentKind;
   confidence: ContextConfidence;
@@ -209,7 +213,11 @@ function formatPlan(plan: AssistPlan): string {
 }
 
 function isHostedOpenHandsRuntime(runtime: RuntimeBackend): boolean {
-  return runtime === "playgroundApi" || runtime === "cutie";
+  return runtime === "playgroundApi" || runtime === "cutie" || runtime === "qwenCode";
+}
+
+function isBinaryLifecycleToolName(toolName: string): boolean {
+  return /^binary_/.test(String(toolName || "").trim());
 }
 
 function stableStringify(value: unknown): string {
@@ -439,7 +447,7 @@ function getObjectiveGoalType(intent: IntentKind, mode: Mode): ObjectiveState["g
 }
 
 function hasMutationProofFromTools(toolCallsUsed: string[], envelope: AssistRunEnvelope): boolean {
-  if (toolCallsUsed.some((tool) => isMutationToolName(tool))) return true;
+  if (toolCallsUsed.some((tool) => isMutationToolName(tool) || isBinaryLifecycleToolName(tool))) return true;
   if (Array.isArray(envelope.actions) && envelope.actions.length > 0) return true;
   if (
     Array.isArray(envelope.toolTrace) &&
@@ -447,7 +455,7 @@ function hasMutationProofFromTools(toolCallsUsed: string[], envelope: AssistRunE
       (entry) =>
         entry.status === "completed" &&
         Boolean(entry.toolCall?.name) &&
-        isMutationToolName(entry.toolCall?.name || "")
+        (isMutationToolName(entry.toolCall?.name || "") || isBinaryLifecycleToolName(entry.toolCall?.name || ""))
     )
   ) {
     return true;
@@ -838,9 +846,6 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async performSignIn(): Promise<string> {
-    if (this.state.runtime === "qwenCode") {
-      return "Qwen Code uses your Xpersona Binary IDE API key. Use /key or the Key button instead of browser sign-in.";
-    }
     await this.auth.signInWithBrowser();
     return "Browser sign-in opened.";
   }
@@ -855,9 +860,6 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async performUndo(): Promise<string> {
-    if (this.state.runtime === "qwenCode") {
-      return "Undo is only available for hosted Binary IDE runs. For Qwen Code sessions, use source control or Qwen checkpoints.";
-    }
     return this.actionRunner.undoLastBatch();
   }
 
@@ -1032,11 +1034,6 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   }
 
   async refreshHistory(): Promise<void> {
-    if (this.state.runtime === "qwenCode") {
-      this.state.history = await this.qwenHistoryService.list().catch(() => []);
-      this.postState();
-      return;
-    }
     const auth = await this.auth.getRequestAuth();
     if (!auth) {
       this.state.history = [];
@@ -1115,14 +1112,6 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async refreshAuth(): Promise<void> {
-    if (this.state.runtime === "qwenCode") {
-      const apiKey = await this.auth.getApiKey().catch(() => null);
-      this.state.auth = apiKey
-        ? { kind: "apiKey", label: "Qwen Code via Xpersona Binary IDE API key" }
-        : { kind: "none", label: "Qwen Code needs an Xpersona Binary IDE API key" };
-      this.postState();
-      return;
-    }
     this.state.auth = await this.auth.getAuthState().catch(() => ({
       kind: "none",
       label: "Not signed in",
@@ -1200,20 +1189,6 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     this.setActiveBinaryBuild(null);
     this.state.liveChat = null;
 
-    if (this.state.runtime === "qwenCode") {
-      this.sessionId = sessionId;
-      this.state.selectedSessionId = sessionId;
-      this.state.messages = await this.qwenHistoryService.loadMessages(sessionId).catch(() => []);
-      this.state.activity = [];
-      this.state.followUpActions = [];
-      const historyItem = this.state.history.find((item) => item.id === sessionId);
-      if (historyItem) this.state.mode = normalizeMode(historyItem.mode);
-      await this.loadDraftText();
-      this.state.runtimePhase = this.getRuntimePhaseForDraft();
-      await this.refreshDraftContext(this.draftText);
-      this.postState();
-      return;
-    }
     const auth = await this.auth.getRequestAuth();
     if (!auth) return;
     this.sessionId = sessionId;
@@ -2896,15 +2871,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       this.manualContext.attachedFiles = Array.from(
         new Set([action.targetPath, ...this.manualContext.attachedFiles].map((value) => String(value || "").trim()))
       ).slice(0, 4);
-      if (this.state.runtime === "qwenCode") {
-        await this.runQwenPrompt({
-          text: this.pendingClarification.text,
-          appendUser: false,
-          searchDepth: this.pendingClarification.searchDepth,
-        });
-      } else {
-        await this.sendPromptWithPlaygroundApi(this.pendingClarification.text, "", undefined, false);
-      }
+      await this.sendPromptWithPlaygroundApi(this.pendingClarification.text, "", undefined, false);
       return;
     }
 
@@ -2938,15 +2905,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         }
       }
 
-      if (this.state.runtime === "qwenCode") {
-        await this.runQwenPrompt({
-          text: base.text,
-          appendUser: false,
-          searchDepth: id === "search-deeper" ? "deep" : "fast",
-        });
-      } else {
-        await this.sendPromptWithPlaygroundApi(base.text, "", undefined, false);
-      }
+      await this.sendPromptWithPlaygroundApi(base.text, "", undefined, false);
     }
   }
 
@@ -2961,15 +2920,6 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       if (planTask) {
         await this.setMode("plan");
         await this.clearCurrentDraft();
-        if (this.state.runtime === "qwenCode") {
-          await this.runQwenPrompt({
-            text: planTask,
-            appendUser: true,
-            searchDepth: "fast",
-            clientMessageId,
-          });
-          return;
-        }
         await this.sendPromptWithPlaygroundApi(planTask, clientMessageId, undefined, true);
         return;
       }
@@ -2995,18 +2945,73 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     }
 
     await this.clearCurrentDraft();
+    await this.sendPromptWithPlaygroundApi(text, clientMessageId, promptText, true);
+  }
 
-    if (this.state.runtime === "qwenCode") {
-      await this.runQwenPrompt({
-        text,
-        promptText,
-        appendUser: true,
-        searchDepth,
-        clientMessageId,
-      });
+  getBinaryToolContext(): { activeBuild: BinaryBuildRecord | null; targetEnvironment: BinaryTargetEnvironment } {
+    return {
+      activeBuild: this.state.binary.activeBuild,
+      targetEnvironment: this.state.binary.targetEnvironment,
+    };
+  }
+
+  private async handleBinaryToolResult(input: {
+    toolResult: ToolResult;
+    auth: RequestAuth;
+  }): Promise<void> {
+    if (!input.toolResult.ok || !isBinaryLifecycleToolName(input.toolResult.name)) {
       return;
     }
-    await this.sendPromptWithPlaygroundApi(text, clientMessageId, promptText, true);
+
+    const data = input.toolResult.data;
+    const build =
+      data && typeof data === "object" && data.build && typeof data.build === "object"
+        ? (data.build as BinaryBuildRecord)
+        : null;
+    if (!build?.id) return;
+
+    const switchingBuild = this.state.binary.activeBuild?.id && this.state.binary.activeBuild.id !== build.id;
+    if (switchingBuild) {
+      this.stopBinaryStream();
+      this.clearBinaryEventTracking();
+    }
+
+    this.setActiveBinaryBuild(build);
+
+    if (input.toolResult.name === "binary_start_build" || input.toolResult.name === "binary_branch_build") {
+      this.applyChatLiveEvent({
+        type: "build_attached",
+        buildId: build.id,
+        phase: build.phase || "queued",
+        progress: typeof build.progress === "number" ? build.progress : undefined,
+      });
+    } else {
+      this.applyChatLiveEvent({
+        type: "build_event",
+        eventType:
+          build.status === "completed"
+            ? "build.completed"
+            : build.status === "failed"
+              ? "build.failed"
+              : build.status === "canceled"
+                ? "build.canceled"
+                : "phase.changed",
+        phase: build.phase || this.state.liveChat?.phase,
+        progress: typeof build.progress === "number" ? build.progress : this.state.liveChat?.progress,
+        latestLog: Array.isArray(build.logs) && build.logs.length > 0 ? build.logs[build.logs.length - 1] : undefined,
+        latestFile: build.artifactState?.latestFile,
+      });
+    }
+
+    if (isBinaryBuildPending(build) && (!this.binaryStreamAbort || this.binaryStreamBuildId !== build.id)) {
+      void this.followBinaryBuildStream({
+        auth: input.auth,
+        buildId: build.id,
+      }).catch(() => undefined);
+      return;
+    }
+
+    this.postState();
   }
 
   private buildClarificationMessage(preview: Awaited<ReturnType<ContextCollector["preview"]>>): string {
@@ -3713,9 +3718,16 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
 
     const hosted = this.lastHostedDebugSnapshot;
     if (hosted) {
-      lines.push("=== Hosted API (last run) ===");
+      lines.push(
+        hosted.runtime === "cutie"
+          ? "=== Cutie (hosted OpenHands, last run) ==="
+          : hosted.runtime === "qwenCode"
+            ? "=== Qwen Profile (hosted OpenHands, last run) ==="
+            : "=== Hosted API (last run) ==="
+      );
       lines.push(`Captured: ${hosted.timestamp}`);
       lines.push(`Task: ${hosted.task}`);
+      lines.push(`Runtime: ${hosted.runtime}`);
       lines.push(`Mode: ${hosted.mode}`);
       lines.push(`Intent: ${hosted.intent}`);
       lines.push(`Context confidence: ${hosted.confidence}`);
@@ -3743,7 +3755,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
 
     if (!qwen && !hosted) {
       lines.push(
-        "No debug snapshots captured yet. Send a prompt with local Qwen Code or the hosted OpenHands runtime to populate."
+        "No debug snapshots captured yet. Send a prompt with Cutie, Qwen Code, or the hosted OpenHands runtime to populate."
       );
     }
 
@@ -3809,6 +3821,21 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         }
       );
       hostedPreview = preview;
+      this.lastHostedDebugSnapshot = {
+        timestamp: nowIso(),
+        task: taskText,
+        runtime: this.state.runtime,
+        mode: this.state.mode,
+        intent: preview.intent,
+        confidence: preview.confidence,
+        workspaceRoot: getWorkspaceRootPath() || null,
+        activeFile: String(preview.activeFile || ""),
+        resolvedFiles: [...preview.resolvedFiles],
+        selectedFiles: [...preview.selectedFiles],
+        runtimePhase: this.state.runtimePhase,
+        recentActivity: [...this.state.activity].slice(-12),
+        toolCallsUsed: [...hostedToolCallsUsed],
+      };
       if (promptAbort.signal.aborted) {
         throw new Error("Prompt aborted");
       }
@@ -3837,6 +3864,8 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
             vscode.extensions.getExtension("playgroundai.xpersona-playground")?.packageJSON?.version || "0.0.0"
           ),
           workspaceHash,
+          maxToolSteps: getMaxToolStepsForPlayground(),
+          maxWorkspaceMutations: getMaxWorkspaceMutationsForPlayground(),
         },
       };
 
@@ -4005,6 +4034,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       this.lastHostedDebugSnapshot = {
         timestamp: nowIso(),
         task: taskText,
+        runtime: this.state.runtime,
         mode: this.state.mode,
         intent: preview.intent,
         confidence: preview.confidence,
@@ -4057,6 +4087,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       this.lastHostedDebugSnapshot = {
         timestamp: nowIso(),
         task: taskText,
+        runtime: this.state.runtime,
         mode: this.state.mode,
         intent: hostedPreview?.intent ?? "ask",
         confidence: hostedPreview?.confidence ?? "low",
@@ -4321,6 +4352,10 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         sessionId: this.sessionId || undefined,
         workspaceFingerprint: input.workspaceFingerprint,
         signal: input.signal,
+      });
+      await this.handleBinaryToolResult({
+        toolResult,
+        auth: input.auth,
       });
       if (input.signal?.aborted) {
         throw new Error("Prompt aborted");

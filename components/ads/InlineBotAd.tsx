@@ -4,7 +4,6 @@ import {
   getTextContentForBot,
   trackedImpressionPixelSrc,
 } from "@/lib/ads/text-ad";
-import { AdUnit, DEFAULT_AD_SLOT } from "@/components/ads/AdUnit";
 import { shouldUseInternalAds } from "@/lib/ads/adsense-config";
 
 function trackedClickHref(ad: { id: string }): string {
@@ -13,8 +12,6 @@ function trackedClickHref(ad: { id: string }): string {
 
 interface InlineBotAdProps {
   className?: string;
-  /** AdSense slot for human visitors */
-  slot?: string;
   /** Position label for debugging */
   position?: string;
 }
@@ -25,7 +22,6 @@ interface InlineBotAdProps {
  */
 export async function InlineBotAd({
   className = "",
-  slot,
   position = "inline",
 }: InlineBotAdProps) {
   const h = await headers();
@@ -70,11 +66,5 @@ export async function InlineBotAd({
     );
   }
 
-  const resolvedSlot = slot?.trim() || DEFAULT_AD_SLOT;
-
-  return (
-    <div className={className}>
-      <AdUnit slot={resolvedSlot} format="auto" />
-    </div>
-  );
+  return null;
 }

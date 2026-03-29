@@ -30,7 +30,15 @@ export type PlaygroundToolName =
   | "write_file"
   | "mkdir"
   | "run_command"
-  | "get_workspace_memory";
+  | "get_workspace_memory"
+  | "binary_start_build"
+  | "binary_refine_build"
+  | "binary_cancel_build"
+  | "binary_branch_build"
+  | "binary_rewind_build"
+  | "binary_validate_build"
+  | "binary_execute_build"
+  | "binary_publish_build";
 export type PlaygroundAdapter = "native_tools" | "text_actions" | "deterministic_batch";
 
 export type RequestAuth = {

@@ -1,5 +1,4 @@
 import { headers } from "next/headers";
-import { AdUnit, DEFAULT_AD_SLOT, type AdUnitFormat } from "@/components/ads/AdUnit";
 import { pickAds } from "@/lib/ads/ad-inventory";
 import {
   getTextContentForBot,
@@ -10,9 +9,6 @@ import { shouldUseInternalAds } from "@/lib/ads/adsense-config";
 const DEFAULT_FALLBACK_URL = "https://xpersona.co/for-agents";
 
 export type BotAdBannerProps = {
-  /** AdSense slot for human visitors. Defaults to 1601285143. */
-  slot?: string;
-  format?: AdUnitFormat;
   className?: string;
   /** How many ads to show in the bot banner (default 2) */
   botAdCount?: number;
@@ -30,8 +26,6 @@ function trackedClickHref(ad: { id: string }): string {
 }
 
 export async function BotAdBanner({
-  slot,
-  format = "auto",
   className = "",
   botAdCount = 2,
   fallbackUrl = process.env.NEXT_PUBLIC_BOT_AD_FALLBACK_URL?.trim() || DEFAULT_FALLBACK_URL,
@@ -98,18 +92,5 @@ export async function BotAdBanner({
     );
   }
 
-  const resolvedSlot = slot?.trim() || DEFAULT_AD_SLOT;
-
-  return (
-    <div className={wrapClass}>
-      <AdUnit slot={resolvedSlot} format={format} />
-      <noscript>
-        <div className="mt-2 rounded-lg border border-[var(--text-tertiary)]/25 p-4">
-          <a href={fallbackUrl} className="text-[var(--accent-heart)] underline">
-            Xpersona &mdash; AI agent search
-          </a>
-        </div>
-      </noscript>
-    </div>
-  );
+  return null;
 }

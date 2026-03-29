@@ -95,10 +95,7 @@ export function getBaseApiUrl(): string {
 }
 
 export function getRuntimeBackend(): RuntimeBackend {
-  if (!getAgentRollbackLocalRuntime()) {
-    return "playgroundApi";
-  }
-  const configured = getConfigurationValue<string>("runtime", "playgroundApi");
+  const configured = getConfigurationValue<string>("runtime", "cutie");
   if (configured === "playgroundApi") return "playgroundApi";
   if (configured === "cutie") return "cutie";
   return "qwenCode";
@@ -187,6 +184,14 @@ export function getWorkspaceHash(): string {
   const root = getWorkspaceRootPath();
   if (!root) return "no-workspace";
   return createHash("sha1").update(root, "utf8").digest("hex");
+}
+
+export function getMaxToolStepsForPlayground(): number {
+  return Math.max(8, Math.min(128, getConfigurationValue<number>("maxToolSteps", 18)));
+}
+
+export function getMaxWorkspaceMutationsForPlayground(): number {
+  return Math.max(2, Math.min(64, getConfigurationValue<number>("maxWorkspaceMutations", 8)));
 }
 
 export function getProjectKey(): string | null {
