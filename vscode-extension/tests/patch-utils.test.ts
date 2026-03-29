@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyUnifiedDiff,
   extractPatchTargetPath,
+  isPatchSafelyAnchoredForExistingFile,
   patchContainsLeakedPatchArtifacts,
   patchContainsWrappedToolPayload,
   recoverUnifiedDiffFromLeakedPatchArtifacts,
@@ -119,6 +120,27 @@ describe("patch utils", () => {
     const result = applyUnifiedDiff("one\n", patch);
     expect(result.status).toBe("applied");
     expect(result.content).toBe("two\n");
+  });
+
+  it("treats bare @@ hunks without file headers as unsafe for existing files", () => {
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: a.txt",
+      "@@",
+      "-one",
+      "+two",
+      "*** End Patch",
+    ].join("\n");
+    expect(isPatchSafelyAnchoredForExistingFile(patch)).toBe(false);
+  });
+
+  it("treats numbered hunks as safely anchored even without file headers", () => {
+    const patch = [
+      "@@ -1,1 +1,1 @@",
+      "-one",
+      "+two",
+    ].join("\n");
+    expect(isPatchSafelyAnchoredForExistingFile(patch)).toBe(true);
   });
 
   it("applies multiple apply_patch-style bare @@ hunks in order", () => {

@@ -3,7 +3,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { applyUnifiedDiff } from "./patch-utils";
+import { applyUnifiedDiff, isPatchSafelyAnchoredForExistingFile } from "./patch-utils";
 import { collapseConflictingFileActions } from "./apply-recovery-utils";
 import { planQuickValidationForFile } from "./validation-utils";
 import { requestJson } from "./api-client";
@@ -276,6 +276,13 @@ export class ActionRunner {
           await fs.writeFile(absolutePath, createdContent, "utf8");
           changedFiles.push(action.path);
           details.push(`Created ${action.path} from additive patch.`);
+          continue;
+        }
+
+        if (!isPatchSafelyAnchoredForExistingFile(patch)) {
+          details.push(
+            `Skipped unsafe patch for ${action.path}: add ---/+++ file headers or @@ hunks with line numbers (example: @@ -10,6 +10,7 @@) so the edit cannot apply at the wrong location.`
+          );
           continue;
         }
 

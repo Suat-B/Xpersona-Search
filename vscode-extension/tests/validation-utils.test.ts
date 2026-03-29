@@ -13,7 +13,7 @@ describe("validation utils", () => {
         absFile: "C:/repo/src/main.py",
         workspaceFolder: "C:/repo",
       })
-    ).toBe("python C:/repo/src/main.py --cwd C:/repo --rel src/main.py");
+    ).toBe('python "C:/repo/src/main.py" --cwd "C:/repo" --rel "src/main.py"');
   });
 
   it("selects the built-in lint runner only when the workspace exposes lint", () => {
@@ -63,7 +63,7 @@ describe("validation utils", () => {
     });
 
     expect(plan.status).toBe("ready");
-    expect(plan.commands).toEqual(["git diff --check -- src/app.ts", "npm run lint -- src/app.ts"]);
+    expect(plan.commands).toEqual(['git diff --check -- "src/app.ts"', 'npm run lint -- "src/app.ts"']);
   });
 
   it("falls back to sanity-only validation when there is no built-in runner", () => {
@@ -80,7 +80,24 @@ describe("validation utils", () => {
     expect(plan.reason).toBe("sanity_only_validation:.md");
     expect(plan.runnerLabel).toBe("git diff sanity");
     expect(plan.coverage).toBe("sanity_only");
-    expect(plan.commands).toEqual(["git diff --check -- docs/notes.md"]);
+    expect(plan.commands).toEqual(['git diff --check -- "docs/notes.md"']);
+  });
+
+  it("quotes validation paths that include spaces", () => {
+    const plan = planQuickValidationForFile({
+      filePath: "All Files and Folders/topstepapi-main/Samsara_Trading_Model.py",
+      absFile:
+        "C:/repo/All Files and Folders/topstepapi-main/Samsara_Trading_Model.py",
+      workspaceFolder: "C:/repo/Trading Bot",
+      changed: true,
+      hasWorkspaceLintScript: false,
+      pythonAvailable: true,
+    });
+
+    expect(plan.commands).toEqual([
+      'git diff --check -- "All Files and Folders/topstepapi-main/Samsara_Trading_Model.py"',
+      'python -m py_compile "C:/repo/All Files and Folders/topstepapi-main/Samsara_Trading_Model.py"',
+    ]);
   });
 
   it("skips quick validation for no-op edits", () => {

@@ -95,9 +95,10 @@ export default async function RootLayout({
       />
         {shouldLoadGoogleAdScripts ? (
           <>
-            <script
-              async
+            <Script
+              id="adsense-js"
               src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsenseClientId}`}
+              strategy="beforeInteractive"
               crossOrigin="anonymous"
             />
             {loadGpt ? (

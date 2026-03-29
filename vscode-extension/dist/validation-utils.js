@@ -43,11 +43,18 @@ function normalizeForMatch(input) {
     const slashified = String(input || "").replace(/\\/g, "/").trim();
     return slashified.replace(/^\.\/+/, "").replace(/^\/+/, "");
 }
+function quoteForShellArg(value) {
+    const raw = String(value || "");
+    if (process.platform === "win32") {
+        return `"${raw.replace(/"/g, '""').replace(/%/g, "%%")}"`;
+    }
+    return `'${raw.replace(/'/g, `'\"'\"'`)}'`;
+}
 function substituteValidationCommand(template, vars) {
     return String(template || "")
-        .replace(/\$\{file\}/g, vars.file)
-        .replace(/\$\{absFile\}/g, vars.absFile)
-        .replace(/\$\{workspaceFolder\}/g, vars.workspaceFolder);
+        .replace(/\$\{file\}/g, quoteForShellArg(vars.file))
+        .replace(/\$\{absFile\}/g, quoteForShellArg(vars.absFile))
+        .replace(/\$\{workspaceFolder\}/g, quoteForShellArg(vars.workspaceFolder));
 }
 function selectBuiltInValidationRunner(input) {
     const ext = path.posix.extname(normalizeForMatch(input.filePath)).toLowerCase();

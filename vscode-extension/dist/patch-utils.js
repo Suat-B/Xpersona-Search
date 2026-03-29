@@ -5,6 +5,7 @@ exports.recoverUnifiedDiffFromWrappedPayload = recoverUnifiedDiffFromWrappedPayl
 exports.textContainsLeakedPatchArtifacts = textContainsLeakedPatchArtifacts;
 exports.patchContainsLeakedPatchArtifacts = patchContainsLeakedPatchArtifacts;
 exports.recoverUnifiedDiffFromLeakedPatchArtifacts = recoverUnifiedDiffFromLeakedPatchArtifacts;
+exports.isPatchSafelyAnchoredForExistingFile = isPatchSafelyAnchoredForExistingFile;
 exports.extractPatchTargetPath = extractPatchTargetPath;
 exports.applyUnifiedDiff = applyUnifiedDiff;
 function parseHunkHeader(line) {
@@ -560,6 +561,24 @@ function locateHunkStart(sourceLines, expectedStart, hunk, minStart) {
     if (relaxedNearby >= 0)
         return relaxedNearby;
     return findRelaxedUniqueMatch(sourceLines, minStart, Math.max(minStart, sourceLines.length - 1), hunk);
+}
+/**
+ * True when the patch has ---/+++ paths or every hunk uses line-numbered @@ headers.
+ * Bare @@ hunks default to line 1 and paired with relaxed matching can land in the wrong place.
+ */
+function isPatchSafelyAnchoredForExistingFile(patchText) {
+    const wrapped = recoverUnifiedDiffFromWrappedPayload(patchText);
+    const leaked = recoverUnifiedDiffFromLeakedPatchArtifacts(wrapped || patchText);
+    const patchToApply = leaked || wrapped || patchText;
+    const normalized = normalizePatchText(patchToApply).trim();
+    if (!normalized)
+        return false;
+    const parsed = parsePatch(normalized);
+    if (!parsed?.hunks.length)
+        return false;
+    if (parsed.oldPath && parsed.newPath)
+        return true;
+    return parsed.hunks.every((hunk) => hunk.hasExplicitStart);
 }
 function extractPatchTargetPath(patchText) {
     const wrapped = recoverUnifiedDiffFromWrappedPayload(patchText);

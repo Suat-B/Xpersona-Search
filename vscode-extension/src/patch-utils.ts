@@ -562,6 +562,22 @@ function locateHunkStart(sourceLines: string[], expectedStart: number, hunk: Par
   return findRelaxedUniqueMatch(sourceLines, minStart, Math.max(minStart, sourceLines.length - 1), hunk);
 }
 
+/**
+ * True when the patch has ---/+++ paths or every hunk uses line-numbered @@ headers.
+ * Bare @@ hunks default to line 1 and paired with relaxed matching can land in the wrong place.
+ */
+export function isPatchSafelyAnchoredForExistingFile(patchText: string): boolean {
+  const wrapped = recoverUnifiedDiffFromWrappedPayload(patchText);
+  const leaked = recoverUnifiedDiffFromLeakedPatchArtifacts(wrapped || patchText);
+  const patchToApply = leaked || wrapped || patchText;
+  const normalized = normalizePatchText(patchToApply).trim();
+  if (!normalized) return false;
+  const parsed = parsePatch(normalized);
+  if (!parsed?.hunks.length) return false;
+  if (parsed.oldPath && parsed.newPath) return true;
+  return parsed.hunks.every((hunk) => hunk.hasExplicitStart);
+}
+
 export function extractPatchTargetPath(patchText: string): string | null {
   const wrapped = recoverUnifiedDiffFromWrappedPayload(patchText);
   const leaked = recoverUnifiedDiffFromLeakedPatchArtifacts(wrapped || patchText);

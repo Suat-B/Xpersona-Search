@@ -126,6 +126,13 @@ export async function TrendingGridHF() {
     { title: "Trending Tool Packs", items: toolPacks.slice(0, 5) },
     { title: "Trending Capabilities", items: capabilities.slice(0, 5) },
   ] as const;
+  const gradients = [
+    "from-[#7c3aed] via-[#6d28d9] to-[#4f46e5]",
+    "from-[#ec4899] via-[#f97316] to-[#f59e0b]",
+    "from-[#f97316] via-[#f43f5e] to-[#ec4899]",
+    "from-[#0ea5e9] via-[#14b8a6] to-[#22c55e]",
+    "from-[#6366f1] via-[#8b5cf6] to-[#ec4899]",
+  ] as const;
 
   return (
     <section className="w-full bg-white py-12 sm:py-16">
@@ -143,8 +150,11 @@ export async function TrendingGridHF() {
               </div>
               <div className="space-y-3">
                 {column.items.map((item, rowIndex) => {
-                  const cardBase =
-                    "flex min-h-[56px] items-center rounded-lg border border-black/10 bg-white px-3 py-1.5 text-black shadow-[0_10px_28px_rgba(15,23,42,0.06)] transition hover:border-black/20 hover:shadow-[0_14px_32px_rgba(15,23,42,0.09)]";
+                  const isAccent = columnIndex === 1;
+                  const gradient = gradients[rowIndex % gradients.length];
+                  const cardBase = isAccent
+                    ? `flex min-h-[56px] items-center rounded-lg border border-transparent bg-gradient-to-r ${gradient} px-3 py-1.5 text-white shadow-[0_12px_30px_rgba(124,58,237,0.22)] transition hover:opacity-95 hover:shadow-[0_16px_38px_rgba(124,58,237,0.28)]`
+                    : "flex min-h-[56px] items-center rounded-lg border border-black/10 bg-white px-3 py-1.5 text-black shadow-[0_10px_28px_rgba(15,23,42,0.06)] transition hover:border-black/20 hover:shadow-[0_14px_32px_rgba(15,23,42,0.09)]";
 
                   if ("name" in item) {
                     const agent = item as SearchAgent;
@@ -157,18 +167,22 @@ export async function TrendingGridHF() {
                       >
                         <div className="flex w-full items-center justify-between gap-3">
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold text-black">
+                            <p className={`truncate text-sm font-semibold ${isAccent ? "text-white" : "text-black"}`}>
                               {agent.name}
                             </p>
-                            <p className="mt-1 text-[11px] text-black/55">
+                            <p className={`mt-1 text-[11px] ${isAccent ? "text-white/80" : "text-black/55"}`}>
                               {formatFreshness(agent)}
                             </p>
                           </div>
-                          <div className="flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap text-[11px] text-black/55">
-                            <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-black/70">
+                          <div className={`flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap text-[11px] ${isAccent ? "text-white/90" : "text-black/55"}`}>
+                            <span className={isAccent
+                              ? "rounded-full bg-white/15 px-2 py-0.5 text-white"
+                              : "rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-black/70"}>
                               Pop {metricLabel(agent.popularityScore ?? agent.overallRank)}
                             </span>
-                            <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-black/70">
+                            <span className={isAccent
+                              ? "rounded-full bg-white/15 px-2 py-0.5 text-white"
+                              : "rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-black/70"}>
                               Safe {metricLabel(agent.safetyScore)}
                             </span>
                           </div>
@@ -193,18 +207,22 @@ export async function TrendingGridHF() {
                     >
                       <div className="flex w-full items-center justify-between gap-3">
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-black">
+                          <p className={`truncate text-sm font-semibold ${isAccent ? "text-white" : "text-black"}`}>
                             {cap.name}
                           </p>
-                          <p className="mt-1 text-[11px] text-black/55">
+                          <p className={`mt-1 text-[11px] ${isAccent ? "text-white/80" : "text-black/55"}`}>
                             {freshness}
                           </p>
                         </div>
-                        <div className="flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap text-[11px] text-black/55">
-                          <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-black/70">
+                        <div className={`flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap text-[11px] ${isAccent ? "text-white/90" : "text-black/55"}`}>
+                          <span className={isAccent
+                            ? "rounded-full bg-white/15 px-2 py-0.5 text-white"
+                            : "rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-black/70"}>
                             Pop {cap.count}
                           </span>
-                          <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-black/70">
+                          <span className={isAccent
+                            ? "rounded-full bg-white/15 px-2 py-0.5 text-white"
+                            : "rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-black/70"}>
                             Safe -
                           </span>
                         </div>

@@ -256,6 +256,10 @@ class ActionRunner {
                     details.push(`Created ${action.path} from additive patch.`);
                     continue;
                 }
+                if (!(0, patch_utils_1.isPatchSafelyAnchoredForExistingFile)(patch)) {
+                    details.push(`Skipped unsafe patch for ${action.path}: add ---/+++ file headers or @@ hunks with line numbers (example: @@ -10,6 +10,7 @@) so the edit cannot apply at the wrong location.`);
+                    continue;
+                }
                 const result = (0, patch_utils_1.applyUnifiedDiff)(previous, patch);
                 if (result.status !== "applied" || typeof result.content !== "string") {
                     details.push(`Patch failed for ${action.path}: ${result.reason || result.status}.`);

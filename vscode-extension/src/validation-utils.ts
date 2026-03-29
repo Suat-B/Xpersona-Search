@@ -32,14 +32,22 @@ function normalizeForMatch(input: string): string {
   return slashified.replace(/^\.\/+/, "").replace(/^\/+/, "");
 }
 
+function quoteForShellArg(value: string): string {
+  const raw = String(value || "");
+  if (process.platform === "win32") {
+    return `"${raw.replace(/"/g, '""').replace(/%/g, "%%")}"`;
+  }
+  return `'${raw.replace(/'/g, `'\"'\"'`)}'`;
+}
+
 export function substituteValidationCommand(
   template: string,
   vars: { file: string; absFile: string; workspaceFolder: string }
 ): string {
   return String(template || "")
-    .replace(/\$\{file\}/g, vars.file)
-    .replace(/\$\{absFile\}/g, vars.absFile)
-    .replace(/\$\{workspaceFolder\}/g, vars.workspaceFolder);
+    .replace(/\$\{file\}/g, quoteForShellArg(vars.file))
+    .replace(/\$\{absFile\}/g, quoteForShellArg(vars.absFile))
+    .replace(/\$\{workspaceFolder\}/g, quoteForShellArg(vars.workspaceFolder));
 }
 
 export function selectBuiltInValidationRunner(input: {
