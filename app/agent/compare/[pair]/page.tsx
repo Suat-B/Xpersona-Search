@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { CrawlerSummaryCard } from "@/components/agent/CrawlerSummaryCard";
 import { getAgentsBySlugs } from "@/lib/agents/hub-data";
 
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
@@ -94,6 +95,23 @@ export default async function ComparePage({
           Side-by-side comparison for selection decisions. Validate trust and contract endpoints before production routing.
         </p>
       </header>
+      <div className="mt-6">
+        <CrawlerSummaryCard
+          eyebrow="Crawler Summary"
+          title={`${data.left.name} vs ${data.right.name}`}
+          summary={`This comparison page helps LLMs answer "which one should I pick?" with a public, side-by-side snapshot of source, protocol, safety, and capability differences before opening deeper agent detail pages.`}
+          bestFor={`Fast comparative recommendations when ${data.left.name} and ${data.right.name} are already shortlisted and you need a citation-ready summary.`}
+          notIdealFor="Blind ranking by a single score. Final selection still depends on contract freshness, trust telemetry, and setup fit."
+          freshness="Comparison values reflect the latest public card and ranking metadata for both agents."
+          evidenceSources={["agent cards", "ranking signals", "linked detail pages"]}
+          links={[
+            { href: `/agent/${data.left.slug}`, label: data.left.name },
+            { href: `/agent/${data.right.slug}`, label: data.right.name },
+            { href: "/for-agents", label: "For AI Agents" },
+            { href: "/api/v1/openapi/ai-public", label: "AI OpenAPI" },
+          ]}
+        />
+      </div>
 
       <section className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
         <div className="overflow-x-auto">
@@ -133,4 +151,3 @@ export default async function ComparePage({
     </main>
   );
 }
-

@@ -32,8 +32,8 @@ export default function ForAgentsPage() {
   const card = `${baseUrl}/api/v1/agents/example-research/card`;
   const facts = `${baseUrl}/api/v1/agents/example-research/facts`;
   const feed = `${baseUrl}/api/v1/feeds/agents/latest`;
-  const crawlLicense = `${baseUrl}/api/v1/crawl-license`;
-  const openapi = `${baseUrl}/api/v1/openapi/public`;
+  const aiOpenapi = `${baseUrl}/api/v1/openapi/ai-public`;
+  const fullOpenapi = `${baseUrl}/api/v1/openapi/public`;
   const policy = `${baseUrl}/api/v1/search/policy`;
 
   const jsonLd = {
@@ -44,7 +44,7 @@ export default function ForAgentsPage() {
         name: "Xpersona for AI Agents",
         url: `${baseUrl}/for-agents`,
         description: "Machine-first onboarding page for autonomous agents integrating Xpersona.",
-        isBasedOn: [searchAi, openapi, card, facts, feed, snapshot, contract, trust, policy, crawlLicense],
+        isBasedOn: [searchAi, aiOpenapi, fullOpenapi, card, facts, feed, snapshot, contract, trust, policy],
       },
       {
         "@type": "Dataset",
@@ -99,21 +99,47 @@ export default function ForAgentsPage() {
         </section>
 
         <section className="agent-card p-5">
-          <h2 className="text-lg font-semibold">Public teaser + licensed crawl flow</h2>
+          <h2 className="text-lg font-semibold">Public validation layer</h2>
           <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
-            Xpersona keeps public teaser surfaces fully crawlable so companies can discover fresh cards, facts, and feed
-            pages first. Deep snapshot, contract, trust, and premium dossier reads stay behind the crawl-license flow.
+            Xpersona keeps the core validation stack public so LLMs can discover candidates, read summary evidence, and
+            verify contract and trust posture without needing paid crawl access on the first touch.
           </p>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 text-sm text-[var(--text-secondary)]">
-              Public feed pages like <code>/agent/benchmarked</code> and <code>/agent/recent-updates</code> are the crawl magnet.
+              Public feed pages like <code>/agent/benchmarked</code> and <code>/agent/recent-updates</code> remain the freshness magnet.
             </div>
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 text-sm text-[var(--text-secondary)]">
-              Public machine endpoints like <code>/card</code> and <code>/facts</code> expose provenance-rich summaries.
+              Public machine endpoints like <code>/card</code>, <code>/facts</code>, <code>/snapshot</code>, <code>/contract</code>, and <code>/trust</code> expose provenance-rich summaries and decision checks.
             </div>
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 text-sm text-[var(--text-secondary)]">
-              Licensed crawlers graduate to <code>/api/v1/crawl-license</code> for deeper premium access.
+              Premium crawl access still exists for deeper dossier and bulk workflows, but the validation trio is public by default.
             </div>
+          </div>
+        </section>
+
+        <section className="agent-card p-5">
+          <h2 className="text-lg font-semibold">Answer-first crawler brief</h2>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">Best for</p>
+              <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                Public discovery, shortlist creation, and evidence-backed recommendations where you need a crawlable
+                answer surface before committing to deeper integration work.
+              </p>
+            </div>
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">Not ideal for</p>
+              <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                Private vendor diligence that depends on premium dossiers, bulk exports, or non-public implementation material.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">Evidence Sources Checked</p>
+            <p className="mt-2 text-sm text-[var(--text-secondary)]">
+              AI search results, public card and facts payloads, snapshot summaries, contract metadata, trust telemetry,
+              feed freshness, and the machine policy document.
+            </p>
           </div>
         </section>
 
@@ -215,8 +241,13 @@ export default function ForAgentsPage() {
           <h2 className="text-lg font-semibold">Machine links</h2>
           <ul className="mt-3 text-sm text-[var(--text-secondary)] space-y-1">
             <li>
+              <Link className="text-[var(--accent-heart)] hover:underline" href="/api/v1/openapi/ai-public">
+                AI OpenAPI JSON
+              </Link>
+            </li>
+            <li>
               <Link className="text-[var(--accent-heart)] hover:underline" href="/api/v1/openapi/public">
-                OpenAPI JSON
+                Full OpenAPI JSON
               </Link>
             </li>
             <li>
@@ -257,11 +288,6 @@ export default function ForAgentsPage() {
             <li>
               <Link className="text-[var(--accent-heart)] hover:underline" href="/llms-full.txt">
                 llms-full.txt
-              </Link>
-            </li>
-            <li>
-              <Link className="text-[var(--accent-heart)] hover:underline" href="/api/v1/crawl-license">
-                Crawl license
               </Link>
             </li>
           </ul>

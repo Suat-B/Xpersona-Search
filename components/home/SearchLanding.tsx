@@ -23,6 +23,7 @@ import {
   buildSearchScopeKey,
   getPrefetchOrder,
   getRequestVertical,
+  isMcpsOnlyVertical,
   isSkillsOnlyVertical,
   type ResolvedSearchState,
   type SearchVertical,
@@ -39,6 +40,8 @@ interface Agent {
   id: string;
   name: string;
   slug: string;
+  entityType?: "agent" | "skill" | "mcp";
+  canonicalPath?: string;
   description: string | null;
   primaryImageUrl?: string | null;
   capabilities: string[];
@@ -158,7 +161,7 @@ interface SearchOverrides {
   selectedCapabilities?: string[];
   minSafety?: number;
   sort?: string;
-  vertical?: "all" | "agents" | "skills" | "artifacts";
+  vertical?: "all" | "agents" | "skills" | "mcps" | "artifacts";
   intent?: "discover" | "execute";
   taskType?: string;
   maxLatencyMs?: string;
@@ -295,6 +298,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     const urlVertical = searchParams.get("vertical");
     if (
       urlVertical === "artifacts" ||
+      urlVertical === "mcps" ||
       urlVertical === "skills" ||
       urlVertical === "all" ||
       urlVertical === "agents" ||
@@ -302,7 +306,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     ) {
       return urlVertical === "docs" ? "all" : urlVertical;
     }
-    return "all";
+    return "agents";
   }
   );
   const [taskType, setTaskType] = useState(searchParams.get("taskType") ?? "");
@@ -438,8 +442,18 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
         requestParams.set("include", "content");
       }
       if (isSkillsOnlyVertical(resolvedState.vertical)) {
+        requestParams.set("entityTypes", "skill");
         requestParams.set("skillsOnly", "1");
+      } else if (isMcpsOnlyVertical(resolvedState.vertical)) {
+        requestParams.set("entityTypes", "mcp");
+        requestParams.delete("skillsOnly");
+      } else if (resolvedState.vertical === "agents") {
+        requestParams.set("entityTypes", "agent");
+        requestParams.delete("skillsOnly");
       } else {
+        if (resolvedState.vertical === "all") {
+          requestParams.set("entityTypes", "agent,skill,mcp");
+        }
         requestParams.delete("skillsOnly");
       }
       if (resolvedState.includeSources.length > 0) {
@@ -622,13 +636,14 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     if (
       urlVertical === "artifacts" ||
       urlVertical === "skills" ||
+      urlVertical === "mcps" ||
       urlVertical === "all" ||
       urlVertical === "agents" ||
       urlVertical === "docs"
     ) {
       setVertical(urlVertical === "docs" ? "all" : urlVertical);
     } else {
-      setVertical("all");
+      setVertical("agents");
     }
     setTaskType(searchParams.get("taskType") ?? "");
     setMaxLatencyMs(searchParams.get("maxLatencyMs") ?? "");
@@ -672,6 +687,8 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
           ? "assets"
         : vertical === "skills"
           ? "skills"
+        : vertical === "mcps"
+          ? "mcps"
           : vertical === "all"
             ? "results"
             : "agents"
@@ -901,6 +918,8 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
                           ? "No results found. Try different filters or search terms."
                         : vertical === "skills"
                           ? "No skills found. Try different filters or search terms."
+                          : vertical === "mcps"
+                            ? "No MCPs found. Try different filters or search terms."
                           : "No agents found. Try different filters or search terms."}
                     </p>
                     {vertical === "artifacts" && hasFallbackAgents && (
@@ -1014,7 +1033,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
                                 </div>
                               )}
                               <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-secondary)]">
-                                <Link href={`/agent/${asset.agentSlug}`} className="text-[var(--accent-heart)] hover:underline">
+                                <Link href={agents.filter(isAgentResult).find((agent) => agent.slug === asset.agentSlug)?.canonicalPath ?? `/agent/${asset.agentSlug}`} className="text-[var(--accent-heart)] hover:underline">
                                   {asset.agentName}
                                 </Link>
                                 {asset.artifactType ? (

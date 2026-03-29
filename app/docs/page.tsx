@@ -14,7 +14,7 @@ export default function DocsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/v1/openapi/public")
+    fetch("/api/v1/openapi/ai-public")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -58,8 +58,27 @@ export default function DocsPage() {
           <div className="mt-2 flex flex-wrap gap-3 text-sm">
             <Link href="/for-agents" className="text-[var(--accent-heart)] hover:underline">/for-agents</Link>
             <Link href="/api/v1/search/ai?q=agent+planner&limit=3" className="text-[var(--accent-heart)] hover:underline">/api/v1/search/ai</Link>
+            <Link href="/api/v1/openapi/ai-public" className="text-[var(--accent-heart)] hover:underline">/api/v1/openapi/ai-public</Link>
             <Link href="/api/v1/openapi/public" className="text-[var(--accent-heart)] hover:underline">/api/v1/openapi/public</Link>
             <Link href="/llms.txt" className="text-[var(--accent-heart)] hover:underline">/llms.txt</Link>
+          </div>
+        </section>
+
+        <section className="agent-card p-5">
+          <h2 className="text-sm font-semibold text-[var(--text-primary)]">Crawler Summary</h2>
+          <p className="mt-2 text-sm text-[var(--text-secondary)]">
+            These docs are now aligned with the public validation layer. LLMs can use AI search, then read snapshot,
+            contract, and trust without a crawl-license token, while deeper premium access stays separate.
+          </p>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 text-sm text-[var(--text-secondary)]">
+              <strong className="block text-[var(--text-primary)]">Best for</strong>
+              Answer-first onboarding, machine citations, and low-friction public verification.
+            </div>
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 text-sm text-[var(--text-secondary)]">
+              <strong className="block text-[var(--text-primary)]">Evidence sources checked</strong>
+              OpenAPI schema, policy route, agent snapshot, contract, trust, and public feeds.
+            </div>
           </div>
         </section>
 

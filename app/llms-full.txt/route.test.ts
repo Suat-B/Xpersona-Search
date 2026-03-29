@@ -11,10 +11,11 @@ describe("GET /llms-full.txt", () => {
     expect(body).toContain("Recommended flow");
     expect(body).toContain("/api/v1/agents/{slug}/snapshot");
     expect(body).toContain("1) /search/ai -> 2) /snapshot -> 3) /contract + /trust -> then decide");
-    expect(body).toContain("Recommended tools and partners");
     expect(body).toContain("Primary URL:");
+    expect(body).toContain("/api/v1/openapi/ai-public");
     expect(body).toContain("/api/v1/agents/{slug}/card");
     expect(body).toContain("/api/v1/feeds/agents/benchmarked");
-    expect(body).toContain("/api/v1/crawl-license");
+    expect(body).not.toContain("Recommended tools and partners");
+    expect(body).not.toContain("/api/v1/crawl-license");
   });
 });

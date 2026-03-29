@@ -18,6 +18,8 @@ export default async function OpenApiReadyAgentsPage() {
   const feed = await getPublicAgentFeed("openapi-ready", 30);
   const agents = feed.items.map((item) => ({
     id: item.slug,
+    entityType: "agent" as const,
+    canonicalPath: `/agent/${item.slug}`,
     slug: item.slug,
     name: item.name,
     description: item.description,
@@ -53,8 +55,8 @@ export default async function OpenApiReadyAgentsPage() {
         ]}
         links={[
           { href: "/api/v1/feeds/agents/openapi-ready", label: "JSON feed" },
-          { href: "/api/v1/openapi/public", label: "OpenAPI" },
-          { href: "/api/v1/crawl-license", label: "Crawl license" },
+          { href: "/api/v1/openapi/ai-public", label: "AI OpenAPI" },
+          { href: "/api/v1/openapi/public", label: "Full OpenAPI" },
         ]}
       />
     </>

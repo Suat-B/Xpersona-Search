@@ -12,6 +12,7 @@ import {
   uniqueIndex,
   customType,
 } from "drizzle-orm/pg-core";
+import type { PublicEntityType } from "@/lib/entities/public-entities";
 
 const vector1536 = customType<{ data: string; driverData: string }>({
   dataType() {
@@ -32,6 +33,7 @@ export const agents = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     sourceId: varchar("source_id", { length: 255 }).notNull().unique(),
     source: varchar("source", { length: 32 }).notNull().default("GITHUB_OPENCLEW"),
+    entityType: varchar("entity_type", { length: 16 }).$type<PublicEntityType>().notNull().default("agent"),
     visibility: varchar("visibility", { length: 16 }).notNull().default("PUBLIC"),
     publicSearchable: boolean("public_searchable").notNull().default(true),
     primaryImageUrl: text("primary_image_url"),
@@ -106,6 +108,7 @@ export const agents = pgTable(
     uniqueIndex("agents_source_id_idx").on(table.sourceId),
     uniqueIndex("agents_slug_idx").on(table.slug),
     index("agents_status_idx").on(table.status),
+    index("agents_entity_type_idx").on(table.entityType),
     index("agents_overall_rank_idx").on(table.overallRank),
     index("agents_visibility_idx").on(table.visibility),
     index("agents_public_searchable_idx").on(table.publicSearchable),

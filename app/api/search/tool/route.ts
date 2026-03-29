@@ -6,7 +6,7 @@ export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const descriptor = {
     name: "xpersona_search",
-    description: "Search AI agents and MCP servers, returning ranked and trust-aware matches.",
+    description: "Search AI agents, skills, and MCP servers, returning ranked and trust-aware matches.",
     input_schema: {
       type: "object",
       properties: {
@@ -20,6 +20,11 @@ export async function GET(req: NextRequest) {
           type: "array",
           items: { type: "string" },
           description: "Optional capability filters.",
+        },
+        entityTypes: {
+          type: "array",
+          items: { type: "string", enum: ["agent", "skill", "mcp"] },
+          description: "Optional public entity filters. Defaults to agent.",
         },
         limit: { type: "integer", minimum: 1, maximum: 20, default: 5 },
       },

@@ -6,6 +6,7 @@ import {
   agentCapabilityContracts,
   agents,
 } from "@/lib/db/schema";
+import { isLowQualityPublicAgent } from "@/lib/seo/sitemaps";
 
 export type PublicAgentFeedView =
   | "latest"
@@ -112,7 +113,21 @@ async function hasOptionalTable(tableName: string): Promise<boolean> {
 async function getHubAgentsFromSlugRows(slugRows: Array<{ slug: string }>, limit: number): Promise<HubAgent[]> {
   const slugs = slugRows.map((row) => row.slug).filter(Boolean).slice(0, limit);
   if (slugs.length === 0) return [];
-  return getAgentsBySlugs(slugs);
+  return (await getAgentsBySlugs(slugs)).filter(
+    (agent) =>
+      !isLowQualityPublicAgent({
+        slug: agent.slug,
+        entityType: agent.entityType,
+        name: agent.name,
+        description: agent.description,
+        url: agent.url ?? null,
+        homepage: agent.homepage ?? null,
+        updatedAt: agent.updatedAt ? new Date(agent.updatedAt) : null,
+        protocols: agent.protocols,
+        capabilities: agent.capabilities,
+        source: agent.source,
+      })
+  );
 }
 
 export async function getPublicAgentFeed(view: PublicAgentFeedView, limit = 24): Promise<PublicAgentFeed> {
@@ -124,7 +139,7 @@ export async function getPublicAgentFeed(view: PublicAgentFeedView, limit = 24):
       const rows = await db
         .select({ slug: agents.slug })
         .from(agents)
-        .where(and(eq(agents.status, "ACTIVE"), eq(agents.publicSearchable, true)))
+        .where(and(eq(agents.status, "ACTIVE"), eq(agents.publicSearchable, true), eq(agents.entityType, "agent")))
         .orderBy(desc(agents.updatedAt), desc(agents.createdAt))
         .limit(limit);
       agentsForFeed = await getHubAgentsFromSlugRows(rows, limit);
@@ -135,7 +150,7 @@ export async function getPublicAgentFeed(view: PublicAgentFeedView, limit = 24):
         SELECT a.slug
         FROM agent_benchmark_results abr
         INNER JOIN agents a ON a.id = abr.agent_id
-        WHERE a.status = 'ACTIVE' AND a.public_searchable = true
+        WHERE a.status = 'ACTIVE' AND a.public_searchable = true AND a.entity_type = 'agent'
         GROUP BY a.slug
         ORDER BY max(abr.created_at) DESC
         LIMIT ${limit}
@@ -157,6 +172,7 @@ export async function getPublicAgentFeed(view: PublicAgentFeedView, limit = 24):
           and(
             eq(agents.status, "ACTIVE"),
             eq(agents.publicSearchable, true),
+            eq(agents.entityType, "agent"),
             or(
               isNotNull(agentCapabilityContracts.inputSchemaRef),
               isNotNull(agentCapabilityContracts.outputSchemaRef)
@@ -174,7 +190,7 @@ export async function getPublicAgentFeed(view: PublicAgentFeedView, limit = 24):
           SELECT a.slug
           FROM agent_capability_handshakes ach
           INNER JOIN agents a ON a.id = ach.agent_id
-          WHERE a.status = 'ACTIVE' AND a.public_searchable = true
+          WHERE a.status = 'ACTIVE' AND a.public_searchable = true AND a.entity_type = 'agent'
           GROUP BY a.slug
           ORDER BY max(ach.verified_at) DESC
           LIMIT ${limit}
@@ -190,7 +206,7 @@ export async function getPublicAgentFeed(view: PublicAgentFeedView, limit = 24):
           SELECT a.slug
           FROM agent_reputation_snapshots ars
           INNER JOIN agents a ON a.id = ars.agent_id
-          WHERE a.status = 'ACTIVE' AND a.public_searchable = true
+          WHERE a.status = 'ACTIVE' AND a.public_searchable = true AND a.entity_type = 'agent'
           GROUP BY a.slug
           ORDER BY max(ars.computed_at) DESC
           LIMIT ${limit}
@@ -218,7 +234,7 @@ export async function getPublicAgentFeed(view: PublicAgentFeedView, limit = 24):
       source: item.source,
       protocols: item.protocols,
       capabilities: item.capabilities,
-      url: `/agent/${encodeURIComponent(item.slug)}`,
+      url: item.canonicalPath,
       updatedAt: item.updatedAt,
       whyIncluded:
         view === "benchmarked"
@@ -242,7 +258,7 @@ async function getVendorCandidateRows(limit = 360) {
       url: agents.url,
     })
     .from(agents)
-    .where(and(eq(agents.status, "ACTIVE"), eq(agents.publicSearchable, true)))
+    .where(and(eq(agents.status, "ACTIVE"), eq(agents.publicSearchable, true), eq(agents.entityType, "agent")))
     .orderBy(desc(agents.overallRank), desc(agents.updatedAt))
     .limit(limit);
 }
@@ -290,6 +306,7 @@ export async function getAgentsByArtifactType(artifactType: string, limit = 30):
         and(
           eq(agents.status, "ACTIVE"),
           eq(agents.publicSearchable, true),
+          eq(agents.entityType, "agent"),
           or(
             isNotNull(agentCapabilityContracts.inputSchemaRef),
             isNotNull(agentCapabilityContracts.outputSchemaRef)
@@ -308,6 +325,7 @@ export async function getAgentsByArtifactType(artifactType: string, limit = 30):
     WHERE
       a.status = 'ACTIVE'
       AND a.public_searchable = true
+      AND a.entity_type = 'agent'
       AND ama.is_public = true
       AND ama.is_dead = false
       AND lower(coalesce(ama.artifact_type, '')) = ${normalized}
@@ -348,6 +366,7 @@ export async function listPublicArtifactTypes(limit = 24): Promise<Array<{ slug:
       and(
         eq(agents.status, "ACTIVE"),
         eq(agents.publicSearchable, true),
+        eq(agents.entityType, "agent"),
         or(
           isNotNull(agentCapabilityContracts.inputSchemaRef),
           isNotNull(agentCapabilityContracts.outputSchemaRef)
@@ -385,7 +404,7 @@ export function buildCollectionJsonLd(input: {
         itemListElement: input.agents.map((agent, index) => ({
           "@type": "ListItem",
           position: index + 1,
-          url: `${input.baseUrl}/agent/${encodeURIComponent(agent.slug)}`,
+          url: `${input.baseUrl}${agent.canonicalPath}`,
           name: agent.name,
         })),
       },

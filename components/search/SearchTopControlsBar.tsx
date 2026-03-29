@@ -13,8 +13,8 @@ interface SearchTopControlsBarProps {
   onSearch: (overrideQuery?: string) => void;
   loading: boolean;
   isRefreshing?: boolean;
-  vertical: "all" | "agents" | "skills" | "artifacts";
-  onVerticalChange: (v: "all" | "agents" | "skills" | "artifacts") => void;
+  vertical: "all" | "agents" | "skills" | "mcps" | "artifacts";
+  onVerticalChange: (v: "all" | "agents" | "skills" | "mcps" | "artifacts") => void;
   sort: string;
   onSortChange: (s: string) => void;
   totalLabel?: string;
@@ -50,7 +50,8 @@ export function SearchTopControlsBar({
     const params = new URLSearchParams(window.location.search);
     const fromPath = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
     saveScrollPosition(fromPath);
-    router.push(`/agent/${agent.slug}?from=${encodeURIComponent(fromPath)}`);
+    const target = agent.canonicalPath ?? `/agent/${agent.slug}`;
+    router.push(`${target}?from=${encodeURIComponent(fromPath)}`);
   };
 
   const handleQuerySelect = (text: string) => {
@@ -131,6 +132,8 @@ export function SearchTopControlsBar({
                   ? "Agents"
                   : vertical === "skills"
                     ? "Skills"
+                    : vertical === "mcps"
+                      ? "MCPs"
                     : "Artifacts"}
             </h1>
             <p className="mt-1 text-sm text-[var(--text-tertiary)]">
@@ -142,7 +145,7 @@ export function SearchTopControlsBar({
               </p>
             ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
-              {(["all", "agents", "skills", "artifacts"] as const).map((v) => (
+              {(["all", "agents", "skills", "mcps", "artifacts"] as const).map((v) => (
                 <button
                   key={v}
                   type="button"
@@ -159,6 +162,8 @@ export function SearchTopControlsBar({
                       ? "Agents"
                       : v === "skills"
                         ? "Skills"
+                        : v === "mcps"
+                          ? "MCPs"
                         : "Artifacts"}
                 </button>
               ))}
@@ -204,6 +209,7 @@ export function SearchTopControlsBar({
                 <SearchSuggestions
                   ref={suggestionsRef}
                   query={query}
+                  vertical={vertical}
                   onSelect={handleSuggestionSelect}
                   onQuerySelect={handleQuerySelect}
                   onClose={() => setShowSuggestions(false)}

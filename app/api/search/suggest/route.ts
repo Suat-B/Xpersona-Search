@@ -12,6 +12,11 @@ import { TASK_TYPES } from "@/lib/search/taxonomy";
 import { SUGGEST_ENTITIES } from "@/lib/search/suggest-entities";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 import { recordApiResponse } from "@/lib/metrics/record";
+import {
+  getCanonicalEntityPath,
+  normalizeRequestedEntityTypes,
+  parseEntityTypesParam,
+} from "@/lib/entities/public-entities";
 
 const SuggestSchema = z.object({
   q: z
@@ -21,6 +26,10 @@ const SuggestSchema = z.object({
     .transform((s) => s.trim()),
   limit: z.coerce.number().min(1).max(12).default(8),
   intent: z.enum(["discover", "execute"]).default("discover"),
+  entityTypes: z
+    .string()
+    .optional()
+    .transform((s) => parseEntityTypesParam(s)),
 });
 
 type SuggestParams = z.infer<typeof SuggestSchema>;
@@ -360,6 +369,10 @@ export async function GET(req: NextRequest) {
     params.intent === "execute" ||
     clientType === "agent" ||
     process.env.SEARCH_EXECUTE_SUGGEST_ENABLED === "1";
+  const requestedEntityTypes = normalizeRequestedEntityTypes({
+    entityTypes: params.entityTypes,
+    skillsOnly: false,
+  });
 
   // Cache check
   const cacheKey = buildCacheKey({
@@ -368,6 +381,7 @@ export async function GET(req: NextRequest) {
     q: params.q,
     limit: params.limit,
     intent: params.intent,
+    entityTypes: requestedEntityTypes.join(","),
     executeSuggestMode,
   });
   const cached = suggestCache.get(cacheKey);
@@ -450,6 +464,10 @@ export async function GET(req: NextRequest) {
       .where(
         and(
           eq(agents.status, "ACTIVE"),
+          sql`${agents.entityType} = ANY(ARRAY[${sql.join(
+            requestedEntityTypes.map((entityType) => sql`${entityType}`),
+            sql`, `
+          )}]::text[])`,
           sql`(${agents.name} ILIKE ${esc + "%"} OR ${agents.name} ILIKE ${"% " + esc + "%"})`,
         )
       )
@@ -484,12 +502,22 @@ export async function GET(req: NextRequest) {
         id: agents.id,
         name: agents.name,
         slug: agents.slug,
+        entityType: agents.entityType,
         description: agents.description,
         protocols: agents.protocols,
         capabilities: agents.capabilities,
       })
       .from(agents)
-      .where(and(eq(agents.status, "ACTIVE"), searchCondition))
+      .where(
+        and(
+          eq(agents.status, "ACTIVE"),
+          sql`${agents.entityType} = ANY(ARRAY[${sql.join(
+            requestedEntityTypes.map((entityType) => sql`${entityType}`),
+            sql`, `
+          )}]::text[])`,
+          searchCondition
+        )
+      )
       .orderBy(desc(agents.overallRank), desc(agents.createdAt))
       .limit(30);
     if (matchingRows.length > 0) sourceUsage.add("corpus");
@@ -498,6 +526,16 @@ export async function GET(req: NextRequest) {
       id: r.id,
       name: r.name,
       slug: r.slug,
+      entityType:
+        r.entityType === "skill" || r.entityType === "mcp" || r.entityType === "agent"
+          ? r.entityType
+          : "agent",
+      canonicalPath: getCanonicalEntityPath(
+        r.entityType === "skill" || r.entityType === "mcp" || r.entityType === "agent"
+          ? r.entityType
+          : "agent",
+        r.slug
+      ),
       description: r.description
         ? r.description.length > DESC_TRUNCATE
           ? r.description.slice(0, DESC_TRUNCATE) + "\u2026"

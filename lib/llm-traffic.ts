@@ -1,0 +1,142 @@
+import { db } from "@/lib/db";
+import { llmTrafficEvents } from "@/lib/db/schema";
+import { classifyBotPageType, isAgentCollectionPath, parseAgentDetailSlugFromPath } from "@/lib/agents/route-patterns";
+
+const UA_MAX = 512;
+const REF_MAX = 512;
+const PATH_MAX = 2048;
+const SESSION_ID_MAX = 128;
+const REFERRER_HOST_MAX = 255;
+const REFERRER_SOURCE_MAX = 64;
+const PAGE_TYPE_MAX = 64;
+const CONVERSION_TYPE_MAX = 64;
+const BOT_NAME_MAX = 64;
+
+export const LLM_REF_COOKIE_NAME = "xp_llm_ref";
+export const INTERNAL_LLM_TRAFFIC_HEADER = "x-internal-llm-traffic";
+
+export type LlmTrafficEventType = "crawler_hit" | "llm_referral" | "llm_conversion";
+
+function truncate(value: string, max: number): string {
+  return value.length <= max ? value : value.slice(0, max);
+}
+
+function firstForwardedIp(xff: string | null): string | null {
+  if (!xff) return null;
+  const first = xff.split(",")[0]?.trim();
+  return first ? truncate(first, 128) : null;
+}
+
+function shouldSample(): boolean {
+  const raw = process.env.LLM_TRAFFIC_LOG_SAMPLE_RATE?.trim();
+  const rate = raw === undefined || raw === "" ? 1 : Number(raw);
+  if (!Number.isFinite(rate)) return true;
+  const bounded = Math.min(1, Math.max(0, rate));
+  if (bounded <= 0) return false;
+  if (bounded >= 1) return true;
+  return Math.random() < bounded;
+}
+
+export function classifyLlmPageType(pathname: string): string {
+  if (pathname === "/") return "home";
+  if (pathname === "/docs" || pathname.startsWith("/docs/")) return "docs";
+  if (pathname === "/api" || pathname.startsWith("/api/")) return "api";
+  if (pathname === "/for-agents") return "machine_onboarding";
+  if (pathname === "/llms.txt" || pathname === "/llms-full.txt" || pathname === "/chatgpt.txt") {
+    return "machine_manifest";
+  }
+  if (pathname === "/sitemap.xml" || pathname.startsWith("/sitemaps/")) return "sitemap";
+  if (pathname.startsWith("/api/v1/feeds/agents/")) return "agent_feed";
+  if (parseAgentDetailSlugFromPath(pathname)) return "agent_profile";
+  if (isAgentCollectionPath(pathname)) return "agent_collection";
+  return classifyBotPageType(pathname);
+}
+
+export function normalizeReferrerHost(referer: string | null | undefined): string | null {
+  if (!referer) return null;
+  try {
+    return new URL(referer).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+export function getLlmReferrerSource(input: {
+  referer: string | null | undefined;
+  utmSource: string | null | undefined;
+}): string | null {
+  const utm = (input.utmSource ?? "").trim().toLowerCase();
+  if (utm === "chatgpt.com" || utm === "chatgpt") return "chatgpt";
+  if (utm === "perplexity.ai" || utm === "perplexity") return "perplexity";
+  if (utm === "claude.ai" || utm === "claude") return "claude";
+
+  const host = normalizeReferrerHost(input.referer);
+  if (!host) return null;
+  if (host === "chatgpt.com" || host.endsWith(".chatgpt.com") || host === "chat.openai.com") return "chatgpt";
+  if (host === "perplexity.ai" || host.endsWith(".perplexity.ai")) return "perplexity";
+  if (host === "claude.ai" || host.endsWith(".claude.ai")) return "claude";
+  if (host === "copilot.microsoft.com") return "copilot";
+  if (host === "gemini.google.com") return "gemini";
+  return null;
+}
+
+export function createLlmReferralSession(source: string): string {
+  const random = Math.random().toString(36).slice(2, 10);
+  return truncate(`${source}.${Date.now().toString(36)}.${random}`, SESSION_ID_MAX);
+}
+
+export function parseLlmReferralSession(raw: string | null | undefined): { source: string; sessionId: string } | null {
+  if (!raw) return null;
+  const [source] = raw.split(".", 1);
+  if (!source) return null;
+  return {
+    source,
+    sessionId: truncate(raw, SESSION_ID_MAX),
+  };
+}
+
+export function getConversionType(pathname: string): string | null {
+  if (pathname === "/auth/signup") return "signup";
+  if (pathname === "/auth/signin") return "signin";
+  if (pathname === "/dashboard/claimed-agents") return "claimed_agents_dashboard";
+  if (pathname === "/api/v1/crawl-license") return "crawl_license";
+  if (/^\/agent\/[^/]+\/claim$/.test(pathname)) return "agent_claim";
+  return null;
+}
+
+export function recordLlmTrafficEvent(input: {
+  eventType: LlmTrafficEventType;
+  path: string;
+  pageType?: string | null;
+  botName?: string | null;
+  referrerHost?: string | null;
+  referrerSource?: string | null;
+  utmSource?: string | null;
+  sessionId?: string | null;
+  conversionType?: string | null;
+  userAgent: string | null;
+  xForwardedFor: string | null;
+  referer: string | null;
+}): void {
+  if (!shouldSample()) return;
+
+  void db
+    .insert(llmTrafficEvents)
+    .values({
+      eventType: input.eventType,
+      path: truncate((input.path || "/").replace(/\s+/g, " "), PATH_MAX),
+      pageType: input.pageType ? truncate(input.pageType, PAGE_TYPE_MAX) : null,
+      botName: input.botName ? truncate(input.botName, BOT_NAME_MAX) : null,
+      referrerHost: input.referrerHost ? truncate(input.referrerHost, REFERRER_HOST_MAX) : null,
+      referrerSource: input.referrerSource ? truncate(input.referrerSource, REFERRER_SOURCE_MAX) : null,
+      utmSource: input.utmSource ? truncate(input.utmSource, REF_MAX) : null,
+      sessionId: input.sessionId ? truncate(input.sessionId, SESSION_ID_MAX) : null,
+      conversionType: input.conversionType ? truncate(input.conversionType, CONVERSION_TYPE_MAX) : null,
+      userAgent: truncate(input.userAgent ?? "", UA_MAX),
+      clientIp: firstForwardedIp(input.xForwardedFor),
+      referer: input.referer ? truncate(input.referer, REF_MAX) : null,
+    })
+    .catch((err) => {
+      console.error("[llm-traffic] insert failed:", err);
+    });
+}

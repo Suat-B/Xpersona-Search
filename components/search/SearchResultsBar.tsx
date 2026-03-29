@@ -14,8 +14,8 @@ interface SearchResultsBarProps {
   setQuery: (q: string) => void;
   onSearch: (overrideQuery?: string) => void;
   loading: boolean;
-  vertical: "agents" | "skills" | "artifacts";
-  onVerticalChange: (v: "agents" | "skills" | "artifacts") => void;
+  vertical: "all" | "agents" | "skills" | "mcps" | "artifacts";
+  onVerticalChange: (v: "all" | "agents" | "skills" | "mcps" | "artifacts") => void;
   selectedProtocols: string[];
   onProtocolChange: (p: string[]) => void;
   sort: string;
@@ -91,7 +91,8 @@ export function SearchResultsBar({
     const params = new URLSearchParams(window.location.search);
     const fromPath = params.toString() ? `/?${params.toString()}` : "/";
     saveScrollPosition(fromPath);
-    router.push(`/agent/${agent.slug}?from=${encodeURIComponent(fromPath)}`);
+    const target = agent.canonicalPath ?? `/agent/${agent.slug}`;
+    router.push(`${target}?from=${encodeURIComponent(fromPath)}`);
   };
 
   const handleQuerySelect = (text: string) => {
@@ -217,6 +218,7 @@ export function SearchResultsBar({
               <SearchSuggestions
                 ref={suggestionsRef}
                 query={query}
+                vertical={vertical}
                 onSelect={handleSuggestionSelect}
                 onQuerySelect={handleQuerySelect}
                 onClose={() => setShowSuggestions(false)}
@@ -266,7 +268,7 @@ export function SearchResultsBar({
                       Results
                     </span>
                     <div className="flex flex-wrap gap-2">
-                      {(["agents", "skills", "artifacts"] as const).map((v) => (
+                      {(["all", "agents", "skills", "mcps", "artifacts"] as const).map((v) => (
                         <button
                           key={v}
                           type="button"
@@ -280,7 +282,15 @@ export function SearchResultsBar({
                               : "border-[var(--border)] text-[var(--text-tertiary)]"
                           }`}
                         >
-                          {v === "agents" ? "Agents" : v === "skills" ? "Skills" : "Artifacts"}
+                          {v === "all"
+                            ? "All"
+                            : v === "agents"
+                              ? "Agents"
+                              : v === "skills"
+                                ? "Skills"
+                                : v === "mcps"
+                                  ? "MCPs"
+                                  : "Artifacts"}
                         </button>
                       ))}
                     </div>

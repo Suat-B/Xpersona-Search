@@ -5,7 +5,6 @@ import { agents, agentCapabilityContracts } from "@/lib/db/schema";
 import { hasTrustTable } from "@/lib/trust/db";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 import { recordApiResponse } from "@/lib/metrics/record";
-import { consumeCrawlCreditForRequest } from "@/lib/crawl-license-store";
 
 export async function GET(
   req: Request,
@@ -67,15 +66,6 @@ export async function GET(
     .from(agentCapabilityContracts)
     .where(eq(agentCapabilityContracts.agentId, agent.id))
     .limit(1);
-
-  const crawlChargeResponse = await consumeCrawlCreditForRequest(
-    req,
-    `/api/v1/agents/${slug}/contract`
-  );
-  if (crawlChargeResponse) {
-    recordApiResponse("/api/agents/:slug/contract", req, crawlChargeResponse, startedAt);
-    return crawlChargeResponse;
-  }
 
   const response = NextResponse.json({
     agentId: agent.id,

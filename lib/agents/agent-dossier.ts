@@ -50,9 +50,11 @@ export interface DossierLink {
 
 export interface AgentDossier {
   id: string;
+  entityType: "agent" | "skill" | "mcp";
   slug: string;
   name: string;
   canonicalUrl: string;
+  canonicalPath: string;
   generatedAt: string;
   source: string;
   claimStatus: string;
@@ -925,9 +927,11 @@ export async function getAgentDossier(
 
   return {
     id: publicData.id,
+    entityType: publicData.entityType,
     slug: publicData.slug,
     name: publicData.name,
     canonicalUrl: publicData.canonicalUrl,
+    canonicalPath: publicData.canonicalPath,
     generatedAt,
     source,
     claimStatus: publicData.claimStatus,

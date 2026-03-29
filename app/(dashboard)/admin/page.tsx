@@ -12,7 +12,8 @@ type Tab =
   | "claimed_agents"
   | "agent_submissions"
   | "custom_pages"
-  | "dashboard_access";
+  | "dashboard_access"
+  | "llm_traffic";
 
 type OverviewData = {
   usersTotal: number;
@@ -99,6 +100,39 @@ type DashboardAccessSummary = {
   byOutcome: { outcome: string; count: number }[];
 };
 
+type LlmTrafficRow = {
+  id: string;
+  eventType: string;
+  path: string;
+  pageType: string | null;
+  botName: string | null;
+  referrerHost: string | null;
+  referrerSource: string | null;
+  utmSource: string | null;
+  sessionId: string | null;
+  conversionType: string | null;
+  userAgent: string;
+  clientIp: string | null;
+  referer: string | null;
+  createdAt: string | null;
+};
+
+type LlmTrafficSummary = {
+  totalInWindow: number;
+  sinceHours: number;
+  crawlerHits: number;
+  referralSessions: number;
+  convertedSessions: number;
+  conversionRate: number;
+  chatgptReferralSessions: number;
+  byBotName: { botName: string; count: number }[];
+  byReferrerHost: { referrerHost: string; sessions: number }[];
+  byReferrerSource: { referrerSource: string; sessions: number }[];
+  byLandingPageType: { pageType: string; sessions: number }[];
+  byConversionType: { conversionType: string; count: number }[];
+  keySurfaceHits: { pageType: string; count: number }[];
+};
+
 export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
@@ -114,6 +148,9 @@ export default function AdminPage() {
   const [dashboardAccessItems, setDashboardAccessItems] = useState<DashboardAccessRow[]>([]);
   const [dashboardAccessSummary, setDashboardAccessSummary] = useState<DashboardAccessSummary | null>(null);
   const [dashboardAccessOutcome, setDashboardAccessOutcome] = useState<"" | "redirect_signin" | "rendered">("");
+  const [llmTrafficItems, setLlmTrafficItems] = useState<LlmTrafficRow[]>([]);
+  const [llmTrafficSummary, setLlmTrafficSummary] = useState<LlmTrafficSummary | null>(null);
+  const [llmTrafficEventType, setLlmTrafficEventType] = useState<"" | "crawler_hit" | "llm_referral" | "llm_conversion">("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -191,6 +228,23 @@ export default function AdminPage() {
             setDashboardAccessSummary(data.summary ?? null);
           }
         }
+        if (tab === "llm_traffic") {
+          const q = new URLSearchParams({
+            limit: "200",
+            sinceHours: "168",
+          });
+          if (llmTrafficEventType) q.set("eventType", llmTrafficEventType);
+          const res = await fetch(`/api/v1/admin/llm-traffic?${q}`, { cache: "no-store" });
+          const json = await res.json();
+          const data = unwrapClientResponse<{
+            items?: LlmTrafficRow[];
+            summary?: LlmTrafficSummary;
+          }>(json);
+          if (isActive) {
+            setLlmTrafficItems(data.items ?? []);
+            setLlmTrafficSummary(data.summary ?? null);
+          }
+        }
         if (isActive) setLastUpdated(new Date());
       } catch {
         if (isActive) setError("Failed to load admin data");
@@ -204,7 +258,7 @@ export default function AdminPage() {
       isActive = false;
       clearInterval(interval);
     };
-  }, [isAdmin, tab, dashboardAccessOutcome]);
+  }, [isAdmin, tab, dashboardAccessOutcome, llmTrafficEventType]);
 
   async function handleClaimAction(claimId: string, action: "approve" | "reject") {
     const res = await fetch(`/api/v1/admin/claims/${claimId}/${action}`, { method: "POST" });
@@ -235,6 +289,7 @@ export default function AdminPage() {
     { id: "agent_submissions", label: "Agent Submissions" },
     { id: "custom_pages", label: "Custom Pages" },
     { id: "dashboard_access", label: "Dashboard access" },
+    { id: "llm_traffic", label: "LLM traffic" },
   ];
 
   return (
@@ -505,9 +560,155 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {tab === "llm_traffic" && llmTrafficSummary && (
+        <div className="space-y-6">
+          <p className="text-sm text-[var(--text-secondary)]">
+            First-party analytics for crawler hits, LLM referrals, and downstream conversion events in the last{" "}
+            {llmTrafficSummary.sinceHours} hours.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-[var(--text-tertiary)]">Event type:</span>
+            {(["", "crawler_hit", "llm_referral", "llm_conversion"] as const).map((v) => (
+              <button
+                key={v || "all"}
+                type="button"
+                onClick={() => setLlmTrafficEventType(v)}
+                className={cn(
+                  "rounded-lg px-3 py-1 text-xs font-medium transition-all",
+                  llmTrafficEventType === v
+                    ? "bg-[var(--accent-heart)]/20 text-[var(--accent-heart)]"
+                    : "text-[var(--text-secondary)] hover:bg-white/[0.04]"
+                )}
+              >
+                {v === "" ? "All" : v}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="agent-card p-4">
+              <p className="text-xs text-[var(--text-tertiary)]">Crawler hits</p>
+              <p className="text-2xl font-semibold text-[var(--text-primary)]">{llmTrafficSummary.crawlerHits}</p>
+            </div>
+            <div className="agent-card p-4">
+              <p className="text-xs text-[var(--text-tertiary)]">Referral sessions</p>
+              <p className="text-2xl font-semibold text-[var(--text-primary)]">{llmTrafficSummary.referralSessions}</p>
+            </div>
+            <div className="agent-card p-4">
+              <p className="text-xs text-[var(--text-tertiary)]">Converted sessions</p>
+              <p className="text-2xl font-semibold text-[var(--text-primary)]">{llmTrafficSummary.convertedSessions}</p>
+            </div>
+            <div className="agent-card p-4">
+              <p className="text-xs text-[var(--text-tertiary)]">Conversion rate</p>
+              <p className="text-2xl font-semibold text-[var(--text-primary)]">{llmTrafficSummary.conversionRate}%</p>
+            </div>
+            <div className="agent-card p-4">
+              <p className="text-xs text-[var(--text-tertiary)]">`utm_source=chatgpt.com`</p>
+              <p className="text-2xl font-semibold text-[var(--text-primary)]">{llmTrafficSummary.chatgptReferralSessions}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="agent-card p-4">
+              <p className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Crawler hits by bot</p>
+              <ul className="space-y-1 text-sm">
+                {llmTrafficSummary.byBotName.map((row) => (
+                  <li key={row.botName} className="flex justify-between gap-2">
+                    <span className="text-[var(--text-primary)]">{row.botName}</span>
+                    <span className="text-[var(--text-tertiary)]">{row.count}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="agent-card p-4">
+              <p className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Referral sessions by host</p>
+              <ul className="space-y-1 text-sm">
+                {llmTrafficSummary.byReferrerHost.map((row) => (
+                  <li key={row.referrerHost} className="flex justify-between gap-2">
+                    <span className="text-[var(--text-primary)]">{row.referrerHost}</span>
+                    <span className="text-[var(--text-tertiary)]">{row.sessions}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="agent-card p-4">
+              <p className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Referral sessions by source</p>
+              <ul className="space-y-1 text-sm">
+                {llmTrafficSummary.byReferrerSource.map((row) => (
+                  <li key={row.referrerSource} className="flex justify-between gap-2">
+                    <span className="text-[var(--text-primary)]">{row.referrerSource}</span>
+                    <span className="text-[var(--text-tertiary)]">{row.sessions}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="agent-card p-4">
+              <p className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Referral landing page templates</p>
+              <ul className="space-y-1 text-sm">
+                {llmTrafficSummary.byLandingPageType.map((row) => (
+                  <li key={row.pageType} className="flex justify-between gap-2">
+                    <span className="text-[var(--text-primary)]">{row.pageType}</span>
+                    <span className="text-[var(--text-tertiary)]">{row.sessions}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="agent-card p-4">
+              <p className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Conversion events</p>
+              <ul className="space-y-1 text-sm">
+                {llmTrafficSummary.byConversionType.map((row) => (
+                  <li key={row.conversionType} className="flex justify-between gap-2">
+                    <span className="text-[var(--text-primary)]">{row.conversionType}</span>
+                    <span className="text-[var(--text-tertiary)]">{row.count}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="agent-card p-4">
+              <p className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Weekly crawler acceptance surfaces</p>
+              <ul className="space-y-1 text-sm">
+                {llmTrafficSummary.keySurfaceHits.map((row) => (
+                  <li key={row.pageType} className="flex justify-between gap-2">
+                    <span className="text-[var(--text-primary)]">{row.pageType}</span>
+                    <span className="text-[var(--text-tertiary)]">{row.count}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <div className="agent-card p-0 overflow-auto max-h-[min(70vh,720px)]">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[var(--text-secondary)]">
+                  <th className="p-3 sticky top-0 bg-[var(--bg-elevated)]">Time</th>
+                  <th className="p-3 sticky top-0 bg-[var(--bg-elevated)]">Event</th>
+                  <th className="p-3 sticky top-0 bg-[var(--bg-elevated)]">Path</th>
+                  <th className="p-3 sticky top-0 bg-[var(--bg-elevated)]">Page type</th>
+                  <th className="p-3 sticky top-0 bg-[var(--bg-elevated)]">Source / bot</th>
+                  <th className="p-3 sticky top-0 bg-[var(--bg-elevated)]">Conversion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {llmTrafficItems.map((row) => (
+                  <tr key={row.id} className="border-t border-[var(--border)] align-top">
+                    <td className="p-3 whitespace-nowrap text-xs text-[var(--text-secondary)]">
+                      {row.createdAt ? new Date(row.createdAt).toLocaleString() : "-"}
+                    </td>
+                    <td className="p-3 text-xs">{row.eventType}</td>
+                    <td className="p-3 text-xs break-all max-w-[240px]">{row.path}</td>
+                    <td className="p-3 text-xs">{row.pageType ?? "—"}</td>
+                    <td className="p-3 text-xs">
+                      {row.botName ?? row.referrerSource ?? row.referrerHost ?? "—"}
+                    </td>
+                    <td className="p-3 text-xs">{row.conversionType ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
 
 

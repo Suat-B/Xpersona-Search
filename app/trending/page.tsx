@@ -21,14 +21,11 @@ export const metadata: Metadata = {
 export const revalidate = 60;
 
 export default async function TrendingPage() {
-  const trendingPool = await getTrendingAgents(60);
-  const toolPacks = trendingPool
-    .filter((agent) => agent.protocols.some((p) => p.toUpperCase() === "MCP"))
-    .slice(0, 24);
-  const agents = trendingPool
-    .filter((agent) => !agent.protocols.some((p) => p.toUpperCase() === "MCP"))
-    .slice(0, 24);
-  const capabilities = buildTrendingCapabilities(trendingPool, 18);
+  const [agents, toolPacks] = await Promise.all([
+    getTrendingAgents(24, ["agent"]),
+    getTrendingAgents(24, ["mcp"]),
+  ]);
+  const capabilities = buildTrendingCapabilities([...agents, ...toolPacks], 18);
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-8 md:py-10">

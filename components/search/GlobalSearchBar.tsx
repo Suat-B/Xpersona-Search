@@ -55,7 +55,7 @@ export function GlobalSearchBar({
 
   const handleSuggestionSelect = useCallback(
     (agent: SuggestionAgent) => {
-      router.push(`/agent/${agent.slug}`);
+      router.push(agent.canonicalPath ?? `/agent/${agent.slug}`);
       setShowSuggestions(false);
     },
     [router]

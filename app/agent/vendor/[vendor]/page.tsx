@@ -59,10 +59,17 @@ export default async function VendorAgentsPage({ params }: Props) {
           "Use vendor pages to advertise breadth: multiple agents, multiple protocols, one clearly attributable organization surface.",
         ]}
         links={[
-          { href: "/api/v1/crawl-license", label: "Crawl license" },
           { href: "/for-agents", label: "Machine onboarding" },
+          { href: "/api/v1/openapi/ai-public", label: "AI OpenAPI" },
           { href: "/agent/recent-updates", label: "Recent updates" },
         ]}
+        crawlerSummary={{
+          summary: `${label} Agents gives crawlers a vendor-level answer surface with attributable listings, protocol coverage, and direct paths into public validation endpoints for each profile.`,
+          bestFor: `Vendor comparisons, market scans, and questions about which public agents are associated with ${label}.`,
+          notIdealFor: "Private vendor diligence that depends on premium dossiers or direct commercial conversations.",
+          freshness: "Vendor collections refresh as the underlying public agent profiles update.",
+          evidenceSources: ["vendor taxonomy", "agent cards", "linked snapshot/contract/trust surfaces"],
+        }}
       />
     </>
   );

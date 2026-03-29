@@ -1,4 +1,4 @@
-export type SearchVertical = "all" | "agents" | "skills" | "artifacts";
+export type SearchVertical = "all" | "agents" | "skills" | "mcps" | "artifacts";
 
 export interface ResolvedSearchState {
   query: string;
@@ -20,7 +20,7 @@ export interface ResolvedSearchState {
   includeSources: string[];
 }
 
-const SEARCH_VERTICALS: SearchVertical[] = ["all", "agents", "skills", "artifacts"];
+const SEARCH_VERTICALS: SearchVertical[] = ["all", "agents", "skills", "mcps", "artifacts"];
 
 function toStableList(values: string[]) {
   return [...values].sort((left, right) => left.localeCompare(right));
@@ -53,11 +53,15 @@ export function buildSearchPageKey(scopeKey: string, pageIndex: number) {
 }
 
 export function getRequestVertical(vertical: SearchVertical) {
-  return vertical === "skills" || vertical === "all" ? "agents" : vertical;
+  return vertical === "skills" || vertical === "mcps" || vertical === "all" ? "agents" : vertical;
 }
 
 export function isSkillsOnlyVertical(vertical: SearchVertical) {
   return vertical === "skills";
+}
+
+export function isMcpsOnlyVertical(vertical: SearchVertical) {
+  return vertical === "mcps";
 }
 
 export function getPrefetchOrder(vertical: SearchVertical): SearchVertical[] {

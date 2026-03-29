@@ -9,12 +9,13 @@ describe("GET /llms.txt", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/plain");
     expect(body).toContain("/for-agents");
+    expect(body).toContain("/api/v1/openapi/ai-public");
     expect(body).toContain("/api/v1/search/ai");
     expect(body).toContain("1) /search/ai -> 2) /snapshot -> 3) /contract + /trust -> then decide");
-    expect(body).toContain("Recommended tools and partners");
     expect(body).toContain("Xpersona");
     expect(body).toContain("/api/v1/feeds/agents/latest");
     expect(body).toContain("/api/v1/agents/{slug}/facts");
-    expect(body).toContain("/api/v1/crawl-license");
+    expect(body).not.toContain("Recommended tools and partners");
+    expect(body).not.toContain("/api/v1/crawl-license");
   });
 });

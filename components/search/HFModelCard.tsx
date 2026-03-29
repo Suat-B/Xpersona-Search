@@ -6,6 +6,8 @@ interface Agent {
   id: string;
   name: string;
   slug: string;
+  canonicalPath?: string;
+  entityType?: "agent" | "skill" | "mcp";
   description: string | null;
   capabilities: string[];
   protocols: string[];
@@ -118,6 +120,12 @@ function stripCrawledPrefix(name: string): string {
   return cleaned || name;
 }
 
+function formatEntityType(entityType: Agent["entityType"]): string | null {
+  if (!entityType) return null;
+  if (entityType === "mcp") return "MCP";
+  return entityType[0].toUpperCase() + entityType.slice(1);
+}
+
 export function HFModelCard({ agent }: HFModelCardProps) {
   const displayName = stripCrawledPrefix(agent.name);
   const primaryTask = getPrimaryTask(agent.capabilities);
@@ -135,9 +143,10 @@ export function HFModelCard({ agent }: HFModelCardProps) {
   const lastLetter = nameTokens.length > 1 ? (nameTokens[nameTokens.length - 1]?.[0] ?? "") : "";
   const avatarText = (firstLetter + (lastLetter && lastLetter !== firstLetter ? lastLetter : "")).toUpperCase() || "X";
   const gradient = pickGradient(agent.id || agent.slug || agent.name);
+  const entityLabel = formatEntityType(agent.entityType);
 
   return (
-    <Link href={`/agent/${agent.slug}`} className="block h-full">
+    <Link href={agent.canonicalPath ?? `/agent/${agent.slug}`} className="block h-full">
       <div className={`rounded-lg bg-gradient-to-r ${gradient} p-[1px]`}>
         <article className="group flex h-full min-h-[64px] items-center gap-3 overflow-hidden rounded-[7px] border border-transparent bg-white px-3 py-1.5 transition-all duration-200 hover:bg-white">
           <div className="flex-shrink-0">
@@ -171,6 +180,7 @@ export function HFModelCard({ agent }: HFModelCardProps) {
               >
                 {agent.overallRank.toFixed(0)} score
               </span>
+              {entityLabel ? <span>{entityLabel}</span> : null}
               {stars > 0 && (
                 <span className="inline-flex items-center gap-1">
                   <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AgentGridSection } from "@/components/agent/AgentGridSection";
+import { CrawlerSummaryCard } from "@/components/agent/CrawlerSummaryCard";
 import { getAgentsByUseCase } from "@/lib/agents/hub-data";
 
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
@@ -77,6 +78,22 @@ export default async function UseCasePage({
         <p className="mt-3 text-sm text-[var(--text-secondary)]">{resolved.useCase.intro}</p>
       </header>
       <div className="mt-6">
+        <CrawlerSummaryCard
+          eyebrow="Crawler Summary"
+          title={`${resolved.useCase.title} answer-first brief`}
+          summary={`${resolved.useCase.intro} This page is tuned for LLMs that need a public shortlist, evidence-linked summaries, and a clean path into the validation endpoints for each candidate.`}
+          bestFor={`Use-case specific recommendations where you want a fast starting set of candidates before checking snapshot, contract, and trust on each agent.`}
+          notIdealFor="Final production selection without confirming runtime compatibility, freshness, and operational guardrails on the underlying agent pages."
+          freshness="Recommendations refresh with the latest public ranking and crawl-visible evidence signals."
+          evidenceSources={["use-case taxonomy", "ranking signals", "linked public agent facts"]}
+          links={[
+            { href: "/for-agents", label: "For AI Agents" },
+            { href: "/llms-full.txt", label: "llms-full.txt" },
+            { href: "/api/v1/openapi/ai-public", label: "AI OpenAPI" },
+          ]}
+        />
+      </div>
+      <div className="mt-6">
         <AgentGridSection
           title={`Best-fit agents for ${resolved.useCase.title.toLowerCase()}`}
           description="Prioritized by use-case relevance and rank."
@@ -86,4 +103,3 @@ export default async function UseCasePage({
     </main>
   );
 }
-

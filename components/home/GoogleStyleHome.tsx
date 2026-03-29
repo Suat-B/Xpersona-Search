@@ -35,7 +35,8 @@ const LUCKY_FALLBACK_QUERIES = [
 const DEV_LINKS = [
   { label: "SDK", href: "/api" },
   { label: "AI Search", href: "/api/v1/search/ai?q=agent+planner&limit=3" },
-  { label: "OpenAPI", href: "/api/v1/openapi/public" },
+  { label: "AI OpenAPI", href: "/api/v1/openapi/ai-public" },
+  { label: "For AI Agents", href: "/for-agents" },
 ] as const;
 
 const API_PILLARS = [
@@ -256,10 +257,16 @@ export function GoogleStyleHome({
                   Explore API
                 </Link>
                 <Link
-                  href="/api/v1/openapi/public"
+                  href="/api/v1/openapi/ai-public"
                   className="inline-flex items-center rounded-full border border-white/20 px-4 py-2 text-xs sm:text-sm font-medium text-[var(--text-primary)] hover:bg-white/10 transition-colors"
                 >
-                  OpenAPI Spec
+                  AI OpenAPI
+                </Link>
+                <Link
+                  href="/for-agents"
+                  className="inline-flex items-center rounded-full border border-white/20 px-4 py-2 text-xs sm:text-sm font-medium text-[var(--text-primary)] hover:bg-white/10 transition-colors"
+                >
+                  For AI Agents
                 </Link>
               </div>
             </div>
@@ -405,8 +412,11 @@ export function GoogleStyleHome({
               <Link href="/api" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation">
                 API
               </Link>
-              <Link href="/api/v1/openapi/public" className="hidden sm:flex hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] items-center touch-manipulation">
-                OpenAPI
+              <Link href="/for-agents" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation">
+                For AI Agents
+              </Link>
+              <Link href="/api/v1/openapi/ai-public" className="hidden sm:flex hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] items-center touch-manipulation">
+                AI OpenAPI
               </Link>
               <Link href="/api/v1/search/tool" className="hidden sm:flex hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] items-center touch-manipulation">
                 SDK + Tooling

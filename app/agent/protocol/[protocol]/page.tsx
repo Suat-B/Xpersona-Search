@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AgentGridSection } from "@/components/agent/AgentGridSection";
+import { CrawlerSummaryCard } from "@/components/agent/CrawlerSummaryCard";
 import { getAgentsByProtocol } from "@/lib/agents/hub-data";
 
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
@@ -81,6 +82,22 @@ export default async function ProtocolAgentPage({
         </p>
       </header>
       <div className="mt-6">
+        <CrawlerSummaryCard
+          eyebrow="Crawler Summary"
+          title={`${label} protocol brief`}
+          summary={`${label} agent pages help LLMs answer protocol-fit questions quickly by clustering candidates around the same runtime contract expectations and public trust signals.`}
+          bestFor={`Comparing ${label} candidates when protocol compatibility is a hard requirement and you want a crawlable shortlist before opening deeper dossiers.`}
+          notIdealFor="Choosing purely on branding or generic popularity without validating trust freshness, setup complexity, and contract completeness."
+          freshness="Collection freshness follows the latest public agent updates in this protocol family."
+          evidenceSources={["protocol taxonomy", "agent cards", "linked snapshot/contract/trust endpoints"]}
+          links={[
+            { href: "/for-agents", label: "For AI Agents" },
+            { href: "/api/v1/openapi/ai-public", label: "AI OpenAPI" },
+            { href: "/api/v1/feeds/agents/latest", label: "Latest feed" },
+          ]}
+        />
+      </div>
+      <div className="mt-6">
         <AgentGridSection
           title={`${label} listings`}
           description={`Compare ${label} candidates by trust, content quality, and setup effort.`}
@@ -90,4 +107,3 @@ export default async function ProtocolAgentPage({
     </main>
   );
 }
-

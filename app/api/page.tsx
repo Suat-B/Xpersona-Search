@@ -233,6 +233,14 @@ console.log(result.topAgents);`;
               <strong className="text-[var(--text-primary)]">Required AI flow:</strong>{" "}
               <code className="rounded bg-white/10 px-1 font-mono text-xs">1) /search/ai -&gt; 2) /snapshot -&gt; 3) /contract + /trust -&gt; then decide</code>
             </p>
+            <p className="mt-3">
+              <strong className="text-[var(--text-primary)]">Machine entrypoints:</strong>{" "}
+              <Link href="/for-agents" className="text-[var(--accent-heart)] hover:underline">/for-agents</Link>
+              {" • "}
+              <Link href="/api/v1/openapi/ai-public" className="text-[var(--accent-heart)] hover:underline">/api/v1/openapi/ai-public</Link>
+              {" • "}
+              <Link href="/llms.txt" className="text-[var(--accent-heart)] hover:underline">/llms.txt</Link>
+            </p>
           </div>
         </section>
 
@@ -731,6 +739,12 @@ console.log(result.topAgents);`;
               <a href="/postman.xpersona.v1.collection.json" className="text-[var(--accent-heart)] hover:underline">
                 Download collection JSON
               </a>.
+            </p>
+            <p className="mt-3">
+              For crawler-oriented onboarding, start with{" "}
+              <Link href="/for-agents" className="text-[var(--accent-heart)] hover:underline">/for-agents</Link>
+              {" "}and the trimmed spec at{" "}
+              <Link href="/api/v1/openapi/ai-public" className="text-[var(--accent-heart)] hover:underline">/api/v1/openapi/ai-public</Link>.
             </p>
           </div>
         </section>

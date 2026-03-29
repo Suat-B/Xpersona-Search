@@ -11,6 +11,12 @@ import {
 import { getTrustSummary } from "@/lib/trust/summary";
 import { calibrateSafetyScore } from "@/lib/search/scoring/safety";
 import { hasTrustTable } from "@/lib/trust/db";
+import {
+  buildEntityTypeCondition,
+  detectPublicEntityType,
+  getCanonicalEntityPath,
+  type PublicEntityType,
+} from "@/lib/entities/public-entities";
 
 export type ContractStatus = "ready" | "missing" | "unavailable";
 export type TrustConfidence = "high" | "medium" | "low" | "unknown";
@@ -108,6 +114,7 @@ export interface MachineBlocks {
 
 export interface PublicAgentPageData {
   id: string;
+  entityType: PublicEntityType;
   slug: string;
   name: string;
   description: string;
@@ -127,6 +134,7 @@ export interface PublicAgentPageData {
   readmeExcerpt: string | null;
   updatedAtIso: string | null;
   canonicalUrl: string;
+  canonicalPath: string;
   snapshotUrl: string;
   contractUrl: string;
   trustUrl: string;
@@ -255,11 +263,15 @@ export function shouldEnableMachineBlocks(slug: string): boolean {
 
 export async function getPublicAgentPageData(
   slug: string,
-  viewerUserId?: string | null
+  viewerUserId?: string | null,
+  entityTypes?: PublicEntityType[]
 ): Promise<PublicAgentPageData | null> {
+  const entityTypeCondition =
+    entityTypes && entityTypes.length > 0 ? buildEntityTypeCondition(entityTypes) : null;
   const rows = await db
     .select({
       id: agents.id,
+      entityType: agents.entityType,
       sourceId: agents.sourceId,
       source: agents.source,
       name: agents.name,
@@ -287,11 +299,18 @@ export async function getPublicAgentPageData(
       updatedAt: agents.updatedAt,
     })
     .from(agents)
-    .where(and(eq(agents.slug, slug), eq(agents.status, "ACTIVE")))
+    .where(
+      and(
+        eq(agents.slug, slug),
+        eq(agents.status, "ACTIVE"),
+        ...(entityTypeCondition ? [entityTypeCondition] : [])
+      )
+    )
     .limit(1);
 
   const rawAgent = rows[0];
   if (!rawAgent) return null;
+  const entityType = detectPublicEntityType(rawAgent);
 
   const overrides = (rawAgent.ownerOverrides ?? {}) as Record<string, unknown>;
   const merged = { ...rawAgent } as Record<string, unknown>;
@@ -417,7 +436,8 @@ export async function getPublicAgentPageData(
 
   const generatedAt = new Date().toISOString();
   const baseUrl = getBaseUrl();
-  const canonicalUrl = `${baseUrl}/agent/${encodeURIComponent(slug)}`;
+  const canonicalPath = getCanonicalEntityPath(entityType, slug);
+  const canonicalUrl = `${baseUrl}${canonicalPath}`;
   const snapshotUrl = `${baseUrl}/api/v1/agents/${encodeURIComponent(slug)}/snapshot`;
   const contractUrl = `${baseUrl}/api/v1/agents/${encodeURIComponent(slug)}/contract`;
   const trustUrl = `${baseUrl}/api/v1/agents/${encodeURIComponent(slug)}/trust`;
@@ -611,6 +631,7 @@ export async function getPublicAgentPageData(
 
   return {
     id: rawAgent.id,
+    entityType,
     slug: String(merged.slug ?? slug),
     name: String(merged.name ?? "Agent"),
     description,
@@ -630,6 +651,7 @@ export async function getPublicAgentPageData(
     readmeExcerpt,
     updatedAtIso: rawAgent.updatedAt?.toISOString?.() ?? null,
     canonicalUrl,
+    canonicalPath,
     snapshotUrl,
     contractUrl,
     trustUrl,

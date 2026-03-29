@@ -67,6 +67,11 @@ import {
   expandSourceBuckets,
   REGISTRY_SOURCES,
 } from "@/lib/search/source-taxonomy";
+import {
+  getCanonicalEntityPath,
+  normalizeRequestedEntityTypes,
+  parseEntityTypesParam,
+} from "@/lib/entities/public-entities";
 
 let hasSearchClaimColumnsCache: boolean | null = null;
 let hasSearchClicksTableCache: boolean | null = null;
@@ -174,6 +179,10 @@ const SearchSchema = z.object({
             .filter(Boolean)
         : []
     ),
+  entityTypes: z
+    .string()
+    .optional()
+    .transform((s) => parseEntityTypesParam(s)),
   skillsOnly: z
     .string()
     .optional()
@@ -321,22 +330,16 @@ function buildConditions(params: SearchParams, fieldFilters?: Record<string, str
   if (params.includeSources.length > 0) {
     conditions.push(buildSourceFilterCondition(params.includeSources));
   }
-  if (params.skillsOnly) {
-    conditions.push(
-      sql`(
-        ${buildSourceFilterCondition([...REGISTRY_SOURCES, "CLAWHUB", "GITHUB_OPENCLEW", "GITHUB_REPOS"])}
-        OR ${buildCapabilityPresenceCondition()}
-        OR ${agents.openclawData} IS NOT NULL
-        OR (
-          ${agents.readme} IS NOT NULL
-          AND (
-            ${agents.readme} ILIKE '%protocols:%'
-            OR ${agents.readme} ILIKE '%capability:%'
-          )
-        )
-      )`
-    );
-  }
+  const requestedEntityTypes = normalizeRequestedEntityTypes({
+    entityTypes: params.entityTypes,
+    skillsOnly: params.skillsOnly,
+  });
+  conditions.push(
+    sql`${agents.entityType} = ANY(ARRAY[${sql.join(
+      requestedEntityTypes.map((entityType) => sql`${entityType}`),
+      sql`, `
+    )}]::text[])`
+  );
 
   // Merge explicit protocol params with inline operator filters
   const protocolList = [...params.protocols];
@@ -941,6 +944,7 @@ async function runDocumentVerticalQuery(
       sd.url_norm_hash,
       sd.content_hash,
       doc_agent.slug AS agent_slug,
+      doc_agent.entity_type AS agent_entity_type,
       ${documentPriorityExpr} AS document_priority,
       ${lexicalRankExpr} AS lexical_rank,
       ${finalScoreExpr} AS final_score
@@ -967,6 +971,10 @@ async function runDocumentVerticalQuery(
       (typeof row.agent_slug === "string" && row.agent_slug.trim().length > 0
         ? row.agent_slug.trim()
         : fallbackSlug) ?? null;
+    const mappedAgentEntityType =
+      row.agent_entity_type === "skill" || row.agent_entity_type === "mcp" || row.agent_entity_type === "agent"
+        ? row.agent_entity_type
+        : "agent";
     const kind =
       docType === "web_page"
         ? "page"
@@ -984,7 +992,7 @@ async function runDocumentVerticalQuery(
       url: String(row.canonical_url ?? ""),
       domain: String(row.domain ?? ""),
       agentSlug: mappedAgentSlug,
-      agentUrl: mappedAgentSlug ? `/agent/${encodeURIComponent(mappedAgentSlug)}` : null,
+      agentUrl: mappedAgentSlug ? getCanonicalEntityPath(mappedAgentEntityType, mappedAgentSlug) : null,
       title: row.title as string | null,
       snippet: row.snippet as string | null,
       qualityScore: Number(row.quality_score ?? 0),
@@ -1123,6 +1131,11 @@ export async function GET(req: NextRequest) {
     artifactType: params.artifactType.join(","),
     recall: params.recall,
     includeSources: params.includeSources.join(","),
+    entityTypes: normalizeRequestedEntityTypes({
+      entityTypes: params.entityTypes,
+      skillsOnly: params.skillsOnly,
+    }).join(","),
+    skillsOnly: Boolean(params.skillsOnly),
     debug: params.debug,
     fields: params.fields,
     intent: params.intent,
@@ -1282,6 +1295,8 @@ export async function GET(req: NextRequest) {
     const hasExplicitFilters =
       params.protocols.length > 0 ||
       params.capabilities.length > 0 ||
+      params.entityTypes.length > 0 ||
+      Boolean(params.skillsOnly) ||
       params.minSafety != null ||
       params.minRank != null ||
       Boolean(fieldFilters.protocol || fieldFilters.lang || fieldFilters.safety || fieldFilters.source);
@@ -1536,6 +1551,7 @@ export async function GET(req: NextRequest) {
           sql`WITH base AS (
                 SELECT
                   id, name, slug, description, url, homepage, ${canonicalSourceExpr} AS source, source_id,
+                  entity_type,
                   capabilities, protocols, canonical_agent_id,
                   safety_score, popularity_score, freshness_score, overall_rank, github_data, npm_data, openclaw_data,
                   languages, created_at, ${claimCols}
@@ -1635,6 +1651,7 @@ export async function GET(req: NextRequest) {
       const rawResult = await db.execute(
         sql`SELECT
               id, name, slug, description, url, homepage, ${canonicalSourceExpr} AS source, source_id,
+              entity_type,
               capabilities, protocols, canonical_agent_id, safety_score, popularity_score,
               freshness_score, overall_rank, github_data, npm_data, openclaw_data,
               languages, created_at, ${claimCols}
@@ -2095,6 +2112,10 @@ export async function GET(req: NextRequest) {
         handshakesByAgent.get(agentId),
         reputationByAgent.get(agentId)
       );
+      const entityType =
+        r.entity_type === "skill" || r.entity_type === "mcp" || r.entity_type === "agent"
+          ? r.entity_type
+          : "agent";
       const safetyScore = calibrateSafetyScore({
         baseScore: r.safety_score as number,
         trust,
@@ -2105,6 +2126,8 @@ export async function GET(req: NextRequest) {
         id: r.id as string,
         name: r.name as string,
         slug: r.slug as string,
+        entityType,
+        canonicalPath: getCanonicalEntityPath(entityType, r.slug as string),
         description: r.description as string | null,
         snippet: (r.snippet as string | null) || null,
         capabilities: r.capabilities as string[] | null,

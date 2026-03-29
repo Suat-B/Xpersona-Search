@@ -22,6 +22,7 @@ export default async function CapabilityContractsDocPage() {
           </p>
           <div className="flex flex-wrap gap-3 text-sm">
             <Link href="/for-agents" className="text-[var(--accent-heart)] hover:underline">/for-agents</Link>
+            <Link href="/api/v1/openapi/ai-public" className="text-[var(--accent-heart)] hover:underline">/api/v1/openapi/ai-public</Link>
             <Link href="/docs" className="text-[var(--accent-heart)] hover:underline">Back to API Docs</Link>
             <a href="/llms.txt" className="text-[var(--accent-heart)] hover:underline">/llms.txt</a>
           </div>

@@ -25,6 +25,8 @@ export interface SuggestionAgent {
   id: string;
   name: string;
   slug: string;
+  entityType?: "agent" | "skill" | "mcp";
+  canonicalPath?: string;
   description: string | null;
   protocols: string[];
 }
@@ -47,6 +49,7 @@ type SuggestionItem =
 
 interface Props {
   query: string;
+  vertical?: "all" | "agents" | "skills" | "mcps" | "artifacts";
   onSelect: (agent: SuggestionAgent) => void;
   onQuerySelect?: (queryText: string) => void;
   onClose: () => void;
@@ -203,6 +206,41 @@ function SectionHeader({ label }: { label: string }) {
   );
 }
 
+function getResultSectionLabel(vertical: NonNullable<Props["vertical"]>): string {
+  switch (vertical) {
+    case "skills":
+      return "Skills";
+    case "mcps":
+      return "MCPs";
+    case "all":
+      return "Results";
+    default:
+      return "Agents";
+  }
+}
+
+function getSuggestionEntityLabel(agent: SuggestionAgent): string {
+  switch (agent.entityType) {
+    case "skill":
+      return "Skill";
+    case "mcp":
+      return "MCP";
+    default:
+      return "Agent";
+  }
+}
+
+function getSuggestionEntityGlyph(agent: SuggestionAgent): string {
+  switch (agent.entityType) {
+    case "skill":
+      return "S";
+    case "mcp":
+      return "M";
+    default:
+      return "A";
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
@@ -211,6 +249,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
   function SearchSuggestions(
     {
       query,
+      vertical = "agents",
       onSelect,
       onQuerySelect,
       onClose,
@@ -366,9 +405,17 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
       abortRef.current?.abort();
       abortRef.current = new AbortController();
       setLoading(true);
+      const entityTypesParam =
+        vertical === "skills"
+          ? "&entityTypes=skill"
+          : vertical === "mcps"
+            ? "&entityTypes=mcp"
+            : vertical === "all"
+              ? "&entityTypes=agent,skill,mcp"
+              : "&entityTypes=agent";
       try {
         const res = await fetch(
-          `/api/v1/search/suggest?q=${encodeURIComponent(q)}&limit=8`,
+          `/api/v1/search/suggest?q=${encodeURIComponent(q)}&limit=8${entityTypesParam}`,
           { signal: abortRef.current.signal }
         );
         const payload = await res.json();
@@ -398,7 +445,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
       } finally {
         setLoading(false);
       }
-    }, [onQuerySelect]);
+    }, [onQuerySelect, vertical]);
 
     /* ---- fetch trending + recent for empty query ---- */
     const fetchEmptyState = useCallback(async () => {
@@ -589,14 +636,14 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
     }
 
     if (hasAgent) {
-      sections.push(<SectionHeader key="sh-agents" label="Agents" />);
+      sections.push(<SectionHeader key="sh-agents" label={getResultSectionLabel(vertical)} />);
       for (const item of items) {
         if (item.type !== "agent") continue;
         const idx = flatIndex++;
         sections.push(
           <li key={item.agent.id} data-index={idx}>
             <Link
-              href={`/agent/${item.agent.slug}`}
+              href={item.agent.canonicalPath ?? `/agent/${item.agent.slug}`}
               onClick={(e) => handleClickSelect(e, item)}
               onMouseDown={handleMouseDownOnly}
               onMouseEnter={() => setHighlightedIndex(idx)}
@@ -610,11 +657,16 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
               }`}
             >
               <span className="w-5 h-5 mt-0.5 flex-shrink-0 rounded-full bg-[var(--accent-heart)]/20 flex items-center justify-center text-[var(--accent-heart)] text-[10px] font-bold">
-                A
+                {getSuggestionEntityGlyph(item.agent)}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">
-                  {highlightMatch(item.agent.name, query)}
+                <span className="flex items-center justify-between gap-2">
+                  <span className="block min-w-0 truncate font-medium">
+                    {highlightMatch(item.agent.name, query)}
+                  </span>
+                  <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">
+                    {getSuggestionEntityLabel(item.agent)}
+                  </span>
                 </span>
                 {item.agent.description && (
                   <span className="block truncate text-xs text-[var(--text-tertiary)] mt-0.5">

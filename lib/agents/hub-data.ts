@@ -3,12 +3,20 @@ import { db } from "@/lib/db";
 import { agents } from "@/lib/db/schema";
 import { normalizeCapabilityToken } from "@/lib/search/capability-tokens";
 import { canonicalSourceSql, canonicalizeSource } from "@/lib/search/source-taxonomy";
+import {
+  getCanonicalEntityPath,
+  type PublicEntityType,
+} from "@/lib/entities/public-entities";
 
 export type HubAgent = {
   id: string;
+  entityType: PublicEntityType;
+  canonicalPath: string;
   slug: string;
   name: string;
   description: string | null;
+  url?: string | null;
+  homepage?: string | null;
   source: string;
   protocols: string[];
   capabilities: string[];
@@ -93,6 +101,10 @@ function parseDownloads(raw: Record<string, unknown>): number | null {
 }
 
 function rowToHubAgent(row: Record<string, unknown>): HubAgent {
+  const entityType =
+    typeof row.entityType === "string" && ["agent", "skill", "mcp"].includes(row.entityType)
+      ? (row.entityType as PublicEntityType)
+      : "agent";
   const protocols = (Array.isArray(row.protocols) ? row.protocols : [])
     .filter((p): p is string => typeof p === "string")
     .map((p) => toExternalProtocol(p));
@@ -100,9 +112,13 @@ function rowToHubAgent(row: Record<string, unknown>): HubAgent {
     .filter((c): c is string => typeof c === "string");
   return {
     id: String(row.id),
+    entityType,
+    canonicalPath: getCanonicalEntityPath(entityType, String(row.slug)),
     slug: String(row.slug),
     name: String(row.name),
     description: typeof row.description === "string" ? row.description : null,
+    url: typeof row.url === "string" ? row.url : null,
+    homepage: typeof row.homepage === "string" ? row.homepage : null,
     source: canonicalizeSource(
       typeof row.source === "string" ? row.source : null,
       typeof row.sourceId === "string" ? row.sourceId : null
@@ -117,13 +133,20 @@ function rowToHubAgent(row: Record<string, unknown>): HubAgent {
   };
 }
 
-async function getBaseAgents(limit = 180): Promise<HubAgent[]> {
+function entityTypeFilterSql(entityTypes: PublicEntityType[]): ReturnType<typeof sql> {
+  return sql`${agents.entityType} = ANY(ARRAY[${sql.join(entityTypes.map((entityType) => sql`${entityType}`), sql`, `)}]::text[])`;
+}
+
+async function getBaseAgents(limit = 180, entityTypes: PublicEntityType[] = ["agent"]): Promise<HubAgent[]> {
   const rows = await db
     .select({
       id: agents.id,
+      entityType: agents.entityType,
       slug: agents.slug,
       name: agents.name,
       description: agents.description,
+      url: agents.url,
+      homepage: agents.homepage,
       source: agents.source,
       sourceId: agents.sourceId,
       protocols: agents.protocols,
@@ -136,19 +159,22 @@ async function getBaseAgents(limit = 180): Promise<HubAgent[]> {
       openclawData: agents.openclawData,
     })
     .from(agents)
-    .where(and(eq(agents.status, "ACTIVE"), eq(agents.publicSearchable, true)))
+    .where(and(eq(agents.status, "ACTIVE"), eq(agents.publicSearchable, true), entityTypeFilterSql(entityTypes)))
     .orderBy(desc(agents.overallRank), desc(agents.updatedAt))
     .limit(limit);
   return rows.map((row) => rowToHubAgent(row as unknown as Record<string, unknown>));
 }
 
-export async function getTrendingAgents(limit = 20): Promise<HubAgent[]> {
+export async function getTrendingAgents(limit = 20, entityTypes: PublicEntityType[] = ["agent"]): Promise<HubAgent[]> {
   const rows = await db
     .select({
       id: agents.id,
+      entityType: agents.entityType,
       slug: agents.slug,
       name: agents.name,
       description: agents.description,
+      url: agents.url,
+      homepage: agents.homepage,
       source: agents.source,
       sourceId: agents.sourceId,
       protocols: agents.protocols,
@@ -161,19 +187,22 @@ export async function getTrendingAgents(limit = 20): Promise<HubAgent[]> {
       openclawData: agents.openclawData,
     })
     .from(agents)
-    .where(and(eq(agents.status, "ACTIVE"), eq(agents.publicSearchable, true)))
+    .where(and(eq(agents.status, "ACTIVE"), eq(agents.publicSearchable, true), entityTypeFilterSql(entityTypes)))
     .orderBy(desc(agents.overallRank), desc(agents.updatedAt))
     .limit(limit);
   return rows.map((row) => rowToHubAgent(row as unknown as Record<string, unknown>));
 }
 
-export async function getNewestAgents(limit = 20): Promise<HubAgent[]> {
+export async function getNewestAgents(limit = 20, entityTypes: PublicEntityType[] = ["agent"]): Promise<HubAgent[]> {
   const rows = await db
     .select({
       id: agents.id,
+      entityType: agents.entityType,
       slug: agents.slug,
       name: agents.name,
       description: agents.description,
+      url: agents.url,
+      homepage: agents.homepage,
       source: agents.source,
       sourceId: agents.sourceId,
       protocols: agents.protocols,
@@ -186,14 +215,14 @@ export async function getNewestAgents(limit = 20): Promise<HubAgent[]> {
       openclawData: agents.openclawData,
     })
     .from(agents)
-    .where(and(eq(agents.status, "ACTIVE"), eq(agents.publicSearchable, true)))
+    .where(and(eq(agents.status, "ACTIVE"), eq(agents.publicSearchable, true), entityTypeFilterSql(entityTypes)))
     .orderBy(desc(agents.createdAt), desc(agents.updatedAt))
     .limit(limit);
   return rows.map((row) => rowToHubAgent(row as unknown as Record<string, unknown>));
 }
 
-export async function getMostDownloadedAgents(limit = 20): Promise<HubAgent[]> {
-  const base = await getBaseAgents(500);
+export async function getMostDownloadedAgents(limit = 20, entityTypes: PublicEntityType[] = ["agent"]): Promise<HubAgent[]> {
+  const base = await getBaseAgents(500, entityTypes);
   return base
     .filter((agent) => agent.downloads != null && agent.downloads > 0)
     .sort((a, b) => (b.downloads ?? 0) - (a.downloads ?? 0))
@@ -201,7 +230,7 @@ export async function getMostDownloadedAgents(limit = 20): Promise<HubAgent[]> {
 }
 
 export async function getProtocolCounts(limit = 8): Promise<Array<{ protocol: string; count: number }>> {
-  const base = await getBaseAgents(300);
+  const base = await getBaseAgents(300, ["agent"]);
   const map = new Map<string, number>();
   for (const item of base) {
     const uniq = new Set(item.protocols);
@@ -219,7 +248,7 @@ export async function getSourceCounts(limit = 8): Promise<Array<{ source: string
   const rows = await db.execute(sql`
     SELECT source, count(*)::int AS count
     FROM agents
-    WHERE status = 'ACTIVE' AND public_searchable = true
+    WHERE status = 'ACTIVE' AND public_searchable = true AND entity_type = 'agent'
     GROUP BY source
     ORDER BY count(*) DESC
     LIMIT ${limit}
@@ -236,14 +265,17 @@ export async function getSourceCounts(limit = 8): Promise<Array<{ source: string
     .slice(0, limit);
 }
 
-export async function getAgentsByProtocol(protocol: string, limit = 24): Promise<HubAgent[]> {
+export async function getAgentsByProtocol(protocol: string, limit = 24, entityTypes: PublicEntityType[] = ["agent"]): Promise<HubAgent[]> {
   const target = fromExternalProtocol(protocol);
   const rows = await db
     .select({
       id: agents.id,
+      entityType: agents.entityType,
       slug: agents.slug,
       name: agents.name,
       description: agents.description,
+      url: agents.url,
+      homepage: agents.homepage,
       source: agents.source,
       sourceId: agents.sourceId,
       protocols: agents.protocols,
@@ -260,6 +292,7 @@ export async function getAgentsByProtocol(protocol: string, limit = 24): Promise
       and(
         eq(agents.status, "ACTIVE"),
         eq(agents.publicSearchable, true),
+        entityTypeFilterSql(entityTypes),
         sql`${agents.protocols} ? ${target}`
       )
     )
@@ -268,15 +301,18 @@ export async function getAgentsByProtocol(protocol: string, limit = 24): Promise
   return rows.map((row) => rowToHubAgent(row as unknown as Record<string, unknown>));
 }
 
-export async function getAgentsByCapability(capability: string, limit = 36): Promise<HubAgent[]> {
+export async function getAgentsByCapability(capability: string, limit = 36, entityTypes: PublicEntityType[] = ["agent"]): Promise<HubAgent[]> {
   const normalized = normalizeCapabilityToken(capability);
   if (!normalized) return [];
   const rows = await db
     .select({
       id: agents.id,
+      entityType: agents.entityType,
       slug: agents.slug,
       name: agents.name,
       description: agents.description,
+      url: agents.url,
+      homepage: agents.homepage,
       source: agents.source,
       sourceId: agents.sourceId,
       protocols: agents.protocols,
@@ -293,6 +329,7 @@ export async function getAgentsByCapability(capability: string, limit = 36): Pro
       and(
         eq(agents.status, "ACTIVE"),
         eq(agents.publicSearchable, true),
+        entityTypeFilterSql(entityTypes),
         sql`EXISTS (
           SELECT 1
           FROM jsonb_array_elements_text(
@@ -308,14 +345,17 @@ export async function getAgentsByCapability(capability: string, limit = 36): Pro
   return rows.map((row) => rowToHubAgent(row as unknown as Record<string, unknown>));
 }
 
-export async function getAgentsBySource(sourceSlug: string, limit = 24): Promise<HubAgent[]> {
+export async function getAgentsBySource(sourceSlug: string, limit = 24, entityTypes: PublicEntityType[] = ["agent"]): Promise<HubAgent[]> {
   const sourceNormalized = sourceSlug.trim().toUpperCase();
   const rows = await db
     .select({
       id: agents.id,
+      entityType: agents.entityType,
       slug: agents.slug,
       name: agents.name,
       description: agents.description,
+      url: agents.url,
+      homepage: agents.homepage,
       source: agents.source,
       sourceId: agents.sourceId,
       protocols: agents.protocols,
@@ -332,6 +372,7 @@ export async function getAgentsBySource(sourceSlug: string, limit = 24): Promise
       and(
         eq(agents.status, "ACTIVE"),
         eq(agents.publicSearchable, true),
+        entityTypeFilterSql(entityTypes),
         sql`${canonicalizeSource(sourceNormalized)} = ${canonicalSourceSql(agents.source, agents.sourceId)}`
       )
     )
@@ -358,7 +399,7 @@ export async function getAgentsByUseCase(useCaseSlug: string, limit = 24): Promi
 }> {
   const useCase = USE_CASES.find((item) => item.slug === useCaseSlug) ?? null;
   if (!useCase) return { useCase: null, agents: [] };
-  const base = await getBaseAgents(600);
+  const base = await getBaseAgents(600, ["agent"]);
   const ranked = base
     .map((agent) => ({ agent, score: scoreUseCase(agent, useCase) }))
     .filter((item) => item.score > 0)
@@ -399,9 +440,12 @@ export async function getAgentsBySlugs(slugs: string[]): Promise<HubAgent[]> {
   const rows = await db
     .select({
       id: agents.id,
+      entityType: agents.entityType,
       slug: agents.slug,
       name: agents.name,
       description: agents.description,
+      url: agents.url,
+      homepage: agents.homepage,
       source: agents.source,
       sourceId: agents.sourceId,
       protocols: agents.protocols,
@@ -418,6 +462,7 @@ export async function getAgentsBySlugs(slugs: string[]): Promise<HubAgent[]> {
       and(
         eq(agents.status, "ACTIVE"),
         eq(agents.publicSearchable, true),
+        eq(agents.entityType, "agent"),
         sql`${agents.slug} = ANY(ARRAY[${sql.join(slugs.map((slug) => sql`${slug}`), sql`, `)}]::text[])`
       )
     )

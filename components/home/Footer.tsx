@@ -20,6 +20,13 @@ const FOOTER_LINKS = {
     { label: "Search API", href: getHubUrl("/api"), external: true },
     { label: "Reliability", href: getHubUrl("/reliability"), external: true },
   ],
+  aiAgents: [
+    { label: "For AI Agents", href: getHubUrl("/for-agents"), external: true },
+    { label: "llms.txt", href: getHubUrl("/llms.txt"), external: true },
+    { label: "llms-full.txt", href: getHubUrl("/llms-full.txt"), external: true },
+    { label: "AI OpenAPI", href: getHubUrl("/api/v1/openapi/ai-public"), external: true },
+    { label: "Latest Agent Feed", href: getHubUrl("/api/v1/feeds/agents/latest"), external: true },
+  ],
   company: [
     { label: "About", href: "/about" },
     { label: "Blog", href: "/blog" },
@@ -55,7 +62,7 @@ export function Footer() {
   return (
     <footer className="border-t border-[var(--border)] bg-black/40 backdrop-blur-sm">
       <div className="container mx-auto px-4 sm:px-6 py-12">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-8 mb-12">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-8 mb-12">
           <div className="col-span-2">
             <a href={getHubUrl("/")} className="block mb-4">
               <Image src="/xpersona-logo-1.png" alt="Xpersona" width={124} height={32} className="h-8 w-auto" />
@@ -112,6 +119,19 @@ export function Footer() {
                       {link.label}
                     </Link>
                   )}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider mb-3">For AI Agents</h4>
+            <ul className="space-y-2">
+              {FOOTER_LINKS.aiAgents.map((link) => (
+                <li key={link.href}>
+                  <a href={link.href} className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors">
+                    {link.label}
+                  </a>
                 </li>
               ))}
             </ul>

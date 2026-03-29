@@ -91,12 +91,16 @@ vi.mock("next/image", () => ({
 const mockNotFound = vi.hoisted(() => vi.fn(() => {
   throw new Error("notFound");
 }));
+const mockPermanentRedirect = vi.hoisted(() => vi.fn((target: string) => {
+  throw new Error(`redirect:${target}`);
+}));
 
 vi.mock("next/navigation", async () => {
   const actual = await vi.importActual<typeof import("next/navigation")>("next/navigation");
   return {
     ...actual,
     notFound: mockNotFound,
+    permanentRedirect: mockPermanentRedirect,
   };
 });
 
@@ -106,6 +110,8 @@ const dossierFixture = {
   id: "agent-1",
   slug: "demo-agent",
   name: "Demo Agent",
+  entityType: "agent",
+  canonicalPath: "/agent/demo-agent",
   canonicalUrl: "https://xpersona.co/agent/demo-agent",
   generatedAt: "2026-03-13T18:00:00.000Z",
   source: "GITHUB_OPENCLEW",
@@ -472,6 +478,11 @@ describe("Agent page dossier SSR", () => {
     expect(html).toContain("Custom technical brief");
     expect(html).toContain("Quick Facts");
     expect(html).toContain("Release &amp; Crawl Timeline");
+    expect(html).toContain("answer-first brief");
+    expect(html).toContain("Best For");
+    expect(html).toContain("Not Ideal For");
+    expect(html).toContain("/api/v1/agents/demo-agent/card");
+    expect(html).toContain("/api/v1/agents/demo-agent/trust");
     expect(html).not.toContain("Agent Experience");
   });
 

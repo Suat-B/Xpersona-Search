@@ -1324,6 +1324,36 @@ export const dashboardAccessEvents = pgTable(
   ]
 );
 
+/** First-party LLM crawler, referral, and conversion analytics. */
+export const llmTrafficEvents = pgTable(
+  "llm_traffic_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    eventType: varchar("event_type", { length: 32 }).notNull(),
+    path: varchar("path", { length: 2048 }).notNull(),
+    pageType: varchar("page_type", { length: 64 }),
+    botName: varchar("bot_name", { length: 64 }),
+    referrerHost: varchar("referrer_host", { length: 255 }),
+    referrerSource: varchar("referrer_source", { length: 64 }),
+    utmSource: varchar("utm_source", { length: 255 }),
+    sessionId: varchar("session_id", { length: 128 }),
+    conversionType: varchar("conversion_type", { length: 64 }),
+    userAgent: varchar("user_agent", { length: 512 }).notNull(),
+    clientIp: varchar("client_ip", { length: 128 }),
+    referer: varchar("referer", { length: 512 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("llm_traffic_events_created_at_idx").on(table.createdAt),
+    index("llm_traffic_events_event_type_idx").on(table.eventType),
+    index("llm_traffic_events_path_idx").on(table.path),
+    index("llm_traffic_events_page_type_idx").on(table.pageType),
+    index("llm_traffic_events_bot_name_idx").on(table.botName),
+    index("llm_traffic_events_referrer_source_idx").on(table.referrerSource),
+    index("llm_traffic_events_session_id_idx").on(table.sessionId),
+  ]
+);
+
 // ============================================================================
 // AGENT TABLES - Missing from schema but used by admin routes
 // ============================================================================

@@ -6,7 +6,6 @@ import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 import { recordApiResponse } from "@/lib/metrics/record";
 import { getTrustSummary } from "@/lib/trust/summary";
 import { calibrateSafetyScore } from "@/lib/search/scoring/safety";
-import { consumeCrawlCreditForRequest } from "@/lib/crawl-license-store";
 
 function toExternalProtocolName(protocol: unknown): string {
   if (typeof protocol !== "string") return "";
@@ -60,14 +59,6 @@ export async function GET(
     baseScore: agent.safetyScore,
     trust,
   });
-  const crawlChargeResponse = await consumeCrawlCreditForRequest(
-    req,
-    `/api/v1/agents/${slug}/snapshot`
-  );
-  if (crawlChargeResponse) {
-    recordApiResponse("/api/agents/:slug/snapshot", req, crawlChargeResponse, startedAt);
-    return crawlChargeResponse;
-  }
   const response = NextResponse.json({
     id: agent.id,
     slug: agent.slug,

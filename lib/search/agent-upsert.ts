@@ -10,6 +10,7 @@ import {
   normalizeCapabilityTokens,
   sanitizeCapabilityLabels,
 } from "@/lib/search/capability-tokens";
+import { detectPublicEntityType } from "@/lib/entities/public-entities";
 import { canonicalizeSource } from "@/lib/search/source-taxonomy";
 
 type AgentInsert = typeof agents.$inferInsert;
@@ -50,6 +51,19 @@ function normalizeAgentRecord<T extends Partial<AgentInsert>>(
     ...(values.source || sourceId
       ? { source: canonicalizeSource(values.source as string | undefined, sourceId) }
       : {}),
+    entityType: detectPublicEntityType({
+      entityType: values.entityType as string | null | undefined,
+      source: values.source as string | null | undefined,
+      sourceId,
+      protocols: values.protocols,
+      agentCard: values.agentCard,
+      agentCardUrl: values.agentCardUrl as string | null | undefined,
+      openclawData: values.openclawData,
+      capabilities: values.capabilities,
+      readme: values.readme as string | null | undefined,
+      url: values.url as string | null | undefined,
+      homepage: values.homepage as string | null | undefined,
+    }),
     ...(rawCapabilities ? { capabilities: rawCapabilities } : {}),
     ...(rawCapabilities
       ? { capabilityTokens: normalizeCapabilityTokens(rawCapabilities) }

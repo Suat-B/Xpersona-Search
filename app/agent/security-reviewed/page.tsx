@@ -18,6 +18,8 @@ export default async function SecurityReviewedAgentsPage() {
   const feed = await getPublicAgentFeed("security-reviewed", 30);
   const agents = feed.items.map((item) => ({
     id: item.slug,
+    entityType: "agent" as const,
+    canonicalPath: `/agent/${item.slug}`,
     slug: item.slug,
     name: item.name,
     description: item.description,
@@ -53,7 +55,7 @@ export default async function SecurityReviewedAgentsPage() {
         ]}
         links={[
           { href: "/api/v1/feeds/agents/security-reviewed", label: "JSON feed" },
-          { href: "/api/v1/crawl-license", label: "Crawl license" },
+          { href: "/api/v1/openapi/ai-public", label: "AI OpenAPI" },
           { href: "/for-agents", label: "Machine onboarding" },
         ]}
       />

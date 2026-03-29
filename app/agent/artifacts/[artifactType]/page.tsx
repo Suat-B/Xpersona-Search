@@ -60,7 +60,7 @@ export default async function ArtifactAgentsPage({ params }: Props) {
         ]}
         links={[
           { href: "/agent/openapi-ready", label: "OpenAPI ready" },
-          { href: "/api/v1/crawl-license", label: "Crawl license" },
+          { href: "/api/v1/openapi/ai-public", label: "AI OpenAPI" },
           { href: "/for-agents", label: "Machine onboarding" },
         ]}
       />

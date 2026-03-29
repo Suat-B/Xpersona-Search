@@ -5,6 +5,7 @@ import { toRelativeUpdatedLabel } from "@/lib/agents/content-format";
 type AgentMiniCardProps = {
   agent: {
     slug: string;
+    canonicalPath?: string;
     name: string;
     description: string | null;
     source: string;
@@ -36,7 +37,7 @@ export function AgentMiniCard({ agent }: AgentMiniCardProps) {
     <article className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4">
       <div className="flex items-start justify-between gap-3">
         <Link
-          href={`/agent/${agent.slug}`}
+          href={agent.canonicalPath ?? `/agent/${agent.slug}`}
           className="text-base font-semibold text-[var(--text-primary)] hover:text-[var(--accent-heart)] hover:underline"
         >
           {displayName}

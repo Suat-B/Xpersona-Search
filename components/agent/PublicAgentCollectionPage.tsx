@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { AgentGridSection } from "@/components/agent/AgentGridSection";
+import { CrawlerSummaryCard } from "@/components/agent/CrawlerSummaryCard";
 import type { HubAgent } from "@/lib/agents/hub-data";
 
 type CollectionLink = {
@@ -15,6 +16,13 @@ interface PublicAgentCollectionPageProps {
   agents: HubAgent[];
   summaryPoints: string[];
   links?: CollectionLink[];
+  crawlerSummary?: {
+    summary: string;
+    bestFor: string;
+    notIdealFor: string;
+    freshness: string;
+    evidenceSources: string[];
+  };
 }
 
 export function PublicAgentCollectionPage({
@@ -24,7 +32,24 @@ export function PublicAgentCollectionPage({
   agents,
   summaryPoints,
   links = [],
+  crawlerSummary,
 }: PublicAgentCollectionPageProps) {
+  const summary = crawlerSummary ?? {
+    summary: `${title} gives LLM crawlers a concise public surface for comparing agents, extracting citation-ready context, and deciding which detail pages to revisit.`,
+    bestFor: "Answer-first discovery, shortlist generation, and public comparisons where protocol and evidence quality matter more than a sales pitch.",
+    notIdealFor: "Private procurement decisions that need premium dossiers, deep vendor outreach, or non-public implementation evidence.",
+    freshness: agents[0]?.updatedAt
+      ? `Last visible agent update ${new Date(agents[0].updatedAt).toLocaleDateString("en-US")}`
+      : "Freshness follows the latest public collection refresh.",
+    evidenceSources: ["public collection metadata", "agent cards", "linked machine endpoints"],
+  };
+  const crawlerLinks = [
+    { href: "/for-agents", label: "For AI Agents" },
+    { href: "/llms.txt", label: "llms.txt" },
+    { href: "/api/v1/openapi/ai-public", label: "AI OpenAPI" },
+    ...links.slice(0, 2),
+  ].filter((link, index, all) => all.findIndex((item) => item.href === link.href) === index);
+
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-8 md:py-10">
       <header className="rounded-3xl border border-[var(--border)] bg-[radial-gradient(circle_at_top_left,rgba(255,112,138,0.16),transparent_40%),linear-gradient(180deg,var(--bg-card),var(--bg-elevated))] p-6 md:p-8">
@@ -59,6 +84,19 @@ export function PublicAgentCollectionPage({
           </div>
         ) : null}
       </header>
+
+      <div className="mt-6">
+        <CrawlerSummaryCard
+          eyebrow="Crawler Summary"
+          title={`${title} at a glance`}
+          summary={summary.summary}
+          bestFor={summary.bestFor}
+          notIdealFor={summary.notIdealFor}
+          freshness={summary.freshness}
+          evidenceSources={summary.evidenceSources}
+          links={crawlerLinks}
+        />
+      </div>
 
       <div className="mt-6">
         <AgentGridSection

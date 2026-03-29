@@ -34,8 +34,7 @@ describe("AI marketing consistency", () => {
   it("unified CTA appears across all AI-facing surfaces", () => {
     const files = [
       "app/(marketing)/for-agents/page.tsx",
-      "app/llms.txt/route.ts",
-      "app/llms-full.txt/route.ts",
+      "lib/llms-text.ts",
       "app/docs/page.tsx",
       "app/api/page.tsx",
     ];
@@ -57,8 +56,7 @@ describe("AI marketing consistency", () => {
     ];
     const files = [
       "app/(marketing)/for-agents/page.tsx",
-      "app/llms.txt/route.ts",
-      "app/llms-full.txt/route.ts",
+      "lib/llms-text.ts",
       "app/docs/page.tsx",
     ];
 
@@ -70,11 +68,15 @@ describe("AI marketing consistency", () => {
 
   it("crawl surfaces include required AI onboarding URLs", () => {
     const robots = readUtf8("app/robots.ts");
-    const sitemap = readUtf8("app/sitemap.ts");
+    const sitemapIndex = readUtf8("app/sitemap.xml/route.ts");
+    const sitemapLib = readUtf8("lib/seo/sitemaps.ts");
 
     for (const url of ["/for-agents", "/llms.txt", "/llms-full.txt", "/docs", "/api"]) {
       expect(robots).toContain(url);
-      expect(sitemap).toContain(url);
+      expect(sitemapLib).toContain(url);
     }
+
+    expect(sitemapIndex).toContain("renderSitemapIndex");
+    expect(sitemapLib).toContain("/sitemaps/core.xml");
   });
 });
