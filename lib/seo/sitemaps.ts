@@ -57,6 +57,10 @@ const NOISY_HOST_PATTERNS = [
   /(^|\.)youtu\.be$/i,
 ] as const;
 
+function isMissingEntityTypeColumnError(error: unknown): boolean {
+  return error instanceof Error && /column "entity_type" does not exist/i.test(error.message);
+}
+
 function getBaseUrl(): string {
   return process.env.NEXTAUTH_URL ?? DEFAULT_BASE_URL;
 }
@@ -97,24 +101,53 @@ export function isLowQualityPublicAgent(row: AgentSitemapRow): boolean {
 }
 
 async function getPublicSitemapRows(entityType: PublicEntityType): Promise<AgentSitemapRow[]> {
-  const rows = await db
-    .select({
-      slug: agents.slug,
-      entityType: agents.entityType,
-      name: agents.name,
-      description: agents.description,
-      url: agents.url,
-      homepage: agents.homepage,
-      updatedAt: agents.updatedAt,
-      protocols: agents.protocols,
-      capabilities: agents.capabilities,
-      source: agents.source,
-    })
-    .from(agents)
-    .where(and(eq(agents.status, "ACTIVE"), eq(agents.publicSearchable, true), eq(agents.entityType, entityType)))
-    .limit(MAX_AGENT_URLS);
+  try {
+    const rows = await db
+      .select({
+        slug: agents.slug,
+        entityType: agents.entityType,
+        name: agents.name,
+        description: agents.description,
+        url: agents.url,
+        homepage: agents.homepage,
+        updatedAt: agents.updatedAt,
+        protocols: agents.protocols,
+        capabilities: agents.capabilities,
+        source: agents.source,
+      })
+      .from(agents)
+      .where(and(eq(agents.status, "ACTIVE"), eq(agents.publicSearchable, true), eq(agents.entityType, entityType)))
+      .limit(MAX_AGENT_URLS);
 
-  return rows.filter((row) => !isLowQualityPublicAgent(row));
+    return rows.filter((row) => !isLowQualityPublicAgent(row));
+  } catch (error) {
+    if (!isMissingEntityTypeColumnError(error)) throw error;
+    if (entityType !== "agent") return [];
+
+    console.warn("[Sitemaps] agents.entity_type missing; falling back to agent-only sitemap rows");
+    const rows = await db
+      .select({
+        slug: agents.slug,
+        name: agents.name,
+        description: agents.description,
+        url: agents.url,
+        homepage: agents.homepage,
+        updatedAt: agents.updatedAt,
+        protocols: agents.protocols,
+        capabilities: agents.capabilities,
+        source: agents.source,
+      })
+      .from(agents)
+      .where(and(eq(agents.status, "ACTIVE"), eq(agents.publicSearchable, true)))
+      .limit(MAX_AGENT_URLS);
+
+    return rows
+      .map((row) => ({
+        ...row,
+        entityType: "agent" as const,
+      }))
+      .filter((row) => !isLowQualityPublicAgent(row));
+  }
 }
 
 export async function getAgentSitemapRows(): Promise<AgentSitemapRow[]> {
@@ -489,11 +522,18 @@ export async function getTaxonomySitemapEntries(): Promise<SitemapEntry[]> {
 }
 
 export async function getSitemapDescriptors(): Promise<Array<{ path: string; lastModified: Date }>> {
-  const [agentEntries, skillEntries, mcpEntries] = await Promise.all([
-    getAgentSitemapEntries(),
-    getSkillSitemapEntries(),
-    getMcpSitemapEntries(),
-  ]);
+  let agentEntries: SitemapEntry[] = [];
+  let skillEntries: SitemapEntry[] = [];
+  let mcpEntries: SitemapEntry[] = [];
+  try {
+    [agentEntries, skillEntries, mcpEntries] = await Promise.all([
+      getAgentSitemapEntries(),
+      getSkillSitemapEntries(),
+      getMcpSitemapEntries(),
+    ]);
+  } catch (error) {
+    console.warn("[Sitemaps] Falling back to base sitemap descriptors", error);
+  }
   const agentChunks = Math.max(1, Math.ceil(agentEntries.length / SITEMAP_AGENT_CHUNK_SIZE));
   const skillChunks = Math.max(1, Math.ceil(skillEntries.length / SITEMAP_AGENT_CHUNK_SIZE));
   const mcpChunks = Math.max(1, Math.ceil(mcpEntries.length / SITEMAP_AGENT_CHUNK_SIZE));

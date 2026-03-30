@@ -191,7 +191,11 @@ const SearchSchema = z.object({
     .string()
     .optional()
     .transform((s) => s === "1" || s === "true"),
-  fields: z.enum(["full", "compact"]).default("full"),
+  fields: z.enum(["full", "compact", "card"]).default("full"),
+  includeTotal: z
+    .string()
+    .optional()
+    .transform((s) => (s === "0" || s === "false" ? false : true)),
   intent: z.enum(["discover", "execute"]).default("discover"),
   taskType: z.enum(TASK_TYPES).optional(),
   maxLatencyMs: z.coerce.number().int().min(1).max(300000).optional(),
@@ -1109,7 +1113,8 @@ export async function GET(req: NextRequest) {
   const strictContracts =
     params.intent === "execute" &&
     (Boolean(params.strictContracts) || isStrictContractsEnabled(clientType));
-  const includeContent = params.include.includes("content");
+  const includeContent = params.fields !== "card" && params.include.includes("content");
+  const includeTotal = params.includeTotal !== false;
 
   // --- Cache check ---
   const cacheKey = buildCacheKey({
@@ -1138,6 +1143,7 @@ export async function GET(req: NextRequest) {
     skillsOnly: Boolean(params.skillsOnly),
     debug: params.debug,
     fields: params.fields,
+    includeTotal,
     intent: params.intent,
     taskType: params.taskType ?? "",
     maxLatencyMs: params.maxLatencyMs ?? "",
@@ -1427,8 +1433,7 @@ export async function GET(req: NextRequest) {
 
     // --- Main query with ts_headline snippets ---
     async function runMainQuery(
-      includeClaimColumns: boolean
-      ,
+      includeClaimColumns: boolean,
       includeEngagementJoin: boolean
     ): Promise<Array<Record<string, unknown>>> {
       const claimStatusExpr = includeClaimColumns
@@ -1554,7 +1559,7 @@ export async function GET(req: NextRequest) {
                   entity_type,
                   capabilities, protocols, canonical_agent_id,
                   safety_score, popularity_score, freshness_score, overall_rank, github_data, npm_data, openclaw_data,
-                  languages, created_at, ${claimCols}
+                  languages, created_at, updated_at, ${claimCols}
                   ${skillPriorityExpr} AS skill_priority,
                   (
                     ts_rank(search_vector, ${rankTsQuery})
@@ -1626,8 +1631,8 @@ export async function GET(req: NextRequest) {
                       + freshness_score_norm * ${rankingWeights.freshness}
                     )
                   ELSE lexical_score
-                END AS final_score,
-                count(*) OVER() AS total_count
+                END AS final_score
+                ${includeTotal ? sql`, count(*) OVER() AS total_count` : sql``}
               FROM base
               ORDER BY
                 CASE WHEN homepage IS NOT NULL AND homepage != '' THEN 1 ELSE 0 END DESC,
@@ -1654,7 +1659,7 @@ export async function GET(req: NextRequest) {
               entity_type,
               capabilities, protocols, canonical_agent_id, safety_score, popularity_score,
               freshness_score, overall_rank, github_data, npm_data, openclaw_data,
-              languages, created_at, ${claimCols}
+              languages, created_at, updated_at, ${claimCols}
               ${skillPriorityExpr} AS skill_priority,
               ${textQuery
                 ? sql`ts_headline('english', coalesce(description, ''),
@@ -1662,7 +1667,7 @@ export async function GET(req: NextRequest) {
                     'MaxWords=35, MinWords=15, StartSel=<mark>, StopSel=</mark>'
                   ) AS snippet,`
                 : sql`NULL AS snippet,`}
-              count(*) OVER() AS total_count
+              ${includeTotal ? sql`count(*) OVER() AS total_count` : sql`NULL::bigint AS total_count`}
             FROM agents
             WHERE ${and(...allConditions)}
             ORDER BY
@@ -1779,14 +1784,146 @@ export async function GET(req: NextRequest) {
       rows = await executeCurrentStage(stageMatchMode);
     }
 
-    // Extract total from window function (avoids separate count query)
-    const totalFromWindow = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
-    const totalMatches = params.cursor ? await getTotalCount(conditions) : totalFromWindow;
+    const totalFromWindow = includeTotal && rows.length > 0 ? Number(rows[0].total_count ?? 0) : null;
+    const totalMatches = includeTotal
+      ? params.cursor
+        ? await getTotalCount(conditions)
+        : (totalFromWindow ?? 0)
+      : null;
     const hasMore = rows.length > params.limit;
     const resultRows = hasMore ? rows.slice(0, -1) : rows;
 
     // --- Diversify results: max 2 from same source in top 10 ---
     let diversified = diversifyResults(resultRows);
+    if (params.fields === "card") {
+      const results = diversified.map((r) => {
+        const entityType =
+          r.entity_type === "skill" || r.entity_type === "mcp" || r.entity_type === "agent"
+            ? r.entity_type
+            : "agent";
+        const protocolsRaw = Array.isArray(r.protocols) ? (r.protocols as string[]) : [];
+        return {
+          id: r.id as string,
+          name: r.name as string,
+          slug: r.slug as string,
+          canonicalPath: getCanonicalEntityPath(entityType, r.slug as string),
+          entityType,
+          description: (r.description as string | null) ?? null,
+          capabilities: Array.isArray(r.capabilities) ? (r.capabilities as string[]) : [],
+          protocols: protocolsRaw
+            .map((p) => toExternalProtocolName(p))
+            .filter((p) => p.length > 0),
+          safetyScore: calibrateSafetyScore({
+            baseScore: Number(r.safety_score ?? 0),
+            verificationTier: (r.verification_tier as string | null) ?? "NONE",
+            claimStatus: (r.claim_status as string | null) ?? "UNCLAIMED",
+          }),
+          overallRank: Number(r.overall_rank ?? 0),
+          githubData: (r.github_data as Record<string, unknown> | null) ?? null,
+          updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : undefined,
+        };
+      });
+
+      const nextCursor = hasMore
+        ? (diversified[diversified.length - 1]?.id as string | undefined) ?? null
+        : null;
+      const facets = await getFacets(conditions);
+      let didYouMean: string | null = null;
+      if (rawQuery && results.length < 3) {
+        didYouMean = await findDidYouMean(rawQuery);
+      }
+      const fallbackApplied = rawQuery.length > 0 && stageMatchMode !== "strict_lexical";
+      const fallbackReason =
+        results.length === 0 && rawQuery
+          ? hasExplicitFilters
+            ? "no-matches-with-current-filters"
+            : "no-related-results"
+          : undefined;
+      const searchMeta = {
+        fallbackApplied,
+        matchMode: stageMatchMode,
+        queryOriginal: rawQuery,
+        queryInterpreted: interpretedTextQuery || strictTextQuery || rawQuery,
+        filtersHonored: true,
+        stagesTried,
+        ...(fallbackReason
+          ? {
+              fallbackReason:
+                stageNotes.length > 0 ? `${fallbackReason}; ${stageNotes.join(",")}` : fallbackReason,
+            }
+          : {}),
+        ...(includeRankingDebug
+          ? {
+              diagnostics: {
+                stageTimings,
+                interpretedIsNaturalLanguage,
+              },
+            }
+          : {}),
+      };
+
+      searchCircuitBreaker.recordSuccess();
+
+      const responseBody = {
+        results,
+        pagination: {
+          hasMore,
+          nextCursor,
+          ...(typeof totalMatches === "number" ? { total: totalMatches } : {}),
+        },
+        facets,
+        searchMeta,
+        ...(didYouMean ? { didYouMean } : {}),
+      };
+
+      if (shouldLogRanking() && rawQuery) {
+        console.info(
+          "[SearchRank]",
+          JSON.stringify({
+            query: rawQuery,
+            queryHash,
+            hybrid: useHybridRanking,
+            topIds: results.slice(0, 5).map((r) => r.id),
+            weights: rankingWeights,
+            engagement,
+            matchMode: stageMatchMode,
+            stagesTried,
+            stageTimings,
+            fallbackApplied,
+          })
+        );
+      }
+
+      searchResultsCache.set(cacheKey, responseBody);
+
+      const response = NextResponse.json(responseBody);
+      response.headers.set(
+        "Cache-Control",
+        "public, s-maxage=30, stale-while-revalidate=60"
+      );
+      response.headers.set("X-Cache", "MISS");
+      if (shouldIncludeDebugHeaders()) {
+        response.headers.set("X-Search-Ranking", useHybridRanking ? "hybrid" : "lexical");
+        response.headers.set("X-Search-Match-Mode", stageMatchMode);
+        response.headers.set("X-Search-Fallback", fallbackApplied ? "1" : "0");
+        response.headers.set(
+          "X-Search-Weights",
+          `${rankingWeights.lexical.toFixed(3)},${rankingWeights.authority.toFixed(3)},${rankingWeights.engagement.toFixed(3)},${rankingWeights.freshness.toFixed(3)}`
+        );
+      }
+      if (rlResult.remaining != null) {
+        response.headers.set(
+          "X-RateLimit-Remaining",
+          String(rlResult.remaining)
+        );
+      }
+      response.headers.set("X-RateLimit-Limit", String(rateLimitLimit));
+      recordSearchOutcome(results.length > 0 ? "success" : "no_results");
+      applyRequestIdHeader(response, req);
+      recordApiResponse("/api/search", req, response, startedAt);
+      return response;
+    }
+
     const agentIds = diversified.map((r) => String(r.id));
     const editorialMetaByAgent = includeContent
       ? await getEditorialContentMetaMap(agentIds)
@@ -2293,7 +2430,11 @@ export async function GET(req: NextRequest) {
 
     const responseBody = {
       results,
-      pagination: { hasMore, nextCursor, total: totalMatches },
+      pagination: {
+        hasMore,
+        nextCursor,
+        ...(typeof totalMatches === "number" ? { total: totalMatches } : {}),
+      },
       facets,
       searchMeta,
       ...(params.returnPlan && executeParams.intent === "execute"

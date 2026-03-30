@@ -144,30 +144,6 @@ export function SearchTopControlsBar({
                 Updating results...
               </p>
             ) : null}
-            <div className="mt-3 flex flex-wrap gap-2">
-              {(["all", "agents", "skills", "mcps", "artifacts"] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => onVerticalChange(v)}
-                  className={`px-3 py-2 min-h-[36px] rounded-full border text-xs font-semibold transition-colors ${
-                    vertical === v
-                      ? "border-[var(--accent-heart)] text-[var(--accent-heart)] bg-[var(--accent-heart)]/10"
-                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
-                  }`}
-                >
-                  {v === "all"
-                    ? "All"
-                    : v === "agents"
-                      ? "Agents"
-                      : v === "skills"
-                        ? "Skills"
-                        : v === "mcps"
-                          ? "MCPs"
-                        : "Artifacts"}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">

@@ -264,38 +264,6 @@ export function SearchResultsBar({
                   role="menu"
                 >
                   <div>
-                    <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-2">
-                      Results
-                    </span>
-                    <div className="flex flex-wrap gap-2">
-                      {(["all", "agents", "skills", "mcps", "artifacts"] as const).map((v) => (
-                        <button
-                          key={v}
-                          type="button"
-                          onClick={() => {
-                            onVerticalChange(v);
-                            setShowTools(false);
-                          }}
-                          className={`px-2.5 py-1 rounded-lg border text-xs font-semibold ${
-                            vertical === v
-                              ? "border-[var(--accent-heart)] text-[var(--accent-heart)] bg-[var(--accent-heart)]/10"
-                              : "border-[var(--border)] text-[var(--text-tertiary)]"
-                          }`}
-                        >
-                          {v === "all"
-                            ? "All"
-                            : v === "agents"
-                              ? "Agents"
-                              : v === "skills"
-                                ? "Skills"
-                                : v === "mcps"
-                                  ? "MCPs"
-                                  : "Artifacts"}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
                     <label
                       htmlFor="search-intent"
                       className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-2"
@@ -441,23 +409,6 @@ export function SearchResultsBar({
             )}
           </div>
         </div>
-        <div className="mt-2 grid grid-cols-3 gap-2 sm:hidden">
-          {(["agents", "skills", "artifacts"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => onVerticalChange(v)}
-              className={`px-2.5 py-2 min-h-[40px] rounded-lg border text-xs font-semibold transition-colors touch-manipulation ${
-                vertical === v
-                  ? "border-[var(--accent-heart)] text-[var(--accent-heart)] bg-[var(--accent-heart)]/10"
-                  : "border-[var(--border)] text-[var(--text-tertiary)]"
-              }`}
-            >
-              {v === "agents" ? "Agents" : v === "skills" ? "Skills" : "Artifacts"}
-            </button>
-          ))}
-        </div>
-
       </div>
     </div>
   );

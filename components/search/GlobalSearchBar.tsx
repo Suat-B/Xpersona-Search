@@ -26,10 +26,17 @@ export function GlobalSearchBar({
   const searchAnchorRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<SearchSuggestionsHandle>(null);
+  const hasPrefetchedSearchRef = useRef(false);
 
   useEffect(() => {
     setQuery(searchParams.get("q") ?? "");
   }, [searchParams]);
+
+  const prefetchSearchRoute = useCallback(() => {
+    if (hasPrefetchedSearchRef.current) return;
+    hasPrefetchedSearchRef.current = true;
+    router.prefetch("/search");
+  }, [router]);
 
   const navigateToSearch = useCallback(
     (text: string) => {
@@ -70,12 +77,13 @@ export function GlobalSearchBar({
   );
 
   const handleFocus = useCallback(() => {
+    prefetchSearchRoute();
     if (blurTimeoutRef.current) {
       clearTimeout(blurTimeoutRef.current);
       blurTimeoutRef.current = undefined;
     }
     setShowSuggestions(true);
-  }, []);
+  }, [prefetchSearchRoute]);
 
   const handleBlur = useCallback(() => {
     blurTimeoutRef.current = setTimeout(() => setShowSuggestions(false), BLUR_DELAY_MS);
@@ -119,7 +127,10 @@ export function GlobalSearchBar({
           ref={inputRef}
           type="search"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            prefetchSearchRoute();
+            setQuery(e.target.value);
+          }}
           onFocus={handleFocus}
           onBlur={handleBlur}
           onKeyDown={handleInputKeyDown}

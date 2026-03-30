@@ -47,7 +47,7 @@ interface Agent {
   capabilities: string[];
   protocols: string[];
   safetyScore: number;
-  popularityScore: number;
+  popularityScore?: number;
   overallRank: number;
   claimStatus?: string;
   verificationTier?: "NONE" | "BRONZE" | "SILVER" | "GOLD";
@@ -182,7 +182,7 @@ interface CachedSearchPage {
   agents: SearchResultItem[];
   mediaResults: MediaResult[];
   fallbackAgents: Agent[];
-  total: number;
+  total: number | null;
   hasMore: boolean;
   facets?: Facets;
   searchMeta: SearchMeta | null;
@@ -281,7 +281,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
   const [fallbackAgents, setFallbackAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
-  const [total, setTotal] = useState<number>(0);
+  const [total, setTotal] = useState<number | null>(null);
   const [selectedProtocols, setSelectedProtocols] = useState<string[]>(() =>
     parseProtocolsFromUrl(searchParams.get("protocols"))
   );
@@ -438,8 +438,9 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
 
       const requestParams = new URLSearchParams(urlParams.toString());
       requestParams.set("vertical", requestVertical);
+      requestParams.set("includeTotal", "0");
       if (requestVertical === "agents") {
-        requestParams.set("include", "content");
+        requestParams.set("fields", "card");
       }
       if (isSkillsOnlyVertical(resolvedState.vertical)) {
         requestParams.set("entityTypes", "skill");
@@ -529,7 +530,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
           agents: nextAgents,
           mediaResults: nextMedia,
           fallbackAgents: requestVertical === "artifacts" ? nextFallbackAgents : [],
-          total: searchData.pagination?.total ?? 0,
+          total: typeof searchData.pagination?.total === "number" ? searchData.pagination.total : null,
           hasMore: searchData.pagination?.hasMore ?? false,
           facets: searchData.facets,
           searchMeta: searchData.searchMeta ?? null,
@@ -560,7 +561,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
           setAgents([]);
           setMediaResults([]);
           setFallbackAgents([]);
-          setTotal(0);
+          setTotal(null);
           setHasMore(false);
           setFacets(undefined);
           setSearchMeta(null);
@@ -679,10 +680,8 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
 
   const hasResults = vertical === "artifacts" ? mediaResults.length > 0 : agents.length > 0;
   const hasFallbackAgents = fallbackAgents.length > 0;
-  const countValue = vertical === "artifacts" ? mediaResults.length : agents.length;
-  const totalValue = total > 0 ? total : countValue;
-  const totalLabel = totalValue > 0
-    ? `${totalValue.toLocaleString("en-US")} ${
+  const totalLabel = typeof total === "number" && total > 0
+    ? `${total.toLocaleString("en-US")} ${
         vertical === "artifacts"
           ? "assets"
         : vertical === "skills"
@@ -735,7 +734,9 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     });
   }, [loadPage]);
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = typeof total === "number" && total > 0
+    ? Math.max(1, Math.ceil(total / PAGE_SIZE))
+    : null;
   const activeScopeKey = buildSearchScopeKey(buildResolvedState());
   const activeCursorMap = cursorStoreRef.current[activeScopeKey] ?? { 1: null };
   const maxNavigablePage = Math.max(
@@ -743,7 +744,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     ...Object.keys(activeCursorMap).map((p) => Number(p)),
     hasMore ? page + 1 : 1
   );
-  const pageItems = buildPageItems(page, totalPages);
+  const pageItems = totalPages ? buildPageItems(page, totalPages) : [];
   const filtersSidebar = (
     <SearchFiltersSidebar
       facets={facets}
@@ -1064,7 +1065,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
                       </div>
                     )}
 
-                    {totalPages > 1 && (
+                    {((totalPages != null && totalPages > 1) || (totalPages == null && (page > 1 || hasMore))) && (
                       <div className="flex flex-col items-center gap-4 pt-8">
                         <div className="flex flex-wrap items-center justify-center gap-2">
                           <button
@@ -1112,7 +1113,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
                           </button>
                         </div>
                         <p className="text-xs text-[var(--text-tertiary)]">
-                          Page {page} of {totalPages}
+                          {totalPages != null ? `Page ${page} of ${totalPages}` : `Page ${page}`}
                         </p>
                       </div>
                     )}

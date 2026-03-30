@@ -12,7 +12,7 @@ interface Agent {
   capabilities: string[];
   protocols: string[];
   safetyScore: number;
-  popularityScore: number;
+  popularityScore?: number;
   overallRank: number;
   githubData?: { stars?: number; forks?: number };
   claimStatus?: string;

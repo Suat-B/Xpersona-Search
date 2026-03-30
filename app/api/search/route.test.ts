@@ -108,6 +108,7 @@ function mockAgent(overrides: Record<string, unknown> = {}) {
     npm_data: null,
     languages: ["typescript"],
     created_at: new Date("2025-01-01"),
+    updated_at: new Date("2025-01-02"),
     snippet: null,
     total_count: 1,
     ...overrides,
@@ -297,6 +298,37 @@ describe("GET /api/search", () => {
     expect(res.status).toBe(200);
   });
 
+  it("accepts lean card-field mode and trims the result payload", async () => {
+    mockDb.execute.mockResolvedValue({
+      rows: [mockAgent({ claim_status: "CLAIMED", verification_tier: "SILVER" })],
+    });
+
+    const res = await GET(
+      new NextRequest("http://localhost/api/search?fields=card&sort=rank&limit=5")
+    );
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.results[0]).toMatchObject({
+      id: "550e8400-e29b-41d4-a716-446655440000",
+      name: "Test Agent",
+      slug: "test-agent",
+      canonicalPath: "/agent/test-agent",
+      entityType: "agent",
+      description: "A test agent",
+      capabilities: ["testing"],
+      protocols: ["MCP"],
+      overallRank: 72.5,
+      githubData: { stars: 42 },
+      updatedAt: "2025-01-02T00:00:00.000Z",
+    });
+    expect(data.results[0].url).toBeUndefined();
+    expect(data.results[0].trust).toBeUndefined();
+    expect(data.results[0].agentExecution).toBeUndefined();
+    expect(data.pagination.total).toBe(1);
+    expect(data.searchMeta).toBeDefined();
+  });
+
   it("falls back to agent search when vertical=all and document index is unavailable", async () => {
     mockDb.execute
       .mockResolvedValueOnce({ rows: [{ regclass: null }] }) // search_documents table check
@@ -452,6 +484,26 @@ describe("GET /api/search", () => {
     expect(data.results[0].claimStatus).toBe("CLAIMED");
     expect(data.results[0].verificationTier).toBe("SILVER");
     expect(data.results[0].hasCustomPage).toBe(true);
+  });
+
+  it("omits exact totals when includeTotal=0 while preserving cursor pagination", async () => {
+    mockDb.execute.mockResolvedValue({
+      rows: [
+        mockAgent({ id: "id-1", total_count: null }),
+        mockAgent({ id: "id-2", total_count: null }),
+      ],
+    });
+
+    const res = await GET(
+      new NextRequest("http://localhost/api/search?sort=rank&limit=1&includeTotal=0")
+    );
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.pagination.hasMore).toBe(true);
+    expect(data.pagination.nextCursor).toBe("id-1");
+    expect("total" in data.pagination).toBe(false);
+    expect(data.results).toHaveLength(1);
   });
 
   it("includes rankingDebug only with debug=1 in non-production", async () => {
