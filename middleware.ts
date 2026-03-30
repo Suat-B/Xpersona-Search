@@ -16,7 +16,7 @@ import {
   LLM_REF_COOKIE_NAME,
   normalizeReferrerHost,
   parseLlmReferralSession,
-} from "@/lib/llm-traffic";
+} from "@/lib/llm-traffic-shared";
 import {
   createCrawlLicenseRequiredResponse,
   CRAWL_CUSTOMER_ID_HEADER,

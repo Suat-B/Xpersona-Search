@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   INTERNAL_LLM_TRAFFIC_HEADER,
-  recordLlmTrafficEvent,
   type LlmTrafficEventType,
-} from "@/lib/llm-traffic";
+} from "@/lib/llm-traffic-shared";
+import { recordLlmTrafficEvent } from "@/lib/llm-traffic";
+
+export const runtime = "nodejs";
 
 const VALID_EVENT_TYPES = new Set<LlmTrafficEventType>([
   "crawler_hit",
@@ -29,7 +31,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: "BAD_REQUEST" }, { status: 400 });
   }
 
-  recordLlmTrafficEvent({
+  await recordLlmTrafficEvent({
     eventType,
     path,
     pageType: typeof payload.pageType === "string" ? payload.pageType : null,
