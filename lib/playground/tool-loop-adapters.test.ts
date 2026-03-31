@@ -57,6 +57,24 @@ describe("tool loop adapters", () => {
     expect(parsed?.toolCall?.arguments.refresh).toBe(true);
   });
 
+  it("accepts browser-native tool calls", () => {
+    const parsed = parseToolLoopJson(
+      JSON.stringify({
+        toolCall: {
+          id: "call_browser_snapshot",
+          name: "browser_snapshot_dom",
+          arguments: { pageId: "page_1", limit: 10 },
+          kind: "observe",
+          summary: "Inspect the current Gmail DOM before acting",
+        },
+      }),
+      ["browser_snapshot_dom"]
+    );
+
+    expect(parsed?.toolCall?.name).toBe("browser_snapshot_dom");
+    expect(parsed?.toolCall?.arguments.pageId).toBe("page_1");
+  });
+
   it("rejects text-actions responses that try to return batch actions", () => {
     const parsed = parseToolLoopJson(
       JSON.stringify({
@@ -118,9 +136,7 @@ describe("tool loop adapters", () => {
 
   it("prefers the OpenHands gateway when configured", async () => {
     process.env.OPENHANDS_GATEWAY_URL = "http://localhost:8010";
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
+    const fetchMock = vi.fn(async () => ({
         ok: true,
         json: async () => ({
           runId: "oh_run_1",
@@ -135,8 +151,8 @@ describe("tool loop adapters", () => {
           logs: ["gateway=openhands"],
           version: "test-gateway",
         }),
-      }))
-    );
+      }));
+    vi.stubGlobal("fetch", fetchMock);
 
     const result = await requestToolLoopTurn({
       request: {
@@ -146,6 +162,12 @@ describe("tool loop adapters", () => {
         context: {
           activeFile: { path: "src/app.ts", content: "export const x = 1;" },
         },
+      },
+      tom: {
+        enabled: true,
+        userKey: "hashed-user-key",
+        sessionId: "sess-1",
+        traceId: "trace-1",
       },
       targetInference: {
         path: "src/app.ts",
@@ -177,6 +199,14 @@ describe("tool loop adapters", () => {
     expect(result.orchestratorRunId).toBe("oh_run_1");
     expect(result.toolCall?.name).toBe("read_file");
     expect(result.logs).toContain("adapter=openhands_gateway");
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as { tom?: { userKey?: string; enabled?: boolean } };
+    expect(body.tom).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        userKey: "hashed-user-key",
+      })
+    );
   });
 
   it("recovers a gateway tool call that leaked into final text", async () => {

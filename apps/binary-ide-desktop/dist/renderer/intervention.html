@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Binary Intervention</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="surface intervention-surface">
+    <main class="intervention-shell">
+      <header class="intervention-header">
+        <p class="eyebrow">Intervention Sheet</p>
+        <h1 id="interventionTitle">Binary is running smoothly</h1>
+        <p id="interventionSummary" class="lede">When Binary hits a blocked or high-friction moment, this sheet will surface the exact reason and let you step in without losing context.</p>
+      </header>
+
+      <section class="panel compact">
+        <div class="panel-head">
+          <h2>Reason</h2>
+          <span id="interventionStatus" class="confidence-pill blocked">standby</span>
+        </div>
+        <div id="interventionReason" class="proof-card empty">No intervention is currently required.</div>
+      </section>
+
+      <section class="panel compact">
+        <div class="panel-head">
+          <h2>Latest Proof</h2>
+          <span class="pill">before you step in</span>
+        </div>
+        <div id="interventionProof" class="proof-card empty">Binary has not attached a proof card yet.</div>
+      </section>
+
+      <section class="panel compact">
+        <div class="panel-head">
+          <h2>Takeover Ladder</h2>
+          <span class="pill">observe, pause, repair, resume</span>
+        </div>
+        <div class="control-ladder stacked">
+          <button id="interventionPause" class="secondary">Pause</button>
+          <button id="interventionResume" class="secondary">Resume</button>
+          <button id="interventionTakeover">Take over</button>
+          <button id="interventionRepair" class="secondary">Repair and resume</button>
+          <button id="interventionRetry" class="secondary">Retry last turn</button>
+          <button id="interventionCancel" class="danger">Cancel</button>
+          <button id="interventionOpenMain" class="ghost">Open control center</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="./intervention.js" type="module"></script>
+  </body>
+</html>

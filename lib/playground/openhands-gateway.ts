@@ -23,6 +23,12 @@ type GatewayToolTraceEntry = {
 
 type OpenHandsGatewayRunRequest = {
   request: AssistRuntimeInput;
+  tom?: {
+    enabled: boolean;
+    userKey?: string;
+    sessionId?: string;
+    traceId?: string;
+  };
   targetInference: AssistTargetInference;
   contextSelection: AssistContextSelection;
   fallbackPlan: AssistPlan;
@@ -327,6 +333,14 @@ function buildGatewayPayload(input: OpenHandsGatewayRunRequest): Record<string, 
       context: input.request.context || null,
       clientTrace: input.request.clientTrace || null,
     },
+    tom: input.tom
+      ? {
+          enabled: input.tom.enabled,
+          userKey: input.tom.userKey || null,
+          sessionId: input.tom.sessionId || null,
+          traceId: input.tom.traceId || null,
+        }
+      : null,
     targetInference: input.targetInference,
     contextSelection: input.contextSelection,
     fallbackPlan: input.fallbackPlan,

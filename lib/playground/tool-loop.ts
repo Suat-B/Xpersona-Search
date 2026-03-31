@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   LoopStateContract,
   ObjectiveStateContract,
@@ -48,7 +49,7 @@ import type { ExecuteAction } from "@/lib/playground/policy";
 /** Defaults when the client omits `clientTrace` limits (aligned with Binary autonomy targets). */
 const DEFAULT_MAX_TOOL_STEPS = 128;
 const DEFAULT_MAX_MUTATING_STEPS = 12;
-const MAX_REPAIR_ROUNDS = 5;
+const MAX_REPAIR_ROUNDS = 7;
 const MAX_IDENTICAL_CALLS = 2;
 
 type ToolLoopRepairStage =
@@ -95,6 +96,21 @@ type ContinueToolLoopInput = {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function buildToolLoopTomContext(input: {
+  userId: string;
+  sessionId?: string | null;
+  traceId: string;
+  request: AssistRuntimeInput;
+}): { enabled: boolean; userKey: string; sessionId?: string; traceId: string } | undefined {
+  if (input.request.tom?.enabled === false) return undefined;
+  return {
+    enabled: true,
+    userKey: createHash("sha256").update(String(input.userId)).digest("hex"),
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    traceId: input.traceId,
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -150,7 +166,14 @@ function isMutatingTool(name: PlaygroundToolName): boolean {
     name === "desktop_type" ||
     name === "desktop_keypress" ||
     name === "desktop_scroll" ||
-    name === "desktop_wait"
+    name === "desktop_wait" ||
+    name === "browser_open_page" ||
+    name === "browser_focus_page" ||
+    name === "browser_navigate" ||
+    name === "browser_click" ||
+    name === "browser_type" ||
+    name === "browser_press_keys" ||
+    name === "browser_scroll"
   );
 }
 
@@ -539,15 +562,76 @@ function extractRequestedBranchName(task: string): string | null {
   return null;
 }
 
+function getCommandFromTraceEntry(entry: ToolTraceEntryContract): string {
+  if (entry.toolCall?.name !== "run_command") return "";
+  if (typeof entry.toolCall.arguments.command === "string") {
+    return String(entry.toolCall.arguments.command);
+  }
+  if (typeof entry.toolResult?.data?.command === "string") {
+    return String(entry.toolResult.data.command);
+  }
+  return "";
+}
+
+function traceHasSuccessfulValidation(toolTrace: ToolTraceEntryContract[]): boolean {
+  return toolTrace.some((entry) => {
+    if (entry.status !== "completed" || entry.toolCall?.name !== "run_command") return false;
+    const category =
+      typeof entry.toolCall.arguments.category === "string" ? String(entry.toolCall.arguments.category) : "";
+    const command = getCommandFromTraceEntry(entry).toLowerCase();
+    return (
+      category === "validation" ||
+      /\b(npm test|node --test|pytest|python -m pytest|python -m py_compile|npm run lint|typecheck)\b/.test(command)
+    );
+  });
+}
+
+function classifyStructuredFailureCategory(
+  toolResult: ToolResultContract,
+  pendingToolCall: PendingToolCallContract
+): string {
+  const summary = `${toolResult.summary || ""}\n${toolResult.error || ""}\n${String(toolResult.data?.stderr || "")}`.toLowerCase();
+  const category =
+    typeof pendingToolCall.toolCall.arguments.category === "string"
+      ? String(pendingToolCall.toolCall.arguments.category)
+      : "";
+  if (
+    summary.includes("describe is not defined") ||
+    summary.includes("expect is not defined") ||
+    summary.includes("jest is not defined")
+  ) {
+    return "broken_test_harness";
+  }
+  if (
+    summary.includes("node: bad option") ||
+    summary.includes("unknown option") ||
+    summary.includes("cannot find module") ||
+    summary.includes("no module named")
+  ) {
+    return "language_runtime_mismatch";
+  }
+  if (category === "validation") return "validation_command_failure";
+  if (
+    summary.includes("missing file") ||
+    summary.includes("target file did not exist") ||
+    summary.includes("enoent")
+  ) {
+    return "missing_required_file";
+  }
+  if (
+    summary.includes("invalid workspace-relative path") ||
+    summary.includes("outside the workspace") ||
+    summary.includes("invalid path")
+  ) {
+    return "wrong_target_path";
+  }
+  return "tool_result_failed";
+}
+
 function traceHasSuccessfulCommand(toolTrace: ToolTraceEntryContract[], pattern: RegExp): boolean {
   return toolTrace.some((entry) => {
     if (entry.status !== "completed" || entry.toolCall?.name !== "run_command") return false;
-    const command =
-      typeof entry.toolCall.arguments.command === "string"
-        ? String(entry.toolCall.arguments.command)
-        : typeof entry.toolResult?.data?.command === "string"
-          ? String(entry.toolResult.data.command)
-          : "";
+    const command = getCommandFromTraceEntry(entry);
     return pattern.test(command);
   });
 }
@@ -742,6 +826,87 @@ function buildProgressFingerprint(input: {
         }
       : null,
   });
+}
+
+function deriveGitMissingRequirements(
+  request: AssistRuntimeInput,
+  toolTrace: ToolTraceEntryContract[]
+): string[] {
+  if (!taskRequestsGitWorkflow(request.task)) return [];
+  const missing: string[] = [];
+  if (!traceHasSuccessfulCommand(toolTrace, /\bgit\s+init\b/i)) {
+    missing.push("required_git_init_missing");
+  }
+  const branchName = extractRequestedBranchName(request.task);
+  if (
+    branchName &&
+    !traceHasSuccessfulCommand(
+      toolTrace,
+      new RegExp(`\\bgit\\s+(checkout -b|switch -c)\\s+["'\`]?${escapeRegExp(branchName)}["'\`]?`, "i")
+    )
+  ) {
+    missing.push(`required_git_branch_missing:${branchName}`);
+  }
+  if (!traceHasSuccessfulCommand(toolTrace, /\bgit\s+commit\b/i)) {
+    missing.push("required_git_commit_missing");
+  }
+  return missing;
+}
+
+function deriveStructuredMissingRequirements(input: {
+  request: AssistRuntimeInput;
+  targetInference: AssistTargetInference;
+  contextSelection: AssistContextSelection;
+  fallbackPlan: AssistPlan;
+  toolTrace: ToolTraceEntryContract[];
+  actions: ExecuteAction[];
+  loopState: LoopStateContract;
+  final: string;
+  baseMissingRequirements?: string[];
+}): string[] {
+  const requirements = new Set<string>(input.baseMissingRequirements || []);
+  const intent = inferIntent({
+    mode: input.request.mode,
+    task: input.request.task,
+    targetInference: input.targetInference,
+  });
+  const requiredArtifacts = input.fallbackPlan.files
+    .map((file) => normalizeRelativePath(file))
+    .filter(Boolean)
+    .slice(0, 24);
+  if (intent.type === "code_edit") {
+    for (const path of unresolvedRequiredMutationPaths(requiredArtifacts, input.toolTrace)) {
+      requirements.add(`required_artifact_missing:${path}`);
+    }
+  }
+  if (
+    intent.type === "code_edit" &&
+    !input.targetInference.path &&
+    input.contextSelection.files.length === 0 &&
+    !completedEntries(input.toolTrace).some((entry) => entry.toolCall?.name === "list_files" || entry.toolCall?.name === "search_workspace")
+  ) {
+    requirements.add("weak_grounding_requires_inspection");
+  }
+  if (taskRequestsValidation(input.request.task) && !traceHasSuccessfulValidation(input.toolTrace)) {
+    requirements.add("required_validation_missing");
+  }
+  for (const requirement of deriveGitMissingRequirements(input.request, input.toolTrace)) {
+    requirements.add(requirement);
+  }
+  if (input.loopState.status === "completed" && !input.final.trim()) {
+    requirements.add("required_summary_missing");
+  }
+  return [...requirements];
+}
+
+function inferCloseoutStage(requirements: string[]): string {
+  if (requirements.some((item) => item.startsWith("required_artifact_missing:"))) return "implementation";
+  if (requirements.includes("required_validation_missing")) return "validation";
+  if (requirements.includes("required_git_init_missing")) return "git_init";
+  if (requirements.some((item) => item.startsWith("required_git_branch_missing:"))) return "git_branch";
+  if (requirements.includes("required_git_commit_missing")) return "git_commit";
+  if (requirements.includes("required_summary_missing")) return "summary";
+  return "complete";
 }
 
 function buildObservationPrimer(
@@ -1322,7 +1487,7 @@ function buildPersistedOutput(input: {
     orchestrator: input.state.orchestrator,
     orchestratorVersion: input.state.orchestratorVersion ?? null,
     orchestratorRunId: input.state.orchestratorRunId ?? null,
-    loopState: input.state.loopState,
+    loopState: input.result.loopState || input.state.loopState,
     pendingToolCall: input.state.pendingToolCall,
     toolTrace: input.state.toolTrace,
     targetInference: input.state.targetInference,
@@ -1388,7 +1553,17 @@ function buildToolLoopResult(input: {
   previousProgressState?: ProgressStateContract | null;
   previousFingerprint?: string | null;
 }): AssistResult {
-  const missingRequirements = input.missingRequirements || [];
+  const missingRequirements = deriveStructuredMissingRequirements({
+    request: input.request,
+    targetInference: input.targetInference,
+    contextSelection: input.contextSelection,
+    fallbackPlan: input.fallbackPlan,
+    toolTrace: input.toolTrace,
+    actions: input.actions,
+    loopState: input.loopState,
+    final: input.final,
+    baseMissingRequirements: input.missingRequirements,
+  });
   const objectiveState = buildToolLoopObjectiveState({
     request: input.request,
     targetInference: input.targetInference,
@@ -1400,9 +1575,14 @@ function buildToolLoopResult(input: {
     loopState: input.loopState,
     final: input.final,
   });
+  const enrichedLoopState: LoopStateContract = {
+    ...input.loopState,
+    autonomyLane: objectiveState.autonomyLane,
+    closeoutStage: inferCloseoutStage(missingRequirements),
+  };
   const { progressState } = buildToolLoopProgressState({
     request: input.request,
-    loopState: input.loopState,
+    loopState: enrichedLoopState,
     objectiveState,
     pendingToolCall: input.pendingToolCall,
     toolTrace: input.toolTrace,
@@ -1456,7 +1636,7 @@ function buildToolLoopResult(input: {
     orchestratorVersion: input.orchestratorVersion ?? null,
     runId: input.runId,
     adapter: input.adapter,
-    loopState: input.loopState,
+    loopState: enrichedLoopState,
     pendingToolCall: input.pendingToolCall,
     toolTrace: input.toolTrace,
     toolState: {
@@ -1465,7 +1645,7 @@ function buildToolLoopResult(input: {
       route: input.adapter === "deterministic_batch" ? "deterministic_synthesis" : input.adapter,
       adapter: input.orchestrator === "openhands" ? `openhands_${input.adapter}_v1` : `${input.adapter}_v1`,
       actionSource: input.adapter === "deterministic_batch" ? "deterministic_synthesis" : "structured_json",
-      recoveryStage: input.loopState.repairCount > 0 ? "repair" : "none",
+      recoveryStage: enrichedLoopState.repairCount > 0 ? "repair" : "none",
       lastFailureCategory: traceHasFailure(input.toolTrace) ? "local_apply_failed" : null,
     },
   };
@@ -1845,6 +2025,12 @@ async function advanceWithCandidate(input: {
 }
 
 export async function startAssistToolLoop(input: StartToolLoopInput): Promise<AssistResult> {
+  const tomContext = buildToolLoopTomContext({
+    userId: input.userId,
+    sessionId: input.sessionId,
+    traceId: input.traceId,
+    request: input.request,
+  });
   const targetInference = buildTargetInference({
     task: input.request.task,
     context: input.request.context,
@@ -1929,6 +2115,7 @@ export async function startAssistToolLoop(input: StartToolLoopInput): Promise<As
       ...input.request,
       orchestrationProtocol: "tool_loop_v1",
     },
+    tom: tomContext,
     targetInference,
     contextSelection,
     fallbackPlan,
@@ -1981,6 +2168,12 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
   }
 
   const request = asRecord(record.input) as AssistRuntimeInput;
+  const tomContext = buildToolLoopTomContext({
+    userId: input.userId,
+    sessionId: record.sessionId || request.historySessionId,
+    traceId: input.traceId,
+    request,
+  });
   let pendingToolCall = persisted.pendingToolCall;
   if (!pendingToolCall) {
     const latestTraceEntry = persisted.toolTrace[persisted.toolTrace.length - 1];
@@ -2102,6 +2295,7 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
 
   if (!input.toolResult.ok || input.toolResult.blocked) {
     const failureCategory = classifyToolFailure(input.toolResult, pendingToolCall);
+    const structuredFailureCategory = classifyStructuredFailureCategory(input.toolResult, pendingToolCall);
     const repairStage = nextRepairStage({
       targetPath: nextState.targetInference.path,
       repairHistory: nextState.repairHistory,
@@ -2154,6 +2348,7 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
         ...nextState.loopState,
         repairCount: nextState.loopState.repairCount + 1,
         status: "running",
+        failureCategory: structuredFailureCategory,
       },
       repairHistory: [...nextState.repairHistory, repairStage],
       progressState: {
@@ -2166,12 +2361,15 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
         nextDeterministicAction: guidance.nextDeterministicAction,
       },
     };
+    nextState.loopState.repairDirective = `${guidance.reason} Next: ${guidance.nextDeterministicAction}`;
   } else {
     nextState = {
       ...nextState,
       loopState: {
         ...nextState.loopState,
         status: "running",
+        failureCategory: undefined,
+        repairDirective: undefined,
       },
     };
   }
@@ -2213,6 +2411,7 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
 
   const turn = await requestToolLoopTurn({
     request,
+    tom: tomContext,
     targetInference: targetInferenceForNextTurn,
     contextSelection: nextState.contextSelection,
     fallbackPlan: nextState.fallbackPlan,
@@ -2390,6 +2589,7 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
       .join("");
     const repairedTurn = await requestToolLoopTurn({
       request,
+      tom: tomContext,
       targetInference: repairTargetInference,
       contextSelection: nextState.contextSelection,
       fallbackPlan: nextState.fallbackPlan,
@@ -2412,6 +2612,8 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
       loopState: {
         ...nextState.loopState,
         repairCount: nextState.loopState.repairCount + 1,
+        failureCategory: "repeated_non_progress_inspection",
+        repairDirective: `${guidance.reason}${unresolvedReason} Next: ${guidance.nextDeterministicAction}`,
       },
       repairHistory: [...nextState.repairHistory, repairStage],
     };
@@ -2513,6 +2715,7 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
     });
     const repairedTurn = await requestToolLoopTurn({
       request,
+      tom: tomContext,
       targetInference: repairTargetInference,
       contextSelection: nextState.contextSelection,
       fallbackPlan: nextState.fallbackPlan,
@@ -2536,6 +2739,8 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
         ...nextState.loopState,
         repairCount: nextState.loopState.repairCount + 1,
         status: "running",
+        failureCategory: "repeated_non_progress_inspection",
+        repairDirective: `${guidance.reason} Next: ${guidance.nextDeterministicAction}`,
       },
       repairHistory: [...nextState.repairHistory, repairStage],
       progressState: {

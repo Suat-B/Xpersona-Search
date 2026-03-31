@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Binary IDE desktop shell backed by the local Binary Host service.",
-  "type": "module",
+  "type": "commonjs",
   "main": "dist/main.js",
   "files": [
     "dist",
@@ -55,5 +55,8 @@
       ],
       "category": "Development"
     }
+  },
+  "devDependencies": {
+    "electron": "^41.1.0"
   }
 }

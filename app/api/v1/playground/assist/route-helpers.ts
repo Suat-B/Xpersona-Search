@@ -107,3 +107,20 @@ export function buildAssistResponsePayload(input: {
     ...(result.reviewState ? { reviewState: result.reviewState } : {}),
   };
 }
+
+export function resolveAssistTomEnabled(input: {
+  task: string;
+  interactionKind?: string;
+  requestedTomEnabled?: boolean;
+}): boolean {
+  if (typeof input.requestedTomEnabled === "boolean") {
+    return input.requestedTomEnabled;
+  }
+  const task = String(input.task || "").trim().toLowerCase();
+  const debugRuntimeTask =
+    task.startsWith("binary runtime debug") ||
+    task.includes("binary runtime debug") ||
+    task.includes("debug-runtime");
+  if (debugRuntimeTask) return false;
+  return true;
+}

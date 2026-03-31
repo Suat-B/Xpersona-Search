@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Binary Ambient Composer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="ambient-player-body">
+    <main id="ambientBar" class="ambient-player" data-state="ready">
+      <form id="ambientComposer" class="ambient-composer">
+        <div class="ambient-brand" aria-hidden="true">
+          <span class="ambient-brand__pulse"></span>
+          <span>Binary</span>
+        </div>
+        <input
+          id="ambientInput"
+          class="ambient-composer__input"
+          type="text"
+          placeholder="Ask Binary anything..."
+          autocomplete="off"
+        />
+        <div class="ambient-composer__actions">
+          <button id="ambientOpenMain" class="ambient-icon-button" type="button" aria-label="Open Binary window">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM9 9h6v6H9z"/></svg>
+          </button>
+          <button id="ambientSend" class="ambient-icon-button ambient-icon-button--primary" type="submit" aria-label="Send prompt">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M7 10l5-5 5 5"/></svg>
+          </button>
+        </div>
+      </form>
+
+      <section id="ambientStrip" class="ambient-strip">
+        <div class="ambient-strip__headline">
+          <span id="ambientStateChip" class="ambient-state-chip">Ready</span>
+          <span id="ambientTask" class="ambient-task">Standing by</span>
+        </div>
+        <p id="ambientStep" class="ambient-step">Binary is ready for the next task.</p>
+        <div class="ambient-strip__footer">
+          <span id="ambientProof" class="ambient-proof-chip">No proof yet</span>
+          <div class="ambient-strip__controls">
+            <button id="ambientPause" class="ambient-control" type="button">Pause</button>
+            <button id="ambientResume" class="ambient-control" type="button">Resume</button>
+            <button id="ambientCancel" class="ambient-control ambient-control--danger" type="button">Stop</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="./player.js" type="module"></script>
+  </body>
+</html>

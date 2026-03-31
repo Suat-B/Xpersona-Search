@@ -26,6 +26,7 @@ import {
   buildAssistResponsePayload,
   buildConversationHistory,
   isTrivialGreetingOnlyTask,
+  resolveAssistTomEnabled,
 } from "./route-helpers";
 
 const ASSIST_COST_PER_1K_TOKENS = 0.0005;
@@ -172,6 +173,15 @@ export async function POST(request: NextRequest): Promise<Response> {
     const planMode = mode === "plan";
     const maxOut = Math.min(access.limits?.maxOutputTokens ?? 2048, 2048);
     const chatInteraction = body.interactionKind === "chat";
+    const resolvedTomEnabled = resolveAssistTomEnabled({
+      task: body.task,
+      interactionKind: body.interactionKind,
+      requestedTomEnabled: body.tom?.enabled,
+    });
+    const requestWithTom = {
+      ...body,
+      tom: { enabled: resolvedTomEnabled },
+    } as typeof body;
 
     let result: AssistResult;
 
@@ -190,7 +200,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         sessionId: session.id,
         traceId,
         request: {
-          ...body,
+          ...requestWithTom,
           mode,
           orchestrationProtocol: "tool_loop_v1",
           conversationHistory: persistedHistory,
@@ -217,7 +227,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         result = await startHostedToolLoop({ mode: "auto", task: greetingTask });
       } else {
         result = await runAssist({
-          ...body,
+          ...requestWithTom,
           mode: "auto",
           task: greetingTask,
           conversationHistory: persistedHistory,
@@ -237,7 +247,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     } else if (!planMode && chatInteraction) {
       result = await runAssist(
         {
-          ...body,
+          ...requestWithTom,
           mode,
           orchestrationProtocol: "batch_v1",
           conversationHistory: persistedHistory,
@@ -260,7 +270,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         ? isPlaygroundAssistPlanViaGateway() && gatewayOk
           ? await startHostedToolLoop({ mode: "plan" })
           : await runAssist({
-              ...body,
+              ...requestWithTom,
               mode,
               conversationHistory: persistedHistory,
               maxTokens: maxOut,

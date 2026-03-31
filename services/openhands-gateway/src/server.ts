@@ -36,6 +36,13 @@ type GatewayPayload = {
     context?: unknown;
     clientTrace?: unknown;
   };
+  tom?: {
+    enabled?: boolean;
+    userKey?: string | null;
+    sessionId?: string | null;
+    traceId?: string | null;
+    turnPhase?: "start" | "continue" | null;
+  } | null;
   targetInference?: { path?: string | null; [key: string]: unknown };
   contextSelection?: {
     files?: Array<{ path?: string; reason?: string }>;
@@ -168,6 +175,19 @@ function compactWhitespace(value: unknown): string {
 
 function clonePayload(payload: GatewayPayload): GatewayPayload {
   return JSON.parse(JSON.stringify(payload)) as GatewayPayload;
+}
+
+function withTomTurnPhase(payload: GatewayPayload, turnPhase: "start" | "continue"): GatewayPayload {
+  return {
+    ...payload,
+    tom:
+      payload.tom || turnPhase
+        ? {
+            ...(payload.tom || {}),
+            turnPhase,
+          }
+        : null,
+  };
 }
 
 function buildRequestFingerprint(payload: GatewayPayload): string {
@@ -353,7 +373,8 @@ const server = createServer(async (req, res) => {
         return;
       }
 
-      const result = await invokePythonTurn({ payload: body });
+      const payload = withTomTurnPhase(body, "start");
+      const result = await invokePythonTurn({ payload });
       if (!result.ok) {
         writeJson(res, 502, {
           error: result.error || "OpenHands failed to produce the next tool turn.",
@@ -365,7 +386,7 @@ const server = createServer(async (req, res) => {
       const runId = randomUUID();
       const state = upsertRunState({
         runId,
-        payload: body,
+        payload,
         result,
       });
       writeJson(res, 200, {
@@ -404,7 +425,7 @@ const server = createServer(async (req, res) => {
       }
 
       const existing = getRunState(runId);
-      const payload = clonePayload(body);
+      const payload = withTomTurnPhase(clonePayload(body), "continue");
       const effectiveState =
         existing ||
         upsertRunState({

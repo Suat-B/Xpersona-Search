@@ -58,6 +58,7 @@ Auth/config:
   binary config set-local-host-url <url>
   binary config set-model <model>
   binary config set-transport <auto|host|direct>
+  binary config set-tom <on|off>
   binary config show
 
 Execution/index:
@@ -70,6 +71,8 @@ Flags:
   --mode auto|plan|yolo|generate|debug
   --transport auto|host|direct
   --model "Binary IDE"
+  --tom
+  --no-tom
   --help
 `;
 
@@ -104,6 +107,7 @@ Config:
   binary config set-local-host-url <url>
   binary config set-model <model>
   binary config set-transport <auto|host|direct>
+  binary config set-tom <on|off>
 
 Sessions:
   binary sessions list [--limit 20]
@@ -426,6 +430,24 @@ function parseTransport(value: string | undefined, fallback: CliTransport = "aut
   if (!value) return fallback;
   if (value === "auto" || value === "host" || value === "direct") return value;
   throw new Error(`Invalid transport '${value}'. Use auto|host|direct.`);
+}
+
+function resolveTomOverride(parsed: ParsedArgs): boolean | undefined {
+  const enabled = Boolean(parsed.flags.tom);
+  const disabled = Boolean(parsed.flags["no-tom"]);
+  if (enabled && disabled) {
+    throw new Error("Use either --tom or --no-tom, not both.");
+  }
+  if (enabled) return true;
+  if (disabled) return false;
+  return undefined;
+}
+
+function resolveTomEnabled(config: CliConfig, parsed: ParsedArgs, defaultEnabled: boolean): boolean {
+  const override = resolveTomOverride(parsed);
+  if (typeof override === "boolean") return override;
+  if (typeof config.tomEnabled === "boolean") return config.tomEnabled;
+  return defaultEnabled;
 }
 
 type TransportResolution = {
@@ -878,7 +900,7 @@ async function executeHostedToolLoop(
 
 async function runHostedPrompt(
   client: PlaygroundClient,
-  input: { task: string; mode: AssistMode; model: string; historySessionId?: string },
+  input: { task: string; mode: AssistMode; model: string; historySessionId?: string; tom?: { enabled?: boolean } },
   workspaceRoot: string,
   ui?: StreamUiAdapter
 ): Promise<AssistRunEnvelope> {
@@ -899,7 +921,7 @@ async function runHostedPrompt(
 
 async function runLocalHostPrompt(
   hostClient: LocalHostClient,
-  input: { task: string; mode: AssistMode; model: string; historySessionId?: string },
+  input: { task: string; mode: AssistMode; model: string; historySessionId?: string; tom?: { enabled?: boolean } },
   workspaceRoot: string,
   ui?: StreamUiAdapter
 ): Promise<AssistRunEnvelope> {
@@ -918,6 +940,7 @@ async function runLocalHostPrompt(
       mode: input.mode,
       model: input.model,
       historySessionId: input.historySessionId,
+      tom: input.tom,
       workspaceRoot,
       client: {
         surface: "cli",
@@ -1124,6 +1147,7 @@ async function handleDebugRuntime(parsed: ParsedArgs, config: CliConfig): Promis
   const mode = parseMode(getFlagString(parsed, "mode", "m"), "debug");
   const hostedMode = toHostedAssistMode(mode);
   const model = getFlagString(parsed, "model") ?? config.model ?? "Binary IDE";
+  const tomEnabled = resolveTomEnabled(config, parsed, false);
   const workspace = await createDebugWorkspace(parsed);
   const workspacePath = workspace.workspacePath;
   const workspaceKind = workspace.workspaceKind;
@@ -1202,6 +1226,7 @@ async function handleDebugRuntime(parsed: ParsedArgs, config: CliConfig): Promis
         mode,
         model,
         historySessionId: bundle.sessionId,
+        tom: { enabled: tomEnabled },
       },
       workspacePath,
       {
@@ -1433,11 +1458,21 @@ async function handleConfig(parsed: ParsedArgs, config: CliConfig): Promise<void
     console.log(`Default transport set to ${transport}.`);
     return;
   }
+  if (sub === "set-tom") {
+    const raw = String(parsed.positionals[2] || "").trim().toLowerCase();
+    if (raw !== "on" && raw !== "off") throw new Error("Usage: binary config set-tom <on|off>");
+    const tomEnabled = raw === "on";
+    const next = { ...config, tomEnabled };
+    await saveConfig(next);
+    console.log(`Default TOM set to ${tomEnabled ? "on" : "off"}.`);
+    return;
+  }
   throw new Error(`Unknown config subcommand '${sub}'.`);
 }
 
 async function handleChat(parsed: ParsedArgs, config: CliConfig): Promise<void> {
   const transport = await resolveTransport(config, parsed);
+  const tomEnabled = resolveTomEnabled(config, parsed, true);
   if (transport.selected === "host" && transport.hostClient) {
     const mode = parseMode(getFlagString(parsed, "mode", "m"), config.mode ?? "auto");
     const model = getFlagString(parsed, "model") ?? config.model ?? "Binary IDE";
@@ -1494,6 +1529,7 @@ async function handleChat(parsed: ParsedArgs, config: CliConfig): Promise<void> 
           mode: activeMode,
           model,
           historySessionId: activeSessionId,
+          tom: { enabled: tomEnabled },
         },
         process.cwd(),
         {
@@ -1657,6 +1693,7 @@ async function handleChat(parsed: ParsedArgs, config: CliConfig): Promise<void> 
       mode: activeMode,
       model,
       historySessionId: activeSessionId,
+      tom: { enabled: tomEnabled },
     }, process.cwd(), {
       onLog: (message) => {
         process.stdout.write(`\n${dim("log")} ${message}`);
@@ -1705,6 +1742,7 @@ async function handleRun(parsed: ParsedArgs, config: CliConfig): Promise<void> {
   if (!task) throw new Error("Usage: binary run \"<task>\"");
   const mode = parseMode(getFlagString(parsed, "mode", "m"), config.mode ?? "auto");
   const model = getFlagString(parsed, "model") ?? config.model ?? "Binary IDE";
+  const tomEnabled = resolveTomEnabled(config, parsed, true);
   const hostedModeNotice = getHostedModeNotice(mode);
   const detach = Boolean(parsed.flags.detach);
   const transport = await resolveTransport(config, parsed);
@@ -1720,6 +1758,7 @@ async function handleRun(parsed: ParsedArgs, config: CliConfig): Promise<void> {
       task,
       mode,
       model,
+      tom: { enabled: tomEnabled },
       workspaceRoot: process.cwd(),
       detach: true,
       client: {
@@ -1734,7 +1773,7 @@ async function handleRun(parsed: ParsedArgs, config: CliConfig): Promise<void> {
     return;
   }
   if (transport.selected === "host" && transport.hostClient) {
-    await runLocalHostPrompt(transport.hostClient, { task, mode, model }, process.cwd(), {
+    await runLocalHostPrompt(transport.hostClient, { task, mode, model, tom: { enabled: tomEnabled } }, process.cwd(), {
       onToolStart: (pendingToolCall) => {
         process.stdout.write(`\n${dim("tool")} step ${pendingToolCall.step}: ${pendingToolCall.toolCall.name}`);
       },
@@ -1750,7 +1789,7 @@ async function handleRun(parsed: ParsedArgs, config: CliConfig): Promise<void> {
     baseUrl: resolved.config.baseUrl,
     auth: resolved.auth.type === "apiKey" ? { apiKey: resolved.auth.apiKey } : { bearer: resolved.auth.accessToken },
   });
-  await runHostedPrompt(client, { task, mode, model }, process.cwd(), {
+  await runHostedPrompt(client, { task, mode, model, tom: { enabled: tomEnabled } }, process.cwd(), {
     onToolStart: (pendingToolCall) => {
       process.stdout.write(`\n${dim("tool")} step ${pendingToolCall.step}: ${pendingToolCall.toolCall.name}`);
     },

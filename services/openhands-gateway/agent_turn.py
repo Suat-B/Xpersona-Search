@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 import argparse
+import importlib
 import importlib.metadata
+import inspect
 import json
 import os
 import sys
@@ -26,6 +28,87 @@ def sanitize_relative_path(value: Any) -> str | None:
     if not normalized or ".." in normalized or (len(lowered) > 2 and lowered[1:3] == ":/"):
         return None
     return normalized
+
+
+def import_optional_attr(candidates: list[tuple[str, str]]) -> Any | None:
+    for module_name, attr_name in candidates:
+        try:
+            module = importlib.import_module(module_name)
+            value = getattr(module, attr_name, None)
+            if value is not None:
+                return value
+        except Exception:
+            continue
+    return None
+
+
+def filter_supported_kwargs(target: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
+    try:
+        signature = inspect.signature(target)
+    except Exception:
+        return kwargs
+    params = signature.parameters.values()
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params):
+        return kwargs
+    supported = {
+        name
+        for name, param in signature.parameters.items()
+        if param.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+    }
+    return {key: value for key, value in kwargs.items() if key in supported}
+
+
+def instantiate_with_supported_kwargs(factory: Any, kwargs: dict[str, Any]) -> Any:
+    filtered = filter_supported_kwargs(factory, kwargs)
+    try:
+        return factory(**filtered)
+    except TypeError:
+        return factory()
+
+
+def invoke_optional_tool(tool: Any, payload: dict[str, Any]) -> bool:
+    for attr_name in ("invoke", "run", "execute", "compute", "__call__"):
+        method = getattr(tool, attr_name, None)
+        if not callable(method):
+            continue
+        try:
+            filtered = filter_supported_kwargs(method, payload)
+            method(**filtered)
+            return True
+        except TypeError:
+            try:
+                method(payload)
+                return True
+            except Exception:
+                continue
+        except Exception:
+            continue
+    return False
+
+
+def resolve_tom_context(payload: dict[str, Any]) -> dict[str, Any] | None:
+    tom = payload.get("tom") if isinstance(payload.get("tom"), dict) else None
+    if not tom or tom.get("enabled") is False:
+        return None
+    user_key = compact_whitespace(tom.get("userKey"))
+    if not user_key:
+        return None
+    root = Path(
+        os.getenv(
+            "OPENHANDS_TOM_DATA_DIR",
+            str(Path.home() / ".openhands" / "tom"),
+        )
+    ).expanduser()
+    user_dir = root / user_key[:2] / user_key
+    user_dir.mkdir(parents=True, exist_ok=True)
+    return {
+        "user_key": user_key,
+        "storage_dir": user_dir,
+        "session_id": compact_whitespace(tom.get("sessionId")),
+        "trace_id": compact_whitespace(tom.get("traceId")),
+        "turn_phase": compact_whitespace(tom.get("turnPhase")) or "continue",
+        "rag_enabled": True,
+    }
 
 
 def build_history_prompt(history: list[dict[str, Any]] | None) -> str:
@@ -133,6 +216,109 @@ def build_context_prompt(context: dict[str, Any] | None) -> str:
         if lines:
             sections.append("Desktop state:\n" + "\n".join(lines))
 
+    browser = context.get("browser")
+    if isinstance(browser, dict):
+        lines = []
+        mode = str(browser.get("mode") or "").strip()
+        if mode:
+            lines.append(f"Mode: {mode}")
+        browser_name = str(browser.get("browserName") or "").strip()
+        if browser_name:
+            lines.append(f"Browser: {browser_name}")
+        active_page = browser.get("activePage")
+        if isinstance(active_page, dict):
+            active_label = compact_whitespace(" - ".join(str(active_page.get(key) or "") for key in ("title", "url") if active_page.get(key)))
+            if active_label:
+                lines.append(f"Active page: {active_label}")
+        open_pages = browser.get("openPages")
+        if isinstance(open_pages, list) and open_pages:
+            page_lines = []
+            for item in open_pages[:8]:
+                if not isinstance(item, dict):
+                    continue
+                label = compact_whitespace(" - ".join(str(item.get(key) or "") for key in ("title", "url") if item.get(key)))
+                if label:
+                    page_lines.append(f"- {label}")
+            if page_lines:
+                lines.append("Open pages:\n" + "\n".join(page_lines))
+        elements = browser.get("visibleInteractiveElements")
+        if isinstance(elements, list) and elements:
+            element_lines = []
+            for item in elements[:12]:
+                if not isinstance(item, dict):
+                    continue
+                label = compact_whitespace(" @ ".join(str(item.get(key) or "") for key in ("label", "selector") if item.get(key)))
+                if label:
+                    element_lines.append(f"- {label}")
+            if element_lines:
+                lines.append("Interactive elements:\n" + "\n".join(element_lines))
+        if lines:
+            sections.append("Browser state:\n" + "\n".join(lines))
+
+    world_model = context.get("worldModel")
+    if isinstance(world_model, dict):
+        lines = []
+        graph_version = world_model.get("graphVersion")
+        if isinstance(graph_version, int):
+            lines.append(f"Graph version: {graph_version}")
+        summary = str(world_model.get("summary") or "").strip()
+        if summary:
+            lines.append(f"Summary: {summary[:2000]}")
+        active_context = world_model.get("activeContext")
+        if isinstance(active_context, dict):
+            active_lines = []
+            for key, label in (
+                ("activeWindow", "Active window"),
+                ("activePage", "Active page"),
+                ("activeWorkspace", "Active workspace"),
+                ("activeRepo", "Active repo"),
+                ("browserMode", "Browser mode"),
+            ):
+                value = str(active_context.get(key) or "").strip()
+                if value:
+                    active_lines.append(f"{label}: {value}")
+            focus_active = active_context.get("focusLeaseActive")
+            if isinstance(focus_active, bool):
+                active_lines.append(f"Focus lease active: {'true' if focus_active else 'false'}")
+            if active_lines:
+                lines.append("\n".join(active_lines))
+        affordances = world_model.get("affordanceSummary")
+        if isinstance(affordances, dict):
+            available = [str(item).strip() for item in affordances.get("actionsAvailable", [])[:10] if str(item).strip()]
+            if available:
+                lines.append("Affordances:\n" + "\n".join(f"- {item}" for item in available))
+            background = [str(item).strip() for item in affordances.get("backgroundSafe", [])[:8] if str(item).strip()]
+            if background:
+                lines.append("Background-safe routes:\n" + "\n".join(f"- {item}" for item in background))
+            blocked = [str(item).strip() for item in affordances.get("blocked", [])[:8] if str(item).strip()]
+            if blocked:
+                lines.append("Blocked routes:\n" + "\n".join(f"- {item}" for item in blocked))
+        recent_changes = world_model.get("recentChanges")
+        if isinstance(recent_changes, list) and recent_changes:
+            change_lines = []
+            for item in recent_changes[:6]:
+                if not isinstance(item, dict):
+                    continue
+                summary_text = compact_whitespace(item.get("summary"))
+                if summary_text:
+                    change_lines.append(f"- {summary_text}")
+            if change_lines:
+                lines.append("Recent environment changes:\n" + "\n".join(change_lines))
+        routine_ids = world_model.get("machineRoutineIds")
+        if isinstance(routine_ids, list) and routine_ids:
+            visible_ids = [str(item).strip() for item in routine_ids[:8] if str(item).strip()]
+            if visible_ids:
+                lines.append("Known routines: " + ", ".join(visible_ids))
+        freshness = world_model.get("environmentFreshness")
+        if isinstance(freshness, dict):
+            ts = str(freshness.get("lastUpdatedAt") or "").strip()
+            stale = freshness.get("stale")
+            if ts:
+                freshness_label = "stale" if stale is True else "fresh"
+                lines.append(f"Environment freshness: {freshness_label} @ {ts}")
+        if lines:
+            sections.append("Machine world model:\n" + "\n".join(lines))
+
     return "\n\n".join(sections) if sections else "IDE context: none."
 
 
@@ -170,6 +356,34 @@ def build_tool_catalog(tools: list[str]) -> str:
         "desktop_keypress": "Send a desktop keypress chord or sequence. Args: { keys: string[] }",
         "desktop_scroll": "Scroll on the desktop. Args: { displayId?: string, viewport?: { displayId: string, width: number, height: number }, normalizedX?: number, normalizedY?: number, deltaX?: number, deltaY?: number }",
         "desktop_wait": "Wait for a period of time. Args: { durationMs: number }",
+        "browser_list_pages": "List browser pages/tabs currently available to the native browser runtime. Args: {}",
+        "browser_get_active_page": "Return the active browser page/tab. Args: {}",
+        "browser_open_page": "Open a URL in a browser-native page/tab. Args: { url: string }",
+        "browser_focus_page": "Focus a specific browser page/tab. Args: { pageId: string }",
+        "browser_navigate": "Navigate an existing browser page/tab. Args: { pageId: string, url: string }",
+        "browser_snapshot_dom": "Capture a semantic DOM snapshot and affordance graph for a browser page. Args: { pageId: string, query?: string, limit?: number }",
+        "browser_query_elements": "Query interactive DOM elements by text or label and return stable element refs. Args: { pageId: string, query?: string, limit?: number }",
+        "browser_click": "Click a browser element by elementId or selector. Args: { pageId: string, elementId?: string, selector?: string }",
+        "browser_type": "Type into a browser form control by elementId or selector. Args: { pageId: string, text: string, elementId?: string, selector?: string }",
+        "browser_press_keys": "Send keyboard input to a browser page. Args: { pageId: string, keys: string[] }",
+        "browser_scroll": "Scroll a browser page or element. Args: { pageId: string, deltaY?: number, elementId?: string, selector?: string }",
+        "browser_wait_for": "Wait for a browser-native condition. Args: { pageId: string, durationMs?: number, selector?: string, text?: string, urlIncludes?: string, titleIncludes?: string }",
+        "browser_read_text": "Read text from a browser element. Args: { pageId: string, elementId?: string, selector?: string }",
+        "browser_read_form_state": "Read browser form controls and current values. Args: { pageId: string }",
+        "browser_capture_page": "Capture a browser screenshot proof artifact. Args: { pageId: string }",
+        "browser_get_network_activity": "Return recent browser network activity. Args: { pageId: string, limit?: number }",
+        "browser_get_console_messages": "Return recent browser console messages and exceptions. Args: { pageId: string, limit?: number }",
+        "world_get_summary": "Load the current machine world-model summary. Args: {}",
+        "world_get_active_context": "Load the current active machine context slice. Args: {}",
+        "world_query_graph": "Query world-model nodes and edges. Args: { query?: string, type?: string, limit?: number }",
+        "world_get_neighbors": "Load neighboring nodes and edges for a world-model node. Args: { nodeId: string, limit?: number }",
+        "world_get_recent_changes": "Load recent world-model changes. Args: { limit?: number }",
+        "world_get_affordances": "Load current machine affordances and blocked/background-safe routes. Args: {}",
+        "world_find_routine": "Find learned machine routines. Args: { query?: string, limit?: number }",
+        "world_record_observation": "Commit a structured observation to the local world model. Args: { label: string, summary?: string, data?: object, runId?: string }",
+        "world_record_proof": "Commit proof to the local world model. Args: { label: string, summary?: string, toolName?: string, nodeIds?: string[], data?: object, runId?: string }",
+        "world_commit_memory": "Commit durable semantic memory to the local world model. Args: { label: string, summary?: string, scope?: string, tags?: string[], data?: object }",
+        "world_score_route": "Score candidate routes against current machine affordances. Args: { routes: Array<{ id?: string, kind?: string, steps?: string[], requiresVisibleInteraction?: boolean, confidence?: number }> }",
     }
     return "\n".join(f"- {tool}: {details.get(tool, tool.replace('_', ' '))}" for tool in tools)
 
@@ -225,6 +439,7 @@ def build_prompt(payload: dict[str, Any]) -> str:
     tools = [str(tool) for tool in payload.get("availableTools") or [] if isinstance(tool, str)]
     latest_tool = payload.get("latestToolResult") if isinstance(payload.get("latestToolResult"), dict) else None
     repair = payload.get("repairDirective") if isinstance(payload.get("repairDirective"), dict) else None
+    tom_enabled = isinstance(payload.get("tom"), dict) and payload.get("tom", {}).get("enabled") is not False
 
     trace_lines = []
     for entry in trace[-8:]:
@@ -299,6 +514,9 @@ def build_prompt(payload: dict[str, Any]) -> str:
         "The only valid tool names are exactly those listed under Available tools (e.g. read_file, list_files).",
         "Paths must stay workspace-relative.",
         "Desktop requests are freeform machine-intent tasks, not shortcut commands. Infer the user's target dynamically from their language.",
+        "Browser requests should prefer the browser-native lane first. Use browser_* tools for structured web control and use desktop_* tools only when browser-native control is blocked or cannot prove progress.",
+        "For browser tasks, prefer browser_snapshot_dom or browser_query_elements before acting when the current page state or target element is uncertain.",
+        "After meaningful browser actions, prefer browser-native verification such as browser_get_active_page, browser_snapshot_dom, browser_read_text, browser_read_form_state, browser_get_network_activity, or browser_capture_page before finishing.",
         "For desktop tasks, inspect first when uncertain. Prefer desktop_list_apps, desktop_get_active_window, desktop_list_windows, or desktop_capture_screen before acting if the machine target could be ambiguous.",
         "After a meaningful desktop action, prefer a verification turn before finishing when a read-only desktop tool can confirm the result.",
         "If proof does not match the user's intent, replan instead of repeating the same desktop action blindly.",
@@ -308,6 +526,8 @@ def build_prompt(payload: dict[str, Any]) -> str:
         "When Latest tool result shows a successful read_file for the preferred target and the user asked for a code change, your next response must be a toolCall (edit or write_file), not a final string that refuses or asks for more file text.",
         "If the task explicitly asks to run tests, validate, lint, or confirm the project works, and the required task files already exist in the trace, prefer a run_command validation turn over another observation turn.",
         "A final answer with no toolCall at step 0 is invalid for a workspace task. Start with read_file, list_files, or search_workspace instead.",
+        "If TOM support is available for this user, you may consult it when the request is vague, underspecified, or preference-sensitive, but TOM remains advisory only.",
+        f"TOM enabled: {'true' if tom_enabled else 'false'}",
         "Do not emit markdown, explanations, or code fences.",
         "",
         f"Mode: {request.get('mode') or 'auto'}",
@@ -705,6 +925,58 @@ def resolve_openhands_model(model: dict[str, Any]) -> str:
     return resolved
 
 
+def build_tom_tools(llm: Any, workspace: str, tom_context: dict[str, Any]) -> tuple[list[Any], Any | None, list[str]]:
+    consult_cls = import_optional_attr(
+        [
+            ("openhands.sdk", "TomConsultTool"),
+            ("openhands.sdk.tools", "TomConsultTool"),
+            ("openhands.sdk.tools.tom", "TomConsultTool"),
+            ("openhands.sdk.tools.tom_consult", "TomConsultTool"),
+        ]
+    )
+    sleeptime_cls = import_optional_attr(
+        [
+            ("openhands.sdk", "SleeptimeComputeTool"),
+            ("openhands.sdk.tools", "SleeptimeComputeTool"),
+            ("openhands.sdk.tools.tom", "SleeptimeComputeTool"),
+            ("openhands.sdk.tools.sleeptime_compute", "SleeptimeComputeTool"),
+        ]
+    )
+    if consult_cls is None or sleeptime_cls is None:
+        missing = []
+        if consult_cls is None:
+            missing.append("TomConsultTool")
+        if sleeptime_cls is None:
+            missing.append("SleeptimeComputeTool")
+        raise RuntimeError(f"Missing TOM SDK helpers: {', '.join(missing)}")
+
+    shared_kwargs = {
+        "llm": llm,
+        "workspace": workspace,
+        "storage_dir": str(tom_context["storage_dir"]),
+        "storage_root": str(tom_context["storage_dir"]),
+        "data_dir": str(tom_context["storage_dir"]),
+        "persist_dir": str(tom_context["storage_dir"]),
+        "memory_dir": str(tom_context["storage_dir"]),
+        "user_id": tom_context["user_key"],
+        "user_key": tom_context["user_key"],
+        "profile_id": tom_context["user_key"],
+        "tenant_id": tom_context["user_key"],
+        "session_id": tom_context.get("session_id") or None,
+        "trace_id": tom_context.get("trace_id") or None,
+        "rag_enabled": tom_context.get("rag_enabled", True),
+        "enable_rag": tom_context.get("rag_enabled", True),
+    }
+    consult_tool = instantiate_with_supported_kwargs(consult_cls, shared_kwargs)
+    sleeptime_tool = instantiate_with_supported_kwargs(sleeptime_cls, shared_kwargs)
+    logs = [
+        "tom=enabled",
+        f"tom_storage={tom_context['storage_dir']}",
+        "tom_rag=true",
+    ]
+    return [consult_tool, sleeptime_tool], sleeptime_tool, logs
+
+
 def run_turn(payload: dict[str, Any]) -> dict[str, Any]:
     model = payload.get("model") if isinstance(payload.get("model"), dict) else {}
     api_key = str(model.get("apiKey") or "").strip()
@@ -720,6 +992,7 @@ def run_turn(payload: dict[str, Any]) -> dict[str, Any]:
     workspace = os.getenv("OPENHANDS_GATEWAY_WORKSPACE", str(Path.cwd()))
     prompt = build_prompt(payload)
     available_tools = [str(tool) for tool in payload.get("availableTools") or [] if isinstance(tool, str)]
+    tom_context = resolve_tom_context(payload)
 
     version = None
     for package_name in ("openhands-sdk", "openhands"):
@@ -730,7 +1003,7 @@ def run_turn(payload: dict[str, Any]) -> dict[str, Any]:
             continue
 
     # HF OpenAI-compatible router: plain completions avoid LiteLLM tool schemas (fixes bogus tool name "summary").
-    if is_hf_inference_router_base_url(base_url):
+    if is_hf_inference_router_base_url(base_url) and tom_context is None:
         if not raw_model_id:
             return {
                 "ok": False,
@@ -793,18 +1066,41 @@ def run_turn(payload: dict[str, Any]) -> dict[str, Any]:
             api_key=SecretStr(api_key),
             base_url=base_url or None,
         )
-        agent = Agent(llm=llm, tools=[])
+        tools: list[Any] = []
+        sleeptime_tool = None
+        logs = [
+            "runtime=openhands_sdk",
+            f"model={model_name}",
+        ]
+        if tom_context:
+            try:
+                tools, sleeptime_tool, tom_logs = build_tom_tools(llm, workspace, tom_context)
+                logs.extend(tom_logs)
+            except Exception as exc:
+                print(f"[openhands-gateway] TOM setup failed, falling back to standard agent: {exc}", file=sys.stderr)
+                logs.append(f"tom=fallback:{type(exc).__name__}")
+                tools = []
+                sleeptime_tool = None
+        agent = Agent(llm=llm, tools=tools)
         conversation = Conversation(agent=agent, workspace=workspace)
+
+        if tom_context and sleeptime_tool and tom_context.get("turn_phase") == "start":
+            if invoke_optional_tool(
+                sleeptime_tool,
+                {
+                    "phase": "start",
+                    "reason": "run_start",
+                    "session_id": tom_context.get("session_id") or None,
+                    "trace_id": tom_context.get("trace_id") or None,
+                    "user_id": tom_context["user_key"],
+                },
+            ):
+                logs.append("tom_sleeptime=start")
 
         raw = conversation.ask_agent(prompt)
         raw_text = str(raw or "")
         parsed_json = parse_json_candidate(raw_text)
         parsed = parse_turn_response(raw_text, available_tools)
-
-        logs = [
-            "runtime=openhands_sdk",
-            f"model={model_name}",
-        ]
 
         if parsed_json is None:
             repair_prompt = "\n\n".join(
@@ -820,6 +1116,19 @@ def run_turn(payload: dict[str, Any]) -> dict[str, Any]:
             repaired = conversation.ask_agent(repair_prompt)
             parsed = parse_turn_response(str(repaired or ""), available_tools)
             logs.append("repair=json_rewrite")
+
+        if tom_context and sleeptime_tool and not parsed.get("toolCall"):
+            if invoke_optional_tool(
+                sleeptime_tool,
+                {
+                    "phase": "final",
+                    "reason": "terminal_final",
+                    "session_id": tom_context.get("session_id") or None,
+                    "trace_id": tom_context.get("trace_id") or None,
+                    "user_id": tom_context["user_key"],
+                },
+            ):
+                logs.append("tom_sleeptime=final")
 
         return {
             "ok": True,

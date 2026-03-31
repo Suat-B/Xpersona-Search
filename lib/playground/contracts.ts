@@ -35,8 +35,47 @@ export const zPlaygroundToolName = z.enum([
   "desktop_keypress",
   "desktop_scroll",
   "desktop_wait",
+  "browser_list_pages",
+  "browser_get_active_page",
+  "browser_open_page",
+  "browser_focus_page",
+  "browser_navigate",
+  "browser_snapshot_dom",
+  "browser_query_elements",
+  "browser_click",
+  "browser_type",
+  "browser_press_keys",
+  "browser_scroll",
+  "browser_wait_for",
+  "browser_read_text",
+  "browser_read_form_state",
+  "browser_capture_page",
+  "browser_get_network_activity",
+  "browser_get_console_messages",
+  "world_get_summary",
+  "world_get_active_context",
+  "world_query_graph",
+  "world_get_neighbors",
+  "world_get_recent_changes",
+  "world_get_affordances",
+  "world_find_routine",
+  "world_record_observation",
+  "world_record_proof",
+  "world_commit_memory",
+  "world_score_route",
 ]);
 export const zPlaygroundAdapter = z.enum(["native_tools", "text_actions", "deterministic_batch"]);
+export const zExecutionVisibility = z.enum(["background", "low_focus", "visible_required"]);
+export const zForegroundDisruptionRisk = z.enum(["none", "low", "medium", "high"]);
+export const zInteractionMode = z.enum([
+  "terminal",
+  "structured_desktop",
+  "managed_browser",
+  "attached_browser",
+  "visible_desktop",
+]);
+export const zFocusPolicy = z.enum(["never_steal", "avoid_if_possible", "allowed"]);
+export const zSessionPolicy = z.enum(["attach_carefully", "managed_only", "live_session"]);
 
 const zContextFile = z.object({
   path: z.string().min(1).max(4096).optional(),
@@ -92,6 +131,97 @@ const zDesktopSnapshotRef = z.object({
   capturedAt: z.string().datetime().optional(),
 });
 
+const zBrowserPage = z.object({
+  id: z.string().min(1).max(240),
+  title: z.string().max(2000).optional(),
+  url: z.string().max(4000).optional(),
+  origin: z.string().max(1000).optional(),
+  browserName: z.string().max(240).optional(),
+});
+
+const zBrowserSnapshotRef = z.object({
+  snapshotId: z.string().min(1).max(120),
+  pageId: z.string().max(240).optional(),
+  url: z.string().max(4000).optional(),
+  title: z.string().max(2000).optional(),
+  capturedAt: z.string().datetime().optional(),
+});
+
+const zBrowserInteractiveElement = z.object({
+  id: z.string().min(1).max(240),
+  selector: z.string().min(1).max(4000),
+  label: z.string().max(2000),
+  role: z.string().max(240).optional(),
+  tagName: z.string().max(120).optional(),
+});
+
+const zBrowserNetworkEntry = z.object({
+  at: z.string().datetime().optional(),
+  phase: z.enum(["request", "response", "failed"]).optional(),
+  url: z.string().max(4000),
+  method: z.string().max(40).optional(),
+  status: z.number().int().min(0).max(999).optional(),
+  resourceType: z.string().max(120).optional(),
+  errorText: z.string().max(2000).optional(),
+});
+
+const zBrowserConsoleEntry = z.object({
+  at: z.string().datetime().optional(),
+  level: z.string().max(120).optional(),
+  text: z.string().max(4000),
+});
+
+const zTerminalState = z.object({
+  cwd: z.string().max(4096).optional(),
+  preferredTerminalCwd: z.string().max(4096).optional(),
+  projectRoot: z.string().max(4096).optional(),
+  stack: z.enum(["node_js_ts", "python", "generic"]).optional(),
+  terminalObjective: z.string().max(2000).optional(),
+  terminalProof: z.string().max(20_000).optional(),
+  lastCommand: z.string().max(2000).optional(),
+  lastCommandOutcome: z.enum(["idle", "running", "succeeded", "failed"]).optional(),
+});
+
+const zWorldModelChange = z.object({
+  id: z.string().min(1).max(120).optional(),
+  at: z.string().datetime().optional(),
+  kind: z.string().min(1).max(120).optional(),
+  summary: z.string().min(1).max(4000),
+});
+
+const zWorldModelAffordances = z.object({
+  actionsAvailable: z.array(z.string().min(1).max(240)).max(40).optional(),
+  backgroundSafe: z.array(z.string().min(1).max(240)).max(40).optional(),
+  visibleRequired: z.array(z.string().min(1).max(240)).max(40).optional(),
+  blocked: z.array(z.string().min(1).max(240)).max(40).optional(),
+  highConfidence: z.array(z.string().min(1).max(240)).max(40).optional(),
+});
+
+const zWorldModelContext = z.object({
+  graphVersion: z.number().int().min(0).max(10_000_000).optional(),
+  sliceId: z.string().min(1).max(240).optional(),
+  summary: z.string().max(20_000).optional(),
+  activeContext: z
+    .object({
+      activeWindow: z.string().max(4000).optional(),
+      activePage: z.string().max(4000).optional(),
+      activeWorkspace: z.string().max(4000).optional(),
+      activeRepo: z.string().max(4000).optional(),
+      browserMode: z.string().max(120).optional(),
+      focusLeaseActive: z.boolean().optional(),
+    })
+    .optional(),
+  recentChanges: z.array(zWorldModelChange).max(20).optional(),
+  affordanceSummary: zWorldModelAffordances.optional(),
+  environmentFreshness: z
+    .object({
+      lastUpdatedAt: z.string().datetime().optional(),
+      stale: z.boolean().optional(),
+    })
+    .optional(),
+  machineRoutineIds: z.array(z.string().min(1).max(240)).max(20).optional(),
+});
+
 const zOpenFile = z.object({
   path: z.string().min(1).max(4096),
   language: z.string().min(1).max(64).optional(),
@@ -118,6 +248,10 @@ const zClientCapabilities = z.object({
   supportsNativeToolResults: z.boolean().optional(),
 });
 
+const zAssistTomConfig = z.object({
+  enabled: z.boolean().optional(),
+});
+
 export const zAssistRequest = z.object({
   mode: zAssistMode.default("auto"),
   task: z.string().min(1).max(120_000),
@@ -129,6 +263,7 @@ export const zAssistRequest = z.object({
   fallbackToPlatformModel: z.boolean().optional(),
   orchestrationProtocol: zOrchestrationProtocol.default("tool_loop_v1").optional(),
   clientCapabilities: zClientCapabilities.optional(),
+  tom: zAssistTomConfig.optional(),
   historySessionId: z.string().uuid().optional(),
   conversationHistory: z.array(zConversationTurn).max(24).optional(),
   context: z
@@ -153,6 +288,25 @@ export const zAssistRequest = z.object({
           discoveredApps: z.array(zDesktopDiscoveredApp).max(60).optional(),
         })
         .optional(),
+      browser: z
+        .object({
+          mode: z.enum(["unavailable", "attached", "managed"]).optional(),
+          browserName: z.string().max(240).optional(),
+          activePage: zBrowserPage.optional(),
+          openPages: z.array(zBrowserPage).max(30).optional(),
+          recentSnapshots: z.array(zBrowserSnapshotRef).max(12).optional(),
+          visibleInteractiveElements: z.array(zBrowserInteractiveElement).max(60).optional(),
+          recentNetworkActivity: z.array(zBrowserNetworkEntry).max(30).optional(),
+          recentConsoleMessages: z.array(zBrowserConsoleEntry).max(30).optional(),
+          sessionHint: z
+            .object({
+              attachedToExistingSession: z.boolean().optional(),
+              authenticatedLikely: z.boolean().optional(),
+            })
+            .optional(),
+        })
+        .optional(),
+      worldModel: zWorldModelContext.optional(),
     })
     .optional(),
   retrievalHints: zRetrievalHints.optional(),
@@ -205,6 +359,27 @@ export const zLoopState = z.object({
   maxSteps: z.number().int().min(1).max(1000),
   maxMutations: z.number().int().min(0).max(1000),
   lastToolCallKey: z.string().max(1000).optional(),
+  autonomyLane: z.string().min(1).max(120).optional(),
+  failureCategory: z.string().min(1).max(120).optional(),
+  repairDirective: z.string().max(20_000).optional(),
+  closeoutStage: z.string().min(1).max(120).optional(),
+  executionVisibility: zExecutionVisibility.optional(),
+  foregroundDisruptionRisk: zForegroundDisruptionRisk.optional(),
+  interactionMode: zInteractionMode.optional(),
+  focusPolicy: zFocusPolicy.optional(),
+  sessionPolicy: zSessionPolicy.optional(),
+  visibleFallbackReason: z.string().max(2000).optional(),
+  terminalState: zTerminalState.optional(),
+  worldContextVersion: z.number().int().min(0).max(10_000_000).optional(),
+  worldModelSliceId: z.string().max(240).optional(),
+  affordanceSummary: zWorldModelAffordances.optional(),
+  environmentFreshness: z
+    .object({
+      lastUpdatedAt: z.string().datetime().optional(),
+      stale: z.boolean().optional(),
+    })
+    .optional(),
+  machineRoutineIds: z.array(z.string().min(1).max(240)).max(20).optional(),
 });
 
 export const zPendingToolCall = z.object({
@@ -214,6 +389,14 @@ export const zPendingToolCall = z.object({
   toolCall: zToolCall,
   availableTools: z.array(zPlaygroundToolName).max(64).optional(),
   createdAt: z.string().datetime(),
+  executionVisibility: zExecutionVisibility.optional(),
+  foregroundDisruptionRisk: zForegroundDisruptionRisk.optional(),
+  interactionMode: zInteractionMode.optional(),
+  focusPolicy: zFocusPolicy.optional(),
+  sessionPolicy: zSessionPolicy.optional(),
+  visibleFallbackReason: z.string().max(2000).optional(),
+  worldContextVersion: z.number().int().min(0).max(10_000_000).optional(),
+  worldModelSliceId: z.string().max(240).optional(),
 });
 
 export const zProgressState = z.object({
@@ -224,15 +407,56 @@ export const zProgressState = z.object({
   stallReason: z.string().max(20_000).optional(),
   nextDeterministicAction: z.string().max(20_000).optional(),
   pendingToolCallSignature: z.string().max(4000).optional(),
+  executionVisibility: zExecutionVisibility.optional(),
+  interactionMode: zInteractionMode.optional(),
+  visibleFallbackReason: z.string().max(2000).optional(),
+  terminalState: zTerminalState.optional(),
+  worldContextVersion: z.number().int().min(0).max(10_000_000).optional(),
+  worldModelSliceId: z.string().max(240).optional(),
+  affordanceSummary: zWorldModelAffordances.optional(),
+  environmentFreshness: z
+    .object({
+      lastUpdatedAt: z.string().datetime().optional(),
+      stale: z.boolean().optional(),
+    })
+    .optional(),
+  machineRoutineIds: z.array(z.string().min(1).max(240)).max(20).optional(),
+});
+
+const zCompletionChecklistItem = z.object({
+  id: z.string().min(1).max(240),
+  label: z.string().min(1).max(1000),
+  category: z.enum(["grounding", "implementation", "validation", "closeout", "summary"]),
+  status: z.enum(["pending", "completed", "blocked"]),
+  detail: z.string().max(2000).optional(),
 });
 
 export const zObjectiveState = z.object({
   status: z.enum(["in_progress", "satisfied", "blocked"]),
   goalType: z.enum(["code_edit", "command_run", "plan", "unknown"]),
   targetPath: z.string().min(1).max(4096).optional(),
+  autonomyLane: z.string().min(1).max(120).optional(),
+  executionVisibility: zExecutionVisibility.optional(),
+  interactionMode: zInteractionMode.optional(),
+  focusPolicy: zFocusPolicy.optional(),
+  sessionPolicy: zSessionPolicy.optional(),
+  terminalState: zTerminalState.optional(),
+  stackSpecializer: z.string().min(1).max(120).optional(),
+  worldContextVersion: z.number().int().min(0).max(10_000_000).optional(),
+  worldModelSliceId: z.string().max(240).optional(),
+  affordanceSummary: zWorldModelAffordances.optional(),
+  environmentFreshness: z
+    .object({
+      lastUpdatedAt: z.string().datetime().optional(),
+      stale: z.boolean().optional(),
+    })
+    .optional(),
+  machineRoutineIds: z.array(z.string().min(1).max(240)).max(20).optional(),
+  requiredArtifacts: z.array(z.string().min(1).max(4096)).max(40).optional(),
   requiredProof: z.array(z.string().min(1).max(240)).max(20),
   observedProof: z.array(z.string().min(1).max(240)).max(20),
   missingProof: z.array(z.string().min(1).max(240)).max(20),
+  completionChecklist: z.array(zCompletionChecklistItem).max(40).optional(),
 });
 
 export const zRunContinueRequest = z.object({
@@ -444,6 +668,11 @@ export type AssistRequestContract = z.infer<typeof zAssistRequest>;
 export type OrchestrationProtocol = z.infer<typeof zOrchestrationProtocol>;
 export type PlaygroundToolName = z.infer<typeof zPlaygroundToolName>;
 export type PlaygroundAdapter = z.infer<typeof zPlaygroundAdapter>;
+export type ExecutionVisibility = z.infer<typeof zExecutionVisibility>;
+export type ForegroundDisruptionRisk = z.infer<typeof zForegroundDisruptionRisk>;
+export type InteractionMode = z.infer<typeof zInteractionMode>;
+export type FocusPolicy = z.infer<typeof zFocusPolicy>;
+export type SessionPolicy = z.infer<typeof zSessionPolicy>;
 export type ToolCallContract = z.infer<typeof zToolCall>;
 export type ToolResultContract = z.infer<typeof zToolResult>;
 export type ToolTraceEntryContract = z.infer<typeof zToolTraceEntry>;

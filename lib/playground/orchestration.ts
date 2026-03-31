@@ -85,6 +85,87 @@ export type AssistContext = {
       source?: string;
     }>;
   };
+  browser?: {
+    mode?: "unavailable" | "attached" | "managed";
+    browserName?: string;
+    activePage?: {
+      id: string;
+      title?: string;
+      url?: string;
+      origin?: string;
+      browserName?: string;
+    };
+    openPages?: Array<{
+      id: string;
+      title?: string;
+      url?: string;
+      origin?: string;
+      browserName?: string;
+    }>;
+    recentSnapshots?: Array<{
+      snapshotId: string;
+      pageId?: string;
+      url?: string;
+      title?: string;
+      capturedAt?: string;
+    }>;
+    visibleInteractiveElements?: Array<{
+      id: string;
+      selector: string;
+      label: string;
+      role?: string;
+      tagName?: string;
+    }>;
+    recentNetworkActivity?: Array<{
+      at?: string;
+      phase?: "request" | "response" | "failed";
+      url: string;
+      method?: string;
+      status?: number;
+      resourceType?: string;
+      errorText?: string;
+    }>;
+    recentConsoleMessages?: Array<{
+      at?: string;
+      level?: string;
+      text: string;
+    }>;
+    sessionHint?: {
+      attachedToExistingSession?: boolean;
+      authenticatedLikely?: boolean;
+    };
+  };
+  worldModel?: {
+    graphVersion?: number;
+    sliceId?: string;
+    summary?: string;
+    activeContext?: {
+      activeWindow?: string;
+      activePage?: string;
+      activeWorkspace?: string;
+      activeRepo?: string;
+      browserMode?: string;
+      focusLeaseActive?: boolean;
+    };
+    recentChanges?: Array<{
+      id?: string;
+      at?: string;
+      kind?: string;
+      summary: string;
+    }>;
+    affordanceSummary?: {
+      actionsAvailable?: string[];
+      backgroundSafe?: string[];
+      visibleRequired?: string[];
+      blocked?: string[];
+      highConfidence?: string[];
+    };
+    environmentFreshness?: {
+      lastUpdatedAt?: string;
+      stale?: boolean;
+    };
+    machineRoutineIds?: string[];
+  };
 };
 
 export type AssistRetrievalHints = {
@@ -114,6 +195,9 @@ export type AssistRequest = {
     supportedTools?: PlaygroundToolName[];
     autoExecute?: boolean;
     supportsNativeToolResults?: boolean;
+  };
+  tom?: {
+    enabled?: boolean;
   };
   historySessionId?: string;
   context?: AssistContext;
@@ -154,6 +238,23 @@ export type AssistContextSelection = {
 
 export type AssistProgressState = ProgressStateContract;
 export type AssistObjectiveState = ObjectiveStateContract;
+export type AssistAutonomyLane =
+  | "repo_scaffold"
+  | "single_file_edit"
+  | "multi_file_feature_delivery"
+  | "validation_repair"
+  | "git_completion"
+  | "browser_task"
+  | "machine_control"
+  | "unknown";
+export type AssistStackSpecializer = "node_js_ts" | "python" | "generic";
+export type AssistCompletionChecklistItem = {
+  id: string;
+  label: string;
+  category: "grounding" | "implementation" | "validation" | "closeout" | "summary";
+  status: "pending" | "completed" | "blocked";
+  detail?: string;
+};
 
 export type AssistValidationPlan = {
   scope: "none" | "targeted";
@@ -503,6 +604,174 @@ export function mapIntentToGoalType(intent: AssistIntent["type"]): AssistObjecti
   return "unknown";
 }
 
+function taskRequestsValidation(task: string): boolean {
+  return /\b(run|rerun|execute)\s+(the\s+)?tests?\b/i.test(task) || /\buntil (it|they) pass\b/i.test(task) || /\b(validate|validation|lint|typecheck|pytest)\b/i.test(task);
+}
+
+function taskRequestsGitWorkflow(task: string): boolean {
+  return /\b(git init|initialize git|initialise git|create a commit|git commit|create a feature branch|branch named|checkout -b|switch -c)\b/i.test(task);
+}
+
+function pathLooksJavaScript(pathValue: string): boolean {
+  return /\.(c|m)?jsx?$/.test(pathValue) || /\.(tsx?)$/.test(pathValue);
+}
+
+function fileLooksLikeTest(pathValue: string): boolean {
+  return /(^|\/)(__tests__|tests?)\//.test(pathValue) || /\.(test|spec)\.[A-Za-z0-9]+$/i.test(pathValue);
+}
+
+function inferStackSpecializer(input: {
+  request: AssistRuntimeInput;
+  plan: AssistPlan | null;
+  targetInference: AssistTargetInference;
+  contextSelection: AssistContextSelection;
+  actions: ExecuteAction[];
+}): AssistStackSpecializer {
+  const samples = [
+    input.targetInference.path,
+    ...input.contextSelection.files.map((file) => file.path),
+    ...(input.plan?.files || []),
+    ...input.actions.filter((action): action is Extract<ExecuteAction, { path: string }> => "path" in action).map((action) => action.path),
+  ]
+    .map((value) => sanitizeRelativePath(value))
+    .filter((value): value is string => Boolean(value));
+  const task = input.request.task.toLowerCase();
+  if (samples.some((value) => /\.py$/i.test(value)) || /\bpython|pytest|pip\b/.test(task)) {
+    return "python";
+  }
+  if (
+    samples.some((value) => value.endsWith("package.json") || pathLooksJavaScript(value)) ||
+    /\b(node|javascript|typescript|npm|pnpm|yarn|esm)\b/.test(task)
+  ) {
+    return "node_js_ts";
+  }
+  return "generic";
+}
+
+function inferAutonomyLane(input: {
+  request: AssistRuntimeInput;
+  intent: AssistIntent;
+  targetInference: AssistTargetInference;
+  contextSelection: AssistContextSelection;
+  plan: AssistPlan | null;
+}): AssistAutonomyLane {
+  const task = input.request.task;
+  if (input.request.context?.browser || /\b(browser|tab|page|website|site|navigate|login|checkout|dashboard)\b/i.test(task)) {
+    return "browser_task";
+  }
+  if (
+    input.request.context?.desktop ||
+    /\b(open|launch|focus|close)\s+[a-z0-9].*\b(app|window)\b/i.test(task) ||
+    /\bopen\s+[A-Z][A-Za-z0-9._ -]+\b/.test(task)
+  ) {
+    return "machine_control";
+  }
+  if (taskRequestsGitWorkflow(task)) return "git_completion";
+  if (
+    /\brepair|fix failing|make the tests pass|validation\b/i.test(task) &&
+    taskRequestsValidation(task)
+  ) {
+    return "validation_repair";
+  }
+  const plannedFiles = input.plan?.files || [];
+  const multiFileTarget =
+    plannedFiles.length >= 4 ||
+    (plannedFiles.length >= 2 && /\b(project|folder|directory)\b/i.test(task));
+  if (multiFileTarget) {
+    return /\b(create|scaffold|bootstrap)\b/i.test(task) ? "repo_scaffold" : "multi_file_feature_delivery";
+  }
+  if (
+    input.intent.type === "code_edit" &&
+    (Boolean(input.targetInference.path) || input.contextSelection.files.length <= 2)
+  ) {
+    return "single_file_edit";
+  }
+  return "unknown";
+}
+
+function buildRequiredArtifacts(input: {
+  goalType: AssistObjectiveState["goalType"];
+  lane: AssistAutonomyLane;
+  targetInference: AssistTargetInference;
+  plan: AssistPlan | null;
+}): string[] {
+  if (input.goalType === "plan") return [];
+  const planFiles = (input.plan?.files || []).map((value) => sanitizeRelativePath(value)).filter((value): value is string => Boolean(value));
+  if (planFiles.length > 0 && input.lane !== "single_file_edit") {
+    return Array.from(new Set(planFiles)).slice(0, 16);
+  }
+  if (input.targetInference.path) return [input.targetInference.path];
+  return [];
+}
+
+function buildCompletionChecklist(input: {
+  lane: AssistAutonomyLane;
+  goalType: AssistObjectiveState["goalType"];
+  targetInference: AssistTargetInference;
+  requiredArtifacts: string[];
+  requiredProof: string[];
+  observedProof: string[];
+  missingRequirements: string[];
+  final: string;
+  request: AssistRuntimeInput;
+}): AssistCompletionChecklistItem[] {
+  const missing = new Set(input.missingRequirements);
+  const observed = new Set(input.observedProof);
+  const validationRequired = taskRequestsValidation(input.request.task);
+  const gitRequired = taskRequestsGitWorkflow(input.request.task);
+  const items: AssistCompletionChecklistItem[] = [];
+
+  items.push({
+    id: "grounding",
+    label: input.targetInference.path ? `Ground ${input.targetInference.path}` : "Inspect and ground the task target",
+    category: "grounding",
+    status: observed.has("target_resolved") && observed.has("target_grounded") ? "completed" : missing.has("weak_grounding_requires_inspection") ? "blocked" : "pending",
+    detail: input.targetInference.path ? `Target ${input.targetInference.path}` : "No stable target has been grounded yet.",
+  });
+
+  for (const artifact of input.requiredArtifacts.slice(0, 16)) {
+    const isMissing = missing.has(`required_artifact_missing:${artifact}`);
+    items.push({
+      id: `artifact:${artifact}`,
+      label: `Deliver ${artifact}`,
+      category: "implementation",
+      status: isMissing ? "pending" : input.goalType === "plan" ? "completed" : "completed",
+      detail: artifact,
+    });
+  }
+
+  if (validationRequired) {
+    items.push({
+      id: "validation",
+      label: "Pass requested validation",
+      category: "validation",
+      status: missing.has("required_validation_missing") ? "pending" : missing.has("validation_command_failure") ? "blocked" : "completed",
+      detail: "Tests, lint, or typecheck requested by the task.",
+    });
+  }
+
+  if (gitRequired) {
+    const closeoutMissing = input.missingRequirements.filter((item) => item.startsWith("required_git_"));
+    items.push({
+      id: "git-closeout",
+      label: "Finish requested git closeout",
+      category: "closeout",
+      status: closeoutMissing.length > 0 ? "pending" : "completed",
+      detail: closeoutMissing[0]?.replace(/^required_/, "").replace(/_/g, " ") || "Git init, branch, and commit proof requested.",
+    });
+  }
+
+  items.push({
+    id: "summary",
+    label: "Produce a final completion summary",
+    category: "summary",
+    status: input.final.trim() ? "completed" : "pending",
+    detail: input.final.trim() ? input.final.slice(0, 180) : "No final completion summary yet.",
+  });
+
+  return items;
+}
+
 function requiredProofForGoal(goalType: AssistObjectiveState["goalType"]): string[] {
   if (goalType === "code_edit") {
     return ["target_resolved", "target_grounded", "workspace_change_prepared"];
@@ -529,6 +798,26 @@ export function buildObjectiveState(input: {
   blocked?: boolean;
 }): AssistObjectiveState {
   const goalType = mapIntentToGoalType(input.intent.type);
+  const lane = inferAutonomyLane({
+    request: input.request,
+    intent: input.intent,
+    targetInference: input.targetInference,
+    contextSelection: input.contextSelection,
+    plan: input.plan,
+  });
+  const stackSpecializer = inferStackSpecializer({
+    request: input.request,
+    plan: input.plan,
+    targetInference: input.targetInference,
+    contextSelection: input.contextSelection,
+    actions: input.actions,
+  });
+  const requiredArtifacts = buildRequiredArtifacts({
+    goalType,
+    lane,
+    targetInference: input.targetInference,
+    plan: input.plan,
+  });
   const requiredProof = requiredProofForGoal(goalType);
   const hasPreparedMutation = input.actions.some((action) => {
     if (action.type !== "edit" && action.type !== "write_file" && action.type !== "mkdir") return false;
@@ -555,14 +844,29 @@ export function buildObjectiveState(input: {
       : input.blocked
         ? "blocked"
         : "in_progress";
+  const completionChecklist = buildCompletionChecklist({
+    lane,
+    goalType,
+    targetInference: input.targetInference,
+    requiredArtifacts,
+    requiredProof,
+    observedProof,
+    missingRequirements: input.missingRequirements,
+    final: input.final,
+    request: input.request,
+  });
 
   return {
     status,
     goalType,
     ...(input.targetInference.path ? { targetPath: input.targetInference.path } : {}),
+    autonomyLane: lane,
+    stackSpecializer,
+    requiredArtifacts,
     requiredProof,
     observedProof,
     missingProof,
+    completionChecklist,
   };
 }
 
@@ -807,6 +1111,131 @@ export function buildContextPrompt(context?: AssistContext): string {
       sections.push(`Desktop state:\n${desktopSections.join("\n")}`);
     }
   }
+  if (context.browser) {
+    const browserSections: string[] = [];
+    if (context.browser.mode) {
+      browserSections.push(`Mode: ${context.browser.mode}`);
+    }
+    if (context.browser.browserName) {
+      browserSections.push(`Browser: ${context.browser.browserName}`);
+    }
+    if (context.browser.activePage?.title || context.browser.activePage?.url) {
+      browserSections.push(
+        `Active page: ${compactWhitespace(
+          [context.browser.activePage.title, context.browser.activePage.url].filter(Boolean).join(" - ")
+        )}`
+      );
+    }
+    if (context.browser.openPages?.length) {
+      browserSections.push(
+        `Open pages:\n${context.browser.openPages
+          .slice(0, 8)
+          .map((page) => `- ${compactWhitespace([page.title, page.url].filter(Boolean).join(" - ")) || page.id}`)
+          .join("\n")}`
+      );
+    }
+    if (context.browser.visibleInteractiveElements?.length) {
+      browserSections.push(
+        `Interactive elements:\n${context.browser.visibleInteractiveElements
+          .slice(0, 12)
+          .map((element) => `- ${compactWhitespace([element.label, element.selector].filter(Boolean).join(" @ "))}`)
+          .join("\n")}`
+      );
+    }
+    if (context.browser.recentSnapshots?.length) {
+      browserSections.push(
+        `Recent browser snapshots:\n${context.browser.recentSnapshots
+          .slice(0, 6)
+          .map((snapshot) => `- ${snapshot.snapshotId}: ${compactWhitespace([snapshot.title, snapshot.url].filter(Boolean).join(" - "))}`)
+          .join("\n")}`
+      );
+    }
+    if (context.browser.recentNetworkActivity?.length) {
+      browserSections.push(
+        `Recent network activity:\n${context.browser.recentNetworkActivity
+          .slice(0, 8)
+          .map((entry) => `- ${compactWhitespace([entry.phase, entry.method, entry.status ? String(entry.status) : "", entry.url].filter(Boolean).join(" "))}`)
+          .join("\n")}`
+      );
+    }
+    if (context.browser.recentConsoleMessages?.length) {
+      browserSections.push(
+        `Recent console messages:\n${context.browser.recentConsoleMessages
+          .slice(0, 6)
+          .map((entry) => `- ${compactWhitespace([entry.level, entry.text].filter(Boolean).join(": "))}`)
+          .join("\n")}`
+      );
+    }
+    if (context.browser.sessionHint) {
+      browserSections.push(
+        `Session hints: attached=${context.browser.sessionHint.attachedToExistingSession ? "true" : "false"} authenticated=${context.browser.sessionHint.authenticatedLikely ? "true" : "false"}`
+      );
+    }
+    if (browserSections.length) {
+      sections.push(`Browser state:\n${browserSections.join("\n")}`);
+    }
+  }
+  if (context.worldModel) {
+    const worldSections: string[] = [];
+    if (typeof context.worldModel.graphVersion === "number") {
+      worldSections.push(`Graph version: ${context.worldModel.graphVersion}`);
+    }
+    if (context.worldModel.summary) {
+      worldSections.push(`Summary: ${String(context.worldModel.summary).slice(0, 2_000)}`);
+    }
+    if (context.worldModel.activeContext) {
+      const activeContextLines = [
+        context.worldModel.activeContext.activeWindow
+          ? `Active window: ${context.worldModel.activeContext.activeWindow}`
+          : "",
+        context.worldModel.activeContext.activePage
+          ? `Active page: ${context.worldModel.activeContext.activePage}`
+          : "",
+        context.worldModel.activeContext.activeWorkspace
+          ? `Active workspace: ${context.worldModel.activeContext.activeWorkspace}`
+          : "",
+        context.worldModel.activeContext.activeRepo ? `Active repo: ${context.worldModel.activeContext.activeRepo}` : "",
+        context.worldModel.activeContext.browserMode ? `Browser mode: ${context.worldModel.activeContext.browserMode}` : "",
+        typeof context.worldModel.activeContext.focusLeaseActive === "boolean"
+          ? `Focus lease active: ${context.worldModel.activeContext.focusLeaseActive ? "true" : "false"}`
+          : "",
+      ].filter(Boolean);
+      if (activeContextLines.length) {
+        worldSections.push(activeContextLines.join("\n"));
+      }
+    }
+    if (context.worldModel.affordanceSummary) {
+      const affordances = context.worldModel.affordanceSummary;
+      if (affordances.actionsAvailable?.length) {
+        worldSections.push(`Affordances:\n${affordances.actionsAvailable.slice(0, 10).map((item) => `- ${item}`).join("\n")}`);
+      }
+      if (affordances.backgroundSafe?.length) {
+        worldSections.push(`Background-safe routes:\n${affordances.backgroundSafe.slice(0, 8).map((item) => `- ${item}`).join("\n")}`);
+      }
+      if (affordances.blocked?.length) {
+        worldSections.push(`Blocked routes:\n${affordances.blocked.slice(0, 8).map((item) => `- ${item}`).join("\n")}`);
+      }
+    }
+    if (context.worldModel.recentChanges?.length) {
+      worldSections.push(
+        `Recent environment changes:\n${context.worldModel.recentChanges
+          .slice(0, 6)
+          .map((change) => `- ${compactWhitespace(change.summary)}`)
+          .join("\n")}`
+      );
+    }
+    if (context.worldModel.machineRoutineIds?.length) {
+      worldSections.push(`Known routines: ${context.worldModel.machineRoutineIds.slice(0, 8).join(", ")}`);
+    }
+    if (context.worldModel.environmentFreshness?.lastUpdatedAt) {
+      worldSections.push(
+        `Environment freshness: ${context.worldModel.environmentFreshness.stale ? "stale" : "fresh"} @ ${context.worldModel.environmentFreshness.lastUpdatedAt}`
+      );
+    }
+    if (worldSections.length) {
+      sections.push(`Machine world model:\n${worldSections.join("\n")}`);
+    }
+  }
   return sections.length ? sections.join("\n\n") : "IDE context: none.";
 }
 
@@ -843,6 +1272,21 @@ export function buildPlan(input: {
       ).filter((item): item is string => Boolean(item)),
     ])
   ).slice(0, 8);
+  const specializer: AssistStackSpecializer =
+    files.some((file) => /\.py$/i.test(file)) || /\bpython|pytest|pip\b/i.test(input.task)
+      ? "python"
+      : files.some((file) => file.endsWith("package.json") || pathLooksJavaScript(file)) ||
+          /\b(node|javascript|typescript|npm|pnpm|yarn|esm)\b/i.test(input.task)
+        ? "node_js_ts"
+        : "generic";
+  const lane: AssistAutonomyLane =
+    taskRequestsGitWorkflow(input.task)
+      ? "git_completion"
+      : files.length >= 4 || /\b(project|folder|directory)\b/i.test(input.task)
+        ? "multi_file_feature_delivery"
+        : files.length <= 1 && files[0]
+          ? "single_file_edit"
+          : "unknown";
   const touchedLanguage = detectLanguageFromPath(files[0]);
   const acceptanceTests = files.length
     ? files.flatMap((filePath) => {
@@ -853,6 +1297,15 @@ export function buildPlan(input: {
         return checks;
       })
     : ["Confirm the target file before applying changes."];
+  if (specializer === "node_js_ts" && (files.some((file) => file.endsWith("package.json") || fileLooksLikeTest(file)) || taskRequestsValidation(input.task))) {
+    acceptanceTests.push("npm test");
+  }
+  if (specializer === "python" && (files.some((file) => /\.py$/i.test(file)) || taskRequestsValidation(input.task))) {
+    acceptanceTests.push("python -m pytest");
+  }
+  if (taskRequestsGitWorkflow(input.task)) {
+    acceptanceTests.push("git status --short");
+  }
 
   const risks = [
     ...(input.targetInference.path ? [] : ["Target file inference is low confidence; confirm the intended file if the first result is wrong."]),
@@ -864,9 +1317,17 @@ export function buildPlan(input: {
     objective: compactWhitespace(input.task).slice(0, 280),
     files,
     steps: [
-      files.length ? `Inspect and update ${files[0]}.` : "Inspect the most likely target file from IDE context.",
-      "Apply the minimal code change needed to satisfy the request.",
-      "Run focused validation on the touched files and review the resulting diff.",
+      specializer === "generic" && files.length === 0
+        ? "Inspect likely targets before mutating because the task is weakly grounded."
+        : files.length
+          ? `Inspect and update ${files[0]}.`
+          : "Inspect the most likely target file from IDE context.",
+      lane === "multi_file_feature_delivery" || lane === "git_completion"
+        ? "Complete the full requested artifact checklist, not just the first file."
+        : "Apply the minimal code change needed to satisfy the request.",
+      taskRequestsGitWorkflow(input.task)
+        ? "Run validation, then finish the requested git closeout with proof."
+        : "Run focused validation on the touched files and review the resulting diff.",
     ],
     acceptanceTests: Array.from(new Set(acceptanceTests)).slice(0, 6),
     risks,
@@ -891,11 +1352,18 @@ export function buildValidationPlan(input: {
   }
 
   const checks = new Set<string>();
+  const hasPackageJson = touchedFiles.some((filePath) => filePath === "package.json" || filePath.endsWith("/package.json"));
+  const hasJavaScriptTests = touchedFiles.some((filePath) => pathLooksJavaScript(filePath) && fileLooksLikeTest(filePath));
+  const hasPythonFiles = touchedFiles.some((filePath) => /\.py$/i.test(filePath));
   for (const filePath of touchedFiles) {
     checks.add(`git diff --check -- ${filePath}`);
     const language = detectLanguageFromPath(filePath);
     if (language === "ts" || language === "js") checks.add(`npm run lint -- ${filePath}`);
     if (language === "python") checks.add(`python -m py_compile ${filePath}`);
+  }
+  if (hasPackageJson || hasJavaScriptTests) checks.add("npm test");
+  if (hasPythonFiles && touchedFiles.some((filePath) => fileLooksLikeTest(filePath) || /\.py$/i.test(filePath))) {
+    checks.add("python -m pytest");
   }
 
   return {

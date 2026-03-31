@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildAssistResponsePayload,
   buildConversationHistory,
+  resolveAssistTomEnabled,
 } from "@/app/api/v1/playground/assist/route-helpers";
 
 describe("assist route helpers", () => {
@@ -112,5 +113,10 @@ describe("assist route helpers", () => {
         missingProof: [],
       },
     });
+  });
+
+  it("defaults TOM on unless explicitly disabled", () => {
+    expect(resolveAssistTomEnabled({ task: "fix src/app.ts" })).toBe(true);
+    expect(resolveAssistTomEnabled({ task: "debug this", requestedTomEnabled: false })).toBe(false);
   });
 });

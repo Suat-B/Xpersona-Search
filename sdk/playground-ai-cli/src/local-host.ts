@@ -118,6 +118,9 @@ export type LocalHostAssistRequest = {
   mode: AssistMode;
   model: string;
   historySessionId?: string;
+  tom?: {
+    enabled?: boolean;
+  };
   workspaceRoot?: string;
   detach?: boolean;
   client?: {

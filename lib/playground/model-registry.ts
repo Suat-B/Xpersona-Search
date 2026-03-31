@@ -33,7 +33,35 @@ export type PlaygroundToolName =
   | "desktop_type"
   | "desktop_keypress"
   | "desktop_scroll"
-  | "desktop_wait";
+  | "desktop_wait"
+  | "browser_list_pages"
+  | "browser_get_active_page"
+  | "browser_open_page"
+  | "browser_focus_page"
+  | "browser_navigate"
+  | "browser_snapshot_dom"
+  | "browser_query_elements"
+  | "browser_click"
+  | "browser_type"
+  | "browser_press_keys"
+  | "browser_scroll"
+  | "browser_wait_for"
+  | "browser_read_text"
+  | "browser_read_form_state"
+  | "browser_capture_page"
+  | "browser_get_network_activity"
+  | "browser_get_console_messages"
+  | "world_get_summary"
+  | "world_get_active_context"
+  | "world_query_graph"
+  | "world_get_neighbors"
+  | "world_get_recent_changes"
+  | "world_get_affordances"
+  | "world_find_routine"
+  | "world_record_observation"
+  | "world_record_proof"
+  | "world_commit_memory"
+  | "world_score_route";
 
 export type PlaygroundModelCapabilitySet = {
   maxContextTokens: number;
@@ -108,6 +136,34 @@ export const PLAYGROUND_TOOL_LOOP_TOOLS: PlaygroundToolName[] = [
   "desktop_keypress",
   "desktop_scroll",
   "desktop_wait",
+  "browser_list_pages",
+  "browser_get_active_page",
+  "browser_open_page",
+  "browser_focus_page",
+  "browser_navigate",
+  "browser_snapshot_dom",
+  "browser_query_elements",
+  "browser_click",
+  "browser_type",
+  "browser_press_keys",
+  "browser_scroll",
+  "browser_wait_for",
+  "browser_read_text",
+  "browser_read_form_state",
+  "browser_capture_page",
+  "browser_get_network_activity",
+  "browser_get_console_messages",
+  "world_get_summary",
+  "world_get_active_context",
+  "world_query_graph",
+  "world_get_neighbors",
+  "world_get_recent_changes",
+  "world_get_affordances",
+  "world_find_routine",
+  "world_record_observation",
+  "world_record_proof",
+  "world_commit_memory",
+  "world_score_route",
 ];
 
 type PlaygroundModelRegistryEntryInput = {

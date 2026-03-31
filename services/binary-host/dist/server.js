@@ -5,8 +5,14 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { continueHostedRun, streamHostedAssist } from "./hosted-transport.js";
+import { decorateUiEvent } from "./ui-events.js";
+import { AutonomyExecutionController, } from "./autonomy-execution-controller.js";
+import { BrowserToolExecutor, collectBrowserContext } from "./browser-tool-executor.js";
+import { BrowserRuntimeController } from "./browser-runtime.js";
 import { DesktopToolExecutor, collectDesktopContext } from "./desktop-tool-executor.js";
 import { MachineAutonomyController, defaultMachineAutonomyPolicy, } from "./machine-autonomy.js";
+import { MachineWorldModelService } from "./machine-world-model.js";
+import { WorldToolExecutor } from "./world-tool-executor.js";
 const HOST_VERSION = "0.2.0";
 const HOST = process.env.BINARY_IDE_HOST_BIND || "127.0.0.1";
 const PORT = Number(process.env.BINARY_IDE_HOST_PORT || "7777");
@@ -15,6 +21,7 @@ const LEGACY_CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
 const HOST_DIR = path.join(CONFIG_DIR, "host");
 const STATE_PATH = path.join(HOST_DIR, "state.json");
 const SECRET_FALLBACK_PATH = path.join(HOST_DIR, "secrets.json");
+const WORLD_MODEL_PATH = path.join(HOST_DIR, "world-model.json");
 const RUNS_DIR = path.join(HOST_DIR, "runs");
 const JSON_LIMIT_BYTES = 1_500_000;
 const MAX_EVENT_HISTORY = 4_000;
@@ -47,17 +54,168 @@ const HOST_DESKTOP_TOOLS = [
     "desktop_focus_window",
     "desktop_wait",
 ];
+const HOST_BROWSER_TOOLS = [
+    "browser_list_pages",
+    "browser_get_active_page",
+    "browser_open_page",
+    "browser_focus_page",
+    "browser_navigate",
+    "browser_snapshot_dom",
+    "browser_query_elements",
+    "browser_click",
+    "browser_type",
+    "browser_press_keys",
+    "browser_scroll",
+    "browser_wait_for",
+    "browser_read_text",
+    "browser_read_form_state",
+    "browser_capture_page",
+    "browser_get_network_activity",
+    "browser_get_console_messages",
+];
+const HOST_WORLD_TOOLS = [
+    "world_get_summary",
+    "world_get_active_context",
+    "world_query_graph",
+    "world_get_neighbors",
+    "world_get_recent_changes",
+    "world_get_affordances",
+    "world_find_routine",
+    "world_record_observation",
+    "world_record_proof",
+    "world_commit_memory",
+    "world_score_route",
+];
 const activeExecutions = new Map();
 const runControllers = new Map();
 const machineAutonomyController = new MachineAutonomyController();
+const browserRuntimeController = new BrowserRuntimeController();
+const worldModelService = new MachineWorldModelService(WORLD_MODEL_PATH);
+let activeFocusLease = null;
 function nowIso() {
     return new Date().toISOString();
+}
+function sanitizeFocusLease(lease) {
+    if (!lease)
+        return null;
+    if (new Date(lease.expiresAt).getTime() <= Date.now()) {
+        activeFocusLease = null;
+        return null;
+    }
+    return lease;
+}
+function detectTerminalStack(command, workspaceRoot) {
+    const normalized = String(command || "").toLowerCase();
+    if (normalized.includes("npm ") ||
+        normalized.includes("pnpm ") ||
+        normalized.includes("yarn ") ||
+        normalized.includes("node ") ||
+        normalized.includes("npx ")) {
+        return "node_js_ts";
+    }
+    if (normalized.includes("python") || normalized.includes("pytest") || normalized.includes("pip ")) {
+        return "python";
+    }
+    if (workspaceRoot) {
+        if (existsSync(path.join(workspaceRoot, "package.json")))
+            return "node_js_ts";
+        if (existsSync(path.join(workspaceRoot, "pyproject.toml")) || existsSync(path.join(workspaceRoot, "requirements.txt"))) {
+            return "python";
+        }
+    }
+    return "generic";
+}
+function buildTerminalState(run, pendingToolCall, toolResult) {
+    if (pendingToolCall.toolCall.name !== "run_command")
+        return null;
+    const command = String(pendingToolCall.toolCall.arguments.command || "").trim();
+    const preferredProjectRoot = extractRequestedProjectRoot(run.request.task);
+    const cwd = typeof pendingToolCall.toolCall.arguments.cwd === "string" && pendingToolCall.toolCall.arguments.cwd.trim()
+        ? String(pendingToolCall.toolCall.arguments.cwd).trim()
+        : run.workspaceRoot;
+    const projectRoot = cwd ||
+        (preferredProjectRoot && run.workspaceRoot
+            ? path.join(run.workspaceRoot, preferredProjectRoot.replace(/\//g, path.sep))
+            : run.workspaceRoot);
+    return {
+        cwd,
+        preferredTerminalCwd: cwd,
+        projectRoot,
+        stack: detectTerminalStack(command, run.workspaceRoot),
+        terminalObjective: typeof pendingToolCall.toolCall.summary === "string" && pendingToolCall.toolCall.summary.trim()
+            ? pendingToolCall.toolCall.summary.trim()
+            : "Use the shell to inspect, build, or validate the workspace without stealing focus.",
+        terminalProof: toolResult?.summary,
+        lastCommand: command,
+        lastCommandOutcome: !toolResult
+            ? "running"
+            : toolResult.ok
+                ? "succeeded"
+                : "failed",
+    };
+}
+function buildExecutionState(decision, run, pendingToolCall, toolResult) {
+    if (!decision)
+        return null;
+    const terminalState = pendingToolCall ? buildTerminalState(run, pendingToolCall, toolResult) : null;
+    return {
+        lane: decision.lane,
+        executionVisibility: decision.executionVisibility,
+        foregroundDisruptionRisk: decision.foregroundDisruptionRisk,
+        interactionMode: decision.interactionMode,
+        focusPolicy: decision.focusPolicy,
+        sessionPolicy: decision.sessionPolicy,
+        ...(decision.visibleFallbackReason ? { visibleFallbackReason: decision.visibleFallbackReason } : {}),
+        focusLeaseActive: decision.focusLeaseActive,
+        focusSuppressed: decision.focusSuppressed,
+        backgroundSafe: decision.backgroundSafe,
+        requiresVisibleInteraction: decision.requiresVisibleInteraction,
+        ...(terminalState ? { terminalState } : {}),
+    };
+}
+function buildWorldSummaryText(summary) {
+    const parts = [];
+    const activeContext = summary.activeContext || {};
+    const activeWorkspace = typeof activeContext.activeWorkspace === "string" ? activeContext.activeWorkspace : "";
+    const activePage = typeof activeContext.activePage === "string" ? activeContext.activePage : "";
+    const activeWindow = typeof activeContext.activeWindow === "string" ? activeContext.activeWindow : "";
+    if (activeWorkspace)
+        parts.push(`workspace=${activeWorkspace}`);
+    if (activePage)
+        parts.push(`page=${activePage}`);
+    if (activeWindow)
+        parts.push(`window=${activeWindow}`);
+    if (typeof summary.routineCount === "number")
+        parts.push(`routines=${summary.routineCount}`);
+    if (typeof summary.nodeCount === "number")
+        parts.push(`nodes=${summary.nodeCount}`);
+    if (typeof summary.proofCount === "number")
+        parts.push(`proofs=${summary.proofCount}`);
+    const affordanceSummary = summary.affordanceSummary || {};
+    const backgroundSafe = Array.isArray(affordanceSummary.backgroundSafe) ? affordanceSummary.backgroundSafe.length : 0;
+    if (backgroundSafe > 0)
+        parts.push(`background_safe=${backgroundSafe}`);
+    return parts.join(" | ");
+}
+async function buildWorldContextSlice() {
+    const summary = await worldModelService.getSummary();
+    const active = await worldModelService.getActiveContext();
+    return {
+        graphVersion: summary.graphVersion,
+        sliceId: typeof active.sliceId === "string" ? active.sliceId : `world-slice-${summary.graphVersion}`,
+        summary: buildWorldSummaryText(summary),
+        activeContext: summary.activeContext,
+        recentChanges: summary.recentChanges.slice(0, 6),
+        affordanceSummary: summary.affordanceSummary,
+        environmentFreshness: summary.environmentFreshness,
+        machineRoutineIds: summary.machineRoutineIds,
+    };
 }
 function buildResumeToken() {
     return randomUUID().replace(/-/g, "");
 }
 function buildHostSupportedTools(workspaceRoot) {
-    return [...(workspaceRoot ? HOST_WORKSPACE_TOOLS : []), ...HOST_DESKTOP_TOOLS];
+    return [...(workspaceRoot ? HOST_WORKSPACE_TOOLS : []), ...HOST_DESKTOP_TOOLS, ...HOST_BROWSER_TOOLS, ...HOST_WORLD_TOOLS];
 }
 function normalizeWorkspacePath(input) {
     return path.resolve(input);
@@ -175,6 +333,28 @@ async function appendSyntheticToolResult(run, toolResult, attachedRes) {
             ok: toolResult.ok,
             summary: toolResult.summary,
             blocked: toolResult.blocked ?? false,
+            lane: toolResult.data && typeof toolResult.data === "object" && typeof toolResult.data.lane === "string"
+                ? toolResult.data.lane
+                : undefined,
+            executionVisibility: toolResult.data && typeof toolResult.data === "object" && typeof toolResult.data.executionVisibility === "string"
+                ? toolResult.data.executionVisibility
+                : undefined,
+            foregroundDisruptionRisk: toolResult.data &&
+                typeof toolResult.data === "object" &&
+                typeof toolResult.data.foregroundDisruptionRisk === "string"
+                ? toolResult.data.foregroundDisruptionRisk
+                : undefined,
+            interactionMode: toolResult.data && typeof toolResult.data === "object" && typeof toolResult.data.interactionMode === "string"
+                ? toolResult.data.interactionMode
+                : undefined,
+            visibleFallbackReason: toolResult.data &&
+                typeof toolResult.data === "object" &&
+                typeof toolResult.data.visibleFallbackReason === "string"
+                ? toolResult.data.visibleFallbackReason
+                : undefined,
+            terminalState: toolResult.data && typeof toolResult.data === "object" && typeof toolResult.data.terminalState === "object"
+                ? toolResult.data.terminalState
+                : undefined,
         },
     }, attachedRes);
     await emitHostHeartbeat(run, attachedRes);
@@ -262,6 +442,13 @@ function isObserveTool(name) {
         "desktop_keypress",
         "desktop_scroll",
         "desktop_wait",
+        "browser_open_page",
+        "browser_focus_page",
+        "browser_navigate",
+        "browser_click",
+        "browser_type",
+        "browser_press_keys",
+        "browser_scroll",
     ].includes(name);
 }
 function buildPendingSignature(pendingToolCall) {
@@ -334,6 +521,7 @@ function sendSseEvent(res, payload) {
 async function ensureHostDirs() {
     await fs.mkdir(HOST_DIR, { recursive: true });
     await fs.mkdir(RUNS_DIR, { recursive: true });
+    await worldModelService.initialize();
 }
 async function readJsonFile(filePath) {
     try {
@@ -481,17 +669,74 @@ async function readJsonBody(req) {
     });
 }
 async function createHostToolExecutor(input) {
-    const desktopExecutor = new DesktopToolExecutor(machineAutonomyController, input.preferences.machineAutonomy);
-    if (!input.workspaceRoot)
-        return desktopExecutor;
+    const executionController = new AutonomyExecutionController(input.preferences.machineAutonomy);
+    const focusLease = sanitizeFocusLease(activeFocusLease);
+    if (focusLease) {
+        const remainingMs = Math.max(500, new Date(focusLease.expiresAt).getTime() - Date.now());
+        executionController.updateFocusLease({
+            surface: focusLease.surface,
+            source: focusLease.source,
+            leaseMs: remainingMs,
+            active: true,
+        });
+    }
+    const desktopExecutor = new DesktopToolExecutor(machineAutonomyController, input.preferences.machineAutonomy, executionController);
+    const browserExecutor = new BrowserToolExecutor(browserRuntimeController, input.preferences.machineAutonomy, executionController);
+    const worldExecutor = new WorldToolExecutor(worldModelService);
+    const decorateResult = (pendingToolCall, toolResult, decision) => {
+        const executionState = buildExecutionState(decision, input.run, pendingToolCall, toolResult);
+        if (!executionState)
+            return toolResult;
+        input.run.lastExecutionState = executionState;
+        return {
+            ...toolResult,
+            data: {
+                ...(toolResult.data && typeof toolResult.data === "object" ? toolResult.data : {}),
+                executionVisibility: executionState.executionVisibility,
+                foregroundDisruptionRisk: executionState.foregroundDisruptionRisk,
+                interactionMode: executionState.interactionMode,
+                focusPolicy: executionState.focusPolicy,
+                sessionPolicy: executionState.sessionPolicy,
+                backgroundSafe: executionState.backgroundSafe,
+                requiresVisibleInteraction: executionState.requiresVisibleInteraction,
+                focusLeaseActive: executionState.focusLeaseActive,
+                focusSuppressed: executionState.focusSuppressed,
+                ...(executionState.visibleFallbackReason
+                    ? { visibleFallbackReason: executionState.visibleFallbackReason }
+                    : {}),
+                ...(executionState.terminalState ? { terminalState: executionState.terminalState } : {}),
+            },
+        };
+    };
+    if (!input.workspaceRoot) {
+        return {
+            async execute(pendingToolCall) {
+                const decision = executionController.decide(pendingToolCall);
+                if (String(pendingToolCall.toolCall.name || "").startsWith("world_")) {
+                    return decorateResult(pendingToolCall, await worldExecutor.execute(pendingToolCall), decision);
+                }
+                if (String(pendingToolCall.toolCall.name || "").startsWith("browser_")) {
+                    return decorateResult(pendingToolCall, await browserExecutor.execute(pendingToolCall), decision);
+                }
+                return decorateResult(pendingToolCall, await desktopExecutor.execute(pendingToolCall), decision);
+            },
+        };
+    }
     const moduleRef = (await import("../../../sdk/playground-ai-cli/dist/tool-executor.js"));
     const workspaceExecutor = new moduleRef.CliToolExecutor(input.workspaceRoot, extractRequestedProjectRoot(input.task));
     return {
         async execute(pendingToolCall) {
-            if (String(pendingToolCall.toolCall.name || "").startsWith("desktop_")) {
-                return desktopExecutor.execute(pendingToolCall);
+            const decision = executionController.decide(pendingToolCall);
+            if (String(pendingToolCall.toolCall.name || "").startsWith("world_")) {
+                return decorateResult(pendingToolCall, await worldExecutor.execute(pendingToolCall), decision);
             }
-            return workspaceExecutor.execute(pendingToolCall);
+            if (String(pendingToolCall.toolCall.name || "").startsWith("browser_")) {
+                return decorateResult(pendingToolCall, await browserExecutor.execute(pendingToolCall), decision);
+            }
+            if (String(pendingToolCall.toolCall.name || "").startsWith("desktop_")) {
+                return decorateResult(pendingToolCall, await desktopExecutor.execute(pendingToolCall), decision);
+            }
+            return decorateResult(pendingToolCall, await workspaceExecutor.execute(pendingToolCall), decision);
         },
     };
 }
@@ -569,12 +814,52 @@ function buildCheckpointState(run) {
 function buildRunSummary(run) {
     return {
         ...run,
+        lastExecutionState: run.lastExecutionState ?? null,
         eventCount: run.events.length,
     };
 }
 function attachHostMetadata(envelope, run) {
+    const mergedLoopState = envelope.loopState || run.lastExecutionState
+        ? {
+            ...(envelope.loopState || {}),
+            ...(run.lastExecutionState?.executionVisibility
+                ? { executionVisibility: run.lastExecutionState.executionVisibility }
+                : {}),
+            ...(run.lastExecutionState?.foregroundDisruptionRisk
+                ? { foregroundDisruptionRisk: run.lastExecutionState.foregroundDisruptionRisk }
+                : {}),
+            ...(run.lastExecutionState?.interactionMode
+                ? { interactionMode: run.lastExecutionState.interactionMode }
+                : {}),
+            ...(run.lastExecutionState?.focusPolicy ? { focusPolicy: run.lastExecutionState.focusPolicy } : {}),
+            ...(run.lastExecutionState?.sessionPolicy
+                ? { sessionPolicy: run.lastExecutionState.sessionPolicy }
+                : {}),
+            ...(run.lastExecutionState?.visibleFallbackReason
+                ? { visibleFallbackReason: run.lastExecutionState.visibleFallbackReason }
+                : {}),
+            ...(run.lastExecutionState?.terminalState ? { terminalState: run.lastExecutionState.terminalState } : {}),
+        }
+        : envelope.loopState;
+    const mergedProgressState = envelope.progressState || run.lastExecutionState
+        ? {
+            ...(envelope.progressState || {}),
+            ...(run.lastExecutionState?.executionVisibility
+                ? { executionVisibility: run.lastExecutionState.executionVisibility }
+                : {}),
+            ...(run.lastExecutionState?.interactionMode
+                ? { interactionMode: run.lastExecutionState.interactionMode }
+                : {}),
+            ...(run.lastExecutionState?.visibleFallbackReason
+                ? { visibleFallbackReason: run.lastExecutionState.visibleFallbackReason }
+                : {}),
+            ...(run.lastExecutionState?.terminalState ? { terminalState: run.lastExecutionState.terminalState } : {}),
+        }
+        : envelope.progressState;
     return {
         ...envelope,
+        ...(mergedLoopState ? { loopState: mergedLoopState } : {}),
+        ...(mergedProgressState ? { progressState: mergedProgressState } : {}),
         leaseId: run.leaseId,
         heartbeatAt: run.heartbeatAt,
         lastToolAt: run.lastToolAt,
@@ -582,6 +867,8 @@ function attachHostMetadata(envelope, run) {
         checkpointState: run.checkpointState ?? null,
         resumeToken: run.resumeToken,
         workspaceTrustMode: run.workspaceTrustMode,
+        lastExecutionState: run.lastExecutionState ?? null,
+        focusLease: sanitizeFocusLease(activeFocusLease),
     };
 }
 function applyEnvelopeToRun(run, envelope) {
@@ -598,21 +885,51 @@ function applyEnvelopeToRun(run, envelope) {
         run.takeoverReason = envelope.progressState.stallReason;
     }
 }
+function enrichPendingToolCallForUi(run, preferences, pendingToolCall) {
+    const controller = new AutonomyExecutionController(preferences.machineAutonomy);
+    const focusLease = sanitizeFocusLease(activeFocusLease);
+    if (focusLease) {
+        const remainingMs = Math.max(500, new Date(focusLease.expiresAt).getTime() - Date.now());
+        controller.updateFocusLease({
+            surface: focusLease.surface,
+            source: focusLease.source,
+            leaseMs: remainingMs,
+            active: true,
+        });
+    }
+    const decision = controller.decide(pendingToolCall);
+    const executionState = buildExecutionState(decision, run, pendingToolCall, null);
+    run.lastExecutionState = executionState;
+    return {
+        ...pendingToolCall,
+        ...(executionState?.executionVisibility ? { executionVisibility: executionState.executionVisibility } : {}),
+        ...(executionState?.foregroundDisruptionRisk
+            ? { foregroundDisruptionRisk: executionState.foregroundDisruptionRisk }
+            : {}),
+        ...(executionState?.interactionMode ? { interactionMode: executionState.interactionMode } : {}),
+        ...(executionState?.focusPolicy ? { focusPolicy: executionState.focusPolicy } : {}),
+        ...(executionState?.sessionPolicy ? { sessionPolicy: executionState.sessionPolicy } : {}),
+        ...(executionState?.visibleFallbackReason
+            ? { visibleFallbackReason: executionState.visibleFallbackReason }
+            : {}),
+    };
+}
 function nextEventSeq(run) {
     return (run.events[run.events.length - 1]?.seq || 0) + 1;
 }
 async function appendRunEvent(run, event, attachedRes) {
+    const decoratedEvent = decorateUiEvent(event);
     const stored = {
         seq: nextEventSeq(run),
         capturedAt: nowIso(),
-        event,
+        event: decoratedEvent,
     };
     run.events.push(stored);
     run.events = run.events.slice(-MAX_EVENT_HISTORY);
     run.updatedAt = stored.capturedAt;
     await persistHostRun(run);
     if (attachedRes && !attachedRes.destroyed) {
-        sendSseEvent(attachedRes, event);
+        sendSseEvent(attachedRes, decoratedEvent);
     }
 }
 function blockedToolResult(pendingToolCall, message) {
@@ -624,6 +941,21 @@ function blockedToolResult(pendingToolCall, message) {
         summary: message,
         error: message,
         createdAt: nowIso(),
+    };
+}
+function sanitizeToolResultForUi(toolResult) {
+    const data = toolResult.data && typeof toolResult.data === "object" ? { ...toolResult.data } : undefined;
+    if (data && "dataBase64" in data)
+        delete data.dataBase64;
+    return {
+        toolCallId: toolResult.toolCallId,
+        name: toolResult.name,
+        ok: toolResult.ok,
+        blocked: toolResult.blocked ?? false,
+        summary: toolResult.summary,
+        ...(toolResult.error ? { error: toolResult.error } : {}),
+        ...(data ? { data } : {}),
+        ...(toolResult.createdAt ? { createdAt: toolResult.createdAt } : {}),
     };
 }
 function looksLikeDangerousGlobalCommand(command) {
@@ -929,6 +1261,7 @@ async function executeHostRun(runId, attachedRes) {
     });
     await emitHostHeartbeat(run, attachedRes);
     const executor = await createHostToolExecutor({
+        run,
         workspaceRoot: run.workspaceRoot,
         task: run.request.task,
         preferences,
@@ -937,10 +1270,25 @@ async function executeHostRun(runId, attachedRes) {
         await emitHostStatus(run, "Binary Host is contacting the hosted assist transport.", attachedRes, {
             baseUrl: preferences.baseUrl,
         });
-        const desktopContext = await collectDesktopContext({
-            machineAutonomyController,
-            policy: preferences.machineAutonomy,
-        }).catch(() => ({ platform: process.platform }));
+        const [desktopContext, browserContext] = await Promise.all([
+            collectDesktopContext({
+                machineAutonomyController,
+                policy: preferences.machineAutonomy,
+            }).catch(() => ({ platform: process.platform })),
+            collectBrowserContext({
+                runtime: browserRuntimeController,
+                policy: preferences.machineAutonomy,
+            }).catch(() => ({ mode: "unavailable" })),
+        ]);
+        await worldModelService.ingestSnapshot({
+            runId: run.id,
+            task: run.request.task,
+            workspaceRoot: run.workspaceRoot,
+            desktopContext,
+            browserContext,
+            focusLease: sanitizeFocusLease(activeFocusLease),
+        });
+        const worldContext = await buildWorldContextSlice();
         let envelope = await runWithTransportRetry(run, attachedRes, () => streamHostedAssist({
             baseUrl: preferences.baseUrl,
             apiKey: auth.apiKey,
@@ -948,6 +1296,8 @@ async function executeHostRun(runId, attachedRes) {
                 ...run.request,
                 context: {
                     desktop: desktopContext,
+                    browser: browserContext,
+                    worldModel: worldContext,
                 },
                 clientCapabilities: {
                     toolLoop: true,
@@ -979,6 +1329,12 @@ async function executeHostRun(runId, attachedRes) {
         updatePendingStats(run, envelope);
         await persistHostRun(run);
         await emitHostBudget(run, attachedRes);
+        if (envelope.pendingToolCall) {
+            await appendRunEvent(run, {
+                event: "tool_request",
+                data: enrichPendingToolCallForUi(run, preferences, envelope.pendingToolCall),
+            }, attachedRes);
+        }
         while (envelope.pendingToolCall && envelope.runId) {
             if (controller.cancelRequested) {
                 await cancelRun(run, attachedRes, "Binary Host cancelled the run before the next tool execution.");
@@ -1018,6 +1374,13 @@ async function executeHostRun(runId, attachedRes) {
             if (!isObserveTool(pendingToolCall.toolCall.name)) {
                 run.observationOnlyStreak = 0;
             }
+            await worldModelService.recordToolReceipt({
+                runId: run.id,
+                task: run.request.task,
+                workspaceRoot: run.workspaceRoot,
+                pendingToolCall,
+                toolResult,
+            });
             await appendRunEvent(run, {
                 event: "tool_result",
                 data: {
@@ -1025,6 +1388,38 @@ async function executeHostRun(runId, attachedRes) {
                     ok: toolResult.ok,
                     summary: toolResult.summary,
                     blocked: toolResult.blocked ?? false,
+                    lane: toolResult.data && typeof toolResult.data === "object" && typeof toolResult.data.lane === "string"
+                        ? toolResult.data.lane
+                        : undefined,
+                    executionVisibility: toolResult.data &&
+                        typeof toolResult.data === "object" &&
+                        typeof toolResult.data.executionVisibility === "string"
+                        ? toolResult.data.executionVisibility
+                        : undefined,
+                    foregroundDisruptionRisk: toolResult.data &&
+                        typeof toolResult.data === "object" &&
+                        typeof toolResult.data.foregroundDisruptionRisk === "string"
+                        ? toolResult.data.foregroundDisruptionRisk
+                        : undefined,
+                    interactionMode: toolResult.data &&
+                        typeof toolResult.data === "object" &&
+                        typeof toolResult.data.interactionMode === "string"
+                        ? toolResult.data.interactionMode
+                        : undefined,
+                    visibleFallbackReason: toolResult.data &&
+                        typeof toolResult.data === "object" &&
+                        typeof toolResult.data.visibleFallbackReason === "string"
+                        ? toolResult.data.visibleFallbackReason
+                        : undefined,
+                    terminalState: toolResult.data &&
+                        typeof toolResult.data === "object" &&
+                        typeof toolResult.data.terminalState === "object"
+                        ? toolResult.data.terminalState
+                        : undefined,
+                    proof: toolResult.data && typeof toolResult.data === "object" && typeof toolResult.data.proof === "object"
+                        ? toolResult.data.proof
+                        : undefined,
+                    result: sanitizeToolResultForUi(toolResult),
                 },
             }, attachedRes);
             const checkpoint = recordToolCheckpoint(run, pendingToolCall, toolResult);
@@ -1051,7 +1446,7 @@ async function executeHostRun(runId, attachedRes) {
             if (envelope.pendingToolCall) {
                 await appendRunEvent(run, {
                     event: "tool_request",
-                    data: envelope.pendingToolCall,
+                    data: enrichPendingToolCallForUi(run, preferences, envelope.pendingToolCall),
                 }, attachedRes);
             }
             if (envelope.final) {
@@ -1095,6 +1490,23 @@ async function executeHostRun(runId, attachedRes) {
             await emitTakeoverRequired(run, reason, attachedRes);
             return;
         }
+        await worldModelService.commitMemory({
+            label: "Successful run",
+            summary: typeof run.finalEnvelope?.final === "string" && run.finalEnvelope.final.trim()
+                ? run.finalEnvelope.final.trim().slice(0, 2000)
+                : `Binary completed: ${run.request.task}`,
+            scope: run.workspaceRoot ? "workspace" : "run",
+            tags: Array.from(new Set([
+                "successful_run",
+                run.workspaceRoot ? path.basename(run.workspaceRoot) : "",
+                run.lastExecutionState?.interactionMode || "",
+            ].filter(Boolean))),
+            data: {
+                runId: run.id,
+                task: run.request.task,
+                workspaceRoot: run.workspaceRoot || null,
+            },
+        });
         await finalizeRun(run, "completed", attachedRes, {
             message: "Binary Host completed the run.",
         });
@@ -1232,15 +1644,41 @@ const server = createServer(async (req, res) => {
             writeJson(res, 200, await loadPreferences());
             return;
         }
+        if (method === "GET" && url.pathname === "/v1/focus-lease") {
+            writeJson(res, 200, { lease: sanitizeFocusLease(activeFocusLease) });
+            return;
+        }
+        if (method === "POST" && url.pathname === "/v1/focus-lease") {
+            const body = await readJsonBody(req);
+            const controller = new AutonomyExecutionController((await loadPreferences()).machineAutonomy);
+            const lease = controller.updateFocusLease({
+                surface: body.surface === "desktop" || body.surface === "cli" || body.surface === "unknown"
+                    ? body.surface
+                    : "desktop",
+                source: typeof body.source === "string" ? body.source : "typing",
+                leaseMs: typeof body.leaseMs === "number" ? body.leaseMs : undefined,
+                active: body.active !== false,
+            });
+            activeFocusLease = lease;
+            writeJson(res, 200, { lease });
+            return;
+        }
         if (method === "GET" && url.pathname === "/v1/autonomy/status") {
             const preferences = await loadPreferences();
             const discovered = await machineAutonomyController.listApps();
+            const browser = await browserRuntimeController.getStatus(preferences.machineAutonomy).catch(() => ({
+                enabled: preferences.machineAutonomy.enabled,
+                allowBrowserNative: preferences.machineAutonomy.allowBrowserNative,
+                mode: "unavailable",
+            }));
             writeJson(res, 200, {
                 enabled: preferences.machineAutonomy.enabled,
                 platform: process.platform,
                 policy: preferences.machineAutonomy,
                 appCount: discovered.apps.length,
                 indexedAt: discovered.indexedAt,
+                browser,
+                focusLease: sanitizeFocusLease(activeFocusLease),
             });
             return;
         }
@@ -1260,6 +1698,74 @@ const server = createServer(async (req, res) => {
             const forceRefresh = url.searchParams.get("refresh") === "1";
             const discovered = await machineAutonomyController.listApps({ forceRefresh });
             writeJson(res, 200, discovered);
+            return;
+        }
+        if (method === "GET" && url.pathname === "/v1/autonomy/browser/status") {
+            const preferences = await loadPreferences();
+            const browser = await browserRuntimeController.getStatus(preferences.machineAutonomy);
+            writeJson(res, 200, browser);
+            return;
+        }
+        if (method === "GET" && url.pathname === "/v1/autonomy/browser/pages") {
+            const preferences = await loadPreferences();
+            const pages = await browserRuntimeController.listPages(preferences.machineAutonomy);
+            writeJson(res, 200, { pages });
+            return;
+        }
+        if (method === "GET" && url.pathname === "/v1/world-model/status") {
+            writeJson(res, 200, await worldModelService.getStatus());
+            return;
+        }
+        if (method === "GET" && url.pathname === "/v1/world-model/summary") {
+            writeJson(res, 200, await worldModelService.getSummary());
+            return;
+        }
+        if (method === "GET" && url.pathname === "/v1/world-model/active-context") {
+            writeJson(res, 200, await worldModelService.getActiveContext());
+            return;
+        }
+        if (method === "GET" && url.pathname === "/v1/world-model/recent-changes") {
+            const limitRaw = url.searchParams.get("limit");
+            const limit = limitRaw ? Number.parseInt(limitRaw, 10) : 20;
+            writeJson(res, 200, {
+                changes: await worldModelService.getRecentChanges(limit),
+            });
+            return;
+        }
+        if (method === "GET" && url.pathname === "/v1/world-model/routines") {
+            const query = String(url.searchParams.get("query") || "").trim();
+            const limitRaw = url.searchParams.get("limit");
+            const limit = limitRaw ? Number.parseInt(limitRaw, 10) : 8;
+            writeJson(res, 200, {
+                routines: await worldModelService.findRoutine(query, limit),
+            });
+            return;
+        }
+        if (method === "POST" && url.pathname === "/v1/world-model/query") {
+            const body = await readJsonBody(req);
+            writeJson(res, 200, await worldModelService.queryGraph({
+                query: typeof body.query === "string" ? body.query : undefined,
+                type: typeof body.type === "string" ? body.type : undefined,
+                limit: typeof body.limit === "number" ? body.limit : undefined,
+            }));
+            return;
+        }
+        if (method === "POST" && url.pathname === "/v1/world-model/memory/commit") {
+            const body = await readJsonBody(req);
+            const label = String(body.label || "").trim();
+            if (!label) {
+                writeJson(res, 400, { error: "Invalid request", message: "label is required" });
+                return;
+            }
+            writeJson(res, 200, await worldModelService.commitMemory({
+                label,
+                summary: typeof body.summary === "string" && body.summary.trim() ? body.summary.trim() : label,
+                scope: body.scope === "workspace" || body.scope === "domain" || body.scope === "run" || body.scope === "machine"
+                    ? body.scope
+                    : "machine",
+                tags: Array.isArray(body.tags) ? body.tags.map((item) => String(item)) : [],
+                data: body.data && typeof body.data === "object" ? body.data : {},
+            }));
             return;
         }
         if (method === "POST" && url.pathname === "/v1/autonomy/apps/launch") {

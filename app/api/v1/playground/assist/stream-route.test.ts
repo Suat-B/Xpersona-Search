@@ -166,6 +166,25 @@ describe("POST /api/v1/playground/assist stream", () => {
     expect(text).toContain('"event":"final"');
     expect(text).toContain("Hosted stream answer.");
     expect(startAssistToolLoop).toHaveBeenCalledTimes(1);
+    expect(startAssistToolLoop.mock.calls[0]?.[0]?.request?.tom).toEqual({ enabled: true });
     expect(runAssist).not.toHaveBeenCalled();
+  });
+
+  it("preserves an explicit TOM override", async () => {
+    const req = new NextRequest("http://localhost/api/v1/playground/assist", {
+      method: "POST",
+      body: JSON.stringify({
+        task: "help me",
+        stream: true,
+        mode: "auto",
+        tom: { enabled: false },
+      }),
+    });
+
+    const res = await POST(req);
+    await res.text();
+
+    expect(startAssistToolLoop).toHaveBeenCalledTimes(1);
+    expect(startAssistToolLoop.mock.calls[0]?.[0]?.request?.tom).toEqual({ enabled: false });
   });
 });

@@ -147,6 +147,7 @@ function listMissing(expectedPaths, files) {
 function summarizeCategory(category, exportedRun, files, elapsedMs) {
   const finalEnvelope = exportedRun.finalEnvelope && typeof exportedRun.finalEnvelope === "object" ? exportedRun.finalEnvelope : {};
   const loopState = finalEnvelope.loopState && typeof finalEnvelope.loopState === "object" ? finalEnvelope.loopState : {};
+  const objectiveState = finalEnvelope.objectiveState && typeof finalEnvelope.objectiveState === "object" ? finalEnvelope.objectiveState : {};
   const toolResults = Array.isArray(exportedRun.toolResults) ? exportedRun.toolResults : [];
   const missingPaths = listMissing(category.expectedPaths, files);
   const commandRuns = toolResults.filter((item) => item?.name === "run_command");
@@ -167,6 +168,15 @@ function summarizeCategory(category, exportedRun, files, elapsedMs) {
       return map;
     }, new Map())
   );
+  const completionChecklist = Array.isArray(objectiveState.completionChecklist) ? objectiveState.completionChecklist : [];
+  const completedChecklistItems = completionChecklist.filter((item) => item?.status === "completed").length;
+  const requiredProof = Array.isArray(objectiveState.requiredProof) ? objectiveState.requiredProof : [];
+  const observedProof = Array.isArray(objectiveState.observedProof) ? objectiveState.observedProof : [];
+  const missingRequirements = Array.isArray(finalEnvelope.missingRequirements) ? finalEnvelope.missingRequirements.map((item) => String(item)) : [];
+  const failureCategory =
+    typeof loopState.failureCategory === "string"
+      ? loopState.failureCategory
+      : missingRequirements.find((item) => /failure|validation|tool_result_failed|required_git_|weak_grounding|required_artifact_missing/.test(item)) || null;
   return {
     category: category.id,
     workspace: exportedRun.workspaceRoot || null,
@@ -179,6 +189,21 @@ function summarizeCategory(category, exportedRun, files, elapsedMs) {
     successfulToolCalls: toolResults.filter((item) => item?.ok === true).length,
     failedToolCalls: toolResults.filter((item) => item?.ok === false).length,
     toolCounts,
+    autonomyLane: typeof loopState.autonomyLane === "string" ? loopState.autonomyLane : objectiveState.autonomyLane || null,
+    stackSpecializer: typeof objectiveState.stackSpecializer === "string" ? objectiveState.stackSpecializer : null,
+    closeoutStage: typeof loopState.closeoutStage === "string" ? loopState.closeoutStage : null,
+    failureCategory,
+    checklistCompletionRatio: completionChecklist.length ? completedChecklistItems / completionChecklist.length : 0,
+    proofCompletionRatio: requiredProof.length ? observedProof.length / requiredProof.length : 0,
+    unfinishedChecklistItems: completionChecklist
+      .filter((item) => item?.status !== "completed")
+      .map((item) => String(item?.label || item?.id || "unfinished"))
+      .slice(0, 12),
+    repairCategoryHistogram: failureCategory ? { [failureCategory]: 1 } : {},
+    firstFailureStage:
+      failureCategory ||
+      (completionChecklist.find((item) => item?.status !== "completed")?.id ? String(completionChecklist.find((item) => item?.status !== "completed")?.id) : null),
+    finalUnfinishedRequirements: missingRequirements,
     stalledBeforeFirstTool:
       exportedRun.status === "running" &&
       totalToolCalls === 0 &&
@@ -187,6 +212,7 @@ function summarizeCategory(category, exportedRun, files, elapsedMs) {
     requiredCommandProof: Array.isArray(category.requiredCommands) ? matchedCommands.length === category.requiredCommands.length : true,
     matchedCommands,
     missingPaths,
+    missingRequirements,
     turns: typeof loopState.stepCount === "number" ? loopState.stepCount : toolResults.length,
     repeatedCallCount: typeof loopState.repeatedCallCount === "number" ? loopState.repeatedCallCount : 0,
     repairCount: typeof loopState.repairCount === "number" ? loopState.repairCount : 0,
@@ -297,6 +323,13 @@ async function main() {
       passed: results.filter((item) => item.artifactCorrect && item.finishStatus === "completed" && item.requiredCommandProof !== false).length,
       takeoverRequired: results.filter((item) => item.takeoverRequired).length,
       validationPassed: results.filter((item) => item.validationPassed).length,
+      scorecard: {
+        scaffoldReliability: results.filter((item) => item.autonomyLane === "repo_scaffold" && item.artifactCorrect).length,
+        validationReliability: results.filter((item) => item.validationPassed).length,
+        repairReliability: results.filter((item) => (item.repairCount || 0) > 0 && item.finishStatus === "completed").length,
+        gitCloseoutReliability: results.filter((item) => item.requiredCommandProof && item.matchedCommands?.some((command) => String(command).includes("git commit"))).length,
+        endToEndCompletionRate: results.length ? results.filter((item) => item.finishStatus === "completed").length / results.length : 0,
+      },
     },
   };
 

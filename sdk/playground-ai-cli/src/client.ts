@@ -13,6 +13,9 @@ type AssistInput = {
   reasoning?: string;
   historySessionId?: string;
   stream?: boolean;
+  tom?: {
+    enabled?: boolean;
+  };
 };
 
 type ExecuteAction =
@@ -92,6 +95,7 @@ export class PlaygroundClient {
         model: input.model || "Binary IDE",
         stream: input.stream ?? true,
         historySessionId: input.historySessionId,
+        ...(input.tom ? { tom: input.tom } : {}),
         contextBudget: {
           strategy: "hybrid",
           maxTokens: 16384,
@@ -113,6 +117,7 @@ export class PlaygroundClient {
         model: input.model || "Binary IDE",
         stream: false,
         historySessionId: input.historySessionId,
+        ...(input.tom ? { tom: input.tom } : {}),
       },
     });
   }

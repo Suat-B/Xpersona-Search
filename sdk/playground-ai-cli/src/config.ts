@@ -15,10 +15,15 @@ const DEFAULT_CONFIG: CliConfig = {
   reasoning: "medium",
   includeIdeContext: true,
   transport: (process.env.BINARY_IDE_TRANSPORT as CliConfig["transport"]) ?? "auto",
+  tomEnabled: true,
 };
 
 function normalizeTransport(value: unknown): CliConfig["transport"] {
   return value === "host" || value === "direct" || value === "auto" ? value : DEFAULT_CONFIG.transport;
+}
+
+function normalizeTomEnabled(value: unknown): boolean {
+  return value === false ? false : true;
 }
 
 export function getConfigDir(): string {
@@ -52,6 +57,7 @@ function normalizeConfig(config: Partial<CliConfig>): CliConfig {
       process.env.BINARY_IDE_LOCAL_HOST_URL || config.localHostUrl || DEFAULT_CONFIG.localHostUrl
     ).replace(/\/+$/, ""),
     transport: normalizeTransport(process.env.BINARY_IDE_TRANSPORT || config.transport),
+    tomEnabled: normalizeTomEnabled(config.tomEnabled),
   };
 }
 

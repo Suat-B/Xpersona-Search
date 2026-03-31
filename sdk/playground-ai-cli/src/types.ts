@@ -19,6 +19,7 @@ export type CliConfig = {
   reasoning?: "low" | "medium" | "high" | "max";
   includeIdeContext?: boolean;
   transport?: CliTransport;
+  tomEnabled?: boolean;
 };
 
 export type ApiSuccess<T> = {

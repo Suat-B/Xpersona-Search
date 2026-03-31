@@ -392,72 +392,47 @@ describe("playground tool loop", () => {
   });
 
   it("keeps repairing blocked tool results until the longer repair budget is exhausted", async () => {
-    mockedRequestToolLoopTurn
-      .mockResolvedValueOnce(openHandsTurn({
+    mockedRequestToolLoopTurn.mockResolvedValueOnce(openHandsTurn({
+      adapter: "text_actions",
+      final: "",
+      toolCall: {
+        id: "call_read",
+        name: "read_file",
+        arguments: { path: "hello.py" },
+        kind: "observe",
+        summary: "Inspect hello.py",
+      },
+      logs: ["adapter=text_actions"],
+      modelSelection: {} as any,
+    }));
+    mockedRequestToolLoopTurn.mockResolvedValueOnce(openHandsTurn({
+      adapter: "text_actions",
+      final: "",
+      toolCall: {
+        id: "call_command",
+        name: "run_command",
+        arguments: { command: "npm test", category: "implementation" },
+        kind: "command",
+        summary: "Run the implementation command",
+      },
+      logs: ["adapter=text_actions"],
+      modelSelection: {} as any,
+    }));
+    for (let retry = 1; retry <= 7; retry += 1) {
+      mockedRequestToolLoopTurn.mockResolvedValueOnce(openHandsTurn({
         adapter: "text_actions",
         final: "",
         toolCall: {
-          id: "call_read",
-          name: "read_file",
-          arguments: { path: "hello.py" },
-          kind: "observe",
-          summary: "Inspect hello.py",
-        },
-        logs: ["adapter=text_actions"],
-        modelSelection: {} as any,
-      }))
-      .mockResolvedValueOnce(openHandsTurn({
-        adapter: "text_actions",
-        final: "",
-        toolCall: {
-          id: "call_command",
+          id: `call_command_retry_${retry}`,
           name: "run_command",
           arguments: { command: "npm test", category: "implementation" },
           kind: "command",
-          summary: "Run the implementation command",
-        },
-        logs: ["adapter=text_actions"],
-        modelSelection: {} as any,
-      }))
-      .mockResolvedValueOnce(openHandsTurn({
-        adapter: "text_actions",
-        final: "",
-        toolCall: {
-          id: "call_command_retry_1",
-          name: "run_command",
-          arguments: { command: "npm test", category: "implementation" },
-          kind: "command",
-          summary: "Retry the implementation command",
-        },
-        logs: ["adapter=text_actions"],
-        modelSelection: {} as any,
-      }))
-      .mockResolvedValueOnce(openHandsTurn({
-        adapter: "text_actions",
-        final: "",
-        toolCall: {
-          id: "call_command_retry_2",
-          name: "run_command",
-          arguments: { command: "npm test", category: "implementation" },
-          kind: "command",
-          summary: "Retry the implementation command again",
-        },
-        logs: ["adapter=text_actions"],
-        modelSelection: {} as any,
-      }))
-      .mockResolvedValueOnce(openHandsTurn({
-        adapter: "text_actions",
-        final: "",
-        toolCall: {
-          id: "call_command_retry_3",
-          name: "run_command",
-          arguments: { command: "npm test", category: "implementation" },
-          kind: "command",
-          summary: "Retry the implementation command a third time",
+          summary: `Retry the implementation command ${retry}`,
         },
         logs: ["adapter=text_actions"],
         modelSelection: {} as any,
       }));
+    }
 
     const started = await startAssistToolLoop({
       userId: "user-2",
@@ -492,66 +467,26 @@ describe("playground tool loop", () => {
 
     expect(afterRead.pendingToolCall?.toolCall.name).toBe("run_command");
 
-    const repaired = await continueAssistToolLoop({
-      userId: "user-2",
-      traceId: "trace-8",
-      runId: started.runId!,
-      toolResult: {
-        toolCallId: afterRead.pendingToolCall!.toolCall.id,
-        name: "run_command",
-        ok: false,
-        blocked: true,
-        summary: "Command blocked by policy.",
-      },
-    });
-
-    expect(repaired.pendingToolCall?.toolCall.name).toBe("run_command");
-
-    const repairedAgain = await continueAssistToolLoop({
-      userId: "user-2",
-      traceId: "trace-9",
-      runId: started.runId!,
-      toolResult: {
-        toolCallId: repaired.pendingToolCall!.toolCall.id,
-        name: "run_command",
-        ok: false,
-        blocked: true,
-        summary: "Command blocked again by policy.",
-      },
-    });
-
-    expect(repairedAgain.pendingToolCall?.toolCall.name).toBe("run_command");
-
-    const repairedThird = await continueAssistToolLoop({
-      userId: "user-2",
-      traceId: "trace-10",
-      runId: started.runId!,
-      toolResult: {
-        toolCallId: repairedAgain.pendingToolCall!.toolCall.id,
-        name: "run_command",
-        ok: false,
-        blocked: true,
-        summary: "Command blocked a third time by policy.",
-      },
-    });
-
-    expect(repairedThird.pendingToolCall?.toolCall.name).toBe("run_command");
-
-    const failed = await continueAssistToolLoop({
-      userId: "user-2",
-      traceId: "trace-11",
-      runId: started.runId!,
-      toolResult: {
-        toolCallId: repairedThird.pendingToolCall!.toolCall.id,
-        name: "run_command",
-        ok: false,
-        blocked: true,
-        summary: "Command blocked a fourth time by policy.",
-      },
-    });
-
-    expect(failed.loopState?.status).toBe("failed");
-    expect(failed.missingRequirements).toContain("tool_result_failed");
+    let current = afterRead;
+    let repairAttempts = 0;
+    while (current.pendingToolCall && repairAttempts < 8) {
+      repairAttempts += 1;
+      current = await continueAssistToolLoop({
+        userId: "user-2",
+        traceId: `trace-repair-${repairAttempts}`,
+        runId: started.runId!,
+        toolResult: {
+          toolCallId: current.pendingToolCall!.toolCall.id,
+          name: "run_command",
+          ok: false,
+          blocked: true,
+          summary: `Command blocked by policy attempt ${repairAttempts}.`,
+        },
+      });
+    }
+    expect(repairAttempts).toBeGreaterThanOrEqual(4);
+    expect(current.loopState?.status).toBe("failed");
+    expect(current.missingRequirements).toContain("tool_result_failed");
   });
 
   it("does not inject unsupported primer or checkpoint tools", async () => {
@@ -1597,6 +1532,10 @@ describe("playground tool loop", () => {
 
       expect(afterWrite.pendingToolCall?.toolCall.name).toBe("run_command");
       expect(afterWrite.pendingToolCall?.toolCall.arguments.command).toBe('cd "repo-proof" && npm test');
+      expect(afterWrite.loopState?.autonomyLane).toBe("git_completion");
+      expect(afterWrite.loopState?.closeoutStage).toBe("validation");
+      expect(afterWrite.objectiveState.stackSpecializer).toBe("node_js_ts");
+      expect(afterWrite.objectiveState.completionChecklist?.some((item) => item.id === "validation" && item.status === "pending")).toBe(true);
 
       const afterValidation = await continueAssistToolLoop({
         userId: "user-git-closeout",
@@ -1618,6 +1557,8 @@ describe("playground tool loop", () => {
 
       expect(afterValidation.pendingToolCall?.toolCall.name).toBe("run_command");
       expect(afterValidation.pendingToolCall?.toolCall.arguments.command).toBe('cd "repo-proof" && git init');
+      expect(afterValidation.loopState?.closeoutStage).toBe("git_init");
+      expect(afterValidation.missingRequirements).toContain("required_git_init_missing");
     });
   });
 });
