@@ -88,6 +88,51 @@ def build_context_prompt(context: dict[str, Any] | None) -> str:
         if lines:
             sections.append("Indexed snippets:\n" + "\n".join(lines))
 
+    desktop = context.get("desktop")
+    if isinstance(desktop, dict):
+        lines = []
+        platform = str(desktop.get("platform") or "").strip()
+        if platform:
+            lines.append(f"Platform: {platform}")
+        active_window = desktop.get("activeWindow")
+        if isinstance(active_window, dict):
+            active_label = compact_whitespace(" - ".join(str(active_window.get(key) or "") for key in ("app", "title") if active_window.get(key)))
+            if active_label:
+                lines.append(f"Active window: {active_label}")
+        visible_windows = desktop.get("visibleWindows")
+        if isinstance(visible_windows, list) and visible_windows:
+            win_lines = []
+            for item in visible_windows[:8]:
+                if not isinstance(item, dict):
+                    continue
+                label = compact_whitespace(" - ".join(str(item.get(key) or "") for key in ("app", "title") if item.get(key)))
+                if label:
+                    win_lines.append(f"- {label}")
+            if win_lines:
+                lines.append("Visible windows:\n" + "\n".join(win_lines))
+        discovered_apps = desktop.get("discoveredApps")
+        if isinstance(discovered_apps, list) and discovered_apps:
+            app_lines = []
+            for item in discovered_apps[:16]:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name") or "").strip()
+                if not name:
+                    continue
+                aliases = item.get("aliases")
+                aliases_note = ""
+                if isinstance(aliases, list) and aliases:
+                    alias_values = [str(alias).strip() for alias in aliases[:4] if str(alias).strip()]
+                    if alias_values:
+                        aliases_note = f" aliases={', '.join(alias_values)}"
+                source = str(item.get("source") or "").strip()
+                source_note = f" source={source}" if source else ""
+                app_lines.append(f"- {name}{aliases_note}{source_note}")
+            if app_lines:
+                lines.append("Discovered apps:\n" + "\n".join(app_lines))
+        if lines:
+            sections.append("Desktop state:\n" + "\n".join(lines))
+
     return "\n\n".join(sections) if sections else "IDE context: none."
 
 
@@ -114,6 +159,7 @@ def build_tool_catalog(tools: list[str]) -> str:
         "binary_execute_build": "Execute an entrypoint on the active or specified binary build. Args: { buildId?: string, entryPoint?: string, args?: unknown[] }",
         "binary_publish_build": "Publish the active or specified binary build. Args: { buildId?: string }",
         "desktop_capture_screen": "Capture the current desktop and upload a snapshot. Args: { displayId?: string }",
+        "desktop_list_apps": "List discovered desktop applications with aliases and sources. Args: { limit?: number, refresh?: boolean }",
         "desktop_get_active_window": "Return the currently focused desktop window. Args: {}",
         "desktop_list_windows": "List currently visible desktop windows. Args: {}",
         "desktop_open_app": "Open a desktop application. Args: { app: string, args?: string[] }",
@@ -252,10 +298,16 @@ def build_prompt(payload: dict[str, Any]) -> str:
         "Never emit a native/tool name of summary, description, final, or note — those are optional JSON string fields inside toolCall, not callable tools.",
         "The only valid tool names are exactly those listed under Available tools (e.g. read_file, list_files).",
         "Paths must stay workspace-relative.",
+        "Desktop requests are freeform machine-intent tasks, not shortcut commands. Infer the user's target dynamically from their language.",
+        "For desktop tasks, inspect first when uncertain. Prefer desktop_list_apps, desktop_get_active_window, desktop_list_windows, or desktop_capture_screen before acting if the machine target could be ambiguous.",
+        "After a meaningful desktop action, prefer a verification turn before finishing when a read-only desktop tool can confirm the result.",
+        "If proof does not match the user's intent, replan instead of repeating the same desktop action blindly.",
         "Prefer observation tools before mutation unless the trace already provides enough grounding.",
         "When loop stats show steps=0 and the tool trace is empty, you must return toolCall (read_file, search_workspace, or list_files) — not final — unless the user message is purely conversational with no workspace task.",
         "After inspecting the trusted target on a code-edit request, do not choose another observation tool unless the latest tool result blocked mutation or the repair directive explicitly requires path repair.",
         "When Latest tool result shows a successful read_file for the preferred target and the user asked for a code change, your next response must be a toolCall (edit or write_file), not a final string that refuses or asks for more file text.",
+        "If the task explicitly asks to run tests, validate, lint, or confirm the project works, and the required task files already exist in the trace, prefer a run_command validation turn over another observation turn.",
+        "A final answer with no toolCall at step 0 is invalid for a workspace task. Start with read_file, list_files, or search_workspace instead.",
         "Do not emit markdown, explanations, or code fences.",
         "",
         f"Mode: {request.get('mode') or 'auto'}",
@@ -269,6 +321,16 @@ def build_prompt(payload: dict[str, Any]) -> str:
                 if str(item or "").strip()
             )
             if isinstance(fallback_plan.get("files"), list) and fallback_plan.get("files")
+            else "none."
+        ),
+        "Acceptance tests:\n"
+        + (
+            "\n".join(
+                f"- {compact_whitespace(item)}"
+                for item in (fallback_plan.get("acceptanceTests") or [])
+                if compact_whitespace(item)
+            )
+            if isinstance(fallback_plan.get("acceptanceTests"), list) and fallback_plan.get("acceptanceTests")
             else "none."
         ),
         f"Available tools:\n{build_tool_catalog(tools) if tools else '- none'}",

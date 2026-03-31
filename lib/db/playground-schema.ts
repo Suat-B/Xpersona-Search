@@ -19,6 +19,9 @@ export type PlaygroundPlanTier = "trial" | "starter" | "builder" | "studio";
 
 /** Playground subscription status */
 export type PlaygroundSubscriptionStatus = "active" | "cancelled" | "past_due" | "trial";
+export type PlaygroundConnectedProvider = "openai";
+export type PlaygroundProviderAuthMode = "api_key" | "browser_auth";
+export type PlaygroundProviderConnectionStatus = "active" | "needs_reauth" | "error" | "disabled";
 
 /** HF usage log status */
 export type HfUsageStatus = "success" | "error" | "rate_limited" | "quota_exceeded" | "validation_error";
@@ -198,6 +201,36 @@ export const playgroundUserProfiles = pgTable(
   (table) => [
     uniqueIndex("playground_user_profiles_user_idx").on(table.userId),
     index("playground_user_profiles_updated_idx").on(table.updatedAt),
+  ]
+);
+
+export const playgroundProviderConnections = pgTable(
+  "playground_provider_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: varchar("provider", { length: 40 }).notNull().$type<PlaygroundConnectedProvider>(),
+    alias: varchar("alias", { length: 120 }).notNull(),
+    displayName: varchar("display_name", { length: 160 }),
+    authMode: varchar("auth_mode", { length: 24 }).notNull().$type<PlaygroundProviderAuthMode>(),
+    /** Encrypted with MASTER_ENCRYPTION_KEY / NEXTAUTH_SECRET at rest. */
+    secretEncrypted: text("secret_encrypted").notNull(),
+    baseUrl: varchar("base_url", { length: 512 }),
+    defaultModel: varchar("default_model", { length: 160 }),
+    status: varchar("status", { length: 24 }).notNull().default("active").$type<PlaygroundProviderConnectionStatus>(),
+    lastValidatedAt: timestamp("last_validated_at", { withTimezone: true }),
+    lastValidationError: text("last_validation_error"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("playground_provider_connections_user_provider_idx").on(table.userId, table.provider),
+    uniqueIndex("playground_provider_connections_user_alias_idx").on(table.userId, table.alias),
+    index("playground_provider_connections_user_idx").on(table.userId),
+    index("playground_provider_connections_status_idx").on(table.status),
   ]
 );
 

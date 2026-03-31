@@ -12,6 +12,19 @@ function nowIso() {
 function normalizeWorkspacePath(value) {
     return value.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/^\/+/, "");
 }
+export function inferTaskProjectRoot(task) {
+    const patterns = [
+        /\b(?:project|folder)\s+named\s+([A-Za-z0-9._-]+)/i,
+        /\bnamed\s+([A-Za-z0-9._-]+)\s+in\s+the\s+current\s+workspace\b/i,
+        /\bcreate\s+(?:a\s+new\s+)?(?:plain\s+\w+\s+)?(?:project\s+folder|folder)\s+named\s+([A-Za-z0-9._-]+)/i,
+    ];
+    for (const pattern of patterns) {
+        const match = task.match(pattern);
+        if (match?.[1])
+            return normalizeWorkspacePath(match[1]);
+    }
+    return null;
+}
 function looksLikeProjectScopedCommand(command) {
     return /^(npm|pnpm|yarn|bun|node)\b/i.test(command.trim());
 }
@@ -62,6 +75,40 @@ async function collectWorkspaceFiles(root, limit) {
     }
     return out.sort((a, b) => a.localeCompare(b));
 }
+async function searchWorkspaceFallback(root, query, limit) {
+    const files = await collectWorkspaceFiles(root, 400);
+    const out = [];
+    const caseSensitive = /[A-Z]/.test(query);
+    const needle = caseSensitive ? query : query.toLowerCase();
+    for (const relativePath of files) {
+        if (out.length >= limit)
+            break;
+        const absolutePath = path.join(root, relativePath);
+        let raw;
+        try {
+            raw = await fs.readFile(absolutePath, "utf8");
+        }
+        catch {
+            continue;
+        }
+        const lines = raw.replace(/\r\n/g, "\n").split("\n");
+        for (let index = 0; index < lines.length; index += 1) {
+            const line = lines[index] || "";
+            const haystack = caseSensitive ? line : line.toLowerCase();
+            if (!haystack.includes(needle))
+                continue;
+            out.push({
+                path: relativePath,
+                line: index + 1,
+                content: line.trim(),
+                source: "local_scan_fallback",
+                reason: "Workspace text scan fallback",
+            });
+            break;
+        }
+    }
+    return out;
+}
 async function suggestWorkspacePath(workspaceRoot, requestedPath) {
     const normalizedRequested = normalizeWorkspacePath(String(requestedPath || "").trim());
     if (!normalizedRequested)
@@ -74,6 +121,12 @@ async function suggestWorkspacePath(workspaceRoot, requestedPath) {
     if (!basename || basename === normalizedRequested)
         return null;
     return files.find((file) => path.posix.basename(file) === basename) || null;
+}
+async function pathExists(targetPath) {
+    return fs
+        .stat(targetPath)
+        .then(() => true)
+        .catch(() => false);
 }
 async function runShellCommand(command, cwd, timeoutMs) {
     try {
@@ -106,10 +159,32 @@ async function runShellCommand(command, cwd, timeoutMs) {
 export class CliToolExecutor {
     workspaceRoot;
     observedRoots = new Set();
-    constructor(workspaceRoot) {
+    preferredProjectRoot;
+    constructor(workspaceRoot, preferredProjectRoot) {
         this.workspaceRoot = path.resolve(workspaceRoot);
+        this.preferredProjectRoot = preferredProjectRoot ? normalizeWorkspacePath(preferredProjectRoot) : null;
+    }
+    getPreferredObservedRoot() {
+        if (this.preferredProjectRoot)
+            return this.preferredProjectRoot;
+        if (this.observedRoots.size === 1) {
+            const [observedRoot] = Array.from(this.observedRoots);
+            return observedRoot || null;
+        }
+        return null;
     }
     rememberObservedPath(relativePath) {
+        const normalized = normalizeWorkspacePath(relativePath);
+        if (!normalized)
+            return;
+        if (!normalized.includes("/"))
+            return;
+        const [topLevel] = normalized.split("/");
+        if (!topLevel)
+            return;
+        this.observedRoots.add(topLevel);
+    }
+    rememberObservedDirectory(relativePath) {
         const normalized = normalizeWorkspacePath(relativePath);
         if (!normalized)
             return;
@@ -119,15 +194,15 @@ export class CliToolExecutor {
         this.observedRoots.add(topLevel);
     }
     async maybeRewriteIntoObservedRoot(relativePath, options) {
-        if (this.observedRoots.size !== 1)
+        const observedRoot = this.getPreferredObservedRoot();
+        if (!observedRoot)
             return null;
         const normalized = normalizeWorkspacePath(relativePath);
         if (!normalized)
             return null;
         const [topLevel] = normalized.split("/");
-        if (topLevel && this.observedRoots.has(topLevel))
+        if (topLevel && topLevel === observedRoot)
             return null;
-        const [observedRoot] = Array.from(this.observedRoots);
         const rewritten = normalizeWorkspacePath(`${observedRoot}/${normalized}`);
         const resolved = resolveWorkspacePath(this.workspaceRoot, rewritten);
         if (!resolved)
@@ -161,8 +236,8 @@ export class CliToolExecutor {
             const resolved = this.resolveStaticPath(explicitCwd, { preferObservedRoot: true }) || this.workspaceRoot;
             return resolved;
         }
-        if (this.observedRoots.size === 1 && looksLikeProjectScopedCommand(command)) {
-            const [observedRoot] = Array.from(this.observedRoots);
+        const observedRoot = this.getPreferredObservedRoot();
+        if (observedRoot && looksLikeProjectScopedCommand(command)) {
             const resolved = path.resolve(this.workspaceRoot, observedRoot);
             return resolved;
         }
@@ -175,14 +250,58 @@ export class CliToolExecutor {
         if (!options?.preferObservedRoot)
             return direct.absolutePath;
         const normalized = normalizeWorkspacePath(direct.relativePath);
-        if (this.observedRoots.size === 1 && normalized) {
-            const [observedRoot] = Array.from(this.observedRoots);
+        const observedRoot = this.getPreferredObservedRoot();
+        if (observedRoot && normalized) {
             const [topLevel] = normalized.split("/");
-            if (topLevel && !this.observedRoots.has(topLevel)) {
+            if (topLevel && topLevel !== observedRoot) {
                 return path.resolve(this.workspaceRoot, observedRoot, normalized);
             }
         }
         return direct.absolutePath;
+    }
+    async findNearestGitRoot(startPath) {
+        let current = path.resolve(startPath);
+        const workspaceRoot = this.workspaceRoot;
+        try {
+            const stats = await fs.stat(current);
+            if (stats.isFile())
+                current = path.dirname(current);
+        }
+        catch {
+            current = path.dirname(current);
+        }
+        while (true) {
+            if (await pathExists(path.join(current, ".git")))
+                return current;
+            if (current === workspaceRoot)
+                break;
+            const parent = path.dirname(current);
+            if (parent === current)
+                break;
+            if (path.relative(workspaceRoot, parent).startsWith(".."))
+                break;
+            current = parent;
+        }
+        return (await pathExists(path.join(workspaceRoot, ".git"))) ? workspaceRoot : null;
+    }
+    async inferGitCwd(args) {
+        const candidates = [];
+        const requestedPath = typeof args.path === "string" ? args.path : "";
+        if (requestedPath.trim()) {
+            const resolved = await this.resolveWithObservedRoot(requestedPath, { preferExisting: true });
+            if (resolved)
+                candidates.push(resolved.absolutePath);
+        }
+        const observedRoot = this.getPreferredObservedRoot();
+        if (observedRoot)
+            candidates.push(path.resolve(this.workspaceRoot, observedRoot));
+        candidates.push(this.workspaceRoot);
+        for (const candidate of candidates) {
+            const gitRoot = await this.findNearestGitRoot(candidate);
+            if (gitRoot)
+                return gitRoot;
+        }
+        return this.workspaceRoot;
     }
     async execute(pendingToolCall) {
         const toolCall = pendingToolCall.toolCall;
@@ -247,7 +366,7 @@ export class CliToolExecutor {
                 }
                 const command = `rg -n --no-heading --hidden -S --glob "!node_modules" --glob "!.git" --glob "!dist" --glob "!build" ${JSON.stringify(query)} .`;
                 const result = await runShellCommand(command, this.workspaceRoot, 10_000);
-                const matches = result.stdout
+                let matches = result.stdout
                     .split(/\r?\n/)
                     .filter(Boolean)
                     .slice(0, limit)
@@ -270,6 +389,9 @@ export class CliToolExecutor {
                         reason: "Local ripgrep match",
                     };
                 });
+                if (!matches.length && result.exitCode !== 0) {
+                    matches = await searchWorkspaceFallback(this.workspaceRoot, query, limit);
+                }
                 return {
                     toolCallId: toolCall.id,
                     name: toolCall.name,
@@ -282,12 +404,13 @@ export class CliToolExecutor {
                 };
             }
             if (toolCall.name === "git_status" || toolCall.name === "git_diff") {
+                const gitCwd = await this.inferGitCwd(args);
                 const gitCommand = toolCall.name === "git_status"
                     ? "git status --short"
                     : typeof args.path === "string" && args.path.trim()
                         ? `git diff -- ${JSON.stringify(String(args.path))}`
                         : "git diff --stat";
-                const result = await runShellCommand(gitCommand, this.workspaceRoot, 15_000);
+                const result = await runShellCommand(gitCommand, gitCwd, 15_000);
                 return {
                     toolCallId: toolCall.id,
                     name: toolCall.name,
@@ -297,7 +420,10 @@ export class CliToolExecutor {
                             ? "Captured git status."
                             : "Captured git diff."
                         : `${toolCall.name} failed: ${result.stderr || result.stdout || "unknown error"}`,
-                    data: result,
+                    data: {
+                        ...result,
+                        cwd: gitCwd,
+                    },
                     error: result.exitCode === 0 ? undefined : result.stderr || result.stdout,
                     createdAt: nowIso(),
                 };
@@ -319,7 +445,7 @@ export class CliToolExecutor {
                     return this.fail(toolCall.id, toolCall.name, "Invalid workspace-relative path for mkdir.");
                 }
                 await fs.mkdir(resolved.absolutePath, { recursive: true });
-                this.rememberObservedPath(resolved.relativePath);
+                this.rememberObservedDirectory(resolved.relativePath);
                 return {
                     toolCallId: toolCall.id,
                     name: toolCall.name,

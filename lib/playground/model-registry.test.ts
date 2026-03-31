@@ -27,10 +27,31 @@ describe("playground model registry", () => {
     expect(selection.resolvedEntry.model).toContain("Qwen/");
   });
 
+  it("treats kimi-k2 as the first-class default alias", () => {
+    const entry = getDefaultPlaygroundModelEntry();
+    expect(entry.alias).toBe(DEFAULT_PLAYGROUND_MODEL_ALIAS);
+    expect(entry.displayName.toLowerCase()).toContain("kimi");
+
+    const selection = resolvePlaygroundModelSelection({ requested: "kimi-k2" });
+    expect(selection.resolvedAlias).toBe("kimi-k2");
+  });
+
   it("resolves qwen-coder-32b alias", () => {
     const selection = resolvePlaygroundModelSelection({ requested: "qwen-coder-32b" });
     expect(selection.resolvedAlias).toBe("qwen-coder-32b");
     expect(selection.resolvedEntry.model).toContain("Qwen/");
+  });
+
+  it("keeps playground-default as a compatibility alias", () => {
+    const selection = resolvePlaygroundModelSelection({ requested: "playground-default" });
+    expect(selection.resolvedAlias).toBe("playground-default");
+    expect(selection.resolvedEntry.displayName.toLowerCase()).toContain("kimi");
+  });
+
+  it("keeps kimi as a compatibility alias", () => {
+    const selection = resolvePlaygroundModelSelection({ requested: "kimi" });
+    expect(selection.resolvedAlias).toBe("kimi");
+    expect(selection.resolvedEntry.displayName.toLowerCase()).toContain("kimi");
   });
 
   it("returns a tool-ready default entry", () => {

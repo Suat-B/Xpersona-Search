@@ -38,6 +38,25 @@ describe("tool loop adapters", () => {
     expect(parsed?.toolCall?.arguments.path).toBe("src/app.ts");
   });
 
+  it("accepts desktop discovery tool calls", () => {
+    const parsed = parseToolLoopJson(
+      JSON.stringify({
+        toolCall: {
+          id: "call_apps",
+          name: "desktop_list_apps",
+          arguments: { limit: 12, refresh: true },
+          kind: "observe",
+          summary: "Inspect installed apps before launching anything",
+        },
+      }),
+      ["desktop_list_apps"]
+    );
+
+    expect(parsed?.toolCall?.name).toBe("desktop_list_apps");
+    expect(parsed?.toolCall?.arguments.limit).toBe(12);
+    expect(parsed?.toolCall?.arguments.refresh).toBe(true);
+  });
+
   it("rejects text-actions responses that try to return batch actions", () => {
     const parsed = parseToolLoopJson(
       JSON.stringify({

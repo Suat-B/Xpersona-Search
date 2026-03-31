@@ -125,6 +125,30 @@ describe("playground orchestration", () => {
     expect(plan.acceptanceTests).toContain("git diff --check -- app/api/v1/playground/assist/route.ts");
   });
 
+  it("anchors bare task file mentions into the requested project folder", () => {
+    const target = buildTargetInference({
+      task: "Create a folder named repo-proof with README.md, src/index.js, test/index.test.js, and package.json.",
+    });
+    const selection = buildContextSelection({
+      task: "Create a folder named repo-proof with README.md, src/index.js, test/index.test.js, and package.json.",
+      targetInference: target,
+      retrievalHints: {
+        mentionedPaths: ["README.md", "src/index.js", "test/index.test.js", "package.json"],
+      },
+    });
+    const plan = buildPlan({
+      task: "Create a folder named repo-proof with README.md, src/index.js, test/index.test.js, and package.json.",
+      targetInference: target,
+      contextSelection: selection,
+    });
+
+    expect(target.path).toBe("repo-proof/README.md");
+    expect(plan.files).toContain("repo-proof/README.md");
+    expect(plan.files).toContain("repo-proof/src/index.js");
+    expect(plan.files).toContain("repo-proof/test/index.test.js");
+    expect(plan.files).toContain("repo-proof/package.json");
+  });
+
   it("parses normalized JSON model output into actions", () => {
     const parsed = parseStructuredAssistResponse({
       raw: JSON.stringify({

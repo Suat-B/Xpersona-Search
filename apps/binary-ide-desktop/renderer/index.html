@@ -11,8 +11,8 @@
       <aside class="sidebar">
         <div class="brand">
           <p class="eyebrow">Binary IDE</p>
-          <h1>Guided workspace desktop shell</h1>
-          <p class="lede">A local-host-first app that keeps chat, artifacts, trust, and runtime logs in one place.</p>
+          <h1>AI-led desktop shell</h1>
+          <p class="lede">A local-host-first surface for chat, trust, app discovery, action traces, and long-running autonomy on the same machine.</p>
         </div>
 
         <section class="panel compact">
@@ -43,13 +43,23 @@
             <button id="clearApiKey" class="secondary">Clear</button>
           </div>
         </section>
+
+        <section class="panel compact">
+          <h2>Autonomy</h2>
+          <div id="autonomyStatus" class="status-card">Checking machine autonomy...</div>
+          <div class="row">
+            <button id="enableAutonomy">Enable autonomy</button>
+            <button id="refreshApps" class="secondary">Refresh apps</button>
+          </div>
+          <p class="lede compact-copy">Machine actions now flow through AI orchestration, while the local host executes the resulting desktop tools and records them in the timeline.</p>
+        </section>
       </aside>
 
       <main class="main">
         <section class="hero panel">
           <div>
             <p class="eyebrow">Binary Host Runtime</p>
-            <h2>Desktop becomes the default surface. The host stays the contract.</h2>
+            <h2>OpenHands decides. The local host executes. The timeline stays visible.</h2>
           </div>
           <div class="hero-meta" id="runtimeMeta">Loading desktop runtime info...</div>
         </section>
@@ -68,7 +78,7 @@
               <input id="modelInput" type="text" value="Binary IDE" />
             </div>
           </div>
-          <textarea id="taskInput" rows="5" placeholder="Describe what you want Binary IDE to do in this workspace."></textarea>
+          <textarea id="taskInput" rows="5" placeholder="Describe what you want Binary IDE to do. Try: Open Dota, inspect installed launchers, or switch to Discord."></textarea>
           <div class="row">
             <button id="runTask">Run with Binary Host</button>
             <button id="refreshState" class="secondary">Refresh state</button>
@@ -78,15 +88,49 @@
         <section class="grid">
           <section class="panel">
             <div class="panel-head">
-              <h2>Stream</h2>
-              <span class="pill">Hosted-first orchestration</span>
+              <h2>Action Timeline</h2>
+              <span class="pill">AI-led orchestration</span>
             </div>
             <pre id="streamLog" class="log">No run started yet.</pre>
           </section>
 
           <section class="panel">
             <div class="panel-head">
-              <h2>Recent sessions</h2>
+              <h2>App Library</h2>
+              <span class="pill">Supplemental context</span>
+            </div>
+            <div id="appLibrary" class="list empty">No discovered apps yet.</div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Agents</h2>
+              <span class="pill">Background wake hooks</span>
+            </div>
+            <label class="stack">
+              <span>Name</span>
+              <input id="agentNameInput" type="text" placeholder="Game launcher helper" />
+            </label>
+            <label class="stack">
+              <span>Prompt</span>
+              <textarea id="agentPromptInput" rows="4" placeholder="Inspect discovered apps, then open Steam and launch Dota if it is installed."></textarea>
+            </label>
+            <div class="row">
+              <select id="agentTrigger">
+                <option value="manual">manual wake</option>
+                <option value="scheduled">scheduled hook</option>
+                <option value="file_event">file event hook</option>
+                <option value="process_event">process event hook</option>
+                <option value="notification">notification hook</option>
+              </select>
+              <button id="saveAgent">Save agent</button>
+            </div>
+            <div id="agentList" class="list empty">No background agents yet.</div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Recent Sessions</h2>
               <span class="pill">Shared by desktop and CLI</span>
             </div>
             <div id="recentSessions" class="list empty">No sessions yet.</div>

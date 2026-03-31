@@ -133,6 +133,8 @@ function buildToolCatalog(tools: PlaygroundToolName[]): string {
       "Execute an entrypoint on the active or specified binary build. Args: { buildId?: string, entryPoint?: string, args?: unknown[] }",
     binary_publish_build: "Publish the active or specified binary build. Args: { buildId?: string }",
     desktop_capture_screen: "Capture the current desktop and upload a snapshot. Args: { displayId?: string }",
+    desktop_list_apps:
+      "List discovered desktop applications with aliases and sources. Args: { limit?: number, refresh?: boolean }",
     desktop_get_active_window: "Return the currently focused desktop window. Args: {}",
     desktop_list_windows: "List currently visible desktop windows. Args: {}",
     desktop_open_app: "Open a desktop application. Args: { app: string, args?: string[] }",
@@ -209,10 +211,24 @@ function buildToolLoopUserPrompt(input: ToolLoopTurnInput, tools: PlaygroundTool
     resultSection,
     repairSection,
     `Plan objective: ${input.fallbackPlan.objective}`,
+    input.fallbackPlan.acceptanceTests.length
+      ? `Acceptance tests:\n${input.fallbackPlan.acceptanceTests.map((item) => `- ${item}`).join("\n")}`
+      : "Acceptance tests: none.",
     "Return either one toolCall or a final answer. Do not return an actions array in tool_loop_v1.",
+    "Desktop and whole-PC tasks are natural-language intent problems, not shortcut commands. Infer intent dynamically from the user's phrasing.",
+    "For desktop tasks, inspect first when uncertain. Prefer desktop_list_apps, desktop_get_active_window, desktop_list_windows, or desktop_capture_screen before acting if the target may be ambiguous.",
+    "After a meaningful desktop action such as desktop_open_app, desktop_open_url, desktop_focus_window, typing, or keypress, prefer a verification turn before finishing when a read-only desktop tool can confirm the outcome.",
+    "If proof does not match the user's intent, replan instead of repeatedly issuing the same desktop action.",
     "If a repair directive is present, follow it strictly and choose the narrowest next tool that can prove progress.",
     "After inspecting the trusted target on a code edit request, do not choose another observation tool unless the latest tool result explicitly blocked mutation or the repair directive requires a path check.",
     "Do not keep rewriting the same file while explicit task files remain missing or uncreated unless the latest tool result proves that missing-file issue is blocked.",
+    "If the task explicitly asks to run tests, validate, lint, or confirm the project works, and the required task files already exist in the trace, prefer one run_command validation turn over another observation turn.",
+    "When the task names a project folder and then lists files like README.md, package.json, src/index.js, or test/index.test.js, treat those files as belonging inside that project folder unless the trace proves otherwise.",
+    "Do not create duplicate workspace-root package.json, README.md, src/*, or test/* files when the task clearly targets a nested project folder.",
+    "For Node or JavaScript project scaffolds, prefer package.json test scripts that use built-in node:test such as `node --test` unless the existing project context proves a different runner is already configured.",
+    "Do not invent obsolete or invalid Node CLI flags such as `--experimental-modulesloader` or unsupported loader spellings.",
+    "If a validation command fails because a generated package.json script or test harness is wrong, repair the project files first and only then rerun validation.",
+    "If the task asks for git init, branch creation, commits, or other repository closeout steps, do those after the project files and validation are in place instead of drifting into extra inspection.",
     `Task:\n${input.request.task}`,
   ].join("\n\n");
 }
@@ -229,6 +245,11 @@ function buildTextActionsSystemPrompt(): string {
     "Only use tools from the provided catalog.",
     "Paths must stay workspace-relative.",
     "Never return an actions array in tool_loop_v1.",
+    "Desktop automation requests are freeform. Use desktop inspection tools first when the machine target is ambiguous, and verify desktop actions before you finish when feasible.",
+    "When the task centers on a named project folder, keep generated file paths inside that folder unless the task explicitly asks for a workspace-root file.",
+    "For Node and JavaScript project scaffolds, use modern built-in node:test defaults like `node --test` unless the existing repo clearly uses another runner.",
+    "Never invent obsolete Node flags or unsupported command syntaxes.",
+    "When the task asks for git closeout such as init, branch, add, or commit, finish those steps once the project is validated instead of returning to generic observation.",
   ].join("\n");
 }
 
@@ -239,6 +260,7 @@ function buildNativeToolsSystemPrompt(): string {
     "If the task is complete, respond with a concise final answer.",
     "Prefer observation tools before mutation unless prior tool results already grounded the change.",
     "Do not return batch actions or an actions array in tool_loop_v1.",
+    "Treat desktop requests as dynamic machine-intent tasks. Prefer desktop inspection tools before desktop actions when uncertain, and verify meaningful desktop actions before finishing when feasible.",
   ].join("\n");
 }
 
@@ -754,6 +776,24 @@ function buildOpenAIToolSpec(name: PlaygroundToolName) {
           additionalProperties: true,
           properties: {
             displayId: { type: "string" },
+          },
+        },
+      },
+    };
+  }
+
+  if (name === "desktop_list_apps") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: "List discovered desktop applications with aliases and sources.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            limit: { type: "number" },
+            refresh: { type: "boolean" },
           },
         },
       },

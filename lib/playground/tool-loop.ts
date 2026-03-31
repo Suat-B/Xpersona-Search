@@ -43,13 +43,12 @@ import {
   selectToolLoopAdapter,
   type ToolLoopTurnInput,
 } from "@/lib/playground/tool-loop-adapters";
-import { isOpenHandsPrimaryOrchestration } from "@/lib/playground/openhands-primary-orchestration";
 import type { ExecuteAction } from "@/lib/playground/policy";
 
-/** Defaults when the client omits `clientTrace` limits (aligned with Cutie extension defaults). */
-const DEFAULT_MAX_TOOL_STEPS = 18;
-const DEFAULT_MAX_MUTATING_STEPS = 8;
-const MAX_REPAIR_ROUNDS = 3;
+/** Defaults when the client omits `clientTrace` limits (aligned with Binary autonomy targets). */
+const DEFAULT_MAX_TOOL_STEPS = 128;
+const DEFAULT_MAX_MUTATING_STEPS = 12;
+const MAX_REPAIR_ROUNDS = 5;
 const MAX_IDENTICAL_CALLS = 2;
 
 type ToolLoopRepairStage =
@@ -203,6 +202,197 @@ function inferRequiredProjectRoot(requiredFiles: string[]): string | null {
   return roots.size === 1 ? [...roots][0] || null : null;
 }
 
+function fileLooksLikeTest(value: string): boolean {
+  const normalized = normalizeRelativePath(value);
+  return (
+    /(^|\/)(__tests__|tests?)\//.test(normalized) ||
+    /\.(test|spec)\.[A-Za-z0-9]+$/i.test(normalized)
+  );
+}
+
+function taskRequestsValidation(task: string): boolean {
+  return (
+    /\b(run|rerun|execute)\s+(the\s+)?tests?\b/i.test(task) ||
+    /\buntil (it|they) pass\b/i.test(task) ||
+    /\bvalidate\b/i.test(task) ||
+    /\blint\b/i.test(task) ||
+    /\btypecheck\b/i.test(task)
+  );
+}
+
+function extractRequestedProjectRoot(task: string): string | null {
+  const patterns = [
+    /\bcreate\s+["'`]?([A-Za-z0-9._/-]+)["'`]?\s+with\b/i,
+    /\bproject folder named\s+["'`]?([A-Za-z0-9._/-]+)["'`]?/i,
+    /\bfolder named\s+["'`]?([A-Za-z0-9._/-]+)["'`]?/i,
+    /\bfolder called\s+["'`]?([A-Za-z0-9._/-]+)["'`]?/i,
+    /\bdirectory named\s+["'`]?([A-Za-z0-9._/-]+)["'`]?/i,
+    /\bdirectory called\s+["'`]?([A-Za-z0-9._/-]+)["'`]?/i,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(task);
+    const candidate = normalizeRelativePath(match?.[1] || "");
+    if (candidate && !candidate.includes("/")) return candidate;
+  }
+  return null;
+}
+
+function traceHasCompletedMutation(toolTrace: ToolTraceEntryContract[]): boolean {
+  return toolTrace.some(
+    (entry) =>
+      entry.status === "completed" &&
+      Boolean(entry.toolCall) &&
+      (entry.toolCall!.name === "edit" ||
+        entry.toolCall!.name === "write_file" ||
+        entry.toolCall!.name === "mkdir")
+  );
+}
+
+function traceHasCompletedRunCommand(toolTrace: ToolTraceEntryContract[]): boolean {
+  return toolTrace.some(
+    (entry) => entry.status === "completed" && entry.toolCall?.name === "run_command"
+  );
+}
+
+function inferValidationCommand(
+  fallbackPlan: AssistPlan,
+  task: string
+): string | null {
+  const normalizedFiles = fallbackPlan.files.map((file) => normalizeRelativePath(file)).filter(Boolean);
+  const requestedProjectRoot = extractRequestedProjectRoot(task);
+  const inferredProjectRoot = inferRequiredProjectRoot(normalizedFiles);
+  const projectRoot =
+    inferredProjectRoot && inferredProjectRoot !== "test" && inferredProjectRoot !== "tests"
+      ? inferredProjectRoot
+      : requestedProjectRoot || inferredProjectRoot;
+  const hasPackageJson = normalizedFiles.some(
+    (file) => file === "package.json" || file.endsWith("/package.json")
+  );
+  const testFile = normalizedFiles.find((file) => fileLooksLikeTest(file));
+
+  if (hasPackageJson) {
+    return "npm test";
+  }
+
+  if (testFile) {
+    if (/\.(js|jsx|mjs|cjs|ts|tsx)$/i.test(testFile)) {
+      return `node --test ${testFile}`;
+    }
+    if (/\.py$/i.test(testFile)) {
+      return `python -m pytest ${pathDirname(testFile) || testFile}`;
+    }
+  }
+
+  if (taskRequestsValidation(task) && projectRoot) {
+    return "npm test";
+  }
+
+  return null;
+}
+
+function inferValidationRepairTarget(
+  fallbackPlan: AssistPlan,
+  pendingToolCall: PendingToolCallContract,
+  toolResult: ToolResultContract
+): string | null {
+  if (toolResult.ok || pendingToolCall.toolCall.name !== "run_command") return null;
+  const category =
+    typeof pendingToolCall.toolCall.arguments.category === "string"
+      ? String(pendingToolCall.toolCall.arguments.category)
+      : "";
+  if (category !== "validation") return null;
+
+  const normalizedFiles = fallbackPlan.files.map((file) => normalizeRelativePath(file)).filter(Boolean);
+  const packageJsonPath = normalizedFiles.find(
+    (file) => file === "package.json" || file.endsWith("/package.json")
+  );
+  const testFilePath = normalizedFiles.find((file) => fileLooksLikeTest(file));
+
+  const stderr =
+    toolResult.data && typeof toolResult.data === "object" && typeof toolResult.data.stderr === "string"
+      ? String(toolResult.data.stderr)
+      : "";
+  const combined = `${toolResult.summary || ""}\n${toolResult.error || ""}\n${stderr}`.toLowerCase();
+  if (
+    testFilePath &&
+    (combined.includes("describe is not defined") ||
+      combined.includes("expect is not defined") ||
+      combined.includes(".test.js") ||
+      combined.includes(".spec.js"))
+  ) {
+    return testFilePath;
+  }
+  if (combined.includes("node: bad option") || combined.includes("unknown option") || combined.includes("bad option")) {
+    return packageJsonPath || testFilePath || null;
+  }
+  return packageJsonPath || testFilePath || null;
+}
+
+function inferProjectRootForTask(fallbackPlan: AssistPlan, task: string): string | null {
+  const normalizedFiles = fallbackPlan.files.map((file) => normalizeRelativePath(file)).filter(Boolean);
+  const requestedProjectRoot = extractRequestedProjectRoot(task);
+  const inferredProjectRoot = inferRequiredProjectRoot(normalizedFiles);
+  if (requestedProjectRoot) return requestedProjectRoot;
+  if (inferredProjectRoot && !["src", "test", "tests", "docs"].includes(inferredProjectRoot)) {
+    return inferredProjectRoot;
+  }
+  return null;
+}
+
+function quoteShellPath(value: string): string {
+  return `"${String(value).replace(/"/g, '\\"')}"`;
+}
+
+function toolCallTargetsAnyPath(toolCall: ToolCallContract | null | undefined, candidatePaths: string[]): boolean {
+  if (!toolCall || !candidatePaths.length) return false;
+  const normalizedPaths = candidatePaths.map((value) => normalizeRelativePath(value)).filter(Boolean);
+  if (!normalizedPaths.length) return false;
+  const rawPath = normalizeRelativePath(typeof toolCall.arguments.path === "string" ? toolCall.arguments.path : "");
+  const rawQuery = normalizeRelativePath(typeof toolCall.arguments.query === "string" ? toolCall.arguments.query : "");
+  const touchedValues = [rawPath, rawQuery].filter(Boolean);
+  if (!touchedValues.length) return false;
+  return normalizedPaths.some((candidate) =>
+    touchedValues.some(
+      (value) =>
+        value === candidate ||
+        candidate.endsWith(`/${value}`) ||
+        value.endsWith(`/${candidate}`) ||
+        pathBasename(candidate) === value ||
+        value.includes(pathBasename(candidate))
+    )
+  );
+}
+
+function buildValidationToolCall(command: string): ToolCallContract {
+  return {
+    id: `call_${Date.now().toString(36)}_validate`,
+    name: "run_command",
+    arguments: {
+      command,
+      category: "validation",
+    },
+    kind: "command",
+    summary: `Run focused validation: ${command}`,
+  };
+}
+
+function buildCommandToolCall(
+  command: string,
+  summary: string,
+  category: "validation" | "shell" = "shell"
+): ToolCallContract {
+  return {
+    id: `call_${Date.now().toString(36)}_command`,
+    name: "run_command",
+    arguments: {
+      command,
+      category,
+    },
+    kind: "command",
+    summary,
+  };
+}
+
 function alignCandidatePathToRequiredFiles(
   toolCall: ToolCallContract,
   requiredFiles: string[]
@@ -257,6 +447,55 @@ function alignCandidatePathToRequiredFiles(
   };
 }
 
+function alignRunCommandToProject(
+  toolCall: ToolCallContract,
+  fallbackPlan: AssistPlan,
+  task: string
+): ToolCallContract {
+  if (toolCall.name !== "run_command") return toolCall;
+  const rawCommand = typeof toolCall.arguments.command === "string" ? toolCall.arguments.command : "";
+  const trimmedCommand = rawCommand.trim();
+  if (!trimmedCommand) return toolCall;
+
+  const category =
+    typeof toolCall.arguments.category === "string" ? String(toolCall.arguments.category) : "";
+  let command = trimmedCommand;
+  if (category === "validation") {
+    command = command.replace(/\s+--silent\b/g, "").trim();
+  }
+
+  const projectRoot = inferProjectRootForTask(fallbackPlan, task);
+  if (
+    projectRoot &&
+    !/^\s*(cd|pushd)\s+/i.test(command) &&
+    /^(npm|pnpm|yarn|bun|node|git)\b/i.test(command)
+  ) {
+    command = `cd ${quoteShellPath(projectRoot)} && ${command}`;
+  }
+
+  if (command === trimmedCommand) return toolCall;
+  return {
+    ...toolCall,
+    arguments: {
+      ...toolCall.arguments,
+      command,
+    },
+    summary: toolCall.summary ? `${toolCall.summary} [project-aligned]` : undefined,
+  };
+}
+
+function alignCandidateToTask(
+  toolCall: ToolCallContract,
+  fallbackPlan: AssistPlan,
+  task: string
+): ToolCallContract {
+  return alignRunCommandToProject(
+    alignCandidatePathToRequiredFiles(toolCall, fallbackPlan.files),
+    fallbackPlan,
+    task
+  );
+}
+
 function extractMentionedFilePaths(task: string): string[] {
   const matches = String(task || "").match(/@?[A-Za-z0-9_./-]+\.[A-Za-z0-9._-]{1,12}/g) || [];
   const seen = new Set<string>();
@@ -276,6 +515,41 @@ function pathMatchesMention(candidatePath: string | undefined | null, mentionedP
   const mention = normalizeRelativePath(mentionedPath);
   if (!candidate || !mention) return false;
   return candidate === mention || candidate.endsWith(`/${mention}`);
+}
+
+function taskRequestsGitWorkflow(task: string): boolean {
+  return /\b(git init|initialize git|initialise git|create a commit|create a feature branch|checkout -b|git commit)\b/i.test(task);
+}
+
+function escapeRegExp(value: string): string {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractRequestedBranchName(task: string): string | null {
+  const patterns = [
+    /\bfeature branch named\s+["'`]?([A-Za-z0-9._/-]+)["'`]?/i,
+    /\bbranch named\s+["'`]?([A-Za-z0-9._/-]+)["'`]?/i,
+    /\bcheckout -b\s+["'`]?([A-Za-z0-9._/-]+)["'`]?/i,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(task);
+    const branch = String(match?.[1] || "").trim();
+    if (branch) return branch;
+  }
+  return null;
+}
+
+function traceHasSuccessfulCommand(toolTrace: ToolTraceEntryContract[], pattern: RegExp): boolean {
+  return toolTrace.some((entry) => {
+    if (entry.status !== "completed" || entry.toolCall?.name !== "run_command") return false;
+    const command =
+      typeof entry.toolCall.arguments.command === "string"
+        ? String(entry.toolCall.arguments.command)
+        : typeof entry.toolResult?.data?.command === "string"
+          ? String(entry.toolResult.data.command)
+          : "";
+    return pattern.test(command);
+  });
 }
 
 function pendingToolCallSignature(value: PendingToolCallContract | ToolCallContract | null | undefined): string {
@@ -697,6 +971,41 @@ function unresolvedRequiredMutationPaths(requiredFiles: string[], toolTrace: Too
       !actions.some((action) => "path" in action && pathMatchesMention(action.path, requiredPath)) &&
       !provenChangedPaths.some((path) => pathMatchesMention(path, requiredPath))
   );
+}
+
+function inferNextGitWorkflowCommand(
+  request: AssistRuntimeInput,
+  fallbackPlan: AssistPlan,
+  toolTrace: ToolTraceEntryContract[]
+): { command: string; summary: string } | null {
+  if (!taskRequestsGitWorkflow(request.task)) return null;
+  const projectRoot = inferProjectRootForTask(fallbackPlan, request.task);
+  if (!projectRoot) return null;
+
+  const prefix = `cd ${quoteShellPath(projectRoot)} && `;
+  if (!traceHasSuccessfulCommand(toolTrace, /\bgit init\b/i)) {
+    return {
+      command: `${prefix}git init`,
+      summary: `Initialize git inside ${projectRoot}`,
+    };
+  }
+
+  const branchName = extractRequestedBranchName(request.task);
+  if (branchName && !traceHasSuccessfulCommand(toolTrace, new RegExp(`\\bgit checkout -b\\s+${escapeRegExp(branchName)}\\b`, "i"))) {
+    return {
+      command: `${prefix}git checkout -b ${branchName}`,
+      summary: `Create the requested branch ${branchName}`,
+    };
+  }
+
+  if (!traceHasSuccessfulCommand(toolTrace, /\bgit commit\b/i)) {
+    return {
+      command: `${prefix}git add . && git commit -m "Complete ${projectRoot}"`,
+      summary: `Create a proof commit for ${projectRoot}`,
+    };
+  }
+
+  return null;
 }
 
 function selectRepairTargetPath(input: {
@@ -1172,7 +1481,7 @@ function enforceLoopSafeguards(input: {
   final?: string;
   missingRequirements?: string[];
 } {
-  const alignedCandidate = alignCandidatePathToRequiredFiles(input.candidate, input.state.fallbackPlan.files);
+  const alignedCandidate = alignCandidateToTask(input.candidate, input.state.fallbackPlan, input.request.task);
   const nextStep = input.state.loopState.stepCount + 1;
   if (nextStep > input.state.loopState.maxSteps) {
     return {
@@ -1323,7 +1632,6 @@ async function advanceWithCandidate(input: {
   // OpenHands (and other adapters) sometimes return {"final":"..."} on step 0 instead of a tool call.
   // Without a pending tool the IDE never executes tools. Force an observation step for agentic intents.
   if (
-    !isOpenHandsPrimaryOrchestration() &&
     !candidate &&
     input.state.loopState.stepCount === 0 &&
     input.state.toolTrace.length === 0 &&
@@ -1363,7 +1671,6 @@ async function advanceWithCandidate(input: {
       targetInference: input.state.targetInference,
     });
     const terminalMissingRequirements =
-      !isOpenHandsPrimaryOrchestration() &&
       finalIntent.type === "code_edit" &&
       finalActions.length === 0
         ? ["no_usable_next_action", "mutation_required_for_code_edit"]
@@ -1547,6 +1854,7 @@ export async function startAssistToolLoop(input: StartToolLoopInput): Promise<As
     context: input.request.context,
     targetInference,
     retrievalHints: input.request.retrievalHints,
+    task: input.request.task,
   });
   const fallbackPlan = buildPlan({
     task: input.request.task,
@@ -1868,6 +2176,21 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
     };
   }
 
+  const validationRepairTarget = inferValidationRepairTarget(
+    nextState.fallbackPlan,
+    pendingToolCall,
+    input.toolResult
+  );
+  const targetInferenceForNextTurn = validationRepairTarget
+    ? buildRepairTargetInference(nextState.targetInference, validationRepairTarget)
+    : nextState.targetInference;
+  if (validationRepairTarget && repairDirective) {
+    repairDirective = {
+      ...repairDirective,
+      reason: `${repairDirective.reason} Repair the generated validation script or test harness in ${validationRepairTarget} before retrying validation.`,
+    };
+  }
+
   if (input.toolResult.ok && pendingToolCall.toolCall.name === "create_checkpoint" && nextState.deferredToolCall) {
     const deferred = nextState.deferredToolCall;
     return advanceWithCandidate({
@@ -1890,7 +2213,7 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
 
   const turn = await requestToolLoopTurn({
     request,
-    targetInference: nextState.targetInference,
+    targetInference: targetInferenceForNextTurn,
     contextSelection: nextState.contextSelection,
     fallbackPlan: nextState.fallbackPlan,
     toolTrace,
@@ -1929,14 +2252,87 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
     changeIntent && !turn.toolCall && unresolvedMentionedPaths.length > 0;
   const finalOnlyWithUnfinishedRequiredTargets =
     changeIntent && !turn.toolCall && unresolvedRequiredPaths.length > 0;
+  const observationWithoutMissingRequiredTarget =
+    changeIntent &&
+    unresolvedRequiredPaths.length > 0 &&
+    Boolean(turn.toolCall) &&
+    isObservationTool(turn.toolCall!.name) &&
+    !toolCallTargetsAnyPath(turn.toolCall, unresolvedRequiredPaths);
   const repeatedPendingSignature =
     Boolean(turn.toolCall) &&
     pendingToolCallSignature(turn.toolCall) === pendingToolCallSignature(pendingToolCall.toolCall);
+  const shouldForceValidation =
+    changeIntent &&
+    taskRequestsValidation(request.task) &&
+    unresolvedRequiredPaths.length === 0 &&
+    traceHasCompletedMutation(toolTrace) &&
+    !traceHasCompletedRunCommand(toolTrace) &&
+    nextState.availableTools.includes("run_command") &&
+    (!turn.toolCall || isObservationTool(turn.toolCall.name));
+  const forcedValidationCommand = shouldForceValidation
+    ? inferValidationCommand(nextState.fallbackPlan, request.task)
+    : null;
+  const shouldForceGitCloseout =
+    changeIntent &&
+    unresolvedRequiredPaths.length === 0 &&
+    input.toolResult.ok &&
+    nextState.availableTools.includes("run_command") &&
+    (!turn.toolCall || isObservationTool(turn.toolCall.name));
+  const forcedGitCloseout = shouldForceGitCloseout
+    ? inferNextGitWorkflowCommand(request, nextState.fallbackPlan, toolTrace)
+    : null;
+
+  if (forcedValidationCommand) {
+    return advanceWithCandidate({
+      record,
+      request,
+      state: {
+        ...nextState,
+        adapter: turn.adapter,
+        orchestrator: turn.orchestrator ?? nextState.orchestrator,
+        orchestratorVersion: turn.orchestratorVersion ?? nextState.orchestratorVersion ?? null,
+        orchestratorRunId: turn.orchestratorRunId ?? nextState.orchestratorRunId ?? null,
+      },
+      traceId: input.traceId,
+      candidate: buildValidationToolCall(forcedValidationCommand),
+      adapter: turn.adapter,
+      orchestrator: turn.orchestrator,
+      orchestratorVersion: turn.orchestratorVersion ?? null,
+      orchestratorRunId: turn.orchestratorRunId ?? null,
+      final: "Required project files are in place. Running validation before more observation.",
+      actions: turn.actions as ExecuteAction[] | undefined,
+      logs: [...turn.logs, "repair=validation_turn_forced"],
+    });
+  }
+
+  if (forcedGitCloseout) {
+    return advanceWithCandidate({
+      record,
+      request,
+      state: {
+        ...nextState,
+        adapter: turn.adapter,
+        orchestrator: turn.orchestrator ?? nextState.orchestrator,
+        orchestratorVersion: turn.orchestratorVersion ?? nextState.orchestratorVersion ?? null,
+        orchestratorRunId: turn.orchestratorRunId ?? nextState.orchestratorRunId ?? null,
+      },
+      traceId: input.traceId,
+      candidate: buildCommandToolCall(forcedGitCloseout.command, forcedGitCloseout.summary, "shell"),
+      adapter: turn.adapter,
+      orchestrator: turn.orchestrator,
+      orchestratorVersion: turn.orchestratorVersion ?? null,
+      orchestratorRunId: turn.orchestratorRunId ?? null,
+      final: `Project validation is done. Continuing the requested git workflow: ${forcedGitCloseout.command}`,
+      actions: turn.actions as ExecuteAction[] | undefined,
+      logs: [...turn.logs, "repair=git_closeout_forced"],
+    });
+  }
 
   if (
     finalOnlyAfterRead ||
     finalOnlyWithUnfinishedRequiredTargets ||
     finalOnlyWithUnfinishedMentionedTargets ||
+    observationWithoutMissingRequiredTarget ||
     (changeIntent && inspectedTrustedTarget && (!turn.toolCall || !isMutatingTool(turn.toolCall.name)))
   ) {
     const repairStage = nextRepairStage({

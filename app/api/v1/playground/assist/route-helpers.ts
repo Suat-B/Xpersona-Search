@@ -81,7 +81,17 @@ export function buildAssistResponsePayload(input: {
     contextSelection: result.contextSelection,
     completionStatus: result.completionStatus,
     missingRequirements: result.missingRequirements,
-    modelAlias: result.modelMetadata.modelResolvedAlias,
+    ...(result.modelMetadata?.modelResolvedAlias ? { modelAlias: result.modelMetadata.modelResolvedAlias } : {}),
+    ...(result.modelMetadata?.chatModelSource ? { chatModelSource: result.modelMetadata.chatModelSource } : {}),
+    ...(result.modelMetadata?.chatModelAlias ? { chatModelAlias: result.modelMetadata.chatModelAlias } : {}),
+    ...(result.modelMetadata?.chatProvider ? { chatProvider: result.modelMetadata.chatProvider } : {}),
+    ...(result.modelMetadata?.orchestratorModelAlias
+      ? { orchestratorModelAlias: result.modelMetadata.orchestratorModelAlias }
+      : {}),
+    ...(result.modelMetadata?.orchestratorProvider
+      ? { orchestratorProvider: result.modelMetadata.orchestratorProvider }
+      : {}),
+    ...(result.modelMetadata?.fallbackApplied ? { fallbackApplied: true } : {}),
     ...(result.orchestrator ? { orchestrator: result.orchestrator } : {}),
     ...(result.orchestratorVersion ? { orchestratorVersion: result.orchestratorVersion } : {}),
     progressState: result.progressState,

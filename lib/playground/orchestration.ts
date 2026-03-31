@@ -17,6 +17,11 @@ import {
   type PlaygroundModelProvider,
 } from "@/lib/playground/model-registry";
 import {
+  resolveChatModelAccess,
+  type PlaygroundChatModelSource,
+  type PlaygroundInteractionKind,
+} from "@/lib/playground/byom";
+import {
   buildAssistAgentArtifacts,
   type AssistContextTrace,
   type AssistDelegateRun,
@@ -59,6 +64,12 @@ export type AssistContext = {
       app?: string;
       displayId?: string;
     };
+    visibleWindows?: Array<{
+      id?: string;
+      title?: string;
+      app?: string;
+      displayId?: string;
+    }>;
     recentSnapshots?: Array<{
       snapshotId: string;
       displayId?: string;
@@ -66,6 +77,12 @@ export type AssistContext = {
       height?: number;
       mimeType?: string;
       capturedAt?: string;
+    }>;
+    discoveredApps?: Array<{
+      id: string;
+      name: string;
+      aliases?: string[];
+      source?: string;
     }>;
   };
 };
@@ -87,6 +104,10 @@ export type AssistRequest = {
   mode: AssistMode;
   task: string;
   stream?: boolean;
+  interactionKind?: PlaygroundInteractionKind;
+  chatModelSource?: PlaygroundChatModelSource;
+  orchestratorModelSource?: "platform_owned" | "user_connected";
+  fallbackToPlatformModel?: boolean;
   orchestrationProtocol?: OrchestrationProtocol;
   clientCapabilities?: {
     toolLoop?: boolean;
@@ -167,6 +188,13 @@ export type AssistModelMetadata = {
   providerResolved: PlaygroundModelProvider;
   capabilities: Record<string, unknown>;
   certification: string;
+  chatModelSource?: PlaygroundChatModelSource;
+  chatModelAlias?: string;
+  chatProvider?: PlaygroundModelProvider;
+  orchestratorModelSource?: "platform_owned" | "user_connected";
+  orchestratorModelAlias?: string | null;
+  orchestratorProvider?: PlaygroundModelProvider | null;
+  fallbackApplied?: boolean;
 };
 
 export type AssistToolState = {
@@ -275,6 +303,29 @@ function sanitizeRelativePath(value: string | null | undefined): string | null {
     .replace(/^\/+/, "");
   if (!normalized || normalized.includes("..") || /^[a-z]:\//i.test(normalized)) return null;
   return normalized;
+}
+
+function extractRequestedProjectRoot(task: string): string | null {
+  const patterns = [
+    /\bproject folder named\s+["'`]?([A-Za-z0-9._/-]+)["'`]?/i,
+    /\bfolder named\s+["'`]?([A-Za-z0-9._/-]+)["'`]?/i,
+    /\bfolder called\s+["'`]?([A-Za-z0-9._/-]+)["'`]?/i,
+    /\bdirectory named\s+["'`]?([A-Za-z0-9._/-]+)["'`]?/i,
+    /\bdirectory called\s+["'`]?([A-Za-z0-9._/-]+)["'`]?/i,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(task);
+    const candidate = sanitizeRelativePath(match?.[1] || "");
+    if (candidate && !candidate.includes("/")) return candidate;
+  }
+  return null;
+}
+
+function anchorPathToProjectRoot(pathValue: string | null | undefined, projectRoot: string | null): string | null {
+  const normalized = sanitizeRelativePath(pathValue);
+  if (!normalized) return null;
+  if (!projectRoot || normalized === projectRoot || normalized.startsWith(`${projectRoot}/`)) return normalized;
+  return `${projectRoot}/${normalized}`;
 }
 
 function detectLanguageFromPath(filePath: string | undefined): "ts" | "js" | "python" | "docs" | "other" {
@@ -592,13 +643,16 @@ export function buildTargetInference(input: {
   context?: AssistContext;
   retrievalHints?: AssistRetrievalHints;
 }): AssistTargetInference {
-  const preferred = sanitizeRelativePath(input.retrievalHints?.preferredTargetPath);
+  const projectRoot = extractRequestedProjectRoot(input.task);
+  const preferred = anchorPathToProjectRoot(input.retrievalHints?.preferredTargetPath, projectRoot);
   if (preferred) return { path: preferred, confidence: 0.98, source: "mention" };
 
-  const hinted = input.retrievalHints?.mentionedPaths?.map((item) => sanitizeRelativePath(item)).find(Boolean);
+  const hinted = input.retrievalHints?.mentionedPaths
+    ?.map((item) => anchorPathToProjectRoot(item, projectRoot))
+    .find(Boolean);
   if (hinted) return { path: hinted || undefined, confidence: 0.96, source: "mention" };
 
-  const mentioned = extractMentionedPaths(input.task)[0];
+  const mentioned = anchorPathToProjectRoot(extractMentionedPaths(input.task)[0], projectRoot);
   if (mentioned) return { path: mentioned, confidence: 0.94, source: "mention" };
 
   const activeFile = sanitizeRelativePath(input.context?.activeFile?.path);
@@ -617,11 +671,13 @@ export function buildContextSelection(input: {
   context?: AssistContext;
   targetInference: AssistTargetInference;
   retrievalHints?: AssistRetrievalHints;
+  task?: string;
 }): AssistContextSelection {
+  const projectRoot = extractRequestedProjectRoot(input.task || "");
   const items: Array<{ path: string; reason: string; score?: number }> = [];
   const seen = new Set<string>();
   const push = (pathValue: string | null | undefined, reason: string, score?: number) => {
-    const normalized = sanitizeRelativePath(pathValue);
+    const normalized = anchorPathToProjectRoot(pathValue, projectRoot);
     if (!normalized || seen.has(normalized)) return;
     seen.add(normalized);
     items.push({ path: normalized, reason, ...(typeof score === "number" ? { score } : {}) });
@@ -698,6 +754,16 @@ export function buildContextPrompt(context?: AssistContext): string {
         )}`
       );
     }
+    if (context.desktop.visibleWindows?.length) {
+      desktopSections.push(
+        `Visible windows:\n${context.desktop.visibleWindows
+          .slice(0, 8)
+          .map((window) =>
+            `- ${compactWhitespace([window.app, window.title].filter(Boolean).join(" - ")) || window.id || "window"}`
+          )
+          .join("\n")}`
+      );
+    }
     if (context.desktop.displays?.length) {
       desktopSections.push(
         `Displays:\n${context.desktop.displays
@@ -706,6 +772,20 @@ export function buildContextPrompt(context?: AssistContext): string {
             const label = compactWhitespace(display.label || display.id);
             const suffix = display.isPrimary ? " primary" : "";
             return `- ${label}: ${display.width}x${display.height}${suffix}`;
+          })
+          .join("\n")}`
+      );
+    }
+    if (context.desktop.discoveredApps?.length) {
+      desktopSections.push(
+        `Discovered apps:\n${context.desktop.discoveredApps
+          .slice(0, 16)
+          .map((app) => {
+            const aliases = Array.isArray(app.aliases) && app.aliases.length
+              ? ` aliases=${app.aliases.slice(0, 4).join(", ")}`
+              : "";
+            const source = app.source ? ` source=${app.source}` : "";
+            return `- ${app.name}${aliases}${source}`;
           })
           .join("\n")}`
       );
@@ -751,11 +831,16 @@ export function buildPlan(input: {
   targetInference: AssistTargetInference;
   contextSelection: AssistContextSelection;
 }): AssistPlan {
-  const explicitPaths = extractMentionedPaths(input.task);
+  const projectRoot = extractRequestedProjectRoot(input.task);
+  const explicitPaths = extractMentionedPaths(input.task)
+    .map((item) => anchorPathToProjectRoot(item, projectRoot))
+    .filter((item): item is string => Boolean(item));
   const files = Array.from(
     new Set([
       ...explicitPaths,
-      ...pathListForPlan(input.targetInference, input.contextSelection),
+      ...pathListForPlan(input.targetInference, input.contextSelection).map((item) =>
+        anchorPathToProjectRoot(item, projectRoot)
+      ).filter((item): item is string => Boolean(item)),
     ])
   ).slice(0, 8);
   const touchedLanguage = detectLanguageFromPath(files[0]);
@@ -863,17 +948,25 @@ async function callDefaultModel(input: {
   mode: AssistMode;
   maxTokens: number;
   requestedModel?: string;
+  userId?: string | null;
+  requestedSource?: PlaygroundChatModelSource | null;
+  fallbackToPlatformModel?: boolean;
 }): Promise<string | null> {
-  const modelSelection = resolvePlaygroundModelSelection({ requested: input.requestedModel });
-  const token = resolvePlaygroundModelToken(modelSelection.resolvedEntry);
+  const modelAccess = await resolveChatModelAccess({
+    userId: input.userId,
+    requestedModel: input.requestedModel,
+    requestedSource: input.requestedSource,
+    fallbackToPlatformModel: input.fallbackToPlatformModel,
+  });
+  const token = modelAccess.token;
   if (!token) return null;
 
   const model =
-    modelSelection.resolvedEntry.provider === "hf"
-      ? normalizeHfRouterModelId(modelSelection.resolvedEntry.model)
-      : String(modelSelection.resolvedEntry.model || "").trim();
+    modelAccess.provider === "hf"
+      ? normalizeHfRouterModelId(modelAccess.resolvedModel)
+      : String(modelAccess.resolvedModel || "").trim();
   if (!model) throw new Error("Hosted model is not configured.");
-  const baseUrl = String(modelSelection.resolvedEntry.baseUrl || HF_ROUTER_BASE_URL).replace(/\/+$/, "");
+  const baseUrl = String(modelAccess.baseUrl || HF_ROUTER_BASE_URL).replace(/\/+$/, "");
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
@@ -1238,6 +1331,7 @@ export function buildDecoratedAssistResult(input: {
   logs?: string[];
   objectiveState?: AssistObjectiveState;
   progressState?: AssistProgressState;
+  modelMetadataOverride?: AssistModelMetadata;
 }): AssistResult {
   const intent = inferIntent({
     mode: input.request.mode,
@@ -1256,19 +1350,31 @@ export function buildDecoratedAssistResult(input: {
     intent,
   });
   const modelSelection = resolvePlaygroundModelSelection({ requested: input.request.model });
-  const modelMetadata: AssistModelMetadata = {
-    contractVersion: PLAYGROUND_CONTRACT_VERSION,
-    adapter: "text_actions_v1",
-    modelRequested: modelSelection.requested,
-    modelRequestedAlias: modelSelection.requestedAlias,
-    modelResolved: modelSelection.resolvedEntry.model,
-    modelResolvedAlias: modelSelection.resolvedAlias,
-    providerResolved: modelSelection.resolvedEntry.provider,
-    capabilities: {
-      ...modelSelection.resolvedEntry.capabilities,
-    },
-    certification: modelSelection.resolvedEntry.certification,
-  };
+  const modelMetadata: AssistModelMetadata =
+    input.modelMetadataOverride || {
+      contractVersion: PLAYGROUND_CONTRACT_VERSION,
+      adapter: "text_actions_v1",
+      modelRequested: modelSelection.requested,
+      modelRequestedAlias: modelSelection.requestedAlias,
+      modelResolved: modelSelection.resolvedEntry.model,
+      modelResolvedAlias: modelSelection.resolvedAlias,
+      providerResolved: modelSelection.resolvedEntry.provider,
+      capabilities: {
+        ...modelSelection.resolvedEntry.capabilities,
+      },
+      certification: modelSelection.resolvedEntry.certification,
+      chatModelSource: input.request.chatModelSource || "platform",
+      chatModelAlias: modelSelection.resolvedAlias,
+      chatProvider: modelSelection.resolvedEntry.provider,
+      orchestratorModelSource:
+        input.request.interactionKind === "repo_code"
+          ? input.request.orchestratorModelSource || "platform_owned"
+          : undefined,
+      orchestratorModelAlias:
+        input.request.interactionKind === "repo_code" ? modelSelection.resolvedAlias : null,
+      orchestratorProvider:
+        input.request.interactionKind === "repo_code" ? modelSelection.resolvedEntry.provider : null,
+    };
   const commands = input.actions
     .filter((action): action is Extract<ExecuteAction, { type: "command" }> => action.type === "command")
     .map((action) => action.command);
@@ -1433,7 +1539,7 @@ export async function guardPlaygroundAccess(params: {
   };
 }
 
-export async function runAssist(request: AssistRuntimeInput): Promise<AssistResult> {
+export async function runAssist(request: AssistRuntimeInput, options?: { userId?: string | null }): Promise<AssistResult> {
   const decision = buildDecision(request.mode, request.task);
   const targetInference = buildTargetInference({
     task: request.task,
@@ -1444,6 +1550,7 @@ export async function runAssist(request: AssistRuntimeInput): Promise<AssistResu
     context: request.context,
     targetInference,
     retrievalHints: request.retrievalHints,
+    task: request.task,
   });
   const fallbackPlan = buildPlan({
     task: request.task,
@@ -1458,12 +1565,50 @@ export async function runAssist(request: AssistRuntimeInput): Promise<AssistResu
   });
 
   let rawModelOutput: string | null = null;
+  let modelMetadataOverride: AssistModelMetadata | undefined;
   try {
+    const resolvedAccess = await resolveChatModelAccess({
+      userId: options?.userId,
+      requestedModel: request.model,
+      requestedSource: request.chatModelSource,
+      fallbackToPlatformModel: request.fallbackToPlatformModel,
+    });
+    const defaultOrchestratorSelection = resolvePlaygroundModelSelection({
+      requested: DEFAULT_PLAYGROUND_MODEL_ALIAS,
+    });
+    modelMetadataOverride = {
+      contractVersion: PLAYGROUND_CONTRACT_VERSION,
+      adapter: "text_actions_v1",
+      modelRequested: request.model || resolvedAccess.requestedModel,
+      modelRequestedAlias: request.model || resolvedAccess.requestedAlias,
+      modelResolved: resolvedAccess.resolvedModel,
+      modelResolvedAlias: resolvedAccess.resolvedAlias,
+      providerResolved: resolvedAccess.provider,
+      capabilities: { ...resolvedAccess.capabilities },
+      certification: resolvedAccess.certification,
+      chatModelSource: resolvedAccess.source,
+      chatModelAlias: resolvedAccess.resolvedAlias,
+      chatProvider: resolvedAccess.provider,
+      orchestratorModelSource:
+        request.interactionKind === "repo_code"
+          ? request.orchestratorModelSource || "platform_owned"
+          : undefined,
+      orchestratorModelAlias:
+        request.interactionKind === "repo_code" ? defaultOrchestratorSelection.resolvedAlias : null,
+      orchestratorProvider:
+        request.interactionKind === "repo_code"
+          ? defaultOrchestratorSelection.resolvedEntry.provider
+          : null,
+      fallbackApplied: Boolean(resolvedAccess.fallbackApplied),
+    };
     rawModelOutput = await callDefaultModel({
       prompt: modelPrompt,
       mode: request.mode,
       maxTokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
       requestedModel: request.model,
+      userId: options?.userId,
+      requestedSource: request.chatModelSource,
+      fallbackToPlatformModel: request.fallbackToPlatformModel,
     });
   } catch (error) {
     rawModelOutput = JSON.stringify({
@@ -1503,10 +1648,12 @@ export async function runAssist(request: AssistRuntimeInput): Promise<AssistResu
     missingRequirements,
     logs: [
       `route=text_actions`,
+      `chat_model_source=${modelMetadataOverride?.chatModelSource || request.chatModelSource || "platform"}`,
       `target=${targetInference.path || "none"}`,
       `actions=${parsed.actions.length}`,
       `context_files=${contextSelection.files.length}`,
     ],
+    modelMetadataOverride,
   });
 }
 

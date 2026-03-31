@@ -7,6 +7,10 @@ const mockCreateAnonymous = vi.hoisted(() => vi.fn());
 const mockEnsureTrial = vi.hoisted(() => vi.fn());
 const mockApplyCookie = vi.hoisted(() => vi.fn());
 const mockRateLimit = vi.hoisted(() => vi.fn());
+const mockGetUserPlaygroundProfile = vi.hoisted(() => vi.fn());
+const mockListUserConnectedModels = vi.hoisted(() => vi.fn());
+const mockGetBrowserAuthAvailability = vi.hoisted(() => vi.fn());
+const mockGetPlaygroundByomPreferences = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/chat/actor", () => ({
   resolveExistingChatActor: mockResolveActor,
@@ -19,6 +23,16 @@ vi.mock("@/lib/chat/bootstrap-rate-limit", () => ({
   checkChatBootstrapRateLimit: mockRateLimit,
 }));
 
+vi.mock("@/lib/playground/store", () => ({
+  getUserPlaygroundProfile: mockGetUserPlaygroundProfile,
+}));
+
+vi.mock("@/lib/playground/byom", () => ({
+  listUserConnectedModels: mockListUserConnectedModels,
+  getBrowserAuthAvailability: mockGetBrowserAuthAvailability,
+  getPlaygroundByomPreferences: mockGetPlaygroundByomPreferences,
+}));
+
 describe("POST /api/me/chat/bootstrap", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -26,6 +40,13 @@ describe("POST /api/me/chat/bootstrap", () => {
       planTier: "trial",
       status: "trial",
       trialEndsAt: new Date().toISOString(),
+    });
+    mockGetUserPlaygroundProfile.mockResolvedValue(null);
+    mockListUserConnectedModels.mockResolvedValue([]);
+    mockGetBrowserAuthAvailability.mockReturnValue({ enabled: false, reason: "disabled" });
+    mockGetPlaygroundByomPreferences.mockReturnValue({
+      preferredChatModelSource: "platform",
+      fallbackToPlatformModel: true,
     });
     mockRateLimit.mockResolvedValue({ allowed: true, remaining: 9 });
   });

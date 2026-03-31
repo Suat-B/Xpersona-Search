@@ -1,8 +1,10 @@
 export type AssistMode = "auto" | "plan" | "yolo" | "generate" | "debug";
+export type CliTransport = "auto" | "host" | "direct";
 export type BillingCycle = "monthly" | "yearly";
 export type PlanTier = "starter" | "builder" | "studio";
 export type CliConfig = {
     baseUrl: string;
+    localHostUrl?: string;
     apiKey?: string;
     browserAuth?: {
         accessToken?: string;
@@ -14,6 +16,7 @@ export type CliConfig = {
     model?: string;
     reasoning?: "low" | "medium" | "high" | "max";
     includeIdeContext?: boolean;
+    transport?: CliTransport;
 };
 export type ApiSuccess<T> = {
     success: true;
@@ -29,4 +32,113 @@ export type ApiFailure = {
     code?: string;
     message?: string;
     details?: unknown;
+};
+export type PlaygroundToolName = "list_files" | "read_file" | "search_workspace" | "get_diagnostics" | "git_status" | "git_diff" | "create_checkpoint" | "edit" | "write_file" | "mkdir" | "run_command" | "get_workspace_memory" | (string & {});
+export type ToolCall = {
+    id: string;
+    name: PlaygroundToolName;
+    arguments: Record<string, unknown>;
+    kind?: "observe" | "mutate" | "command";
+    summary?: string;
+};
+export type ToolResult = {
+    toolCallId: string;
+    name: PlaygroundToolName;
+    ok: boolean;
+    blocked?: boolean;
+    summary: string;
+    data?: Record<string, unknown>;
+    error?: string;
+    createdAt?: string;
+};
+export type LoopState = {
+    protocol: string;
+    status: "idle" | "pending_tool" | "running" | "completed" | "failed";
+    stepCount: number;
+    mutationCount: number;
+    repeatedCallCount: number;
+    repairCount: number;
+    maxSteps: number;
+    maxMutations: number;
+    lastToolCallKey?: string;
+};
+export type ProgressState = {
+    status: "running" | "stalled" | "repairing" | "completed" | "failed";
+    lastMeaningfulProgressAtStep: number;
+    lastMeaningfulProgressSummary: string;
+    stallCount: number;
+    stallReason?: string;
+    nextDeterministicAction?: string;
+    pendingToolCallSignature?: string;
+};
+export type ObjectiveState = {
+    status: "in_progress" | "satisfied" | "blocked";
+    goalType: "code_edit" | "command_run" | "plan" | "unknown";
+    targetPath?: string;
+    requiredProof: string[];
+    observedProof: string[];
+    missingProof: string[];
+};
+export type PendingToolCall = {
+    step: number;
+    adapter: string;
+    requiresClientExecution: boolean;
+    toolCall: ToolCall;
+    availableTools?: PlaygroundToolName[];
+    createdAt: string;
+};
+export type ValidationPlan = {
+    scope: "none" | "targeted";
+    checks: string[];
+    touchedFiles: string[];
+    reason: string;
+};
+export type AssistRunEnvelope = {
+    sessionId?: string;
+    traceId?: string;
+    decision?: {
+        mode: string;
+        reason: string;
+        confidence: number;
+    };
+    plan?: unknown;
+    actions?: unknown[];
+    final?: string;
+    validationPlan?: ValidationPlan;
+    targetInference?: {
+        path?: string;
+        confidence?: number;
+        source?: string;
+    };
+    contextSelection?: {
+        files?: Array<{
+            path: string;
+            reason: string;
+            score?: number;
+        }>;
+        snippets?: number;
+        usedCloudIndex?: boolean;
+    };
+    completionStatus?: "complete" | "incomplete";
+    missingRequirements?: string[];
+    modelAlias?: string;
+    orchestrator?: "in_house" | "openhands";
+    orchestratorVersion?: string | null;
+    runId?: string;
+    orchestrationProtocol?: string;
+    adapter?: string;
+    loopState?: LoopState | null;
+    progressState?: ProgressState | null;
+    objectiveState?: ObjectiveState | null;
+    pendingToolCall?: PendingToolCall | null;
+    toolTrace?: unknown[];
+    reviewState?: Record<string, unknown> | null;
+    receipt?: Record<string, unknown> | null;
+    leaseId?: string;
+    heartbeatAt?: string;
+    lastToolAt?: string;
+    budgetState?: Record<string, unknown> | null;
+    checkpointState?: Record<string, unknown> | null;
+    resumeToken?: string;
+    workspaceTrustMode?: string;
 };

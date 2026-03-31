@@ -7,6 +7,8 @@ import {
 import { proxyPlaygroundRequest } from "@/lib/chat/playground-proxy";
 import { buildWorkspaceAssistContext } from "@/lib/chat/workspace-context";
 import { DEFAULT_PLAYGROUND_MODEL_ALIAS } from "@/lib/playground/model-registry";
+import { getPlaygroundByomPreferences, listUserConnectedModels } from "@/lib/playground/byom";
+import { getUserPlaygroundProfile } from "@/lib/playground/store";
 
 const CHAT_ASSIST_FAST_MODEL = DEFAULT_PLAYGROUND_MODEL_ALIAS;
 
@@ -120,10 +122,33 @@ export async function POST(request: NextRequest): Promise<Response> {
   const rawTask = body.task.trim();
   const codeMode = looksLikeCodeModeTask(rawTask);
   const repoScopedCodeTask = codeMode && looksRepoScopedCodeTask(rawTask);
+  const interactionKind = repoScopedCodeTask ? "repo_code" : "chat";
   const task = codeMode ? buildCodeModeTask(rawTask) : buildConversationModeTask(rawTask);
 
   await ensureChatTrialEntitlement(actor.userId);
   const bearer = createChatProxyBearer(actor);
+  const profile = await getUserPlaygroundProfile({ userId: actor.userId }).catch(() => null);
+  const byomPreferences = getPlaygroundByomPreferences(profile);
+  const connections = await listUserConnectedModels({ userId: actor.userId }).catch(() => []);
+  const requestedModel = typeof body.model === "string" && body.model.trim() ? body.model.trim() : "";
+  const requestedConnection = requestedModel
+    ? connections.find((item) => item.alias === requestedModel) || null
+    : null;
+  const preferredConnection =
+    connections.find((item) => item.alias === (profile?.preferredModelAlias ?? "")) || connections[0] || null;
+  const effectiveChatModelSource =
+    interactionKind === "chat" &&
+    (requestedConnection ||
+      (!requestedModel &&
+        byomPreferences.preferredChatModelSource === "user_connected" &&
+        preferredConnection))
+      ? "user_connected"
+      : "platform";
+  const effectiveModel =
+    interactionKind === "chat"
+      ? requestedModel ||
+        (effectiveChatModelSource === "user_connected" ? preferredConnection?.alias || CHAT_ASSIST_FAST_MODEL : CHAT_ASSIST_FAST_MODEL)
+      : CHAT_ASSIST_FAST_MODEL;
   const inferredContext =
     body.context === undefined && repoScopedCodeTask
       ? await buildWorkspaceAssistContext(rawTask).catch(() => null)
@@ -140,7 +165,11 @@ export async function POST(request: NextRequest): Promise<Response> {
           preferredTargetPath: inferredContext?.activeFile?.path,
         }
       : undefined,
-    model: CHAT_ASSIST_FAST_MODEL,
+    model: effectiveModel,
+    interactionKind,
+    chatModelSource: effectiveChatModelSource,
+    orchestratorModelSource: "platform_owned",
+    fallbackToPlatformModel: byomPreferences.fallbackToPlatformModel,
   };
 
   return proxyPlaygroundRequest({

@@ -1,12 +1,18 @@
-import { promises as fs } from "node:fs";
+import { existsSync, promises as fs } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { continueHostedRun, streamHostedAssist } from "./hosted-transport.js";
+import { DesktopToolExecutor, collectDesktopContext } from "./desktop-tool-executor.js";
+import {
+  MachineAutonomyController,
+  defaultMachineAutonomyPolicy,
+  type MachineAutonomyPolicy,
+} from "./machine-autonomy.js";
 
 type AssistMode = "auto" | "plan" | "yolo" | "generate" | "debug";
-type HostedAssistMode = "auto" | "plan" | "yolo";
 type BinaryHostRunStatus =
   | "queued"
   | "running"
@@ -99,6 +105,22 @@ type BinaryHostPreferences = {
   recentSessions: Array<{ sessionId: string; runId?: string; updatedAt: string; workspaceRoot?: string }>;
   artifactHistory: Array<{ id: string; label: string; url?: string; createdAt: string }>;
   preferredTransport: "host" | "direct";
+  machineAutonomy: MachineAutonomyPolicy;
+  backgroundAgents: BinaryHostBackgroundAgent[];
+};
+
+type BinaryHostBackgroundAgent = {
+  id: string;
+  name: string;
+  prompt: string;
+  status: "active" | "paused";
+  trigger: "manual" | "scheduled" | "file_event" | "process_event" | "notification";
+  scheduleMinutes?: number;
+  workspaceRoot?: string;
+  model?: string;
+  createdAt: string;
+  updatedAt: string;
+  lastRunAt?: string;
 };
 
 type BinaryHostClientInfo = {
@@ -207,9 +229,37 @@ const HEARTBEAT_INTERVAL_MS = 4_000;
 const STALE_LEASE_MS = 20_000;
 const MAX_OBSERVATION_ONLY_STREAK = 8;
 const MAX_PENDING_SIGNATURE_REPEATS = 3;
+const HOST_WORKSPACE_TOOLS = [
+  "list_files",
+  "read_file",
+  "search_workspace",
+  "get_diagnostics",
+  "git_status",
+  "git_diff",
+  "create_checkpoint",
+  "edit",
+  "write_file",
+  "mkdir",
+  "run_command",
+  "get_workspace_memory",
+] as const;
+const HOST_DESKTOP_TOOLS = [
+  "desktop_list_apps",
+  "desktop_get_active_window",
+  "desktop_list_windows",
+  "desktop_open_app",
+  "desktop_open_url",
+  "desktop_focus_window",
+  "desktop_wait",
+] as const;
 
 const activeExecutions = new Map<string, Promise<void>>();
 const runControllers = new Map<string, RunControllerState>();
+const machineAutonomyController = new MachineAutonomyController();
+
+type LocalToolExecutor = {
+  execute: (pendingToolCall: PendingToolCall) => Promise<ToolResult>;
+};
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -219,13 +269,218 @@ function buildResumeToken(): string {
   return randomUUID().replace(/-/g, "");
 }
 
-function toHostedMode(mode: AssistMode): HostedAssistMode {
-  if (mode === "generate" || mode === "debug") return "yolo";
-  return mode;
+function buildHostSupportedTools(workspaceRoot?: string): string[] {
+  return [...(workspaceRoot ? HOST_WORKSPACE_TOOLS : []), ...HOST_DESKTOP_TOOLS];
 }
 
 function normalizeWorkspacePath(input: string): string {
   return path.resolve(input);
+}
+
+function normalizeRelativeTaskPath(input: string): string {
+  return String(input || "")
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\.\/+/, "")
+    .replace(/^\/+/, "")
+    .replace(/[),.;:]+$/g, "");
+}
+
+function taskRequestsValidation(task: string): boolean {
+  return /\b(run tests?|tests until they pass|validate|validation|lint|verify|proof)\b/i.test(task);
+}
+
+function extractRequestedProjectRoot(task: string): string | null {
+  const patterns = [
+    /\b(?:project|folder)\s+named\s+([A-Za-z0-9._-]+)/i,
+    /\bnamed\s+([A-Za-z0-9._-]+)\s+in\s+the\s+current\s+workspace\b/i,
+    /\bcreate\s+(?:a\s+new\s+)?(?:plain\s+\w+\s+)?(?:project\s+folder|folder)\s+named\s+([A-Za-z0-9._-]+)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = task.match(pattern);
+    if (match?.[1]) return normalizeRelativeTaskPath(match[1]);
+  }
+  return null;
+}
+
+function extractRequiredArtifacts(task: string): string[] {
+  const projectRoot = extractRequestedProjectRoot(task);
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  if (projectRoot) {
+    seen.add(projectRoot);
+    out.push(projectRoot);
+  }
+
+  const tokenPattern = /\b([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+|[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+)\b/g;
+  for (const match of task.matchAll(tokenPattern)) {
+    const raw = normalizeRelativeTaskPath(match[1] || "");
+    if (!raw) continue;
+    const normalized =
+      projectRoot && raw !== projectRoot && !raw.startsWith(`${projectRoot}/`) ? `${projectRoot}/${raw}` : raw;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+
+  return out;
+}
+
+async function pathExists(targetPath: string): Promise<boolean> {
+  return fs
+    .stat(targetPath)
+    .then(() => true)
+    .catch(() => false);
+}
+
+async function hasGitWorkspace(workspaceRoot: string): Promise<boolean> {
+  return pathExists(path.join(workspaceRoot, ".git"));
+}
+
+function isOptionalGitValidationCommand(command: string): boolean {
+  return /^git\s+diff\s+--check\s+--\s+/i.test(command.trim());
+}
+
+function hasSuccessfulCommandProof(run: StoredHostRun): boolean {
+  return run.toolResults.some((toolResult) => toolResult.name === "run_command" && toolResult.ok);
+}
+
+function hasRequiredArtifactsLocally(requiredArtifacts: string[], workspaceRoot: string): Promise<boolean> {
+  return Promise.all(
+    requiredArtifacts.map((relativePath) => pathExists(path.join(workspaceRoot, relativePath.replace(/\//g, path.sep))))
+  ).then((results) => results.every(Boolean));
+}
+
+function inferValidationCommand(task: string, workspaceRoot: string): string | null {
+  const projectRoot = extractRequestedProjectRoot(task);
+  const normalizedRoot =
+    projectRoot && projectRoot !== "test" && projectRoot !== "tests" ? projectRoot : null;
+  const projectPackageJson = normalizedRoot
+    ? path.join(workspaceRoot, normalizedRoot, "package.json")
+    : path.join(workspaceRoot, "package.json");
+  const projectTestIndex = normalizedRoot
+    ? path.join(workspaceRoot, normalizedRoot, "test", "index.test.js")
+    : path.join(workspaceRoot, "test", "index.test.js");
+  const projectDurationTest = normalizedRoot
+    ? path.join(workspaceRoot, normalizedRoot, "test", "duration.test.js")
+    : path.join(workspaceRoot, "test", "duration.test.js");
+
+  if (normalizedRoot) {
+    if (existsSync(projectPackageJson)) {
+      return "npm test --silent";
+    }
+    if (existsSync(projectTestIndex)) {
+      return `node --test ${JSON.stringify(`${normalizedRoot}/test/index.test.js`)}`;
+    }
+    if (existsSync(projectDurationTest)) {
+      return `node --test ${JSON.stringify(`${normalizedRoot}/test/duration.test.js`)}`;
+    }
+  }
+
+  if (existsSync(projectPackageJson)) {
+    return "npm test --silent";
+  }
+  if (existsSync(projectTestIndex)) {
+    return `node --test ${JSON.stringify("test/index.test.js")}`;
+  }
+  if (existsSync(projectDurationTest)) {
+    return `node --test ${JSON.stringify("test/duration.test.js")}`;
+  }
+  return null;
+}
+
+async function appendSyntheticToolResult(
+  run: StoredHostRun,
+  toolResult: ToolResult,
+  attachedRes?: ServerResponse | null
+): Promise<void> {
+  run.toolResults.push(toolResult);
+  run.toolResults = run.toolResults.slice(-MAX_TOOL_RESULT_HISTORY);
+  run.lastToolAt = toolResult.createdAt || nowIso();
+  if (run.leaseState) run.leaseState.lastToolAt = run.lastToolAt;
+  run.heartbeatAt = nowIso();
+  if (run.leaseState) run.leaseState.heartbeatAt = run.heartbeatAt;
+  await appendRunEvent(
+    run,
+    {
+      event: "tool_result",
+      data: {
+        name: toolResult.name,
+        ok: toolResult.ok,
+        summary: toolResult.summary,
+        blocked: toolResult.blocked ?? false,
+      },
+    },
+    attachedRes
+  );
+  await emitHostHeartbeat(run, attachedRes);
+}
+
+async function shouldSkipOptionalValidation(
+  run: StoredHostRun,
+  envelope: AssistRunEnvelope,
+  pendingToolCall: PendingToolCall
+): Promise<boolean> {
+  if (envelope.completionStatus !== "complete") return false;
+  if (Array.isArray(envelope.missingRequirements) && envelope.missingRequirements.length > 0) return false;
+  if (pendingToolCall.toolCall.name !== "run_command") return false;
+  const command = String(pendingToolCall.toolCall.arguments?.command || "");
+  if (!isOptionalGitValidationCommand(command)) return false;
+  if (!run.workspaceRoot) return false;
+  return !(await hasGitWorkspace(run.workspaceRoot));
+}
+
+async function attemptLocalCompletionProof(
+  run: StoredHostRun,
+  envelope: AssistRunEnvelope,
+  executor: { execute: (pendingToolCall: PendingToolCall) => Promise<ToolResult> } | null,
+  attachedRes?: ServerResponse | null
+): Promise<boolean> {
+  if (!run.workspaceRoot || !executor) return false;
+  const requiredArtifacts = extractRequiredArtifacts(run.request.task);
+  if (!requiredArtifacts.length) return false;
+  if (!(await hasRequiredArtifactsLocally(requiredArtifacts, run.workspaceRoot))) return false;
+
+  if (taskRequestsValidation(run.request.task) && !hasSuccessfulCommandProof(run)) {
+    const command = inferValidationCommand(run.request.task, run.workspaceRoot);
+    if (!command) return false;
+    const validationResult = await executor.execute({
+      step: Number(envelope.loopState?.stepCount || run.toolResults.length || 0) + 1,
+      adapter: String(envelope.adapter || "host_proof"),
+      requiresClientExecution: true,
+      createdAt: nowIso(),
+      toolCall: {
+        id: `host_validation_${randomUUID()}`,
+        name: "run_command",
+        kind: "command",
+        summary: "Binary Host local completion proof",
+        arguments: { command },
+      },
+    });
+    await appendSyntheticToolResult(run, validationResult, attachedRes);
+    if (!validationResult.ok) return false;
+  }
+
+  run.finalEnvelope = attachHostMetadata(
+    {
+      ...envelope,
+      completionStatus: "complete",
+      missingRequirements: [],
+      pendingToolCall: null,
+      final:
+        typeof envelope.final === "string" && envelope.final.trim()
+          ? envelope.final
+          : "Binary Host verified the completed workspace locally.",
+    },
+    run
+  );
+  run.updatedAt = nowIso();
+  await refreshRunPreferences(run);
+  await finalizeRun(run, "completed", attachedRes, {
+    message: "Binary Host completed the run after local verification.",
+  });
+  return true;
 }
 
 function deriveWorkspaceTrustMode(grant: BinaryHostTrustGrant | null | undefined): BinaryHostWorkspaceTrustMode {
@@ -236,7 +491,21 @@ function deriveWorkspaceTrustMode(grant: BinaryHostTrustGrant | null | undefined
 }
 
 function isObserveTool(name: string): boolean {
-  return !["edit", "write_file", "mkdir", "run_command", "create_checkpoint"].includes(name);
+  return ![
+    "edit",
+    "write_file",
+    "mkdir",
+    "run_command",
+    "create_checkpoint",
+    "desktop_open_app",
+    "desktop_open_url",
+    "desktop_focus_window",
+    "desktop_click",
+    "desktop_type",
+    "desktop_keypress",
+    "desktop_scroll",
+    "desktop_wait",
+  ].includes(name);
 }
 
 function buildPendingSignature(pendingToolCall: PendingToolCall | null | undefined): string {
@@ -245,6 +514,28 @@ function buildPendingSignature(pendingToolCall: PendingToolCall | null | undefin
     name: pendingToolCall.toolCall.name,
     arguments: pendingToolCall.toolCall.arguments,
   });
+}
+
+function truncateText(value: string | undefined, maxLength: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(0, maxLength - 15))}\n...[truncated]`;
+}
+
+function sanitizeToolResultForContinue(toolResult: ToolResult): ToolResult {
+  const next: ToolResult = {
+    ...toolResult,
+    summary: truncateText(toolResult.summary, 20_000) || toolResult.summary,
+    ...(typeof toolResult.error === "string" ? { error: truncateText(toolResult.error, 4_000) } : {}),
+  };
+  if (toolResult.data && typeof toolResult.data === "object") {
+    const data = { ...toolResult.data };
+    if (typeof data.stdout === "string") data.stdout = truncateText(data.stdout, 8_000) || "";
+    if (typeof data.stderr === "string") data.stderr = truncateText(data.stderr, 8_000) || "";
+    if (typeof data.content === "string") data.content = truncateText(data.content, 16_000) || "";
+    next.data = data;
+  }
+  return next;
 }
 
 function isTerminalStatus(status: BinaryHostRunStatus): boolean {
@@ -312,18 +603,29 @@ function defaultPreferences(): BinaryHostPreferences {
     recentSessions: [],
     artifactHistory: [],
     preferredTransport: "host",
+    machineAutonomy: defaultMachineAutonomyPolicy(),
+    backgroundAgents: [],
   };
 }
 
 async function loadPreferences(): Promise<BinaryHostPreferences> {
   const existing = await readJsonFile<Partial<BinaryHostPreferences>>(STATE_PATH);
+  const defaultValue = defaultPreferences();
   return {
-    ...defaultPreferences(),
+    ...defaultValue,
     ...(existing || {}),
-    baseUrl: String(process.env.BINARY_IDE_BASE_URL || existing?.baseUrl || defaultPreferences().baseUrl).replace(/\/+$/, ""),
+    baseUrl: String(process.env.BINARY_IDE_BASE_URL || existing?.baseUrl || defaultValue.baseUrl).replace(/\/+$/, ""),
     trustedWorkspaces: Array.isArray(existing?.trustedWorkspaces) ? existing!.trustedWorkspaces : [],
     recentSessions: Array.isArray(existing?.recentSessions) ? existing!.recentSessions : [],
     artifactHistory: Array.isArray(existing?.artifactHistory) ? existing!.artifactHistory : [],
+    backgroundAgents: Array.isArray(existing?.backgroundAgents) ? (existing!.backgroundAgents as BinaryHostBackgroundAgent[]) : [],
+    machineAutonomy:
+      existing?.machineAutonomy && typeof existing.machineAutonomy === "object"
+        ? {
+            ...defaultValue.machineAutonomy,
+            ...existing.machineAutonomy,
+          }
+        : defaultValue.machineAutonomy,
   };
 }
 
@@ -448,144 +750,29 @@ async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknow
   });
 }
 
-function buildHostedHeaders(apiKey: string): HeadersInit {
-  return {
-    "Content-Type": "application/json",
-    "X-API-Key": apiKey,
-    Authorization: `Bearer ${apiKey}`,
-  };
-}
+async function createHostToolExecutor(input: {
+  workspaceRoot?: string;
+  task: string;
+  preferences: BinaryHostPreferences;
+}): Promise<LocalToolExecutor> {
+  const desktopExecutor = new DesktopToolExecutor(machineAutonomyController, input.preferences.machineAutonomy);
+  if (!input.workspaceRoot) return desktopExecutor;
 
-async function parseHostedError(response: Response): Promise<{ message: string; details?: unknown }> {
-  const text = await response.text().catch(() => "");
-  if (!text) return { message: `Hosted request failed (${response.status})` };
-  try {
-    const parsed = JSON.parse(text) as { message?: string; error?: { code?: string; message?: string } | string };
-    if (typeof parsed.message === "string" && parsed.message.trim()) {
-      return { message: parsed.message, details: parsed };
-    }
-    if (typeof parsed.error === "string") {
-      return { message: parsed.error, details: parsed };
-    }
-    if (parsed.error && typeof parsed.error === "object" && typeof parsed.error.message === "string") {
-      return {
-        message: `${parsed.error.code || "ERROR"}: ${parsed.error.message}`,
-        details: parsed,
-      };
-    }
-    return { message: text, details: parsed };
-  } catch {
-    return { message: text };
-  }
-}
-
-async function streamHostedAssist(input: {
-  baseUrl: string;
-  apiKey: string;
-  request: AssistRequest;
-  onEvent: (event: Record<string, unknown>) => Promise<void> | void;
-}): Promise<AssistRunEnvelope> {
-  const response = await fetch(`${input.baseUrl}/api/v1/playground/assist`, {
-    method: "POST",
-    headers: buildHostedHeaders(input.apiKey),
-    body: JSON.stringify({
-      task: input.request.task,
-      mode: toHostedMode(input.request.mode),
-      model: input.request.model || "Binary IDE",
-      stream: true,
-      historySessionId: input.request.historySessionId,
-      contextBudget: {
-        strategy: "hybrid",
-        maxTokens: 16384,
-      },
-    }),
-  });
-
-  if (!response.ok || !response.body) {
-    const failure = await parseHostedError(response);
-    throw new Error(failure.message);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  const envelope: AssistRunEnvelope = {
-    actions: [],
-    missingRequirements: [],
-  };
-  let buffer = "";
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    while (true) {
-      const boundary = buffer.indexOf("\n\n");
-      if (boundary < 0) break;
-      const raw = buffer.slice(0, boundary).trim();
-      buffer = buffer.slice(boundary + 2);
-      if (!raw) continue;
-      let payload = "";
-      for (const line of raw.split(/\r?\n/)) {
-        if (line.startsWith("data:")) payload += line.slice(5).trimStart();
-      }
-      if (!payload || payload === "[DONE]") continue;
-      let parsed: Record<string, unknown>;
-      try {
-        parsed = JSON.parse(payload) as Record<string, unknown>;
-      } catch {
-        parsed = { event: "raw", data: payload };
-      }
-      if (typeof parsed.sessionId === "string") envelope.sessionId = parsed.sessionId;
-      const eventName = typeof parsed.event === "string" ? parsed.event : "";
-      if (eventName === "run") {
-        const data = parsed.data && typeof parsed.data === "object" ? (parsed.data as Record<string, unknown>) : {};
-        if (typeof data.runId === "string") envelope.runId = data.runId;
-        if (typeof data.adapter === "string") envelope.adapter = data.adapter;
-      }
-      if (eventName === "tool_request" && parsed.data && typeof parsed.data === "object") {
-        envelope.pendingToolCall = parsed.data as unknown as PendingToolCall;
-      }
-      if (eventName === "meta" && parsed.data && typeof parsed.data === "object") {
-        Object.assign(envelope, parsed.data as Record<string, unknown>);
-      }
-      if (eventName === "final") {
-        envelope.final = String(parsed.data ?? "");
-      }
-      await input.onEvent(parsed);
-    }
-  }
-
-  return envelope;
-}
-
-async function continueHostedRun(input: {
-  baseUrl: string;
-  apiKey: string;
-  runId: string;
-  toolResult: ToolResult;
-  sessionId?: string;
-}): Promise<AssistRunEnvelope> {
-  const response = await fetch(`${input.baseUrl}/api/v1/playground/runs/${encodeURIComponent(input.runId)}/continue`, {
-    method: "POST",
-    headers: buildHostedHeaders(input.apiKey),
-    body: JSON.stringify(input.sessionId ? { toolResult: input.toolResult, sessionId: input.sessionId } : { toolResult: input.toolResult }),
-  });
-  if (!response.ok) {
-    const failure = await parseHostedError(response);
-    throw new Error(failure.message);
-  }
-  const parsed = (await response.json().catch(() => ({}))) as { data?: AssistRunEnvelope } | AssistRunEnvelope;
-  const envelope = ("data" in parsed ? parsed.data : parsed) || {};
-  return envelope as AssistRunEnvelope;
-}
-
-async function createHostToolExecutor(workspaceRoot: string): Promise<{
-  execute: (pendingToolCall: PendingToolCall) => Promise<ToolResult>;
-}> {
   const moduleRef = (await import("../../../sdk/playground-ai-cli/dist/tool-executor.js")) as {
-    CliToolExecutor: new (workspaceRoot: string) => { execute: (pendingToolCall: PendingToolCall) => Promise<ToolResult> };
+    CliToolExecutor: new (
+      workspaceRoot: string,
+      preferredProjectRoot?: string | null
+    ) => { execute: (pendingToolCall: PendingToolCall) => Promise<ToolResult> };
   };
-  return new moduleRef.CliToolExecutor(workspaceRoot);
+  const workspaceExecutor = new moduleRef.CliToolExecutor(input.workspaceRoot, extractRequestedProjectRoot(input.task));
+  return {
+    async execute(pendingToolCall: PendingToolCall): Promise<ToolResult> {
+      if (String(pendingToolCall.toolCall.name || "").startsWith("desktop_")) {
+        return desktopExecutor.execute(pendingToolCall);
+      }
+      return workspaceExecutor.execute(pendingToolCall);
+    },
+  };
 }
 
 function hashWorkspaceRoot(input: string | undefined): string {
@@ -1057,26 +1244,52 @@ async function startRunExecution(runId: string, attachedRes?: ServerResponse | n
   await execution;
 }
 
+async function createQueuedRun(input: {
+  request: AssistRequest;
+  workspaceTrustMode: BinaryHostWorkspaceTrustMode;
+}): Promise<StoredHostRun> {
+  const createdAt = nowIso();
+  const run: StoredHostRun = {
+    id: randomUUID(),
+    status: "queued",
+    createdAt,
+    updatedAt: createdAt,
+    client: input.request.client || { surface: "unknown" },
+    request: input.request,
+    workspaceRoot: input.request.workspaceRoot,
+    workspaceTrustMode: input.workspaceTrustMode,
+    traceId: randomUUID(),
+    resumeToken: buildResumeToken(),
+    controlHistory: [],
+    toolResults: [],
+    checkpoints: [],
+    events: [],
+  };
+  run.checkpointState = buildCheckpointState(run);
+  await persistHostRun(run);
+  return run;
+}
+
 async function executeHostRun(runId: string, attachedRes?: ServerResponse | null): Promise<void> {
   const run = await loadRunRecord(runId);
   if (!run) throw new Error(`Unknown Binary Host run ${runId}`);
 
   const preferences = await loadPreferences();
-  const auth = await getApiKeyRecord();
-  if (!auth.apiKey) {
-    await finalizeRun(run, "failed", attachedRes, {
-      error: "No Binary IDE API key is configured in the local host.",
-      message: "Binary Host could not start because no API key is configured.",
-    });
-    return;
-  }
-
   const grant = run.workspaceRoot ? isWorkspaceTrusted(preferences, run.workspaceRoot) : null;
   run.workspaceTrustMode = deriveWorkspaceTrustMode(grant);
   if (run.workspaceRoot && !grant) {
     await finalizeRun(run, "failed", attachedRes, {
       error: `Workspace ${run.workspaceRoot} is not trusted.`,
       message: "Binary Host blocked the run because the workspace is not trusted.",
+    });
+    return;
+  }
+
+  const auth = await getApiKeyRecord();
+  if (!auth.apiKey) {
+    await finalizeRun(run, "failed", attachedRes, {
+      error: "No Binary IDE API key is configured in the local host.",
+      message: "Binary Host could not start because no API key is configured.",
     });
     return;
   }
@@ -1108,21 +1321,37 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
   });
   await emitHostHeartbeat(run, attachedRes);
 
-  let executor:
-    | {
-        execute: (pendingToolCall: PendingToolCall) => Promise<ToolResult>;
-      }
-    | null = null;
-  if (run.workspaceRoot) {
-    executor = await createHostToolExecutor(run.workspaceRoot);
-  }
+  const executor = await createHostToolExecutor({
+    workspaceRoot: run.workspaceRoot,
+    task: run.request.task,
+    preferences,
+  });
 
   try {
+    await emitHostStatus(run, "Binary Host is contacting the hosted assist transport.", attachedRes, {
+      baseUrl: preferences.baseUrl,
+    });
+
+    const desktopContext = await collectDesktopContext({
+      machineAutonomyController,
+      policy: preferences.machineAutonomy,
+    }).catch(() => ({ platform: process.platform }));
+
     let envelope = await runWithTransportRetry(run, attachedRes, () =>
       streamHostedAssist({
         baseUrl: preferences.baseUrl,
         apiKey: auth.apiKey as string,
-        request: run.request,
+        request: {
+          ...run.request,
+          context: {
+            desktop: desktopContext,
+          },
+          clientCapabilities: {
+            toolLoop: true,
+            supportedTools: buildHostSupportedTools(run.workspaceRoot),
+            supportsNativeToolResults: true,
+          },
+        },
         onEvent: async (event) => {
           await appendRunEvent(run, event, attachedRes);
           if (typeof event.sessionId === "string") run.sessionId = event.sessionId;
@@ -1136,6 +1365,11 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
         },
       })
     );
+
+    await emitHostStatus(run, "Binary Host received the initial hosted assist response.", attachedRes, {
+      hostedRunId: envelope.runId || null,
+      sessionId: envelope.sessionId || null,
+    });
 
     applyEnvelopeToRun(run, envelope);
     updatePendingStats(run, envelope);
@@ -1153,12 +1387,29 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
       }
 
       const pendingToolCall = envelope.pendingToolCall;
+      if (await shouldSkipOptionalValidation(run, envelope, pendingToolCall)) {
+        run.finalEnvelope = attachHostMetadata(
+          {
+            ...envelope,
+            pendingToolCall: null,
+            final:
+              typeof envelope.final === "string" && envelope.final.trim()
+                ? envelope.final
+                : "Binary Host completed the run after skipping an optional non-git validation step.",
+          },
+          run
+        );
+        run.updatedAt = nowIso();
+        await refreshRunPreferences(run);
+        await finalizeRun(run, "completed", attachedRes, {
+          message: "Binary Host completed the run after skipping an optional non-git validation step.",
+        });
+        return;
+      }
       const blocked = await enforceToolPolicy(run, preferences, pendingToolCall);
       const toolResult =
         blocked ||
-        (executor
-          ? await executor.execute(pendingToolCall)
-          : blockedToolResult(pendingToolCall, "Binary Host has no local workspace executor for this run."));
+        (await executor.execute(pendingToolCall));
 
       run.toolResults.push(toolResult);
       run.toolResults = run.toolResults.slice(-MAX_TOOL_RESULT_HISTORY);
@@ -1198,7 +1449,7 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
           baseUrl: preferences.baseUrl,
           apiKey: auth.apiKey as string,
           runId: envelope.runId as string,
-          toolResult,
+          toolResult: sanitizeToolResultForContinue(toolResult),
           sessionId: envelope.sessionId,
         })
       );
@@ -1237,6 +1488,9 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
       await emitHostBudget(run, attachedRes);
       const stallReason = detectStall(run, envelope);
       if (stallReason) {
+        if (await attemptLocalCompletionProof(run, envelope, executor, attachedRes)) {
+          return;
+        }
         run.status = "takeover_required";
         run.takeoverReason = stallReason;
         run.updatedAt = nowIso();
@@ -1253,6 +1507,10 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
     run.finalEnvelope = attachHostMetadata(envelope, run);
     run.updatedAt = nowIso();
     await refreshRunPreferences(run);
+
+    if (await attemptLocalCompletionProof(run, envelope, executor, attachedRes)) {
+      return;
+    }
 
     if (
       envelope.completionStatus === "incomplete" ||
@@ -1330,25 +1588,10 @@ async function handleAssist(req: IncomingMessage, res: ServerResponse): Promise<
     return;
   }
 
-  const createdAt = nowIso();
-  const run: StoredHostRun = {
-    id: randomUUID(),
-    status: "queued",
-    createdAt,
-    updatedAt: createdAt,
-    client: request.client || { surface: "unknown" },
+  const run = await createQueuedRun({
     request,
-    workspaceRoot: request.workspaceRoot,
     workspaceTrustMode: deriveWorkspaceTrustMode(trustGrant),
-    traceId: randomUUID(),
-    resumeToken: buildResumeToken(),
-    controlHistory: [],
-    toolResults: [],
-    checkpoints: [],
-    events: [],
-  };
-  run.checkpointState = buildCheckpointState(run);
-  await persistHostRun(run);
+  });
 
   if (request.detach) {
     void startRunExecution(run.id);
@@ -1436,6 +1679,173 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (method === "GET" && url.pathname === "/v1/autonomy/status") {
+      const preferences = await loadPreferences();
+      const discovered = await machineAutonomyController.listApps();
+      writeJson(res, 200, {
+        enabled: preferences.machineAutonomy.enabled,
+        platform: process.platform,
+        policy: preferences.machineAutonomy,
+        appCount: discovered.apps.length,
+        indexedAt: discovered.indexedAt,
+      });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/v1/autonomy/configure") {
+      const body = await readJsonBody(req);
+      const current = await loadPreferences();
+      current.machineAutonomy = {
+        ...current.machineAutonomy,
+        ...(body as Partial<MachineAutonomyPolicy>),
+        updatedAt: nowIso(),
+      };
+      await savePreferences(current);
+      writeJson(res, 200, current.machineAutonomy);
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/v1/autonomy/apps") {
+      const forceRefresh = url.searchParams.get("refresh") === "1";
+      const discovered = await machineAutonomyController.listApps({ forceRefresh });
+      writeJson(res, 200, discovered);
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/v1/autonomy/apps/launch") {
+      const body = await readJsonBody(req);
+      const query = String(body.query || "").trim();
+      if (!query) {
+        writeJson(res, 400, { error: "Invalid request", message: "query is required" });
+        return;
+      }
+      const preferences = await loadPreferences();
+      if (!preferences.machineAutonomy.enabled || !preferences.machineAutonomy.allowAppLaunch) {
+        writeJson(res, 403, {
+          error: "Autonomy disabled",
+          message: "Enable machine autonomy app launching before requesting local app launches.",
+        });
+        return;
+      }
+      try {
+        const launched = await machineAutonomyController.launchApp(query);
+        writeJson(res, 200, launched);
+      } catch (error) {
+        writeJson(res, 404, {
+          error: "App not found",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/v1/autonomy/agents") {
+      const preferences = await loadPreferences();
+      writeJson(res, 200, {
+        agents: preferences.backgroundAgents,
+      });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/v1/autonomy/agents") {
+      const body = await readJsonBody(req);
+      const name = String(body.name || "").trim();
+      const prompt = String(body.prompt || "").trim();
+      if (!name || !prompt) {
+        writeJson(res, 400, { error: "Invalid request", message: "name and prompt are required" });
+        return;
+      }
+      const current = await loadPreferences();
+      const id = typeof body.id === "string" && body.id.trim() ? body.id.trim() : randomUUID();
+      const now = nowIso();
+      const nextAgent: BinaryHostBackgroundAgent = {
+        id,
+        name,
+        prompt,
+        status: body.status === "paused" ? "paused" : "active",
+        trigger:
+          body.trigger === "scheduled" ||
+          body.trigger === "file_event" ||
+          body.trigger === "process_event" ||
+          body.trigger === "notification"
+            ? body.trigger
+            : "manual",
+        scheduleMinutes:
+          typeof body.scheduleMinutes === "number" && Number.isFinite(body.scheduleMinutes)
+            ? Math.max(5, Math.min(1_440, Math.floor(body.scheduleMinutes)))
+            : undefined,
+        workspaceRoot:
+          typeof body.workspaceRoot === "string" && body.workspaceRoot.trim()
+            ? normalizeWorkspacePath(body.workspaceRoot)
+            : undefined,
+        model: typeof body.model === "string" && body.model.trim() ? body.model.trim() : undefined,
+        createdAt: current.backgroundAgents.find((item) => item.id === id)?.createdAt || now,
+        updatedAt: now,
+        lastRunAt: current.backgroundAgents.find((item) => item.id === id)?.lastRunAt,
+      };
+      current.backgroundAgents = [
+        nextAgent,
+        ...current.backgroundAgents.filter((item) => item.id !== id),
+      ].slice(0, 60);
+      await savePreferences(current);
+      writeJson(res, 200, nextAgent);
+      return;
+    }
+
+    const agentRunMatch = url.pathname.match(/^\/v1\/autonomy\/agents\/([^/]+)\/run$/);
+    if (method === "POST" && agentRunMatch) {
+      const agentId = decodeURIComponent(agentRunMatch[1] || "");
+      const body = await readJsonBody(req);
+      const current = await loadPreferences();
+      const agent = current.backgroundAgents.find((item) => item.id === agentId);
+      if (!agent) {
+        writeJson(res, 404, { error: "Not found", message: "Unknown background agent." });
+        return;
+      }
+      if (agent.status !== "active") {
+        writeJson(res, 409, { error: "Agent paused", message: "Resume the background agent before running it." });
+        return;
+      }
+      const workspaceRoot = agent.workspaceRoot;
+      const trustGrant = workspaceRoot ? isWorkspaceTrusted(current, workspaceRoot) : null;
+      if (workspaceRoot && !trustGrant) {
+        writeJson(res, 403, {
+          error: "Workspace not trusted",
+          message: `Trust ${workspaceRoot} before running this background agent.`,
+        });
+        return;
+      }
+      const request: AssistRequest = {
+        task: typeof body.task === "string" && body.task.trim() ? body.task.trim() : agent.prompt,
+        mode: (body.mode as AssistMode) || "auto",
+        model: typeof body.model === "string" && body.model.trim() ? body.model.trim() : agent.model || "Binary IDE",
+        historySessionId: typeof body.historySessionId === "string" ? body.historySessionId : undefined,
+        workspaceRoot,
+        detach: true,
+        client: {
+          surface: "desktop",
+          version: `background-agent:${agent.id}`,
+        },
+      };
+      const run = await createQueuedRun({
+        request,
+        workspaceTrustMode: deriveWorkspaceTrustMode(trustGrant),
+      });
+      agent.lastRunAt = nowIso();
+      agent.updatedAt = nowIso();
+      current.backgroundAgents = [
+        agent,
+        ...current.backgroundAgents.filter((item) => item.id !== agent.id),
+      ].slice(0, 60);
+      await savePreferences(current);
+      void startRunExecution(run.id);
+      writeJson(res, 202, {
+        agent,
+        run: buildRunSummary(run),
+      });
+      return;
+    }
+
     if (method === "POST" && url.pathname === "/v1/preferences") {
       const body = await readJsonBody(req);
       const current = await loadPreferences();
@@ -1446,6 +1856,15 @@ const server = createServer(async (req, res) => {
         trustedWorkspaces: Array.isArray(body.trustedWorkspaces) ? (body.trustedWorkspaces as BinaryHostTrustGrant[]) : current.trustedWorkspaces,
         recentSessions: Array.isArray(body.recentSessions) ? (body.recentSessions as BinaryHostPreferences["recentSessions"]) : current.recentSessions,
         artifactHistory: Array.isArray(body.artifactHistory) ? (body.artifactHistory as BinaryHostPreferences["artifactHistory"]) : current.artifactHistory,
+        backgroundAgents: Array.isArray(body.backgroundAgents) ? (body.backgroundAgents as BinaryHostBackgroundAgent[]) : current.backgroundAgents,
+        machineAutonomy:
+          body.machineAutonomy && typeof body.machineAutonomy === "object"
+            ? {
+                ...current.machineAutonomy,
+                ...(body.machineAutonomy as Partial<MachineAutonomyPolicy>),
+                updatedAt: nowIso(),
+              }
+            : current.machineAutonomy,
       };
       await savePreferences(next);
       writeJson(res, 200, next);

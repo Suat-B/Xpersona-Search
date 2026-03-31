@@ -1,11 +1,11 @@
 {
-  "name": "@playground-ai/cli",
+  "name": "@binary-ide/cli",
   "version": "0.1.0",
-  "description": "Playground AI CLI - agentic coding runtime for terminal workflows.",
+  "description": "Binary IDE CLI - agentic coding runtime for terminal workflows.",
   "type": "module",
   "bin": {
-    "playground": "dist/cli.js",
-    "pgai": "dist/cli.js"
+    "binary": "dist/cli.js",
+    "binary-ide": "dist/cli.js"
   },
   "files": [
     "dist",

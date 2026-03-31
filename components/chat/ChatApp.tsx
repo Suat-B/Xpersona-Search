@@ -26,6 +26,26 @@ type ChatViewer = {
   source: string;
 };
 
+type ConnectedModel = {
+  id: string;
+  provider: string;
+  alias: string;
+  displayName: string;
+  authMode: string;
+  defaultModel: string | null;
+  status: string;
+  browserAuthSupported: boolean;
+};
+
+type ChatModelSettings = {
+  platformDefaultModelAlias: string;
+  preferredModelAlias: string | null;
+  preferredChatModelSource: "platform" | "user_connected";
+  fallbackToPlatformModel: boolean;
+  browserAuth: { enabled: boolean; reason: string };
+  connections: ConnectedModel[];
+};
+
 const STARTER_PROMPTS = [
   "Plan a feature with clear next steps.",
   "Debug a bug and explain the fix.",
@@ -188,7 +208,10 @@ export function ChatApp() {
   const [booting, setBooting] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
   const [viewer, setViewer] = useState<ChatViewer | null>(null);
+  const [modelSettings, setModelSettings] = useState<ChatModelSettings | null>(null);
+  const [selectedModelAlias, setSelectedModelAlias] = useState<string>("");
   const [statusText, setStatusText] = useState<string | null>(null);
+  const [runMetaText, setRunMetaText] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -286,7 +309,7 @@ export function ChatApp() {
           throw new Error(text || "Bootstrap failed");
         }
         const bootJson = (await bootRes.json().catch(() => ({}))) as {
-          data?: { viewer?: unknown };
+          data?: { viewer?: unknown; modelSettings?: unknown };
         };
         const candidate = bootJson?.data?.viewer as Partial<ChatViewer> | undefined;
         const nextViewer =
@@ -305,6 +328,58 @@ export function ChatApp() {
               } as ChatViewer)
             : null;
         if (!cancelled) setViewer(nextViewer);
+        const modelSettingsCandidate = bootJson?.data?.modelSettings as Partial<ChatModelSettings> | undefined;
+        const normalizedModelSettings =
+          modelSettingsCandidate &&
+          typeof modelSettingsCandidate.platformDefaultModelAlias === "string" &&
+          typeof modelSettingsCandidate.preferredChatModelSource === "string" &&
+          typeof modelSettingsCandidate.fallbackToPlatformModel === "boolean" &&
+          modelSettingsCandidate.browserAuth &&
+          typeof modelSettingsCandidate.browserAuth === "object" &&
+          Array.isArray(modelSettingsCandidate.connections)
+            ? ({
+                platformDefaultModelAlias: modelSettingsCandidate.platformDefaultModelAlias,
+                preferredModelAlias:
+                  typeof modelSettingsCandidate.preferredModelAlias === "string"
+                    ? modelSettingsCandidate.preferredModelAlias
+                    : null,
+                preferredChatModelSource:
+                  modelSettingsCandidate.preferredChatModelSource === "user_connected"
+                    ? "user_connected"
+                    : "platform",
+                fallbackToPlatformModel: modelSettingsCandidate.fallbackToPlatformModel,
+                browserAuth: {
+                  enabled:
+                    (modelSettingsCandidate.browserAuth as { enabled?: unknown }).enabled === true,
+                  reason: String(
+                    (modelSettingsCandidate.browserAuth as { reason?: unknown }).reason || ""
+                  ),
+                },
+                connections: (modelSettingsCandidate.connections as unknown[]).map((item) => {
+                  const row = item as Partial<ConnectedModel>;
+                  return {
+                    id: String(row.id || ""),
+                    provider: String(row.provider || ""),
+                    alias: String(row.alias || ""),
+                    displayName: String(row.displayName || row.alias || "Connected model"),
+                    authMode: String(row.authMode || ""),
+                    defaultModel:
+                      typeof row.defaultModel === "string" ? row.defaultModel : null,
+                    status: String(row.status || "active"),
+                    browserAuthSupported: row.browserAuthSupported === true,
+                  };
+                }),
+              } satisfies ChatModelSettings)
+            : null;
+        if (!cancelled) {
+          setModelSettings(normalizedModelSettings);
+          setSelectedModelAlias(
+            normalizedModelSettings?.preferredModelAlias ||
+              (normalizedModelSettings?.preferredChatModelSource === "user_connected"
+                ? normalizedModelSettings?.connections[0]?.alias || normalizedModelSettings?.platformDefaultModelAlias || ""
+                : normalizedModelSettings?.platformDefaultModelAlias || "")
+          );
+        }
         const rows = await refreshSessions();
         if (cancelled) return;
         if (rows.length === 0) {
@@ -456,12 +531,15 @@ export function ChatApp() {
         // Ignore storage errors.
       }
       setStatusText(null);
+      setRunMetaText(null);
       const userMessage: ChatMessage = { id: makeId(), role: "user", content: task };
       const assistantId = makeId();
       setMessages((prev) => [...prev, userMessage, { id: assistantId, role: "assistant", content: "", pending: true }]);
       setSending(true);
 
       try {
+        const effectiveModelAlias =
+          selectedModelAlias || modelSettings?.platformDefaultModelAlias || "";
         const sendAssist = async (sessionId: string | null): Promise<Response> =>
           fetch("/api/v1/me/chat/assist", {
             method: "POST",
@@ -469,6 +547,7 @@ export function ChatApp() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               task,
+              ...(effectiveModelAlias ? { model: effectiveModelAlias } : {}),
               ...(sessionId ? { historySessionId: sessionId } : {}),
             }),
           });
@@ -534,6 +613,23 @@ export function ChatApp() {
             setStatusText(null);
           } else if (parsed.event === "status" && typeof parsed.data === "string") {
             setStatusText(parsed.data);
+          } else if (parsed.event === "meta" && parsed.data && typeof parsed.data === "object") {
+            const meta = parsed.data as Record<string, unknown>;
+            const pieces = [
+              typeof meta.chatModelAlias === "string" && meta.chatModelAlias
+                ? `chat ${meta.chatModelAlias}`
+                : "",
+              typeof meta.chatModelSource === "string" && meta.chatModelSource
+                ? meta.chatModelSource === "user_connected"
+                  ? "your connected model"
+                  : "platform model"
+                : "",
+              typeof meta.orchestrator === "string" && meta.orchestrator
+                ? `orchestrator ${meta.orchestrator}`
+                : "",
+              meta.fallbackApplied === true ? "fell back to platform" : "",
+            ].filter(Boolean);
+            setRunMetaText(pieces.length ? pieces.join(" • ") : null);
           }
         };
 
@@ -583,16 +679,52 @@ export function ChatApp() {
         setSending(false);
       }
     },
-    [activeSessionId, draftStorageKey, input, refreshSessions, sending]
+    [activeSessionId, draftStorageKey, input, modelSettings?.platformDefaultModelAlias, refreshSessions, selectedModelAlias, sending]
   );
 
   const shellTitle = activeSession?.title && activeSession.title.trim() !== "New chat" ? activeSession.title.trim() : "Chat";
   const viewerLabel = viewer && !viewer.isAnonymous ? viewer.email : "Guest access";
   const sessionTimestamp = prettyTime(activeSession?.updatedAt ?? null);
+  const modelOptions = [
+    ...(modelSettings?.platformDefaultModelAlias
+      ? [
+          {
+            alias: modelSettings.platformDefaultModelAlias,
+            label: "Binary platform model",
+          },
+        ]
+      : []),
+    ...((modelSettings?.connections || [])
+      .filter((item) => item.status === "active")
+      .map((item) => ({
+        alias: item.alias,
+        label: `${item.displayName}${item.defaultModel ? ` • ${item.defaultModel}` : ""}`,
+      }))),
+  ];
 
   const composer = (
     <form onSubmit={onSend} className="chat-editorial-composer-form">
       <div className="chat-editorial-composer">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs text-[var(--chat-text-secondary)]">
+          <label className="flex items-center gap-2">
+            <span>Reply with</span>
+            <select
+              value={selectedModelAlias}
+              onChange={(event) => setSelectedModelAlias(event.target.value)}
+              className="rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] px-3 py-1 text-xs text-[var(--chat-text-primary)]"
+              aria-label="Choose reply model"
+            >
+              {modelOptions.map((option) => (
+                <option key={option.alias} value={option.alias}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Link href="/dashboard/playground" className="underline underline-offset-4">
+            Manage connected models
+          </Link>
+        </div>
         <textarea
           ref={inputRef}
           value={input}
@@ -613,7 +745,11 @@ export function ChatApp() {
         <div className="chat-editorial-composer-footer">
           <div className="chat-editorial-status" role="status" aria-live="polite">
             {sending ? <span className="chat-editorial-spinner" aria-hidden="true" /> : null}
-            <span>{statusText || (sending ? "Streaming response..." : "Enter to send · Shift+Enter for a new line")}</span>
+            <span>
+              {statusText ||
+                runMetaText ||
+                (sending ? "Streaming response..." : "Enter to send · Shift+Enter for a new line")}
+            </span>
           </div>
           <button
             type="submit"

@@ -1,5 +1,5 @@
 import { AuthHeadersInput, SseEvent } from "./http.js";
-import { AssistMode, BillingCycle, PlanTier } from "./types.js";
+import { AssistMode, AssistRunEnvelope, BillingCycle, PlanTier, ToolResult } from "./types.js";
 type ClientOptions = {
     baseUrl: string;
     auth: AuthHeadersInput;
@@ -33,6 +33,8 @@ type IndexChunk = {
     content: string;
     metadata?: Record<string, unknown>;
 };
+export type HostedAssistMode = "auto" | "plan" | "yolo";
+export declare function toHostedAssistMode(mode: AssistMode): HostedAssistMode;
 export declare class PlaygroundClient {
     private readonly baseUrl;
     private auth;
@@ -44,6 +46,7 @@ export declare class PlaygroundClient {
     listSessions(limit?: number): Promise<unknown>;
     getSessionMessages(sessionId: string, includeAgentEvents?: boolean): Promise<unknown>;
     replay(sessionId: string, workspaceFingerprint: string, mode?: AssistMode): Promise<unknown>;
+    continueRun(runId: string, toolResult: ToolResult, sessionId?: string): Promise<AssistRunEnvelope>;
     execute(sessionId: string | undefined, workspaceFingerprint: string, actions: ExecuteAction[]): Promise<unknown>;
     indexUpsert(projectKey: string, chunks: IndexChunk[]): Promise<unknown>;
     indexQuery(projectKey: string, query: string, limit?: number): Promise<unknown>;

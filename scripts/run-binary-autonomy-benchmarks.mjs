@@ -6,6 +6,8 @@ const DEFAULT_HOST_URL = process.env.BINARY_IDE_HOST_URL || "http://127.0.0.1:77
 const DEFAULT_MODEL = "Binary IDE";
 const POLL_INTERVAL_MS = 1200;
 const MAX_WAIT_MS = 180000;
+const DEFAULT_MAX_TOOL_STEPS = 128;
+const DEFAULT_MAX_WORKSPACE_MUTATIONS = 64;
 
 const CATEGORY_DEFS = [
   {
@@ -39,6 +41,39 @@ const CATEGORY_DEFS = [
       "notes-workbench/test/index.test.js",
       "notes-workbench/package.json",
     ],
+  },
+  {
+    id: "git_commit_workflow",
+    task:
+      "Create a folder named repo-proof with README.md, src/index.js, test/index.test.js, and package.json for a tiny Node ESM utility. Run tests until they pass. Then initialize git inside repo-proof, create a feature branch named feat/autonomy-proof, add the files, and create a commit proving the project is complete.",
+    expectedPaths: [
+      "repo-proof",
+      "repo-proof/README.md",
+      "repo-proof/src/index.js",
+      "repo-proof/test/index.test.js",
+      "repo-proof/package.json",
+    ],
+    requiredCommands: ["git init", "git checkout -b feat/autonomy-proof", "git commit"],
+  },
+  {
+    id: "complex_autonomy_delivery",
+    task:
+      "Create a folder named launchpad-studio containing package.json, README.md, docs/architecture.md, docs/usage.md, src/index.js, src/planner.js, src/format.js, src/validate.js, test/index.test.js, test/planner.test.js, and .gitignore for a tiny Node ESM release-planning toolkit. Implement a planner that normalizes feature requests into release cards, add formatting helpers and validation, write meaningful node:test coverage, run tests until they pass, then initialize git inside launchpad-studio, create a feature branch named feat/ship-launchpad-studio, add all files, and create a commit proving the delivery is complete.",
+    expectedPaths: [
+      "launchpad-studio",
+      "launchpad-studio/package.json",
+      "launchpad-studio/README.md",
+      "launchpad-studio/docs/architecture.md",
+      "launchpad-studio/docs/usage.md",
+      "launchpad-studio/src/index.js",
+      "launchpad-studio/src/planner.js",
+      "launchpad-studio/src/format.js",
+      "launchpad-studio/src/validate.js",
+      "launchpad-studio/test/index.test.js",
+      "launchpad-studio/test/planner.test.js",
+      "launchpad-studio/.gitignore",
+    ],
+    requiredCommands: ["npm test", "git init", "git checkout -b feat/ship-launchpad-studio", "git commit"],
   },
 ];
 
@@ -115,14 +150,42 @@ function summarizeCategory(category, exportedRun, files, elapsedMs) {
   const toolResults = Array.isArray(exportedRun.toolResults) ? exportedRun.toolResults : [];
   const missingPaths = listMissing(category.expectedPaths, files);
   const commandRuns = toolResults.filter((item) => item?.name === "run_command");
+  const totalToolCalls = toolResults.length;
   const validationPassed = commandRuns.some((item) => item?.ok === true);
+  const matchedCommands = Array.isArray(category.requiredCommands)
+    ? category.requiredCommands.filter((needle) =>
+        commandRuns.some((item) => {
+          const command = String(item?.data?.command || item?.summary || "");
+          return item?.ok === true && command.includes(needle);
+        })
+      )
+    : [];
+  const toolCounts = Object.fromEntries(
+    toolResults.reduce((map, item) => {
+      const key = String(item?.name || "unknown");
+      map.set(key, (map.get(key) || 0) + 1);
+      return map;
+    }, new Map())
+  );
   return {
     category: category.id,
     workspace: exportedRun.workspaceRoot || null,
     status: exportedRun.status,
     finishStatus: exportedRun.status,
+    eventCount: Array.isArray(exportedRun.events) ? exportedRun.events.length : 0,
     artifactCorrect: missingPaths.length === 0,
     validationPassed,
+    totalToolCalls,
+    successfulToolCalls: toolResults.filter((item) => item?.ok === true).length,
+    failedToolCalls: toolResults.filter((item) => item?.ok === false).length,
+    toolCounts,
+    stalledBeforeFirstTool:
+      exportedRun.status === "running" &&
+      totalToolCalls === 0 &&
+      Array.isArray(exportedRun.events) &&
+      exportedRun.events.length <= 2,
+    requiredCommandProof: Array.isArray(category.requiredCommands) ? matchedCommands.length === category.requiredCommands.length : true,
+    matchedCommands,
     missingPaths,
     turns: typeof loopState.stepCount === "number" ? loopState.stepCount : toolResults.length,
     repeatedCallCount: typeof loopState.repeatedCallCount === "number" ? loopState.repeatedCallCount : 0,
@@ -159,6 +222,12 @@ async function runCategory(baseUrl, category) {
       model: DEFAULT_MODEL,
       workspaceRoot: workspace,
       detach: true,
+      clientTrace: {
+        extensionVersion: "autonomy-benchmark",
+        workspaceHash: category.id,
+        maxToolSteps: DEFAULT_MAX_TOOL_STEPS,
+        maxWorkspaceMutations: DEFAULT_MAX_WORKSPACE_MUTATIONS,
+      },
       client: {
         surface: "cli",
         version: "autonomy-benchmark",
@@ -177,9 +246,24 @@ async function runCategory(baseUrl, category) {
     if (!done) await sleep(POLL_INTERVAL_MS);
   }
 
+  if (!done) {
+    try {
+      await requestJson(baseUrl, `/v1/runs/${encodeURIComponent(started.id)}/control`, {
+        method: "POST",
+        body: { action: "cancel", note: "Benchmark timeout" },
+      });
+    } catch {
+      // Keep timeout handling best-effort.
+    }
+  }
+
   const exported = await requestJson(baseUrl, `/v1/runs/${encodeURIComponent(started.id)}/export`);
   const files = await collectFiles(workspace);
-  return summarizeCategory(category, exported, files, Date.now() - startedAt);
+  const summary = summarizeCategory(category, exported, files, Date.now() - startedAt);
+  return {
+    ...summary,
+    timedOut: !done,
+  };
 }
 
 async function main() {
@@ -210,7 +294,7 @@ async function main() {
     categories: results,
     summary: {
       total: results.length,
-      passed: results.filter((item) => item.artifactCorrect && item.finishStatus === "completed").length,
+      passed: results.filter((item) => item.artifactCorrect && item.finishStatus === "completed" && item.requiredCommandProof !== false).length,
       takeoverRequired: results.filter((item) => item.takeoverRequired).length,
       validationPassed: results.filter((item) => item.validationPassed).length,
     },

@@ -1109,7 +1109,7 @@ describe("playground tool loop", () => {
       vi.unstubAllEnvs();
     });
 
-    it("skips observation primer when gateway returns final-only on step 0", async () => {
+    it("injects observation primer when gateway returns final-only on step 0 for agentic edits", async () => {
       vi.stubEnv("PLAYGROUND_OPENHANDS_PRIMARY_ORCHESTRATION", "true");
       mockedRequestToolLoopTurn.mockResolvedValueOnce(
         openHandsTurn({
@@ -1140,9 +1140,9 @@ describe("playground tool loop", () => {
         },
       });
 
-      expect(started.pendingToolCall).toBeNull();
-      expect(started.final).toContain("cannot see your code");
-      expect(started.logs?.some((line) => line.includes("observation primer injected"))).toBe(false);
+      expect(started.pendingToolCall?.toolCall.name).toBe("read_file");
+      expect(started.pendingToolCall?.toolCall.arguments.path).toBe("trader/main.py");
+      expect(started.logs?.some((line) => line.includes("observation primer injected"))).toBe(true);
     });
 
     it("does not fail mutation_required_after_inspection when the next turn is non-mutating", async () => {
@@ -1316,6 +1316,308 @@ describe("playground tool loop", () => {
       expect(afterRead.missingRequirements ?? []).not.toContain("tool_repeat_without_progress");
       expect(afterRead.pendingToolCall?.toolCall.name).toBe("edit");
       expect(afterRead.pendingToolCall?.toolCall.id).toBe("call_edit_1");
+    });
+
+    it("targets package.json for repair after a validation command fails", async () => {
+      mockedRequestToolLoopTurn
+        .mockResolvedValueOnce(
+          openHandsTurn({
+            adapter: "text_actions",
+            final: "",
+            toolCall: {
+              id: "call_read_pkg",
+              name: "read_file",
+              arguments: { path: "repo-proof/package.json" },
+              kind: "observe",
+              summary: "Inspect repo-proof/package.json",
+            },
+            logs: [],
+            modelSelection: {} as any,
+          })
+        )
+        .mockResolvedValueOnce(
+          openHandsTurn({
+            adapter: "text_actions",
+            final: "",
+            toolCall: {
+              id: "call_write_pkg",
+              name: "write_file",
+              arguments: {
+                path: "repo-proof/package.json",
+                content:
+                  '{\n  "name": "repo-proof",\n  "scripts": {\n    "test": "node --experimental-modulesloader test/index.test.js"\n  }\n}\n',
+              },
+              kind: "mutate",
+              summary: "Write repo-proof/package.json",
+            },
+            logs: [],
+            modelSelection: {} as any,
+          })
+        )
+        .mockResolvedValueOnce(
+          openHandsTurn({
+            adapter: "text_actions",
+            final: "",
+            toolCall: {
+              id: "call_validate",
+              name: "run_command",
+              arguments: {
+                command: "npm test",
+                category: "validation",
+              },
+              kind: "command",
+              summary: "Run focused validation: npm test",
+            },
+            logs: [],
+            modelSelection: {} as any,
+          })
+        )
+        .mockResolvedValueOnce(
+          openHandsTurn({
+            adapter: "text_actions",
+            final: "",
+            toolCall: {
+              id: "call_fix_pkg",
+              name: "edit",
+              arguments: {
+                path: "repo-proof/package.json",
+                patch:
+                  '@@ -1,5 +1,5 @@\n-    "test": "node --experimental-modulesloader test/index.test.js"\n+    "test": "node --test test/index.test.js"\n',
+              },
+              kind: "mutate",
+              summary: "Repair the generated validation script",
+            },
+            logs: [],
+            modelSelection: {} as any,
+          })
+        );
+
+      const started = await startAssistToolLoop({
+        userId: "user-validation-repair",
+        sessionId: "session-validation-repair",
+        traceId: "trace-validation-repair",
+        request: {
+          mode: "auto",
+          task: "Create repo-proof with package.json, src/index.js, and test/index.test.js. Run tests until they pass.",
+          orchestrationProtocol: "tool_loop_v1",
+          clientCapabilities: {
+            toolLoop: true,
+            supportedTools: ["read_file", "create_checkpoint", "write_file", "edit", "run_command"],
+            autoExecute: true,
+          },
+          context: {
+            activeFile: { path: "repo-proof/package.json", content: "" },
+          },
+        },
+      });
+
+      const afterRead = await continueAssistToolLoop({
+        userId: "user-validation-repair",
+        traceId: "trace-validation-repair-2",
+        runId: started.runId!,
+        toolResult: {
+          toolCallId: "call_read_pkg",
+          name: "read_file",
+          ok: true,
+          summary: "repo-proof/package.json is missing.",
+          error: "ENOENT",
+        },
+      });
+
+      const afterCheckpoint = await continueAssistToolLoop({
+        userId: "user-validation-repair",
+        traceId: "trace-validation-repair-3",
+        runId: started.runId!,
+        toolResult: {
+          toolCallId: afterRead.pendingToolCall!.toolCall.id,
+          name: "create_checkpoint",
+          ok: true,
+          summary: "Checkpoint created.",
+        },
+      });
+
+      const afterWrite = await continueAssistToolLoop({
+        userId: "user-validation-repair",
+        traceId: "trace-validation-repair-4",
+        runId: started.runId!,
+        toolResult: {
+          toolCallId: afterCheckpoint.pendingToolCall!.toolCall.id,
+          name: "write_file",
+          ok: true,
+          summary: "Wrote repo-proof/package.json.",
+          data: { changedFiles: ["repo-proof/package.json"] },
+        },
+      });
+
+      expect(afterWrite.pendingToolCall?.toolCall.name).toBe("run_command");
+      expect(afterWrite.pendingToolCall?.toolCall.arguments.command).toBe('cd "repo-proof" && npm test');
+
+      await continueAssistToolLoop({
+        userId: "user-validation-repair",
+        traceId: "trace-validation-repair-5",
+        runId: started.runId!,
+        toolResult: {
+          toolCallId: afterWrite.pendingToolCall!.toolCall.id,
+          name: "run_command",
+          ok: false,
+          summary: "Command failed: npm test",
+          error: "node: bad option: --experimental-modulesloader",
+          data: {
+            stderr: "node: bad option: --experimental-modulesloader",
+            exitCode: 9,
+          },
+        },
+      });
+
+      expect(mockedRequestToolLoopTurn).toHaveBeenCalledTimes(4);
+      const repairCall = mockedRequestToolLoopTurn.mock.calls[3]?.[0];
+      expect(repairCall?.targetInference.path).toBe("package.json");
+      expect(repairCall?.repairDirective?.reason).toContain("Repair the generated validation script");
+    });
+
+    it("forces git closeout commands after validation succeeds", async () => {
+      mockedRequestToolLoopTurn
+        .mockResolvedValueOnce(
+          openHandsTurn({
+            adapter: "text_actions",
+            final: "",
+            toolCall: {
+              id: "call_list_repo",
+              name: "list_files",
+              arguments: {},
+              kind: "observe",
+              summary: "Check current workspace structure",
+            },
+            logs: [],
+            modelSelection: {} as any,
+          })
+        )
+        .mockResolvedValueOnce(
+          openHandsTurn({
+            adapter: "text_actions",
+            final: "",
+            toolCall: {
+              id: "call_write_pkg_git",
+              name: "write_file",
+              arguments: {
+                path: "repo-proof/package.json",
+                content: '{\n  "name": "repo-proof",\n  "scripts": {\n    "test": "node --test test/index.test.js"\n  }\n}\n',
+              },
+              kind: "mutate",
+              summary: "Write package.json",
+            },
+            logs: [],
+            modelSelection: {} as any,
+          })
+        )
+        .mockResolvedValueOnce(
+          openHandsTurn({
+            adapter: "text_actions",
+            final: "",
+            toolCall: {
+              id: "call_observe_after_validate",
+              name: "list_files",
+              arguments: { path: "repo-proof" },
+              kind: "observe",
+              summary: "Inspect the finished repo-proof folder",
+            },
+            logs: [],
+            modelSelection: {} as any,
+          })
+        )
+        .mockResolvedValueOnce(
+          openHandsTurn({
+            adapter: "text_actions",
+            final: "",
+            toolCall: {
+              id: "call_observe_after_git",
+              name: "list_files",
+              arguments: { path: "repo-proof" },
+              kind: "observe",
+              summary: "Inspect repo-proof after validation",
+            },
+            logs: [],
+            modelSelection: {} as any,
+          })
+        );
+
+      const started = await startAssistToolLoop({
+        userId: "user-git-closeout",
+        sessionId: "session-git-closeout",
+        traceId: "trace-git-closeout",
+        request: {
+          mode: "auto",
+          task: "Create a folder named repo-proof with README.md, src/index.js, test/index.test.js, and package.json. Run tests until they pass. Then initialize git inside repo-proof, create a feature branch named feat/autonomy-proof, and create a commit.",
+          orchestrationProtocol: "tool_loop_v1",
+          clientCapabilities: {
+            toolLoop: true,
+            supportedTools: ["list_files", "create_checkpoint", "write_file", "run_command"],
+            autoExecute: true,
+          },
+        },
+      });
+
+      const afterList = await continueAssistToolLoop({
+        userId: "user-git-closeout",
+        traceId: "trace-git-closeout-2",
+        runId: started.runId!,
+        toolResult: {
+          toolCallId: "call_list_repo",
+          name: "list_files",
+          ok: true,
+          summary: "Listed 0 workspace file(s).",
+          data: { files: [] },
+        },
+      });
+
+      const afterCheckpoint = await continueAssistToolLoop({
+        userId: "user-git-closeout",
+        traceId: "trace-git-closeout-3",
+        runId: started.runId!,
+        toolResult: {
+          toolCallId: afterList.pendingToolCall!.toolCall.id,
+          name: "create_checkpoint",
+          ok: true,
+          summary: "Checkpoint created.",
+        },
+      });
+
+      const afterWrite = await continueAssistToolLoop({
+        userId: "user-git-closeout",
+        traceId: "trace-git-closeout-4",
+        runId: started.runId!,
+        toolResult: {
+          toolCallId: afterCheckpoint.pendingToolCall!.toolCall.id,
+          name: "write_file",
+          ok: true,
+          summary: "Wrote repo-proof/package.json.",
+          data: { changedFiles: ["repo-proof/package.json", "repo-proof/README.md", "repo-proof/src/index.js", "repo-proof/test/index.test.js"] },
+        },
+      });
+
+      expect(afterWrite.pendingToolCall?.toolCall.name).toBe("run_command");
+      expect(afterWrite.pendingToolCall?.toolCall.arguments.command).toBe('cd "repo-proof" && npm test');
+
+      const afterValidation = await continueAssistToolLoop({
+        userId: "user-git-closeout",
+        traceId: "trace-git-closeout-5",
+        runId: started.runId!,
+        toolResult: {
+          toolCallId: afterWrite.pendingToolCall!.toolCall.id,
+          name: "run_command",
+          ok: true,
+          summary: 'Command succeeded: cd "repo-proof" && npm test',
+          data: {
+            command: 'cd "repo-proof" && npm test',
+            exitCode: 0,
+            stdout: "",
+            stderr: "",
+          },
+        },
+      });
+
+      expect(afterValidation.pendingToolCall?.toolCall.name).toBe("run_command");
+      expect(afterValidation.pendingToolCall?.toolCall.arguments.command).toBe('cd "repo-proof" && git init');
     });
   });
 });

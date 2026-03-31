@@ -16,7 +16,7 @@ import {
   type LocalHostRunControlAction,
   type LocalHostRunSummary,
 } from "./local-host.js";
-import { CliToolExecutor } from "./tool-executor.js";
+import { CliToolExecutor, inferTaskProjectRoot } from "./tool-executor.js";
 import { AssistMode, AssistRunEnvelope, BillingCycle, CliConfig, CliTransport, PendingToolCall, PlanTier, ToolCall } from "./types.js";
 
 const execAsync = promisify(exec);
@@ -858,9 +858,10 @@ async function executeHostedToolLoop(
   client: PlaygroundClient,
   envelope: AssistRunEnvelope,
   workspaceRoot: string,
+  task: string,
   ui?: StreamUiAdapter
 ): Promise<AssistRunEnvelope> {
-  const executor = new CliToolExecutor(workspaceRoot);
+  const executor = new CliToolExecutor(workspaceRoot, inferTaskProjectRoot(task));
   let current = envelope;
 
   while (current.pendingToolCall && current.runId) {
@@ -885,7 +886,7 @@ async function runHostedPrompt(
   if (!envelope.pendingToolCall || !envelope.runId) {
     return envelope;
   }
-  const finalEnvelope = await executeHostedToolLoop(client, envelope, workspaceRoot, ui);
+  const finalEnvelope = await executeHostedToolLoop(client, envelope, workspaceRoot, input.task, ui);
   if (finalEnvelope.final) {
     if (ui?.onFinal) {
       ui.onFinal(String(finalEnvelope.final), false);

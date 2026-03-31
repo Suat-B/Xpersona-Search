@@ -4,6 +4,31 @@ export function toHostedAssistMode(mode) {
         return "yolo";
     return mode;
 }
+function truncateText(value, maxLength) {
+    if (typeof value !== "string")
+        return undefined;
+    if (value.length <= maxLength)
+        return value;
+    return `${value.slice(0, Math.max(0, maxLength - 15))}\n...[truncated]`;
+}
+function sanitizeToolResultForContinue(toolResult) {
+    const next = {
+        ...toolResult,
+        summary: truncateText(toolResult.summary, 20_000) || toolResult.summary,
+        ...(typeof toolResult.error === "string" ? { error: truncateText(toolResult.error, 4_000) } : {}),
+    };
+    if (toolResult.data && typeof toolResult.data === "object") {
+        const data = { ...toolResult.data };
+        if (typeof data.stdout === "string")
+            data.stdout = truncateText(data.stdout, 8_000) || "";
+        if (typeof data.stderr === "string")
+            data.stderr = truncateText(data.stderr, 8_000) || "";
+        if (typeof data.content === "string")
+            data.content = truncateText(data.content, 16_000) || "";
+        next.data = data;
+    }
+    return next;
+}
 export class PlaygroundClient {
     baseUrl;
     auth;
@@ -88,12 +113,13 @@ export class PlaygroundClient {
         });
     }
     async continueRun(runId, toolResult, sessionId) {
+        const sanitizedToolResult = sanitizeToolResultForContinue(toolResult);
         const response = await requestJson({
             baseUrl: this.baseUrl,
             auth: this.auth,
             path: `/api/v1/playground/runs/${encodeURIComponent(runId)}/continue`,
             method: "POST",
-            body: sessionId ? { toolResult, sessionId } : { toolResult },
+            body: sessionId ? { toolResult: sanitizedToolResult, sessionId } : { toolResult: sanitizedToolResult },
         });
         const record = response;
         return (record?.data || response);

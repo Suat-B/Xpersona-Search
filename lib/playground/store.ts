@@ -5,6 +5,7 @@ import {
   playgroundIndexChunks,
   playgroundIndexSyncState,
   playgroundMessages,
+  playgroundProviderConnections,
   playgroundReplayRuns,
   playgroundSessions,
   playgroundUserProfiles,
@@ -104,6 +105,24 @@ export type PlaygroundUserProfileRecord = {
   updatedAt: Date | null;
 };
 
+export type PlaygroundProviderConnectionRecord = {
+  id: string;
+  userId: string;
+  provider: string;
+  alias: string;
+  displayName: string | null;
+  authMode: string;
+  secretEncrypted: string;
+  baseUrl: string | null;
+  defaultModel: string | null;
+  status: string;
+  lastValidatedAt: Date | null;
+  lastValidationError: string | null;
+  metadata: unknown;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
 export type AgentRunRecord = {
   id: string;
   sessionId: string;
@@ -123,6 +142,7 @@ const memory = {
   sessions: new Map<string, SessionRecord[]>(),
   messages: new Map<string, MessageRecord[]>(),
   userProfiles: new Map<string, PlaygroundUserProfileRecord>(),
+  providerConnections: new Map<string, PlaygroundProviderConnectionRecord[]>(),
   runs: new Map<string, AgentRunRecord[]>(),
 };
 
@@ -460,6 +480,191 @@ export async function upsertUserPlaygroundProfile(input: {
     };
     memory.userProfiles.set(input.userId, row);
     return row;
+  }
+}
+
+export async function listPlaygroundProviderConnections(input: {
+  userId: string;
+}): Promise<PlaygroundProviderConnectionRecord[]> {
+  try {
+    return await db
+      .select({
+        id: playgroundProviderConnections.id,
+        userId: playgroundProviderConnections.userId,
+        provider: playgroundProviderConnections.provider,
+        alias: playgroundProviderConnections.alias,
+        displayName: playgroundProviderConnections.displayName,
+        authMode: playgroundProviderConnections.authMode,
+        secretEncrypted: playgroundProviderConnections.secretEncrypted,
+        baseUrl: playgroundProviderConnections.baseUrl,
+        defaultModel: playgroundProviderConnections.defaultModel,
+        status: playgroundProviderConnections.status,
+        lastValidatedAt: playgroundProviderConnections.lastValidatedAt,
+        lastValidationError: playgroundProviderConnections.lastValidationError,
+        metadata: playgroundProviderConnections.metadata,
+        createdAt: playgroundProviderConnections.createdAt,
+        updatedAt: playgroundProviderConnections.updatedAt,
+      })
+      .from(playgroundProviderConnections)
+      .where(eq(playgroundProviderConnections.userId, input.userId))
+      .orderBy(desc(playgroundProviderConnections.updatedAt));
+  } catch {
+    return memory.providerConnections.get(input.userId) ?? [];
+  }
+}
+
+export async function getPlaygroundProviderConnectionByAlias(input: {
+  userId: string;
+  alias: string;
+}): Promise<PlaygroundProviderConnectionRecord | null> {
+  const alias = input.alias.trim();
+  if (!alias) return null;
+  try {
+    const rows = await db
+      .select({
+        id: playgroundProviderConnections.id,
+        userId: playgroundProviderConnections.userId,
+        provider: playgroundProviderConnections.provider,
+        alias: playgroundProviderConnections.alias,
+        displayName: playgroundProviderConnections.displayName,
+        authMode: playgroundProviderConnections.authMode,
+        secretEncrypted: playgroundProviderConnections.secretEncrypted,
+        baseUrl: playgroundProviderConnections.baseUrl,
+        defaultModel: playgroundProviderConnections.defaultModel,
+        status: playgroundProviderConnections.status,
+        lastValidatedAt: playgroundProviderConnections.lastValidatedAt,
+        lastValidationError: playgroundProviderConnections.lastValidationError,
+        metadata: playgroundProviderConnections.metadata,
+        createdAt: playgroundProviderConnections.createdAt,
+        updatedAt: playgroundProviderConnections.updatedAt,
+      })
+      .from(playgroundProviderConnections)
+      .where(and(eq(playgroundProviderConnections.userId, input.userId), eq(playgroundProviderConnections.alias, alias)))
+      .limit(1);
+    return rows[0] ?? null;
+  } catch {
+    const rows = memory.providerConnections.get(input.userId) ?? [];
+    return rows.find((row) => row.alias === alias) ?? null;
+  }
+}
+
+export async function upsertPlaygroundProviderConnection(input: {
+  userId: string;
+  provider: string;
+  alias: string;
+  displayName?: string | null;
+  authMode: string;
+  secretEncrypted: string;
+  baseUrl?: string | null;
+  defaultModel?: string | null;
+  status?: string;
+  lastValidatedAt?: Date | null;
+  lastValidationError?: string | null;
+  metadata?: Record<string, unknown> | null;
+}): Promise<PlaygroundProviderConnectionRecord> {
+  try {
+    const [row] = await db
+      .insert(playgroundProviderConnections)
+      .values({
+        userId: input.userId,
+        provider: input.provider as any,
+        alias: input.alias,
+        displayName: input.displayName ?? null,
+        authMode: input.authMode as any,
+        secretEncrypted: input.secretEncrypted,
+        baseUrl: input.baseUrl ?? null,
+        defaultModel: input.defaultModel ?? null,
+        status: (input.status || "active") as any,
+        lastValidatedAt: input.lastValidatedAt ?? null,
+        lastValidationError: input.lastValidationError ?? null,
+        metadata: (input.metadata as any) ?? null,
+      })
+      .onConflictDoUpdate({
+        target: [playgroundProviderConnections.userId, playgroundProviderConnections.provider],
+        set: {
+          alias: input.alias,
+          displayName: input.displayName ?? null,
+          authMode: input.authMode as any,
+          secretEncrypted: input.secretEncrypted,
+          baseUrl: input.baseUrl ?? null,
+          defaultModel: input.defaultModel ?? null,
+          status: (input.status || "active") as any,
+          lastValidatedAt: input.lastValidatedAt ?? null,
+          lastValidationError: input.lastValidationError ?? null,
+          metadata: (input.metadata as any) ?? null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning({
+        id: playgroundProviderConnections.id,
+        userId: playgroundProviderConnections.userId,
+        provider: playgroundProviderConnections.provider,
+        alias: playgroundProviderConnections.alias,
+        displayName: playgroundProviderConnections.displayName,
+        authMode: playgroundProviderConnections.authMode,
+        secretEncrypted: playgroundProviderConnections.secretEncrypted,
+        baseUrl: playgroundProviderConnections.baseUrl,
+        defaultModel: playgroundProviderConnections.defaultModel,
+        status: playgroundProviderConnections.status,
+        lastValidatedAt: playgroundProviderConnections.lastValidatedAt,
+        lastValidationError: playgroundProviderConnections.lastValidationError,
+        metadata: playgroundProviderConnections.metadata,
+        createdAt: playgroundProviderConnections.createdAt,
+        updatedAt: playgroundProviderConnections.updatedAt,
+      });
+    const existing = (memory.providerConnections.get(input.userId) ?? []).filter((item) => item.id !== row.id);
+    memory.providerConnections.set(input.userId, [row, ...existing]);
+    return row;
+  } catch {
+    const existing = memory.providerConnections.get(input.userId) ?? [];
+    const prev = existing.find((row) => row.provider === input.provider);
+    const row: PlaygroundProviderConnectionRecord = {
+      id: prev?.id || crypto.randomUUID(),
+      userId: input.userId,
+      provider: input.provider,
+      alias: input.alias,
+      displayName: input.displayName ?? null,
+      authMode: input.authMode,
+      secretEncrypted: input.secretEncrypted,
+      baseUrl: input.baseUrl ?? null,
+      defaultModel: input.defaultModel ?? null,
+      status: input.status || "active",
+      lastValidatedAt: input.lastValidatedAt ?? null,
+      lastValidationError: input.lastValidationError ?? null,
+      metadata: input.metadata ?? null,
+      createdAt: prev?.createdAt ?? new Date(),
+      updatedAt: new Date(),
+    };
+    memory.providerConnections.set(
+      input.userId,
+      [row, ...existing.filter((item) => item.id !== row.id && item.provider !== input.provider)]
+    );
+    return row;
+  }
+}
+
+export async function deletePlaygroundProviderConnection(input: {
+  userId: string;
+  connectionId: string;
+}): Promise<boolean> {
+  try {
+    const rows = await db
+      .delete(playgroundProviderConnections)
+      .where(and(eq(playgroundProviderConnections.userId, input.userId), eq(playgroundProviderConnections.id, input.connectionId)))
+      .returning({ id: playgroundProviderConnections.id });
+    if (rows.length) {
+      const existing = memory.providerConnections.get(input.userId) ?? [];
+      memory.providerConnections.set(
+        input.userId,
+        existing.filter((item) => item.id !== input.connectionId)
+      );
+    }
+    return rows.length > 0;
+  } catch {
+    const existing = memory.providerConnections.get(input.userId) ?? [];
+    const next = existing.filter((item) => item.id !== input.connectionId);
+    memory.providerConnections.set(input.userId, next);
+    return next.length !== existing.length;
   }
 }
 

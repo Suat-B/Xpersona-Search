@@ -12,7 +12,7 @@ import { PlaygroundClient, toHostedAssistMode } from "./client.js";
 import { clearApiKey, clearBrowserAuth, getApiKey, getBrowserAccessToken, getBrowserRefreshToken, getConfigPath, loadConfig, saveConfig } from "./config.js";
 import { CliHttpError } from "./http.js";
 import { LocalHostClient, } from "./local-host.js";
-import { CliToolExecutor } from "./tool-executor.js";
+import { CliToolExecutor, inferTaskProjectRoot } from "./tool-executor.js";
 const execAsync = promisify(exec);
 const HELP = `Binary IDE CLI - Agentic coding runtime
 
@@ -776,8 +776,8 @@ async function streamPrompt(client, input, ui) {
     }
     return normalizedEnvelope;
 }
-async function executeHostedToolLoop(client, envelope, workspaceRoot, ui) {
-    const executor = new CliToolExecutor(workspaceRoot);
+async function executeHostedToolLoop(client, envelope, workspaceRoot, task, ui) {
+    const executor = new CliToolExecutor(workspaceRoot, inferTaskProjectRoot(task));
     let current = envelope;
     while (current.pendingToolCall && current.runId) {
         const pending = current.pendingToolCall;
@@ -794,7 +794,7 @@ async function runHostedPrompt(client, input, workspaceRoot, ui) {
     if (!envelope.pendingToolCall || !envelope.runId) {
         return envelope;
     }
-    const finalEnvelope = await executeHostedToolLoop(client, envelope, workspaceRoot, ui);
+    const finalEnvelope = await executeHostedToolLoop(client, envelope, workspaceRoot, input.task, ui);
     if (finalEnvelope.final) {
         if (ui?.onFinal) {
             ui.onFinal(String(finalEnvelope.final), false);

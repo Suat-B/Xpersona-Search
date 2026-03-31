@@ -6,12 +6,34 @@ import {
   resolveExistingChatActor,
 } from "@/lib/chat/actor";
 import { checkChatBootstrapRateLimit } from "@/lib/chat/bootstrap-rate-limit";
+import { DEFAULT_PLAYGROUND_MODEL_ALIAS } from "@/lib/playground/model-registry";
+import {
+  getBrowserAuthAvailability,
+  getPlaygroundByomPreferences,
+  listUserConnectedModels,
+} from "@/lib/playground/byom";
+import { getUserPlaygroundProfile } from "@/lib/playground/store";
+
+async function buildModelSettings(userId: string) {
+  const profile = await getUserPlaygroundProfile({ userId }).catch(() => null);
+  const preferences = getPlaygroundByomPreferences(profile);
+  const connections = await listUserConnectedModels({ userId }).catch(() => []);
+  return {
+    platformDefaultModelAlias: DEFAULT_PLAYGROUND_MODEL_ALIAS,
+    browserAuth: getBrowserAuthAvailability(),
+    preferredModelAlias: profile?.preferredModelAlias ?? null,
+    preferredChatModelSource: preferences.preferredChatModelSource,
+    fallbackToPlatformModel: preferences.fallbackToPlatformModel,
+    connections,
+  };
+}
 
 export async function POST(request: NextRequest): Promise<Response> {
   try {
     const existing = await resolveExistingChatActor(request);
     if (existing) {
       const trial = await ensureChatTrialEntitlement(existing.userId);
+      const modelSettings = await buildModelSettings(existing.userId);
       const response = NextResponse.json({
         success: true,
         data: {
@@ -24,6 +46,7 @@ export async function POST(request: NextRequest): Promise<Response> {
             source: existing.source,
           },
           trial,
+          modelSettings,
         },
       });
       applyChatActorCookie(response, existing);
@@ -50,6 +73,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const actor = await createAnonymousChatActor();
     const trial = await ensureChatTrialEntitlement(actor.userId);
+    const modelSettings = await buildModelSettings(actor.userId);
     const response = NextResponse.json({
       success: true,
       data: {
@@ -62,6 +86,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           source: actor.source,
         },
         trial,
+        modelSettings,
       },
     });
     applyChatActorCookie(response, actor);

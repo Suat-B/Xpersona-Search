@@ -23,6 +23,7 @@ export type PlaygroundToolName =
   | "binary_execute_build"
   | "binary_publish_build"
   | "desktop_capture_screen"
+  | "desktop_list_apps"
   | "desktop_get_active_window"
   | "desktop_list_windows"
   | "desktop_open_app"
@@ -72,7 +73,8 @@ export type PlaygroundResolvedModelSelection = {
 };
 
 export const PLAYGROUND_CONTRACT_VERSION = "2026-03-minimal-coding-v1";
-export const DEFAULT_PLAYGROUND_MODEL_ALIAS = "playground-default";
+export const DEFAULT_PLAYGROUND_MODEL_ALIAS =
+  String(process.env.PLAYGROUND_DEFAULT_MODEL_ALIAS || "kimi-k2").trim() || "kimi-k2";
 export const PLAYGROUND_TOOL_LOOP_TOOLS: PlaygroundToolName[] = [
   "list_files",
   "read_file",
@@ -95,6 +97,7 @@ export const PLAYGROUND_TOOL_LOOP_TOOLS: PlaygroundToolName[] = [
   "binary_execute_build",
   "binary_publish_build",
   "desktop_capture_screen",
+  "desktop_list_apps",
   "desktop_get_active_window",
   "desktop_list_windows",
   "desktop_open_app",
@@ -135,12 +138,14 @@ const DEFAULT_CAPABILITIES: PlaygroundModelCapabilitySet = {
 
 const DEFAULT_MODEL_ENTRY: PlaygroundModelRegistryEntry = buildRegistryEntry({
   alias: DEFAULT_PLAYGROUND_MODEL_ALIAS,
-  displayName: "GPT-OSS 120B (Groq)",
-  description: "Default hosted coding model via Hugging Face Router (Groq provider).",
-  provider: "hf",
-  model: String(process.env.PLAYGROUND_DEFAULT_MODEL || "openai/gpt-oss-120b:groq").trim(),
-  baseUrl: String(process.env.PLAYGROUND_DEFAULT_BASE_URL || "https://router.huggingface.co/v1").trim(),
-  authSource: "hf_token",
+  displayName: "Kimi K2",
+  description: "Default hosted autonomy and coding model, resolved through the shared active alias path.",
+  provider: (String(process.env.PLAYGROUND_KIMI_PROVIDER || "hf").trim() as PlaygroundModelProvider) || "hf",
+  model: String(process.env.PLAYGROUND_KIMI_MODEL || process.env.PLAYGROUND_DEFAULT_MODEL || "moonshotai/Kimi-K2-Instruct").trim(),
+  baseUrl: String(
+    process.env.PLAYGROUND_KIMI_BASE_URL || process.env.PLAYGROUND_DEFAULT_BASE_URL || "https://router.huggingface.co/v1"
+  ).trim(),
+  authSource: (String(process.env.PLAYGROUND_KIMI_AUTH_SOURCE || "hf_token").trim() as PlaygroundModelAuthSource) || "hf_token",
   capabilities: {
     supportsTextActions: true,
     supportsNativeToolCalls: false,
@@ -151,6 +156,32 @@ const DEFAULT_MODEL_ENTRY: PlaygroundModelRegistryEntry = buildRegistryEntry({
 
 const BUILTIN_MODEL_ENTRIES: PlaygroundModelRegistryEntry[] = [
   DEFAULT_MODEL_ENTRY,
+  buildRegistryEntry({
+    alias: "playground-default",
+    displayName: "Kimi K2 (Compatibility)",
+    description: "Compatibility alias that resolves to the current server-owned default model.",
+    provider: DEFAULT_MODEL_ENTRY.provider,
+    model: DEFAULT_MODEL_ENTRY.model,
+    baseUrl: DEFAULT_MODEL_ENTRY.baseUrl,
+    authSource: DEFAULT_MODEL_ENTRY.authSource,
+    capabilities: {
+      ...DEFAULT_MODEL_ENTRY.capabilities,
+    },
+    enabled: true,
+  }),
+  buildRegistryEntry({
+    alias: "kimi",
+    displayName: "Kimi K2",
+    description: "First-class Kimi alias for OpenHands-driven coding and PC autonomy.",
+    provider: DEFAULT_MODEL_ENTRY.provider,
+    model: DEFAULT_MODEL_ENTRY.model,
+    baseUrl: DEFAULT_MODEL_ENTRY.baseUrl,
+    authSource: DEFAULT_MODEL_ENTRY.authSource,
+    capabilities: {
+      ...DEFAULT_MODEL_ENTRY.capabilities,
+    },
+    enabled: true,
+  }),
   buildRegistryEntry({
     alias: "qwen-coder-32b",
     displayName: "Qwen 2.5 Coder 32B",

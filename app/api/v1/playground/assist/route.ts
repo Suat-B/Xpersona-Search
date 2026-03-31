@@ -171,6 +171,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const runTask = async () => {
     const planMode = mode === "plan";
     const maxOut = Math.min(access.limits?.maxOutputTokens ?? 2048, 2048);
+    const chatInteraction = body.interactionKind === "chat";
 
     let result: AssistResult;
 
@@ -201,6 +202,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const trivialGreeting =
       !planMode &&
+      chatInteraction &&
       mode === "auto" &&
       isTrivialGreetingOnlyTask({
         task: body.task,
@@ -220,8 +222,31 @@ export async function POST(request: NextRequest): Promise<Response> {
           task: greetingTask,
           conversationHistory: persistedHistory,
           maxTokens: maxOut,
+        }, {
+          userId: auth.userId,
         });
       }
+      await appendSessionMessage({
+        userId: auth.userId,
+        sessionId: session.id,
+        role: "assistant",
+        content: result.final,
+        payload: result,
+        tokenCount: estimateOutputTokens(result.final),
+      }).catch(() => null);
+    } else if (!planMode && chatInteraction) {
+      result = await runAssist(
+        {
+          ...body,
+          mode,
+          orchestrationProtocol: "batch_v1",
+          conversationHistory: persistedHistory,
+          maxTokens: maxOut,
+        },
+        {
+          userId: auth.userId,
+        }
+      );
       await appendSessionMessage({
         userId: auth.userId,
         sessionId: session.id,
@@ -239,6 +264,8 @@ export async function POST(request: NextRequest): Promise<Response> {
               mode,
               conversationHistory: persistedHistory,
               maxTokens: maxOut,
+            }, {
+              userId: auth.userId,
             })
         : await startHostedToolLoop({ mode });
 
@@ -255,12 +282,16 @@ export async function POST(request: NextRequest): Promise<Response> {
       }
     }
 
-    await incrementUsage(
-      auth.userId,
-      estimatedInputTokens,
-      estimateOutputTokens(result.final),
-      estimateCostUsd(estimatedInputTokens, estimateOutputTokens(result.final))
-    ).catch(() => {});
+    const shouldBillHostedUsage =
+      result.modelMetadata.chatModelSource !== "user_connected" || result.orchestrator === "openhands";
+    if (shouldBillHostedUsage) {
+      await incrementUsage(
+        auth.userId,
+        estimatedInputTokens,
+        estimateOutputTokens(result.final),
+        estimateCostUsd(estimatedInputTokens, estimateOutputTokens(result.final))
+      ).catch(() => {});
+    }
 
     return result;
   };
@@ -325,6 +356,12 @@ export async function POST(request: NextRequest): Promise<Response> {
         completionStatus: result.completionStatus,
         missingRequirements: result.missingRequirements,
         modelAlias: result.modelMetadata.modelResolvedAlias,
+        chatModelSource: result.modelMetadata.chatModelSource,
+        chatModelAlias: result.modelMetadata.chatModelAlias,
+        chatProvider: result.modelMetadata.chatProvider,
+        orchestratorModelAlias: result.modelMetadata.orchestratorModelAlias,
+        orchestratorProvider: result.modelMetadata.orchestratorProvider,
+        fallbackApplied: result.modelMetadata.fallbackApplied,
         orchestrator: result.orchestrator,
         orchestratorVersion: result.orchestratorVersion,
         progressState: result.progressState,

@@ -24,6 +24,7 @@ export const zPlaygroundToolName = z.enum([
   "binary_execute_build",
   "binary_publish_build",
   "desktop_capture_screen",
+  "desktop_list_apps",
   "desktop_get_active_window",
   "desktop_list_windows",
   "desktop_open_app",
@@ -75,6 +76,13 @@ const zDesktopWindow = z.object({
   displayId: z.string().max(120).optional(),
 });
 
+const zDesktopDiscoveredApp = z.object({
+  id: z.string().min(1).max(240),
+  name: z.string().min(1).max(512),
+  aliases: z.array(z.string().min(1).max(240)).max(20).optional(),
+  source: z.string().min(1).max(120).optional(),
+});
+
 const zDesktopSnapshotRef = z.object({
   snapshotId: z.string().min(1).max(120),
   displayId: z.string().max(120).optional(),
@@ -115,6 +123,10 @@ export const zAssistRequest = z.object({
   task: z.string().min(1).max(120_000),
   stream: z.boolean().optional(),
   model: z.string().min(1).max(256).optional(),
+  interactionKind: z.enum(["chat", "repo_code"]).optional(),
+  chatModelSource: z.enum(["platform", "user_connected"]).optional(),
+  orchestratorModelSource: z.enum(["platform_owned", "user_connected"]).optional(),
+  fallbackToPlatformModel: z.boolean().optional(),
   orchestrationProtocol: zOrchestrationProtocol.default("tool_loop_v1").optional(),
   clientCapabilities: zClientCapabilities.optional(),
   historySessionId: z.string().uuid().optional(),
@@ -136,7 +148,9 @@ export const zAssistRequest = z.object({
           platform: z.string().max(120).optional(),
           displays: z.array(zDesktopDisplay).max(12).optional(),
           activeWindow: zDesktopWindow.optional(),
+          visibleWindows: z.array(zDesktopWindow).max(40).optional(),
           recentSnapshots: z.array(zDesktopSnapshotRef).max(12).optional(),
+          discoveredApps: z.array(zDesktopDiscoveredApp).max(60).optional(),
         })
         .optional(),
     })

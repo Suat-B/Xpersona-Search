@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
+import { PlaygroundConnectedModelsCard } from "@/components/dashboard/PlaygroundConnectedModelsCard";
 import { cn } from "@/lib/utils";
 
 type SubscriptionStatus = "active" | "trial" | "cancelled" | "past_due" | "inactive";
@@ -452,6 +453,8 @@ export default function PlaygroundDashboardPage() {
           </div>
         </GlassCard>
       ) : null}
+
+      <PlaygroundConnectedModelsCard />
 
       <GlassCard className="p-6 sm:p-7" glow="fuchsia">
         <div>

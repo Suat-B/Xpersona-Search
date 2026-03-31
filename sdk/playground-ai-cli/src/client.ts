@@ -35,6 +35,28 @@ export function toHostedAssistMode(mode: AssistMode): HostedAssistMode {
   return mode;
 }
 
+function truncateText(value: string | undefined, maxLength: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(0, maxLength - 15))}\n...[truncated]`;
+}
+
+function sanitizeToolResultForContinue(toolResult: ToolResult): ToolResult {
+  const next: ToolResult = {
+    ...toolResult,
+    summary: truncateText(toolResult.summary, 20_000) || toolResult.summary,
+    ...(typeof toolResult.error === "string" ? { error: truncateText(toolResult.error, 4_000) } : {}),
+  };
+  if (toolResult.data && typeof toolResult.data === "object") {
+    const data = { ...toolResult.data } as Record<string, unknown>;
+    if (typeof data.stdout === "string") data.stdout = truncateText(data.stdout, 8_000) || "";
+    if (typeof data.stderr === "string") data.stderr = truncateText(data.stderr, 8_000) || "";
+    if (typeof data.content === "string") data.content = truncateText(data.content, 16_000) || "";
+    next.data = data;
+  }
+  return next;
+}
+
 export class PlaygroundClient {
   private readonly baseUrl: string;
   private auth: AuthHeadersInput;
@@ -130,12 +152,13 @@ export class PlaygroundClient {
   }
 
   async continueRun(runId: string, toolResult: ToolResult, sessionId?: string): Promise<AssistRunEnvelope> {
+    const sanitizedToolResult = sanitizeToolResultForContinue(toolResult);
     const response = await requestJson<{ data?: AssistRunEnvelope } | AssistRunEnvelope>({
       baseUrl: this.baseUrl,
       auth: this.auth,
       path: `/api/v1/playground/runs/${encodeURIComponent(runId)}/continue`,
       method: "POST",
-      body: sessionId ? { toolResult, sessionId } : { toolResult },
+      body: sessionId ? { toolResult: sanitizedToolResult, sessionId } : { toolResult: sanitizedToolResult },
     });
     const record = response as { data?: AssistRunEnvelope };
     return (record?.data || response) as AssistRunEnvelope;
