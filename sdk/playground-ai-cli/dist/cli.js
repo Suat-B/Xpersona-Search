@@ -27,8 +27,16 @@ Core commands:
   binary login                        One-shot browser sign-in
   binary run "<task>"                One-shot task execution
   binary run "<task>" --detach       Start an unattended Binary Host run
+  binary automations list
+  binary automations create --name "<name>" --prompt "<prompt>" --trigger <manual|schedule_nl|file_event|process_event|notification>
+  binary automations show <id>
+  binary automations run <id>
+  binary automations pause <id>
+  binary automations resume <id>
+  binary automations tail <id>
   binary runs list [--limit 20]
   binary runs tail <runId>
+  binary runs stream <runId>
   binary runs resume <runId>
   binary runs cancel <runId>
   binary runs export <runId>
@@ -46,6 +54,7 @@ Auth/config:
   binary config set-local-host-url <url>
   binary config set-model <model>
   binary config set-transport <auto|host|direct>
+  binary config set-tom <on|off>
   binary config show
 
 Execution/index:
@@ -58,6 +67,8 @@ Flags:
   --mode auto|plan|yolo|generate|debug
   --transport auto|host|direct
   --model "Binary IDE"
+  --tom
+  --no-tom
   --help
 `;
 const COMMANDS_OVERVIEW = `All Binary IDE CLI commands
@@ -69,8 +80,16 @@ Primary:
   binary login
   binary run "<task>"
   binary run "<task>" --detach
+  binary automations list
+  binary automations create --name "<name>" --prompt "<prompt>" --trigger <manual|schedule_nl|file_event|process_event|notification>
+  binary automations show <id>
+  binary automations run <id>
+  binary automations pause <id>
+  binary automations resume <id>
+  binary automations tail <id> [--interval 1200]
   binary runs list [--limit 20]
   binary runs tail <runId>
+  binary runs stream <runId>
   binary runs resume <runId>
   binary runs cancel <runId>
   binary runs export <runId>
@@ -91,6 +110,7 @@ Config:
   binary config set-local-host-url <url>
   binary config set-model <model>
   binary config set-transport <auto|host|direct>
+  binary config set-tom <on|off>
 
 Sessions:
   binary sessions list [--limit 20]
@@ -376,6 +396,26 @@ function parseTransport(value, fallback = "auto") {
     if (value === "auto" || value === "host" || value === "direct")
         return value;
     throw new Error(`Invalid transport '${value}'. Use auto|host|direct.`);
+}
+function resolveTomOverride(parsed) {
+    const enabled = Boolean(parsed.flags.tom);
+    const disabled = Boolean(parsed.flags["no-tom"]);
+    if (enabled && disabled) {
+        throw new Error("Use either --tom or --no-tom, not both.");
+    }
+    if (enabled)
+        return true;
+    if (disabled)
+        return false;
+    return undefined;
+}
+function resolveTomEnabled(config, parsed, defaultEnabled) {
+    const override = resolveTomOverride(parsed);
+    if (typeof override === "boolean")
+        return override;
+    if (typeof config.tomEnabled === "boolean")
+        return config.tomEnabled;
+    return defaultEnabled;
 }
 async function resolveTransport(config, parsed, options) {
     const configured = options?.forceDirect
@@ -819,6 +859,7 @@ async function runLocalHostPrompt(hostClient, input, workspaceRoot, ui) {
         mode: input.mode,
         model: input.model,
         historySessionId: input.historySessionId,
+        tom: input.tom,
         workspaceRoot,
         client: {
             surface: "cli",
@@ -991,6 +1032,7 @@ async function handleDebugRuntime(parsed, config) {
     const mode = parseMode(getFlagString(parsed, "mode", "m"), "debug");
     const hostedMode = toHostedAssistMode(mode);
     const model = getFlagString(parsed, "model") ?? config.model ?? "Binary IDE";
+    const tomEnabled = resolveTomEnabled(config, parsed, false);
     const workspace = await createDebugWorkspace(parsed);
     const workspacePath = workspace.workspacePath;
     const workspaceKind = workspace.workspaceKind;
@@ -1062,6 +1104,7 @@ async function handleDebugRuntime(parsed, config) {
             mode,
             model,
             historySessionId: bundle.sessionId,
+            tom: { enabled: tomEnabled },
         }, workspacePath, {
             onEvent: (event) => {
                 bundle.stream.events.push({
@@ -1286,10 +1329,21 @@ async function handleConfig(parsed, config) {
         console.log(`Default transport set to ${transport}.`);
         return;
     }
+    if (sub === "set-tom") {
+        const raw = String(parsed.positionals[2] || "").trim().toLowerCase();
+        if (raw !== "on" && raw !== "off")
+            throw new Error("Usage: binary config set-tom <on|off>");
+        const tomEnabled = raw === "on";
+        const next = { ...config, tomEnabled };
+        await saveConfig(next);
+        console.log(`Default TOM set to ${tomEnabled ? "on" : "off"}.`);
+        return;
+    }
     throw new Error(`Unknown config subcommand '${sub}'.`);
 }
 async function handleChat(parsed, config) {
     const transport = await resolveTransport(config, parsed);
+    const tomEnabled = resolveTomEnabled(config, parsed, true);
     if (transport.selected === "host" && transport.hostClient) {
         const mode = parseMode(getFlagString(parsed, "mode", "m"), config.mode ?? "auto");
         const model = getFlagString(parsed, "model") ?? config.model ?? "Binary IDE";
@@ -1345,6 +1399,7 @@ async function handleChat(parsed, config) {
                 mode: activeMode,
                 model,
                 historySessionId: activeSessionId,
+                tom: { enabled: tomEnabled },
             }, process.cwd(), {
                 onLog: (message) => {
                     process.stdout.write(`\n${dim("log")} ${message}`);
@@ -1498,6 +1553,7 @@ async function handleChat(parsed, config) {
             mode: activeMode,
             model,
             historySessionId: activeSessionId,
+            tom: { enabled: tomEnabled },
         }, process.cwd(), {
             onLog: (message) => {
                 process.stdout.write(`\n${dim("log")} ${message}`);
@@ -1547,6 +1603,7 @@ async function handleRun(parsed, config) {
         throw new Error("Usage: binary run \"<task>\"");
     const mode = parseMode(getFlagString(parsed, "mode", "m"), config.mode ?? "auto");
     const model = getFlagString(parsed, "model") ?? config.model ?? "Binary IDE";
+    const tomEnabled = resolveTomEnabled(config, parsed, true);
     const hostedModeNotice = getHostedModeNotice(mode);
     const detach = Boolean(parsed.flags.detach);
     const transport = await resolveTransport(config, parsed);
@@ -1562,6 +1619,7 @@ async function handleRun(parsed, config) {
             task,
             mode,
             model,
+            tom: { enabled: tomEnabled },
             workspaceRoot: process.cwd(),
             detach: true,
             client: {
@@ -1576,7 +1634,7 @@ async function handleRun(parsed, config) {
         return;
     }
     if (transport.selected === "host" && transport.hostClient) {
-        await runLocalHostPrompt(transport.hostClient, { task, mode, model }, process.cwd(), {
+        await runLocalHostPrompt(transport.hostClient, { task, mode, model, tom: { enabled: tomEnabled } }, process.cwd(), {
             onToolStart: (pendingToolCall) => {
                 process.stdout.write(`\n${dim("tool")} step ${pendingToolCall.step}: ${pendingToolCall.toolCall.name}`);
             },
@@ -1591,7 +1649,7 @@ async function handleRun(parsed, config) {
         baseUrl: resolved.config.baseUrl,
         auth: resolved.auth.type === "apiKey" ? { apiKey: resolved.auth.apiKey } : { bearer: resolved.auth.accessToken },
     });
-    await runHostedPrompt(client, { task, mode, model }, process.cwd(), {
+    await runHostedPrompt(client, { task, mode, model, tom: { enabled: tomEnabled } }, process.cwd(), {
         onToolStart: (pendingToolCall) => {
             process.stdout.write(`\n${dim("tool")} step ${pendingToolCall.step}: ${pendingToolCall.toolCall.name}`);
         },
@@ -1606,6 +1664,104 @@ function printRunSummary(summary) {
     if (summary.takeoverReason) {
         console.log(dim(`takeover: ${summary.takeoverReason}`));
     }
+}
+function describeAutomationTrigger(trigger) {
+    if (trigger.kind === "schedule_nl") {
+        return `schedule "${trigger.scheduleText}"`;
+    }
+    if (trigger.kind === "file_event") {
+        return `file event ${trigger.workspaceRoot}`;
+    }
+    if (trigger.kind === "process_event") {
+        return `process "${trigger.query}"`;
+    }
+    if (trigger.kind === "notification") {
+        return `notification ${trigger.topic || trigger.query || "any"}`;
+    }
+    return "manual";
+}
+function printAutomationSummary(automation) {
+    console.log(`${automation.id}  [${automation.status}]  ${automation.name}`);
+    console.log(dim(`trigger=${describeAutomationTrigger(automation.trigger)}  policy=${automation.policy}${automation.nextRunAt ? `  next=${automation.nextRunAt}` : ""}${automation.lastRunId ? `  lastRun=${automation.lastRunId}` : ""}`));
+    if (automation.lastTriggerSummary) {
+        console.log(dim(`last trigger: ${automation.lastTriggerSummary}`));
+    }
+    if (automation.lastDeliveryError) {
+        console.log(dim(`delivery: ${automation.lastDeliveryError}`));
+    }
+}
+function printAutomationEvent(event) {
+    const root = asObject(event.event);
+    const name = typeof root.event === "string" ? root.event : "automation.event";
+    const data = asObject(root.data);
+    const summary = typeof data.summary === "string" ? data.summary : "";
+    const runId = typeof data.runId === "string" ? data.runId : "";
+    const error = typeof data.error === "string" ? data.error : "";
+    const bits = [summary, runId ? `run=${runId}` : "", error].filter(Boolean);
+    console.log(`${dim(name)}${bits.length ? ` ${bits.join("  ")}` : ""}`);
+}
+function parseCsvFlag(value) {
+    if (!value)
+        return undefined;
+    const items = value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    return items.length ? items : undefined;
+}
+function buildAutomationTriggerFromArgs(parsed) {
+    const triggerKind = getFlagString(parsed, "trigger");
+    const workspaceRoot = getFlagString(parsed, "workspace");
+    if (!triggerKind || triggerKind === "manual") {
+        return {
+            kind: "manual",
+            ...(workspaceRoot ? { workspaceRoot: path.resolve(workspaceRoot) } : {}),
+        };
+    }
+    if (triggerKind === "schedule_nl") {
+        const scheduleText = getFlagString(parsed, "schedule") || getFlagString(parsed, "when");
+        if (!scheduleText) {
+            throw new Error("Schedule automations require --schedule \"every weekday at 9am\".");
+        }
+        return {
+            kind: "schedule_nl",
+            scheduleText,
+            ...(workspaceRoot ? { workspaceRoot: path.resolve(workspaceRoot) } : {}),
+        };
+    }
+    if (triggerKind === "file_event") {
+        const root = workspaceRoot ? path.resolve(workspaceRoot) : process.cwd();
+        const includes = parseCsvFlag(getFlagString(parsed, "includes"));
+        const excludes = parseCsvFlag(getFlagString(parsed, "excludes"));
+        return {
+            kind: "file_event",
+            workspaceRoot: root,
+            ...(includes ? { includes } : {}),
+            ...(excludes ? { excludes } : {}),
+        };
+    }
+    if (triggerKind === "process_event") {
+        const query = getFlagString(parsed, "query");
+        if (!query) {
+            throw new Error("Process automations require --query \"chrome\" or similar.");
+        }
+        return {
+            kind: "process_event",
+            query,
+            ...(workspaceRoot ? { workspaceRoot: path.resolve(workspaceRoot) } : {}),
+        };
+    }
+    if (triggerKind === "notification") {
+        const topic = getFlagString(parsed, "topic");
+        const query = getFlagString(parsed, "query");
+        return {
+            kind: "notification",
+            ...(workspaceRoot ? { workspaceRoot: path.resolve(workspaceRoot) } : {}),
+            ...(topic ? { topic } : {}),
+            ...(query ? { query } : {}),
+        };
+    }
+    throw new Error("Unknown --trigger. Use manual|schedule_nl|file_event|process_event|notification.");
 }
 function printTailEvent(event) {
     const root = asObject(event.event);
@@ -1738,6 +1894,22 @@ async function handleRuns(parsed, config) {
             await new Promise((resolve) => setTimeout(resolve, Number.isFinite(interval) ? interval : 1200));
         }
     }
+    if (sub === "stream") {
+        const runId = parsed.positionals[2];
+        if (!runId)
+            throw new Error("Usage: binary runs stream <runId>");
+        await hostClient.streamRun(runId, async (event) => {
+            const payload = asObject(event);
+            const seq = typeof payload.seq === "number" ? payload.seq : 0;
+            const capturedAt = typeof payload.capturedAt === "string" ? payload.capturedAt : new Date().toISOString();
+            printTailEvent({
+                seq,
+                capturedAt,
+                event: payload,
+            });
+        });
+        return;
+    }
     if (sub === "export") {
         const runId = parsed.positionals[2];
         if (!runId)
@@ -1761,6 +1933,79 @@ async function handleRuns(parsed, config) {
     const note = getFlagString(parsed, "note");
     const summary = await hostClient.controlRun(runId, normalizeRunAction(sub), note);
     printRunSummary(summary);
+}
+async function handleAutomations(parsed, config) {
+    const hostClient = await requireHostClient(config);
+    const sub = parsed.positionals[1] || "list";
+    if (sub === "list") {
+        const response = await hostClient.listAutomations();
+        if (!response.automations.length) {
+            console.log("No automations found.");
+            return;
+        }
+        for (const automation of response.automations) {
+            printAutomationSummary(automation);
+        }
+        return;
+    }
+    if (sub === "create") {
+        const name = getFlagString(parsed, "name");
+        const prompt = getFlagString(parsed, "prompt");
+        if (!name || !prompt) {
+            throw new Error("Usage: binary automations create --name \"...\" --prompt \"...\" --trigger <kind>");
+        }
+        const automation = await hostClient.saveAutomation({
+            name,
+            prompt,
+            trigger: buildAutomationTriggerFromArgs(parsed),
+            status: getFlagString(parsed, "status") === "paused" ? "paused" : "active",
+            policy: getFlagString(parsed, "policy") === "observe_only" || getFlagString(parsed, "policy") === "approval_before_mutation"
+                ? getFlagString(parsed, "policy")
+                : "autonomous",
+            workspaceRoot: getFlagString(parsed, "workspace") ? path.resolve(getFlagString(parsed, "workspace")) : undefined,
+            model: getFlagString(parsed, "model"),
+        });
+        printAutomationSummary(automation);
+        return;
+    }
+    if (sub === "show") {
+        const automationId = parsed.positionals[2];
+        if (!automationId)
+            throw new Error("Usage: binary automations show <id>");
+        printJson(await hostClient.getAutomation(automationId));
+        return;
+    }
+    if (sub === "run") {
+        const automationId = parsed.positionals[2];
+        if (!automationId)
+            throw new Error("Usage: binary automations run <id>");
+        printRunSummary(await hostClient.runAutomation(automationId));
+        return;
+    }
+    if (sub === "pause" || sub === "resume") {
+        const automationId = parsed.positionals[2];
+        if (!automationId)
+            throw new Error(`Usage: binary automations ${sub} <id>`);
+        printAutomationSummary(await hostClient.controlAutomation(automationId, sub));
+        return;
+    }
+    if (sub === "tail") {
+        const automationId = parsed.positionals[2];
+        if (!automationId)
+            throw new Error("Usage: binary automations tail <id>");
+        const intervalRaw = getFlagString(parsed, "interval");
+        const interval = intervalRaw ? Number.parseInt(intervalRaw, 10) : 1200;
+        let after = 0;
+        while (true) {
+            const response = await hostClient.getAutomationEvents(automationId, after);
+            for (const event of response.events) {
+                printAutomationEvent(event);
+                after = Math.max(after, event.seq);
+            }
+            await new Promise((resolve) => setTimeout(resolve, Number.isFinite(interval) ? interval : 1200));
+        }
+    }
+    throw new Error(`Unknown automations subcommand '${sub}'.`);
 }
 async function handleSessions(parsed, config) {
     const resolved = await resolveAuth(config);
@@ -2137,6 +2382,10 @@ async function run() {
     }
     if (command === "runs") {
         await handleRuns(parsed, config);
+        return;
+    }
+    if (command === "automations") {
+        await handleAutomations(parsed, config);
         return;
     }
     if (command === "usage") {

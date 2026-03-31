@@ -73,6 +73,8 @@ export type LocalHostRunSummary = {
   traceId: string;
   sessionId?: string;
   runId?: string;
+  automationId?: string;
+  automationTriggerKind?: LocalHostAutomationTriggerKind;
   leaseId?: string;
   heartbeatAt?: string;
   lastToolAt?: string;
@@ -111,6 +113,85 @@ export type LocalHostPreferences = {
   recentSessions: Array<{ sessionId: string; runId?: string; updatedAt: string; workspaceRoot?: string }>;
   artifactHistory: Array<{ id: string; label: string; url?: string; createdAt: string }>;
   preferredTransport: "host" | "direct";
+  automations?: LocalHostAutomationDefinition[];
+  webhookSubscriptions?: LocalHostWebhookSubscription[];
+};
+
+export type LocalHostAutomationPolicy = "autonomous" | "observe_only" | "approval_before_mutation";
+export type LocalHostAutomationTriggerKind = "manual" | "schedule_nl" | "file_event" | "process_event" | "notification";
+
+export type LocalHostAutomationTrigger =
+  | {
+      kind: "manual";
+      workspaceRoot?: string;
+    }
+  | {
+      kind: "schedule_nl";
+      scheduleText: string;
+      workspaceRoot?: string;
+    }
+  | {
+      kind: "file_event";
+      workspaceRoot: string;
+      includes?: string[];
+      excludes?: string[];
+    }
+  | {
+      kind: "process_event";
+      query: string;
+      workspaceRoot?: string;
+    }
+  | {
+      kind: "notification";
+      topic?: string;
+      query?: string;
+      workspaceRoot?: string;
+    };
+
+export type LocalHostAutomationDefinition = {
+  id: string;
+  name: string;
+  prompt: string;
+  status: "active" | "paused";
+  trigger: LocalHostAutomationTrigger;
+  policy: LocalHostAutomationPolicy;
+  workspaceRoot?: string;
+  model?: string;
+  createdAt: string;
+  updatedAt: string;
+  lastRunAt?: string;
+  lastTriggerAt?: string;
+  lastRunId?: string;
+  lastTriggerSummary?: string;
+  nextRunAt?: string;
+  lastDeliveryAt?: string;
+  lastDeliveryError?: string;
+  deliveryHealth?: "healthy" | "failing" | "idle";
+};
+
+export type LocalHostAutomationEvent = {
+  seq: number;
+  capturedAt: string;
+  event: SseEvent;
+};
+
+export type LocalHostWebhookSubscription = {
+  id: string;
+  url: string;
+  status: "active" | "paused";
+  secret?: string;
+  automationId?: string;
+  events?: string[];
+  createdAt: string;
+  updatedAt: string;
+  lastAttemptAt?: string;
+  lastSuccessAt?: string;
+  failureCount?: number;
+};
+
+export type LocalHostAutomationEventsResponse = {
+  automation: LocalHostAutomationDefinition | null;
+  events: LocalHostAutomationEvent[];
 };
 
 export type LocalHostAssistRequest = {
@@ -123,6 +204,9 @@ export type LocalHostAssistRequest = {
   };
   workspaceRoot?: string;
   detach?: boolean;
+  automationId?: string;
+  automationTriggerKind?: LocalHostAutomationTriggerKind;
+  automationEventId?: string;
   client?: {
     surface: "desktop" | "cli" | "vsix" | "unknown";
     version?: string;
@@ -272,6 +356,16 @@ export class LocalHostClient {
     });
   }
 
+  async streamRun(runId: string, onEvent: (event: SseEvent) => void | Promise<void>, after = 0): Promise<void> {
+    await requestSse({
+      baseUrl: this.baseUrl,
+      auth: {},
+      path: `/v1/runs/${encodeURIComponent(runId)}/stream?after=${encodeURIComponent(String(after))}`,
+      method: "GET",
+      onEvent,
+    });
+  }
+
   async controlRun(runId: string, action: LocalHostRunControlAction, note?: string): Promise<LocalHostRunSummary> {
     return requestJson<LocalHostRunSummary>({
       baseUrl: this.baseUrl,
@@ -288,6 +382,96 @@ export class LocalHostClient {
       auth: {},
       path: `/v1/runs/${encodeURIComponent(runId)}/export`,
       method: "GET",
+    });
+  }
+
+  async listAutomations(): Promise<{ automations: LocalHostAutomationDefinition[] }> {
+    return requestJson<{ automations: LocalHostAutomationDefinition[] }>({
+      baseUrl: this.baseUrl,
+      auth: {},
+      path: "/v1/automations",
+      method: "GET",
+    });
+  }
+
+  async saveAutomation(
+    input: Partial<LocalHostAutomationDefinition> & Pick<LocalHostAutomationDefinition, "name" | "prompt" | "trigger">
+  ): Promise<LocalHostAutomationDefinition> {
+    return requestJson<LocalHostAutomationDefinition>({
+      baseUrl: this.baseUrl,
+      auth: {},
+      path: "/v1/automations",
+      method: "POST",
+      body: input,
+    });
+  }
+
+  async getAutomation(id: string): Promise<LocalHostAutomationDefinition> {
+    return requestJson<LocalHostAutomationDefinition>({
+      baseUrl: this.baseUrl,
+      auth: {},
+      path: `/v1/automations/${encodeURIComponent(id)}`,
+      method: "GET",
+    });
+  }
+
+  async updateAutomation(id: string, patch: Partial<LocalHostAutomationDefinition>): Promise<LocalHostAutomationDefinition> {
+    return requestJson<LocalHostAutomationDefinition>({
+      baseUrl: this.baseUrl,
+      auth: {},
+      path: `/v1/automations/${encodeURIComponent(id)}`,
+      method: "PATCH",
+      body: patch,
+    });
+  }
+
+  async controlAutomation(id: string, action: "pause" | "resume"): Promise<LocalHostAutomationDefinition> {
+    return requestJson<LocalHostAutomationDefinition>({
+      baseUrl: this.baseUrl,
+      auth: {},
+      path: `/v1/automations/${encodeURIComponent(id)}/control`,
+      method: "POST",
+      body: { action },
+    });
+  }
+
+  async runAutomation(id: string): Promise<LocalHostRunSummary> {
+    return requestJson<LocalHostRunSummary>({
+      baseUrl: this.baseUrl,
+      auth: {},
+      path: `/v1/automations/${encodeURIComponent(id)}/run`,
+      method: "POST",
+      body: {},
+    });
+  }
+
+  async getAutomationEvents(id: string, after = 0): Promise<LocalHostAutomationEventsResponse> {
+    return requestJson<LocalHostAutomationEventsResponse>({
+      baseUrl: this.baseUrl,
+      auth: {},
+      path: `/v1/automations/${encodeURIComponent(id)}/events?after=${encodeURIComponent(String(after))}`,
+      method: "GET",
+    });
+  }
+
+  async listWebhookSubscriptions(): Promise<{ subscriptions: LocalHostWebhookSubscription[] }> {
+    return requestJson<{ subscriptions: LocalHostWebhookSubscription[] }>({
+      baseUrl: this.baseUrl,
+      auth: {},
+      path: "/v1/webhooks/subscriptions",
+      method: "GET",
+    });
+  }
+
+  async saveWebhookSubscription(
+    input: Partial<LocalHostWebhookSubscription> & Pick<LocalHostWebhookSubscription, "url">
+  ): Promise<LocalHostWebhookSubscription> {
+    return requestJson<LocalHostWebhookSubscription>({
+      baseUrl: this.baseUrl,
+      auth: {},
+      path: "/v1/webhooks/subscriptions",
+      method: "POST",
+      body: input,
     });
   }
 }

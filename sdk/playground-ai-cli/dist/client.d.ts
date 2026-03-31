@@ -11,6 +11,9 @@ type AssistInput = {
     reasoning?: string;
     historySessionId?: string;
     stream?: boolean;
+    tom?: {
+        enabled?: boolean;
+    };
 };
 type ExecuteAction = {
     type: "command";

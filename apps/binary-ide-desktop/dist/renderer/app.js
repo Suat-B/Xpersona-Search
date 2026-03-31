@@ -22,6 +22,11 @@ const state = {
   currentExecution: null,
   recentSessions: [],
   artifactHistory: [],
+  automations: [],
+  webhookSubscriptions: [],
+  activeAutomationId: null,
+  activeAutomationEvents: [],
+  automationEditorId: null,
   hostAvailable: false,
 };
 
@@ -69,6 +74,20 @@ const el = {
   resumeRun: document.getElementById("resumeRun"),
   takeoverRun: document.getElementById("takeoverRun"),
   cancelRun: document.getElementById("cancelRun"),
+  automationNameInput: document.getElementById("automationNameInput"),
+  automationPromptInput: document.getElementById("automationPromptInput"),
+  automationTriggerSelect: document.getElementById("automationTriggerSelect"),
+  automationPolicySelect: document.getElementById("automationPolicySelect"),
+  automationWorkspaceInput: document.getElementById("automationWorkspaceInput"),
+  automationDetailInput: document.getElementById("automationDetailInput"),
+  saveAutomation: document.getElementById("saveAutomation"),
+  clearAutomationEditor: document.getElementById("clearAutomationEditor"),
+  automationList: document.getElementById("automationList"),
+  webhookUrlInput: document.getElementById("webhookUrlInput"),
+  webhookEventsInput: document.getElementById("webhookEventsInput"),
+  saveWebhook: document.getElementById("saveWebhook"),
+  webhookList: document.getElementById("webhookList"),
+  automationTimeline: document.getElementById("automationTimeline"),
 };
 
 const paletteActionDefinitions = [
@@ -426,6 +445,103 @@ function renderArtifacts() {
   );
 }
 
+function describeAutomationTrigger(trigger) {
+  if (!trigger || typeof trigger !== "object") return "manual";
+  if (trigger.kind === "schedule_nl") return `Schedule â€¢ ${trigger.scheduleText || "every hour"}`;
+  if (trigger.kind === "file_event") return `File event â€¢ ${trigger.workspaceRoot || "workspace"}`;
+  if (trigger.kind === "process_event") return `Process event â€¢ ${trigger.query || "query"}`;
+  if (trigger.kind === "notification") return `Notification â€¢ ${trigger.topic || trigger.query || "any"}`;
+  return "Manual";
+}
+
+function fillAutomationEditor(automation = null) {
+  state.automationEditorId = automation?.id || null;
+  el.automationNameInput.value = automation?.name || "";
+  el.automationPromptInput.value = automation?.prompt || "";
+  el.automationTriggerSelect.value = automation?.trigger?.kind || "manual";
+  el.automationPolicySelect.value = automation?.policy || "autonomous";
+  el.automationWorkspaceInput.value = automation?.workspaceRoot || automation?.trigger?.workspaceRoot || "";
+  if (automation?.trigger?.kind === "schedule_nl") {
+    el.automationDetailInput.value = automation.trigger.scheduleText || "";
+  } else if (automation?.trigger?.kind === "process_event") {
+    el.automationDetailInput.value = automation.trigger.query || "";
+  } else if (automation?.trigger?.kind === "notification") {
+    el.automationDetailInput.value = automation.trigger.topic || automation.trigger.query || "";
+  } else {
+    el.automationDetailInput.value = "";
+  }
+  el.saveAutomation.textContent = automation ? "Update automation" : "Save automation";
+}
+
+function renderAutomations() {
+  renderHistoryList(
+    el.automationList,
+    state.automations,
+    "No automations yet.",
+    (automation) => `
+      <article>
+        <strong>${escapeHtml(automation.name)}</strong>
+        <span>${escapeHtml(describeAutomationTrigger(automation.trigger))}</span>
+        <span>${escapeHtml(`${automation.status} â€¢ ${automation.deliveryHealth || "idle"}${automation.nextRunAt ? ` â€¢ next ${automation.nextRunAt}` : ""}`)}</span>
+        ${automation.lastTriggerSummary ? `<span>${escapeHtml(automation.lastTriggerSummary)}</span>` : ""}
+        <div class="button-row">
+          <button data-automation-action="run" data-automation-id="${escapeHtml(automation.id)}" type="button">Run</button>
+          <button data-automation-action="${automation.status === "paused" ? "resume" : "pause"}" data-automation-id="${escapeHtml(automation.id)}" class="button-secondary" type="button">${automation.status === "paused" ? "Resume" : "Pause"}</button>
+          <button data-automation-action="edit" data-automation-id="${escapeHtml(automation.id)}" class="button-secondary" type="button">Edit</button>
+          <button data-automation-action="timeline" data-automation-id="${escapeHtml(automation.id)}" class="button-secondary" type="button">Timeline</button>
+        </div>
+      </article>
+    `
+  );
+}
+
+function renderWebhookSubscriptions() {
+  renderHistoryList(
+    el.webhookList,
+    state.webhookSubscriptions,
+    "No webhook subscriptions yet.",
+    (subscription) => `
+      <article>
+        <strong>${escapeHtml(subscription.url)}</strong>
+        <span>${escapeHtml(`${subscription.status} â€¢ failures ${subscription.failureCount || 0}`)}</span>
+        ${subscription.events?.length ? `<span>${escapeHtml(subscription.events.join(", "))}</span>` : ""}
+      </article>
+    `
+  );
+}
+
+function renderAutomationTimeline() {
+  const automation = state.automations.find((item) => item.id === state.activeAutomationId);
+  if (!automation) {
+    el.automationTimeline.classList.add("empty");
+    el.automationTimeline.textContent = "Select an automation to inspect its event timeline.";
+    return;
+  }
+  if (!state.activeAutomationEvents.length) {
+    el.automationTimeline.classList.add("empty");
+    el.automationTimeline.textContent = "No automation events yet.";
+    return;
+  }
+  el.automationTimeline.classList.remove("empty");
+  el.automationTimeline.innerHTML = state.activeAutomationEvents
+    .slice()
+    .reverse()
+    .map((entry) => {
+      const payload = entry.event || {};
+      const summary = typeof payload.data?.summary === "string" ? payload.data.summary : "";
+      const runId = typeof payload.data?.runId === "string" ? payload.data.runId : "";
+      return `
+        <article>
+          <strong>${escapeHtml(payload.event || "automation.event")}</strong>
+          <span>${escapeHtml(entry.capturedAt || "")}</span>
+          ${summary ? `<span>${escapeHtml(summary)}</span>` : ""}
+          ${runId ? `<span>${escapeHtml(`run ${runId}`)}</span>` : ""}
+        </article>
+      `;
+    })
+    .join("");
+}
+
 function renderPaletteActions(filterText) {
   const run = currentRunSummary();
   const filtered = paletteActionDefinitions.filter((item) => {
@@ -561,13 +677,15 @@ async function hydrate() {
   host.baseUrl = runtimeInfo.hostUrl || host.baseUrl;
 
   try {
-    const [health, auth, preferences, autonomy, worldModel, runsResponse, appearance] = await Promise.all([
+    const [health, auth, preferences, autonomy, worldModel, runsResponse, automationsResponse, webhooksResponse, appearance] = await Promise.all([
       requestJson("/v1/healthz"),
       requestJson("/v1/auth/status"),
       requestJson("/v1/preferences"),
       requestJson("/v1/autonomy/status"),
       requestJson("/v1/world-model/summary"),
       requestJson("/v1/runs?limit=12"),
+      requestJson("/v1/automations"),
+      requestJson("/v1/webhooks/subscriptions"),
       window.binaryDesktop.getAppearance(),
     ]);
 
@@ -577,9 +695,14 @@ async function hydrate() {
     state.worldModel = worldModel;
     state.appearance = appearance;
     state.runs = Array.isArray(runsResponse.runs) ? runsResponse.runs : [];
+    state.automations = Array.isArray(automationsResponse.automations) ? automationsResponse.automations : [];
+    state.webhookSubscriptions = Array.isArray(webhooksResponse.subscriptions) ? webhooksResponse.subscriptions : [];
     state.recentSessions = Array.isArray(preferences.recentSessions) ? preferences.recentSessions : [];
     state.artifactHistory = Array.isArray(preferences.artifactHistory) ? preferences.artifactHistory : [];
     el.workspaceInput.value = preferences.trustedWorkspaces?.[0]?.path || "";
+    if (!el.automationWorkspaceInput.value.trim()) {
+      el.automationWorkspaceInput.value = preferences.trustedWorkspaces?.[0]?.path || "";
+    }
     el.themeSelect.value = appearance?.theme === "dark" ? "dark" : "light";
     applyTheme(appearance?.theme);
 
@@ -589,6 +712,13 @@ async function hydrate() {
     renderRuns();
     renderRecentSessions();
     renderArtifacts();
+    renderAutomations();
+    renderWebhookSubscriptions();
+    if (state.activeAutomationId) {
+      const activeResponse = await requestJson(`/v1/automations/${encodeURIComponent(state.activeAutomationId)}/events`).catch(() => null);
+      state.activeAutomationEvents = Array.isArray(activeResponse?.events) ? activeResponse.events : [];
+    }
+    renderAutomationTimeline();
     renderLiveControls();
     renderConversation();
     renderPaletteActions(el.paletteSearch.value || "");
@@ -613,6 +743,120 @@ async function trustWorkspace() {
     },
   });
   await hydrate();
+}
+
+function buildAutomationTrigger() {
+  const kind = el.automationTriggerSelect.value;
+  const workspaceRoot = el.automationWorkspaceInput.value.trim() || el.workspaceInput.value.trim() || undefined;
+  const detail = el.automationDetailInput.value.trim();
+  if (kind === "schedule_nl") {
+    return {
+      kind,
+      scheduleText: detail || "every hour",
+      ...(workspaceRoot ? { workspaceRoot } : {}),
+    };
+  }
+  if (kind === "file_event") {
+    return {
+      kind,
+      workspaceRoot: workspaceRoot || el.workspaceInput.value.trim(),
+    };
+  }
+  if (kind === "process_event") {
+    return {
+      kind,
+      query: detail || "chrome",
+      ...(workspaceRoot ? { workspaceRoot } : {}),
+    };
+  }
+  if (kind === "notification") {
+    return {
+      kind,
+      ...(workspaceRoot ? { workspaceRoot } : {}),
+      ...(detail ? { topic: detail } : {}),
+    };
+  }
+  return {
+    kind: "manual",
+    ...(workspaceRoot ? { workspaceRoot } : {}),
+  };
+}
+
+async function saveAutomationDefinition() {
+  const name = el.automationNameInput.value.trim();
+  const prompt = el.automationPromptInput.value.trim();
+  if (!name || !prompt) return;
+  const payload = {
+    name,
+    prompt,
+    trigger: buildAutomationTrigger(),
+    policy: el.automationPolicySelect.value,
+    status: "active",
+    workspaceRoot: el.automationWorkspaceInput.value.trim() || el.workspaceInput.value.trim() || undefined,
+  };
+  if (state.automationEditorId) {
+    await requestJson(`/v1/automations/${encodeURIComponent(state.automationEditorId)}`, {
+      method: "PATCH",
+      body: payload,
+    });
+  } else {
+    await requestJson("/v1/automations", {
+      method: "POST",
+      body: payload,
+    });
+  }
+  fillAutomationEditor();
+  await hydrate();
+}
+
+async function saveWebhookSubscription() {
+  const url = el.webhookUrlInput.value.trim();
+  if (!url) return;
+  const events = el.webhookEventsInput.value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  await requestJson("/v1/webhooks/subscriptions", {
+    method: "POST",
+    body: {
+      url,
+      events,
+    },
+  });
+  el.webhookUrlInput.value = "";
+  el.webhookEventsInput.value = "";
+  await hydrate();
+}
+
+async function loadAutomationTimeline(automationId) {
+  if (!automationId) return;
+  const response = await requestJson(`/v1/automations/${encodeURIComponent(automationId)}/events`);
+  state.activeAutomationId = automationId;
+  state.activeAutomationEvents = Array.isArray(response.events) ? response.events : [];
+  renderAutomationTimeline();
+  openSheet(el.historySheet);
+}
+
+async function controlAutomation(action, automationId) {
+  if (!automationId) return;
+  if (action === "run") {
+    const run = await requestJson(`/v1/automations/${encodeURIComponent(automationId)}/run`, {
+      method: "POST",
+      body: {},
+    });
+    state.activeRunId = run.id || state.activeRunId;
+  } else {
+    await requestJson(`/v1/automations/${encodeURIComponent(automationId)}/control`, {
+      method: "POST",
+      body: {
+        action: action === "resume" ? "resume" : "pause",
+      },
+    });
+  }
+  await hydrate();
+  if (state.activeAutomationId === automationId) {
+    await loadAutomationTimeline(automationId);
+  }
 }
 
 async function saveApiKey() {
@@ -867,6 +1111,18 @@ el.cancelRun.addEventListener("click", () => {
   void controlRun("cancel", "Cancelled from the settings sheet.");
 });
 
+el.saveAutomation.addEventListener("click", () => {
+  void saveAutomationDefinition();
+});
+
+el.clearAutomationEditor.addEventListener("click", () => {
+  fillAutomationEditor();
+});
+
+el.saveWebhook.addEventListener("click", () => {
+  void saveWebhookSubscription();
+});
+
 document.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
@@ -921,6 +1177,28 @@ document.addEventListener("click", (event) => {
   if (inlineAction) {
     const action = inlineAction.getAttribute("data-run-action");
     if (action) void controlRun(action, "Run action triggered from the conversation surface.");
+    return;
+  }
+
+  const automationAction = target.closest("[data-automation-action]");
+  if (automationAction) {
+    const action = automationAction.getAttribute("data-automation-action");
+    const automationId = automationAction.getAttribute("data-automation-id");
+    if (action === "edit" && automationId) {
+      const automation = state.automations.find((item) => item.id === automationId);
+      if (automation) {
+        fillAutomationEditor(automation);
+        openSheet(el.settingsSheet);
+      }
+      return;
+    }
+    if (action === "timeline" && automationId) {
+      void loadAutomationTimeline(automationId);
+      return;
+    }
+    if (action && automationId) {
+      void controlAutomation(action, automationId);
+    }
   }
 });
 
@@ -986,6 +1264,7 @@ window.binaryDesktop.onFocusRun(async ({ runId }) => {
 
 bindFocusLeaseInput(el.taskInput, "chat-composer");
 bindFocusLeaseInput(el.landingTaskInput, "launch-composer");
+fillAutomationEditor();
 renderConversation();
 renderStatusMeta();
 await hydrate();

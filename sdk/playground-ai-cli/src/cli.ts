@@ -13,6 +13,9 @@ import { clearApiKey, clearBrowserAuth, getApiKey, getBrowserAccessToken, getBro
 import { CliHttpError, type SseEvent } from "./http.js";
 import {
   LocalHostClient,
+  type LocalHostAutomationDefinition,
+  type LocalHostAutomationEvent,
+  type LocalHostAutomationTrigger,
   type LocalHostRunControlAction,
   type LocalHostRunSummary,
 } from "./local-host.js";
@@ -39,8 +42,16 @@ Core commands:
   binary login                        One-shot browser sign-in
   binary run "<task>"                One-shot task execution
   binary run "<task>" --detach       Start an unattended Binary Host run
+  binary automations list
+  binary automations create --name "<name>" --prompt "<prompt>" --trigger <manual|schedule_nl|file_event|process_event|notification>
+  binary automations show <id>
+  binary automations run <id>
+  binary automations pause <id>
+  binary automations resume <id>
+  binary automations tail <id>
   binary runs list [--limit 20]
   binary runs tail <runId>
+  binary runs stream <runId>
   binary runs resume <runId>
   binary runs cancel <runId>
   binary runs export <runId>
@@ -85,8 +96,16 @@ Primary:
   binary login
   binary run "<task>"
   binary run "<task>" --detach
+  binary automations list
+  binary automations create --name "<name>" --prompt "<prompt>" --trigger <manual|schedule_nl|file_event|process_event|notification>
+  binary automations show <id>
+  binary automations run <id>
+  binary automations pause <id>
+  binary automations resume <id>
+  binary automations tail <id> [--interval 1200]
   binary runs list [--limit 20]
   binary runs tail <runId>
+  binary runs stream <runId>
   binary runs resume <runId>
   binary runs cancel <runId>
   binary runs export <runId>
@@ -1817,6 +1836,114 @@ function printRunSummary(summary: LocalHostRunSummary): void {
   }
 }
 
+function describeAutomationTrigger(trigger: LocalHostAutomationTrigger): string {
+  if (trigger.kind === "schedule_nl") {
+    return `schedule "${trigger.scheduleText}"`;
+  }
+  if (trigger.kind === "file_event") {
+    return `file event ${trigger.workspaceRoot}`;
+  }
+  if (trigger.kind === "process_event") {
+    return `process "${trigger.query}"`;
+  }
+  if (trigger.kind === "notification") {
+    return `notification ${trigger.topic || trigger.query || "any"}`;
+  }
+  return "manual";
+}
+
+function printAutomationSummary(automation: LocalHostAutomationDefinition): void {
+  console.log(`${automation.id}  [${automation.status}]  ${automation.name}`);
+  console.log(
+    dim(
+      `trigger=${describeAutomationTrigger(automation.trigger)}  policy=${automation.policy}${
+        automation.nextRunAt ? `  next=${automation.nextRunAt}` : ""
+      }${automation.lastRunId ? `  lastRun=${automation.lastRunId}` : ""}`
+    )
+  );
+  if (automation.lastTriggerSummary) {
+    console.log(dim(`last trigger: ${automation.lastTriggerSummary}`));
+  }
+  if (automation.lastDeliveryError) {
+    console.log(dim(`delivery: ${automation.lastDeliveryError}`));
+  }
+}
+
+function printAutomationEvent(event: LocalHostAutomationEvent): void {
+  const root = asObject(event.event);
+  const name = typeof root.event === "string" ? root.event : "automation.event";
+  const data = asObject(root.data);
+  const summary = typeof data.summary === "string" ? data.summary : "";
+  const runId = typeof data.runId === "string" ? data.runId : "";
+  const error = typeof data.error === "string" ? data.error : "";
+  const bits = [summary, runId ? `run=${runId}` : "", error].filter(Boolean);
+  console.log(`${dim(name)}${bits.length ? ` ${bits.join("  ")}` : ""}`);
+}
+
+function parseCsvFlag(value: string | undefined): string[] | undefined {
+  if (!value) return undefined;
+  const items = value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length ? items : undefined;
+}
+
+function buildAutomationTriggerFromArgs(parsed: ParsedArgs): LocalHostAutomationTrigger {
+  const triggerKind = getFlagString(parsed, "trigger");
+  const workspaceRoot = getFlagString(parsed, "workspace");
+  if (!triggerKind || triggerKind === "manual") {
+    return {
+      kind: "manual",
+      ...(workspaceRoot ? { workspaceRoot: path.resolve(workspaceRoot) } : {}),
+    };
+  }
+  if (triggerKind === "schedule_nl") {
+    const scheduleText = getFlagString(parsed, "schedule") || getFlagString(parsed, "when");
+    if (!scheduleText) {
+      throw new Error("Schedule automations require --schedule \"every weekday at 9am\".");
+    }
+    return {
+      kind: "schedule_nl",
+      scheduleText,
+      ...(workspaceRoot ? { workspaceRoot: path.resolve(workspaceRoot) } : {}),
+    };
+  }
+  if (triggerKind === "file_event") {
+    const root = workspaceRoot ? path.resolve(workspaceRoot) : process.cwd();
+    const includes = parseCsvFlag(getFlagString(parsed, "includes"));
+    const excludes = parseCsvFlag(getFlagString(parsed, "excludes"));
+    return {
+      kind: "file_event",
+      workspaceRoot: root,
+      ...(includes ? { includes } : {}),
+      ...(excludes ? { excludes } : {}),
+    };
+  }
+  if (triggerKind === "process_event") {
+    const query = getFlagString(parsed, "query");
+    if (!query) {
+      throw new Error("Process automations require --query \"chrome\" or similar.");
+    }
+    return {
+      kind: "process_event",
+      query,
+      ...(workspaceRoot ? { workspaceRoot: path.resolve(workspaceRoot) } : {}),
+    };
+  }
+  if (triggerKind === "notification") {
+    const topic = getFlagString(parsed, "topic");
+    const query = getFlagString(parsed, "query");
+    return {
+      kind: "notification",
+      ...(workspaceRoot ? { workspaceRoot: path.resolve(workspaceRoot) } : {}),
+      ...(topic ? { topic } : {}),
+      ...(query ? { query } : {}),
+    };
+  }
+  throw new Error("Unknown --trigger. Use manual|schedule_nl|file_event|process_event|notification.");
+}
+
 function printTailEvent(event: { seq: number; capturedAt: string; event: Record<string, unknown> }): void {
   const root = asObject(event.event);
   const name = typeof root.event === "string" ? root.event : "event";
@@ -1953,6 +2080,22 @@ async function handleRuns(parsed: ParsedArgs, config: CliConfig): Promise<void> 
     }
   }
 
+  if (sub === "stream") {
+    const runId = parsed.positionals[2];
+    if (!runId) throw new Error("Usage: binary runs stream <runId>");
+    await hostClient.streamRun(runId, async (event) => {
+      const payload = asObject(event);
+      const seq = typeof payload.seq === "number" ? payload.seq : 0;
+      const capturedAt = typeof payload.capturedAt === "string" ? payload.capturedAt : new Date().toISOString();
+      printTailEvent({
+        seq,
+        capturedAt,
+        event: payload,
+      });
+    });
+    return;
+  }
+
   if (sub === "export") {
     const runId = parsed.positionals[2];
     if (!runId) throw new Error("Usage: binary runs export <runId> [--output run.json]");
@@ -1976,6 +2119,84 @@ async function handleRuns(parsed: ParsedArgs, config: CliConfig): Promise<void> 
   const note = getFlagString(parsed, "note");
   const summary = await hostClient.controlRun(runId, normalizeRunAction(sub), note);
   printRunSummary(summary);
+}
+
+async function handleAutomations(parsed: ParsedArgs, config: CliConfig): Promise<void> {
+  const hostClient = await requireHostClient(config);
+  const sub = parsed.positionals[1] || "list";
+
+  if (sub === "list") {
+    const response = await hostClient.listAutomations();
+    if (!response.automations.length) {
+      console.log("No automations found.");
+      return;
+    }
+    for (const automation of response.automations) {
+      printAutomationSummary(automation);
+    }
+    return;
+  }
+
+  if (sub === "create") {
+    const name = getFlagString(parsed, "name");
+    const prompt = getFlagString(parsed, "prompt");
+    if (!name || !prompt) {
+      throw new Error("Usage: binary automations create --name \"...\" --prompt \"...\" --trigger <kind>");
+    }
+    const automation = await hostClient.saveAutomation({
+      name,
+      prompt,
+      trigger: buildAutomationTriggerFromArgs(parsed),
+      status: getFlagString(parsed, "status") === "paused" ? "paused" : "active",
+      policy:
+        getFlagString(parsed, "policy") === "observe_only" || getFlagString(parsed, "policy") === "approval_before_mutation"
+          ? (getFlagString(parsed, "policy") as LocalHostAutomationDefinition["policy"])
+          : "autonomous",
+      workspaceRoot: getFlagString(parsed, "workspace") ? path.resolve(getFlagString(parsed, "workspace") as string) : undefined,
+      model: getFlagString(parsed, "model"),
+    });
+    printAutomationSummary(automation);
+    return;
+  }
+
+  if (sub === "show") {
+    const automationId = parsed.positionals[2];
+    if (!automationId) throw new Error("Usage: binary automations show <id>");
+    printJson(await hostClient.getAutomation(automationId));
+    return;
+  }
+
+  if (sub === "run") {
+    const automationId = parsed.positionals[2];
+    if (!automationId) throw new Error("Usage: binary automations run <id>");
+    printRunSummary(await hostClient.runAutomation(automationId));
+    return;
+  }
+
+  if (sub === "pause" || sub === "resume") {
+    const automationId = parsed.positionals[2];
+    if (!automationId) throw new Error(`Usage: binary automations ${sub} <id>`);
+    printAutomationSummary(await hostClient.controlAutomation(automationId, sub));
+    return;
+  }
+
+  if (sub === "tail") {
+    const automationId = parsed.positionals[2];
+    if (!automationId) throw new Error("Usage: binary automations tail <id>");
+    const intervalRaw = getFlagString(parsed, "interval");
+    const interval = intervalRaw ? Number.parseInt(intervalRaw, 10) : 1200;
+    let after = 0;
+    while (true) {
+      const response = await hostClient.getAutomationEvents(automationId, after);
+      for (const event of response.events) {
+        printAutomationEvent(event);
+        after = Math.max(after, event.seq);
+      }
+      await new Promise((resolve) => setTimeout(resolve, Number.isFinite(interval) ? interval : 1200));
+    }
+  }
+
+  throw new Error(`Unknown automations subcommand '${sub}'.`);
 }
 
 async function handleSessions(parsed: ParsedArgs, config: CliConfig): Promise<void> {
@@ -2387,6 +2608,10 @@ async function run(): Promise<void> {
   }
   if (command === "runs") {
     await handleRuns(parsed, config);
+    return;
+  }
+  if (command === "automations") {
+    await handleAutomations(parsed, config);
     return;
   }
   if (command === "usage") {

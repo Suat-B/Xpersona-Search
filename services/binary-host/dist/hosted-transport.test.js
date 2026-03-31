@@ -102,6 +102,26 @@ describe("hosted-transport", () => {
         expect(envelope.final).toBe("complete");
         expect(seenEvents).toHaveLength(4);
     });
+    it("forwards TOM config to hosted assist", async () => {
+        const fetchImpl = async (_url, init) => {
+            const body = JSON.parse(String(init?.body || "{}"));
+            expect(body.tom).toEqual({ enabled: false });
+            return createSseResponse(["data: [DONE]\n\n"]);
+        };
+        await streamHostedAssist({
+            baseUrl: "http://localhost:3000",
+            apiKey: "test-key",
+            request: {
+                ...createAssistRequest(),
+                tom: { enabled: false },
+            },
+            onEvent: () => { },
+        }, {
+            fetchImpl: fetchImpl,
+            fetchTimeoutMs: 50,
+            streamIdleTimeoutMs: 50,
+        });
+    });
     it("times out when the continue call hangs", async () => {
         await expect(continueHostedRun({
             baseUrl: "http://localhost:3000",

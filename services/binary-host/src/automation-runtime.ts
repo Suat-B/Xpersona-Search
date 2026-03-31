@@ -222,12 +222,12 @@ function readState(filePath: string): Promise<AutomationRuntimeState> {
     .then((parsed) => ({
       ...DEFAULT_STATE,
       ...parsed,
-      version: 1,
+      version: 1 as const,
       events: parsed.events && typeof parsed.events === "object" ? parsed.events : {},
       deliveries: Array.isArray(parsed.deliveries) ? parsed.deliveries : [],
       processState: toRecord(parsed.processState) ? (parsed.processState as AutomationRuntimeState["processState"]) : {},
     }))
-    .catch(() => ({ ...DEFAULT_STATE }));
+    .catch(() => ({ ...DEFAULT_STATE, version: 1 as const }));
 }
 
 async function writeState(filePath: string, state: AutomationRuntimeState): Promise<void> {
@@ -316,6 +316,7 @@ function computeNextScheduleOccurrence(scheduleText: string, now: Date, lastTrig
 }
 
 function shouldTriggerSchedule(scheduleText: string, now: Date, lastTriggeredAt?: string): boolean {
+  if (!lastTriggeredAt) return true;
   const next = computeNextScheduleOccurrence(scheduleText, lastTriggeredAt ? new Date(lastTriggeredAt) : now, lastTriggeredAt);
   if (!next) return false;
   return next.getTime() <= now.getTime();
@@ -481,6 +482,11 @@ export class AutomationRuntime {
     }
   }
 
+  async refreshConfig(): Promise<void> {
+    await this.initialize();
+    await this.syncFileWatchers();
+  }
+
   async stop(): Promise<void> {
     if (this.schedulerTimer) clearInterval(this.schedulerTimer);
     if (this.processTimer) clearInterval(this.processTimer);
@@ -573,6 +579,7 @@ export class AutomationRuntime {
       ...config,
       automations: [next, ...config.automations.filter((item) => item.id !== id)],
     });
+    await this.syncFileWatchers();
     await this.emitAutomationEvent({
       automation: next,
       eventName: action === "pause" ? "automation.paused" : "automation.updated",
@@ -588,3 +595,555 @@ export class AutomationRuntime {
     const config = await this.input.readConfig();
     return config.webhookSubscriptions;
   }
+
+  async saveWebhookSubscription(
+    raw: Partial<BinaryWebhookSubscription> & Pick<BinaryWebhookSubscription, "url">
+  ): Promise<BinaryWebhookSubscription> {
+    await this.initialize();
+    const config = await this.input.readConfig();
+    const existing = raw.id ? config.webhookSubscriptions.find((item) => item.id === raw.id) : null;
+    const now = nowIso();
+    const next: BinaryWebhookSubscription = {
+      id: existing?.id || randomUUID(),
+      url: compactWhitespace(raw.url),
+      status: raw.status === "paused" ? "paused" : "active",
+      secret:
+        typeof raw.secret === "string" && raw.secret.trim()
+          ? raw.secret.trim()
+          : existing?.secret || randomUUID().replace(/-/g, ""),
+      automationId:
+        typeof raw.automationId === "string" && raw.automationId.trim() ? raw.automationId.trim() : existing?.automationId,
+      events: Array.isArray(raw.events)
+        ? raw.events.map((item) => String(item)).filter(Boolean)
+        : existing?.events,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+      lastAttemptAt: existing?.lastAttemptAt,
+      lastSuccessAt: existing?.lastSuccessAt,
+      failureCount: existing?.failureCount || 0,
+    };
+    await this.input.writeConfig({
+      ...config,
+      webhookSubscriptions: [next, ...config.webhookSubscriptions.filter((item) => item.id !== next.id)],
+    });
+    return next;
+  }
+
+  async runAutomation(id: string, triggerSummary = "Manual automation run requested."): Promise<QueueRunResult | null> {
+    await this.initialize();
+    const automation = await this.getAutomation(id);
+    if (!automation) return null;
+    return await this.triggerAutomation(automation, {
+      triggerKind: "manual",
+      triggerSummary,
+      source: "automation_runtime",
+    });
+  }
+
+  async ingestNotification(input: {
+    topic?: string;
+    summary?: string;
+    automationId?: string;
+    payload?: Record<string, unknown>;
+  }): Promise<{ triggeredAutomationIds: string[] }> {
+    await this.initialize();
+    const config = await this.input.readConfig();
+    const triggered: string[] = [];
+    const topic = compactWhitespace(input.topic);
+    const summary = compactWhitespace(input.summary);
+
+    for (const automation of config.automations) {
+      if (automation.status !== "active" || automation.trigger.kind !== "notification") continue;
+      if (input.automationId && automation.id !== input.automationId) continue;
+      const matchesTopic = !automation.trigger.topic || automation.trigger.topic === topic;
+      const matchesQuery =
+        !automation.trigger.query ||
+        summary.toLowerCase().includes(automation.trigger.query.toLowerCase()) ||
+        topic.toLowerCase().includes(automation.trigger.query.toLowerCase());
+      if (!matchesTopic || !matchesQuery) continue;
+      await this.triggerAutomation(automation, {
+        triggerKind: "notification",
+        triggerSummary: summary || topic || "Notification trigger received.",
+        source: "notification",
+        extraData: {
+          topic,
+          payload: input.payload || {},
+        },
+      });
+      triggered.push(automation.id);
+    }
+
+    return { triggeredAutomationIds: triggered };
+  }
+
+  async getAutomationEvents(automationId: string, after = 0): Promise<{ automation: BinaryAutomationDefinition | null; events: StoredAutomationEvent[] }> {
+    await this.initialize();
+    const automation = await this.getAutomation(automationId);
+    const events = (this.state.events[automationId] || []).filter((item) => item.seq > after);
+    return { automation, events };
+  }
+
+  async recordRunStarted(input: { automationId: string; runId: string }): Promise<void> {
+    const automation = await this.getAutomation(input.automationId);
+    if (!automation) return;
+    await this.emitAutomationEvent({
+      automation,
+      eventName: "automation.run_started",
+      data: { runId: input.runId, automationId: automation.id },
+      source: "host",
+      severity: "info",
+      triggerKind: automation.trigger.kind,
+      runId: input.runId,
+    });
+  }
+
+  async recordRunCompleted(input: { automationId: string; runId: string; summary?: string }): Promise<void> {
+    await this.applyRunResult(input, "automation.run_completed", "info", input.summary);
+  }
+
+  async recordRunFailed(input: { automationId: string; runId: string; summary?: string }): Promise<void> {
+    await this.applyRunResult(input, "automation.run_failed", "error", input.summary);
+  }
+
+  private async applyRunResult(
+    input: { automationId: string; runId: string; summary?: string },
+    eventName: string,
+    severity: "info" | "warn" | "error",
+    summary?: string
+  ): Promise<void> {
+    const config = await this.input.readConfig();
+    const automation = config.automations.find((item) => item.id === input.automationId);
+    if (!automation) return;
+    const next: BinaryAutomationDefinition = {
+      ...automation,
+      lastRunAt: nowIso(),
+      lastRunId: input.runId,
+      updatedAt: nowIso(),
+    };
+    await this.input.writeConfig({
+      ...config,
+      automations: [next, ...config.automations.filter((item) => item.id !== next.id)],
+    });
+    await this.emitAutomationEvent({
+      automation: next,
+      eventName,
+      data: { runId: input.runId, summary: summary || "", automationId: next.id },
+      source: "host",
+      severity,
+      triggerKind: next.trigger.kind,
+      runId: input.runId,
+    });
+  }
+
+  private normalizeTrigger(trigger: BinaryAutomationTrigger, fallbackWorkspaceRoot?: string): BinaryAutomationTrigger {
+    if (trigger.kind === "manual") {
+      return {
+        kind: "manual",
+        ...(trigger.workspaceRoot || fallbackWorkspaceRoot
+          ? { workspaceRoot: normalizePath(trigger.workspaceRoot || fallbackWorkspaceRoot || "") }
+          : {}),
+      };
+    }
+    if (trigger.kind === "schedule_nl") {
+      return {
+        kind: "schedule_nl",
+        scheduleText: compactWhitespace(trigger.scheduleText),
+        ...(trigger.workspaceRoot || fallbackWorkspaceRoot
+          ? { workspaceRoot: normalizePath(trigger.workspaceRoot || fallbackWorkspaceRoot || "") }
+          : {}),
+      };
+    }
+    if (trigger.kind === "file_event") {
+      return {
+        kind: "file_event",
+        workspaceRoot: normalizePath(trigger.workspaceRoot || fallbackWorkspaceRoot || ""),
+        ...(trigger.includes?.length ? { includes: trigger.includes.map((item) => compactWhitespace(item)).filter(Boolean) } : {}),
+        ...(trigger.excludes?.length ? { excludes: trigger.excludes.map((item) => compactWhitespace(item)).filter(Boolean) } : {}),
+      };
+    }
+    if (trigger.kind === "process_event") {
+      return {
+        kind: "process_event",
+        query: compactWhitespace(trigger.query),
+        ...(trigger.workspaceRoot || fallbackWorkspaceRoot
+          ? { workspaceRoot: normalizePath(trigger.workspaceRoot || fallbackWorkspaceRoot || "") }
+          : {}),
+      };
+    }
+    return {
+      kind: "notification",
+      ...(trigger.workspaceRoot || fallbackWorkspaceRoot
+        ? { workspaceRoot: normalizePath(trigger.workspaceRoot || fallbackWorkspaceRoot || "") }
+        : {}),
+      ...(trigger.topic ? { topic: compactWhitespace(trigger.topic) } : {}),
+      ...(trigger.query ? { query: compactWhitespace(trigger.query) } : {}),
+    };
+  }
+
+  private decorateAutomationForReturn(automation: BinaryAutomationDefinition, now: Date): BinaryAutomationDefinition {
+    if (automation.trigger.kind !== "schedule_nl") {
+      return automation;
+    }
+    const nextRunAt = computeNextScheduleOccurrence(
+      automation.trigger.scheduleText,
+      now,
+      automation.lastTriggerAt
+    )?.toISOString();
+    return {
+      ...automation,
+      nextRunAt,
+    };
+  }
+
+  private async emitAutomationEvent(input: {
+    automation: BinaryAutomationDefinition;
+    eventName: string;
+    data: Record<string, unknown>;
+    source: "automation_runtime" | "scheduler" | "file_watch" | "process_watch" | "notification" | "host" | "webhook";
+    severity: "info" | "warn" | "error";
+    triggerKind: BinaryAutomationTriggerKind;
+    runId?: string;
+    skipWebhookDelivery?: boolean;
+  }): Promise<string> {
+    await this.initialize();
+    const seq = ((this.state.events[input.automation.id] || []).at(-1)?.seq || 0) + 1;
+    const capturedAt = nowIso();
+    const payload = {
+      event: input.eventName,
+      data: input.data,
+      id: `automation_event_${input.automation.id}_${seq}`,
+      seq,
+      capturedAt,
+      scope: input.runId ? "run" : "automation",
+      automationId: input.automation.id,
+      ...(input.runId ? { runId: input.runId } : {}),
+      triggerKind: input.triggerKind,
+      source: input.source,
+      severity: input.severity,
+    };
+    const stored: StoredAutomationEvent = {
+      seq,
+      capturedAt,
+      event: payload,
+    };
+    this.state.events[input.automation.id] = [...(this.state.events[input.automation.id] || []), stored].slice(
+      -MAX_AUTOMATION_EVENTS
+    );
+    if (!input.skipWebhookDelivery) {
+      await this.enqueueDeliveries(payload);
+    }
+    await this.persistState();
+    return String(payload.id);
+  }
+
+  private async enqueueDeliveries(payload: Record<string, unknown>): Promise<void> {
+    const config = await this.input.readConfig();
+    const eventName = String(payload.event || "");
+    for (const subscription of config.webhookSubscriptions) {
+      if (subscription.status !== "active") continue;
+      if (subscription.automationId && subscription.automationId !== String(payload.automationId || "")) continue;
+      if (!matchesEventFilter(eventName, subscription.events)) continue;
+      this.state.deliveries.push({
+        id: randomUUID(),
+        subscriptionId: subscription.id,
+        automationId: typeof payload.automationId === "string" ? payload.automationId : undefined,
+        eventName,
+        payload,
+        status: "pending",
+        attemptCount: 0,
+        nextAttemptAt: nowIso(),
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      });
+    }
+    this.state.deliveries = this.state.deliveries.slice(-MAX_DELIVERIES);
+  }
+
+  private async persistState(): Promise<void> {
+    await writeState(this.input.storagePath, this.state);
+  }
+
+  private async triggerAutomation(
+    automation: BinaryAutomationDefinition,
+    input: {
+      triggerKind: BinaryAutomationTriggerKind;
+      triggerSummary: string;
+      source: "automation_runtime" | "scheduler" | "file_watch" | "process_watch" | "notification";
+      extraData?: Record<string, unknown>;
+    }
+  ): Promise<QueueRunResult> {
+    const config = await this.input.readConfig();
+    const current = config.automations.find((item) => item.id === automation.id) || automation;
+    const next: BinaryAutomationDefinition = {
+      ...current,
+      lastTriggerAt: nowIso(),
+      lastTriggerSummary: input.triggerSummary,
+      updatedAt: nowIso(),
+    };
+    await this.input.writeConfig({
+      ...config,
+      automations: [next, ...config.automations.filter((item) => item.id !== next.id)],
+    });
+    const eventId = await this.emitAutomationEvent({
+      automation: next,
+      eventName: "automation.triggered",
+      data: {
+        automationId: next.id,
+        summary: input.triggerSummary,
+        ...(input.extraData || {}),
+      },
+      source: input.source,
+      severity: "info",
+      triggerKind: input.triggerKind,
+    });
+    const queued = await this.input.queueAutomationRun({
+      automation: next,
+      triggerSummary: input.triggerSummary,
+      triggerKind: input.triggerKind,
+      eventId,
+      workspaceRoot: next.workspaceRoot || triggerWorkspaceRoot(next.trigger),
+    });
+    const updated: BinaryAutomationDefinition = {
+      ...next,
+      lastRunId: queued.id,
+      updatedAt: nowIso(),
+    };
+    await this.input.writeConfig({
+      ...config,
+      automations: [updated, ...config.automations.filter((item) => item.id !== updated.id)],
+    });
+    await this.emitAutomationEvent({
+      automation: updated,
+      eventName: "automation.run_queued",
+      data: {
+        automationId: updated.id,
+        runId: queued.id,
+        summary: input.triggerSummary,
+      },
+      source: "host",
+      severity: "info",
+      triggerKind: input.triggerKind,
+      runId: queued.id,
+    });
+    return queued;
+  }
+
+  private async runSchedulerTick(): Promise<void> {
+    const config = await this.input.readConfig();
+    const now = new Date();
+    for (const automation of config.automations) {
+      if (automation.status !== "active" || automation.trigger.kind !== "schedule_nl") continue;
+      if (!shouldTriggerSchedule(automation.trigger.scheduleText, now, automation.lastTriggerAt)) continue;
+      await this.triggerAutomation(automation, {
+        triggerKind: "schedule_nl",
+        triggerSummary: `Schedule matched: ${automation.trigger.scheduleText}`,
+        source: "scheduler",
+      });
+    }
+  }
+
+  private async runProcessTick(): Promise<void> {
+    const config = await this.input.readConfig();
+    if (!config.automations.some((item) => item.status === "active" && item.trigger.kind === "process_event")) {
+      return;
+    }
+    const snapshot = await this.input.getDesktopSnapshot().catch(
+      () =>
+        ({
+          activeWindow: undefined,
+        }) as Awaited<ReturnType<AutomationRuntimeInput["getDesktopSnapshot"]>>
+    );
+    const fingerprint = fingerprintActiveWindow(snapshot.activeWindow);
+    if (!fingerprint || fingerprint === this.state.processState.lastFingerprint) return;
+    this.state.processState.lastFingerprint = fingerprint;
+    await this.persistState();
+    for (const automation of config.automations) {
+      if (automation.status !== "active" || automation.trigger.kind !== "process_event") continue;
+      if (!fingerprint.includes(automation.trigger.query.toLowerCase())) continue;
+      await this.triggerAutomation(automation, {
+        triggerKind: "process_event",
+        triggerSummary: `Process trigger matched ${automation.trigger.query}`,
+        source: "process_watch",
+        extraData: {
+          activeWindow: snapshot.activeWindow || null,
+        },
+      });
+    }
+  }
+
+  private async syncFileWatchers(): Promise<void> {
+    const config = await this.input.readConfig();
+    const roots = new Set<string>();
+    for (const automation of config.automations) {
+      if (automation.status !== "active" || automation.trigger.kind !== "file_event") continue;
+      if (!config.trustedWorkspaceRoots.includes(normalizePath(automation.trigger.workspaceRoot))) continue;
+      roots.add(normalizePath(automation.trigger.workspaceRoot));
+    }
+
+    for (const [root, watcher] of this.watchers.entries()) {
+      if (roots.has(root)) continue;
+      watcher.close();
+      this.watchers.delete(root);
+    }
+
+    for (const root of roots) {
+      if (this.watchers.has(root)) continue;
+      try {
+        const watcher = watch(
+          root,
+          { recursive: process.platform === "win32" },
+          (eventType, filename) => {
+            const relativePath = String(filename || "").trim();
+            if (!relativePath) return;
+            void this.handleFileChange(root, relativePath, eventType);
+          }
+        );
+        this.watchers.set(root, watcher);
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  private async handleFileChange(root: string, relativePath: string, eventType: string): Promise<void> {
+    const config = await this.input.readConfig();
+    for (const automation of config.automations) {
+      if (automation.status !== "active" || automation.trigger.kind !== "file_event") continue;
+      if (normalizePath(automation.trigger.workspaceRoot) !== normalizePath(root)) continue;
+      if (!pathMatchesFilters(relativePath, automation.trigger.includes, automation.trigger.excludes)) continue;
+      const key = `${automation.id}:${relativePath}`;
+      const existing = this.fileDebounce.get(key);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        this.fileDebounce.delete(key);
+        void this.triggerAutomation(automation, {
+          triggerKind: "file_event",
+          triggerSummary: `File ${eventType}: ${relativePath.replace(/\\/g, "/")}`,
+          source: "file_watch",
+          extraData: {
+            relativePath: relativePath.replace(/\\/g, "/"),
+            eventType,
+          },
+        });
+      }, FILE_DEBOUNCE_MS);
+      timer.unref?.();
+      this.fileDebounce.set(key, timer);
+    }
+  }
+
+  private async flushDeliveries(): Promise<void> {
+    const config = await this.input.readConfig();
+    const now = Date.now();
+    const subscriptions = new Map(config.webhookSubscriptions.map((item) => [item.id, item]));
+    const automations = new Map(config.automations.map((item) => [item.id, item]));
+    let changed = false;
+
+    for (const delivery of this.state.deliveries) {
+      if (delivery.status === "delivered") continue;
+      if (new Date(delivery.nextAttemptAt).getTime() > now) continue;
+      const subscription = subscriptions.get(delivery.subscriptionId);
+      if (!subscription || subscription.status !== "active") continue;
+
+      delivery.attemptCount += 1;
+      delivery.lastAttemptAt = nowIso();
+      delivery.updatedAt = nowIso();
+      changed = true;
+      try {
+        const payloadText = JSON.stringify(delivery.payload);
+        const response = await this.fetchImpl(subscription.url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Binary-Event": delivery.eventName,
+            ...(subscription.secret
+              ? { "X-Binary-Signature": encodeSignature(subscription.secret, payloadText) }
+              : {}),
+          },
+          body: payloadText,
+        });
+        if (!response.ok) {
+          throw new Error(`Webhook failed with status ${response.status}`);
+        }
+        delivery.status = "delivered";
+        subscription.lastAttemptAt = delivery.lastAttemptAt;
+        subscription.lastSuccessAt = delivery.lastAttemptAt;
+        subscription.failureCount = 0;
+        if (delivery.automationId) {
+          const automation = automations.get(delivery.automationId);
+          if (automation) {
+            automations.set(delivery.automationId, {
+              ...automation,
+              lastDeliveryAt: delivery.lastAttemptAt,
+              lastDeliveryError: undefined,
+              deliveryHealth: "healthy",
+              updatedAt: nowIso(),
+            });
+            await this.emitAutomationEvent({
+              automation,
+              eventName: "automation.webhook_delivered",
+              data: {
+                automationId: automation.id,
+                subscriptionId: subscription.id,
+                runEvent: delivery.eventName,
+                deliveredAt: delivery.lastAttemptAt,
+                attemptCount: delivery.attemptCount,
+                url: subscription.url,
+              },
+              source: "webhook",
+              severity: "info",
+              triggerKind: automation.trigger.kind,
+              skipWebhookDelivery: true,
+            });
+          }
+        }
+        changed = true;
+      } catch (error) {
+        delivery.lastError = error instanceof Error ? error.message : String(error);
+        if (delivery.attemptCount >= DELIVERY_RETRY_LIMIT) {
+          delivery.status = "failed";
+        }
+        delivery.nextAttemptAt = new Date(Date.now() + Math.min(60_000, 2 ** delivery.attemptCount * 1_000)).toISOString();
+        subscription.lastAttemptAt = delivery.lastAttemptAt;
+        subscription.failureCount = (subscription.failureCount || 0) + 1;
+        if (delivery.automationId) {
+          const automation = automations.get(delivery.automationId);
+          if (automation) {
+            automations.set(delivery.automationId, {
+              ...automation,
+              lastDeliveryError: delivery.lastError,
+              deliveryHealth: "failing",
+              updatedAt: nowIso(),
+            });
+            await this.emitAutomationEvent({
+              automation,
+              eventName: "automation.webhook_failed",
+              data: {
+                automationId: automation.id,
+                subscriptionId: subscription.id,
+                runEvent: delivery.eventName,
+                attemptCount: delivery.attemptCount,
+                error: delivery.lastError,
+                nextAttemptAt: delivery.nextAttemptAt,
+                url: subscription.url,
+              },
+              source: "webhook",
+              severity: "error",
+              triggerKind: automation.trigger.kind,
+              skipWebhookDelivery: true,
+            });
+          }
+        }
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      await this.input.writeConfig({
+        ...config,
+        automations: Array.from(automations.values()),
+        webhookSubscriptions: Array.from(subscriptions.values()),
+      });
+      await this.persistState();
+    }
+  }
+}

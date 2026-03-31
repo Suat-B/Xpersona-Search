@@ -4,6 +4,14 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import {
+  AutomationRuntime,
+  automationToLegacyAgent,
+  legacyAgentToAutomation,
+  type BinaryAutomationDefinition,
+  type BinaryAutomationTriggerKind,
+  type BinaryWebhookSubscription,
+} from "./automation-runtime.js";
 import { continueHostedRun, streamHostedAssist } from "./hosted-transport.js";
 import { decorateUiEvent } from "./ui-events.js";
 import {
@@ -121,6 +129,8 @@ type BinaryHostPreferences = {
   preferredTransport: "host" | "direct";
   machineAutonomy: MachineAutonomyPolicy;
   backgroundAgents: BinaryHostBackgroundAgent[];
+  automations: BinaryAutomationDefinition[];
+  webhookSubscriptions: BinaryWebhookSubscription[];
 };
 
 type BinaryHostBackgroundAgent = {
@@ -152,6 +162,9 @@ type AssistRequest = {
   };
   workspaceRoot?: string;
   detach?: boolean;
+  automationId?: string;
+  automationTriggerKind?: BinaryAutomationTriggerKind;
+  automationEventId?: string;
   client?: BinaryHostClientInfo;
 };
 
@@ -224,6 +237,9 @@ type StoredHostRun = {
   traceId: string;
   sessionId?: string;
   runId?: string;
+  automationId?: string;
+  automationTriggerKind?: BinaryAutomationTriggerKind;
+  automationEventId?: string;
   leaseId?: string;
   heartbeatAt?: string;
   lastToolAt?: string;
@@ -265,6 +281,7 @@ const HOST_DIR = path.join(CONFIG_DIR, "host");
 const STATE_PATH = path.join(HOST_DIR, "state.json");
 const SECRET_FALLBACK_PATH = path.join(HOST_DIR, "secrets.json");
 const WORLD_MODEL_PATH = path.join(HOST_DIR, "world-model.json");
+const AUTOMATION_STATE_PATH = path.join(HOST_DIR, "automation-runtime.json");
 const RUNS_DIR = path.join(HOST_DIR, "runs");
 const JSON_LIMIT_BYTES = 1_500_000;
 const MAX_EVENT_HISTORY = 4_000;
@@ -336,6 +353,66 @@ const machineAutonomyController = new MachineAutonomyController();
 const browserRuntimeController = new BrowserRuntimeController();
 const worldModelService = new MachineWorldModelService(WORLD_MODEL_PATH);
 let activeFocusLease: FocusLease | null = null;
+const automationRuntime = new AutomationRuntime({
+  storagePath: AUTOMATION_STATE_PATH,
+  readConfig: async () => {
+    const preferences = await loadPreferences();
+    return {
+      automations: preferences.automations,
+      webhookSubscriptions: preferences.webhookSubscriptions,
+      trustedWorkspaceRoots: preferences.trustedWorkspaces.map((item) => normalizeWorkspacePath(item.path)),
+    };
+  },
+  writeConfig: async (config) => {
+    const preferences = await loadPreferences();
+    await savePreferences({
+      ...preferences,
+      automations: config.automations,
+      webhookSubscriptions: config.webhookSubscriptions,
+    });
+  },
+  queueAutomationRun: async (input) => {
+    const preferences = await loadPreferences();
+    const trustGrant = input.workspaceRoot ? isWorkspaceTrusted(preferences, input.workspaceRoot) : null;
+    const request: AssistRequest = {
+      task: input.automation.prompt,
+      mode: "auto",
+      model: input.automation.model || "Binary IDE",
+      workspaceRoot: input.workspaceRoot,
+      detach: true,
+      automationId: input.automation.id,
+      automationTriggerKind: input.triggerKind,
+      automationEventId: input.eventId,
+      client: {
+        surface: "desktop",
+        version: `automation:${input.automation.id}`,
+      },
+    };
+    const run = await createQueuedRun({
+      request,
+      workspaceTrustMode: deriveWorkspaceTrustMode(trustGrant),
+    });
+    void startRunExecution(run.id);
+    return {
+      id: run.id,
+      status: run.status,
+      createdAt: run.createdAt,
+      updatedAt: run.updatedAt,
+    };
+  },
+  getDesktopSnapshot: async () => {
+    const preferences = await loadPreferences();
+    const desktopContext = await collectDesktopContext({
+      machineAutonomyController,
+      policy: preferences.machineAutonomy,
+      appLimit: 8,
+      windowLimit: 8,
+    }).catch(() => ({}) as Awaited<ReturnType<typeof collectDesktopContext>>);
+    return {
+      activeWindow: desktopContext.activeWindow,
+    };
+  },
+});
 
 type LocalToolExecutor = {
   execute: (pendingToolCall: PendingToolCall) => Promise<ToolResult>;
@@ -792,7 +869,7 @@ function maskApiKey(value: string | null): string | null {
 function withCors(res: ServerResponse): void {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
 }
 
 function writeJson(res: ServerResponse, statusCode: number, body: unknown): void {
@@ -823,6 +900,8 @@ async function ensureHostDirs(): Promise<void> {
   await fs.mkdir(HOST_DIR, { recursive: true });
   await fs.mkdir(RUNS_DIR, { recursive: true });
   await worldModelService.initialize();
+  await automationRuntime.initialize();
+  await automationRuntime.start();
 }
 
 async function readJsonFile<T>(filePath: string): Promise<T | null> {
@@ -848,12 +927,20 @@ function defaultPreferences(): BinaryHostPreferences {
     preferredTransport: "host",
     machineAutonomy: defaultMachineAutonomyPolicy(),
     backgroundAgents: [],
+    automations: [],
+    webhookSubscriptions: [],
   };
 }
 
 async function loadPreferences(): Promise<BinaryHostPreferences> {
   const existing = await readJsonFile<Partial<BinaryHostPreferences>>(STATE_PATH);
   const defaultValue = defaultPreferences();
+  const automations = Array.isArray(existing?.automations)
+    ? (existing!.automations as BinaryAutomationDefinition[])
+    : Array.isArray(existing?.backgroundAgents)
+      ? (existing!.backgroundAgents as BinaryHostBackgroundAgent[]).map((agent) => legacyAgentToAutomation(agent))
+      : [];
+  const backgroundAgents = automations.map((automation) => automationToLegacyAgent(automation));
   return {
     ...defaultValue,
     ...(existing || {}),
@@ -861,7 +948,11 @@ async function loadPreferences(): Promise<BinaryHostPreferences> {
     trustedWorkspaces: Array.isArray(existing?.trustedWorkspaces) ? existing!.trustedWorkspaces : [],
     recentSessions: Array.isArray(existing?.recentSessions) ? existing!.recentSessions : [],
     artifactHistory: Array.isArray(existing?.artifactHistory) ? existing!.artifactHistory : [],
-    backgroundAgents: Array.isArray(existing?.backgroundAgents) ? (existing!.backgroundAgents as BinaryHostBackgroundAgent[]) : [],
+    backgroundAgents,
+    automations,
+    webhookSubscriptions: Array.isArray(existing?.webhookSubscriptions)
+      ? (existing!.webhookSubscriptions as BinaryWebhookSubscription[])
+      : [],
     machineAutonomy:
       existing?.machineAutonomy && typeof existing.machineAutonomy === "object"
         ? {
@@ -873,7 +964,11 @@ async function loadPreferences(): Promise<BinaryHostPreferences> {
 }
 
 async function savePreferences(value: BinaryHostPreferences): Promise<void> {
-  await writeJsonFile(STATE_PATH, value);
+  const normalized: BinaryHostPreferences = {
+    ...value,
+    backgroundAgents: value.automations.map((automation) => automationToLegacyAgent(automation)),
+  };
+  await writeJsonFile(STATE_PATH, normalized);
 }
 
 async function readLegacyConfig(): Promise<Record<string, unknown>> {
@@ -1290,10 +1385,34 @@ async function appendRunEvent(
   event: Record<string, unknown>,
   attachedRes?: ServerResponse | null
 ): Promise<void> {
-  const decoratedEvent = decorateUiEvent(event);
+  const seq = nextEventSeq(run);
+  const capturedAt = nowIso();
+  const envelope = {
+    ...event,
+    id: typeof event.id === "string" ? event.id : `run_event_${run.id}_${seq}`,
+    seq,
+    capturedAt,
+    scope: typeof event.scope === "string" ? event.scope : "run",
+    runId: typeof event.runId === "string" ? event.runId : run.id,
+    ...(run.automationId ? { automationId: run.automationId } : {}),
+    ...(run.automationTriggerKind ? { triggerKind: run.automationTriggerKind } : {}),
+    source:
+      typeof event.source === "string"
+        ? event.source
+        : typeof event.event === "string" && event.event.startsWith("host.")
+          ? "host"
+          : "host",
+    severity:
+      typeof event.severity === "string"
+        ? event.severity
+        : typeof event.event === "string" && (event.event.includes("failed") || event.event.includes("stall"))
+          ? "error"
+          : "info",
+  };
+  const decoratedEvent = decorateUiEvent(envelope);
   const stored: StoredEvent = {
-    seq: nextEventSeq(run),
-    capturedAt: nowIso(),
+    seq,
+    capturedAt,
     event: decoratedEvent,
   };
   run.events.push(stored);
@@ -1603,6 +1722,19 @@ async function finalizeRun(
   if (extra?.message) {
     await emitHostStatus(run, extra.message, attachedRes);
   }
+  if (run.automationId && status === "completed") {
+    await automationRuntime.recordRunCompleted({
+      automationId: run.automationId,
+      runId: run.id,
+      summary: extra?.message,
+    });
+  } else if (run.automationId && (status === "failed" || status === "cancelled")) {
+    await automationRuntime.recordRunFailed({
+      automationId: run.automationId,
+      runId: run.id,
+      summary: extra?.error || extra?.message,
+    });
+  }
 }
 
 async function pauseRun(
@@ -1666,6 +1798,9 @@ async function createQueuedRun(input: {
     workspaceRoot: input.request.workspaceRoot,
     workspaceTrustMode: input.workspaceTrustMode,
     traceId: randomUUID(),
+    automationId: input.request.automationId,
+    automationTriggerKind: input.request.automationTriggerKind,
+    automationEventId: input.request.automationEventId,
     resumeToken: buildResumeToken(),
     controlHistory: [],
     toolResults: [],
@@ -1723,6 +1858,12 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
   run.updatedAt = nowIso();
   run.checkpointState = buildCheckpointState(run);
   await persistHostRun(run);
+  if (run.automationId) {
+    await automationRuntime.recordRunStarted({
+      automationId: run.automationId,
+      runId: run.id,
+    });
+  }
   await emitHostStatus(run, "Binary Host accepted the request.", attachedRes, {
     attached: Boolean(attachedRes),
   });
@@ -2115,6 +2256,43 @@ async function handleAssist(req: IncomingMessage, res: ServerResponse): Promise<
   await startRunExecution(run.id, res);
 }
 
+async function streamExistingRun(runId: string, res: ServerResponse, after = 0): Promise<void> {
+  writeSseHeaders(res);
+  let lastSeq = after;
+
+  while (!res.destroyed && !res.writableEnded) {
+    const run = await loadRunRecord(runId);
+    if (!run) {
+      sendSseEvent(res, {
+        event: "host.error",
+        data: { message: `Unknown Binary Host run ${runId}` },
+        id: `run_stream_error_${runId}`,
+        seq: lastSeq + 1,
+        capturedAt: nowIso(),
+        scope: "run",
+        runId,
+        source: "host",
+        severity: "error",
+      });
+      break;
+    }
+    const pending = run.events.filter((item) => item.seq > lastSeq);
+    for (const event of pending) {
+      sendSseEvent(res, event.event);
+      lastSeq = Math.max(lastSeq, event.seq);
+    }
+    if (isTerminalStatus(run.status) || run.status === "takeover_required") {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 700));
+  }
+
+  if (!res.destroyed && !res.writableEnded) {
+    res.write("data: [DONE]\n\n");
+    res.end();
+  }
+}
+
 const server = createServer(async (req, res) => {
   const method = String(req.method || "GET").toUpperCase();
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
@@ -2354,9 +2532,9 @@ const server = createServer(async (req, res) => {
     }
 
     if (method === "GET" && url.pathname === "/v1/autonomy/agents") {
-      const preferences = await loadPreferences();
+      const automations = await automationRuntime.listAutomations();
       writeJson(res, 200, {
-        agents: preferences.backgroundAgents,
+        agents: automations.map((automation) => automationToLegacyAgent(automation)),
       });
       return;
     }
@@ -2369,98 +2547,241 @@ const server = createServer(async (req, res) => {
         writeJson(res, 400, { error: "Invalid request", message: "name and prompt are required" });
         return;
       }
-      const current = await loadPreferences();
-      const id = typeof body.id === "string" && body.id.trim() ? body.id.trim() : randomUUID();
-      const now = nowIso();
-      const nextAgent: BinaryHostBackgroundAgent = {
-        id,
+      const trigger =
+        body.trigger === "scheduled"
+          ? {
+              kind: "schedule_nl" as const,
+              scheduleText:
+                typeof body.scheduleText === "string" && body.scheduleText.trim()
+                  ? body.scheduleText.trim()
+                  : typeof body.scheduleMinutes === "number"
+                    ? `every ${Math.max(5, Math.min(1_440, Math.floor(body.scheduleMinutes)))} minutes`
+                    : "every hour",
+              ...(typeof body.workspaceRoot === "string" && body.workspaceRoot.trim()
+                ? { workspaceRoot: normalizeWorkspacePath(body.workspaceRoot) }
+                : {}),
+            }
+          : body.trigger === "file_event"
+            ? {
+                kind: "file_event" as const,
+                workspaceRoot:
+                  typeof body.workspaceRoot === "string" && body.workspaceRoot.trim()
+                    ? normalizeWorkspacePath(body.workspaceRoot)
+                    : process.cwd(),
+              }
+            : body.trigger === "process_event"
+              ? {
+                  kind: "process_event" as const,
+                  query: typeof body.query === "string" && body.query.trim() ? body.query.trim() : name,
+                  ...(typeof body.workspaceRoot === "string" && body.workspaceRoot.trim()
+                    ? { workspaceRoot: normalizeWorkspacePath(body.workspaceRoot) }
+                    : {}),
+                }
+              : body.trigger === "notification"
+                ? {
+                    kind: "notification" as const,
+                    ...(typeof body.workspaceRoot === "string" && body.workspaceRoot.trim()
+                      ? { workspaceRoot: normalizeWorkspacePath(body.workspaceRoot) }
+                      : {}),
+                    ...(typeof body.topic === "string" && body.topic.trim() ? { topic: body.topic.trim() } : {}),
+                    ...(typeof body.query === "string" && body.query.trim() ? { query: body.query.trim() } : {}),
+                  }
+                : {
+                    kind: "manual" as const,
+                    ...(typeof body.workspaceRoot === "string" && body.workspaceRoot.trim()
+                      ? { workspaceRoot: normalizeWorkspacePath(body.workspaceRoot) }
+                      : {}),
+                  };
+      const automation = await automationRuntime.saveAutomation({
+        id: typeof body.id === "string" && body.id.trim() ? body.id.trim() : undefined,
         name,
         prompt,
+        trigger,
         status: body.status === "paused" ? "paused" : "active",
-        trigger:
-          body.trigger === "scheduled" ||
-          body.trigger === "file_event" ||
-          body.trigger === "process_event" ||
-          body.trigger === "notification"
-            ? body.trigger
-            : "manual",
-        scheduleMinutes:
-          typeof body.scheduleMinutes === "number" && Number.isFinite(body.scheduleMinutes)
-            ? Math.max(5, Math.min(1_440, Math.floor(body.scheduleMinutes)))
-            : undefined,
         workspaceRoot:
           typeof body.workspaceRoot === "string" && body.workspaceRoot.trim()
             ? normalizeWorkspacePath(body.workspaceRoot)
             : undefined,
         model: typeof body.model === "string" && body.model.trim() ? body.model.trim() : undefined,
-        createdAt: current.backgroundAgents.find((item) => item.id === id)?.createdAt || now,
-        updatedAt: now,
-        lastRunAt: current.backgroundAgents.find((item) => item.id === id)?.lastRunAt,
-      };
-      current.backgroundAgents = [
-        nextAgent,
-        ...current.backgroundAgents.filter((item) => item.id !== id),
-      ].slice(0, 60);
-      await savePreferences(current);
-      writeJson(res, 200, nextAgent);
+      });
+      writeJson(res, 200, automationToLegacyAgent(automation));
       return;
     }
 
     const agentRunMatch = url.pathname.match(/^\/v1\/autonomy\/agents\/([^/]+)\/run$/);
     if (method === "POST" && agentRunMatch) {
       const agentId = decodeURIComponent(agentRunMatch[1] || "");
-      const body = await readJsonBody(req);
-      const current = await loadPreferences();
-      const agent = current.backgroundAgents.find((item) => item.id === agentId);
-      if (!agent) {
+      const automation = await automationRuntime.getAutomation(agentId);
+      if (!automation) {
         writeJson(res, 404, { error: "Not found", message: "Unknown background agent." });
         return;
       }
-      if (agent.status !== "active") {
+      if (automation.status !== "active") {
         writeJson(res, 409, { error: "Agent paused", message: "Resume the background agent before running it." });
         return;
       }
-      const workspaceRoot = agent.workspaceRoot;
-      const trustGrant = workspaceRoot ? isWorkspaceTrusted(current, workspaceRoot) : null;
-      if (workspaceRoot && !trustGrant) {
-        writeJson(res, 403, {
-          error: "Workspace not trusted",
-          message: `Trust ${workspaceRoot} before running this background agent.`,
-        });
+      const queuedRun = await automationRuntime.runAutomation(agentId, "Legacy background agent run requested.");
+      const run = queuedRun ? (await loadRunRecord(queuedRun.id)) || null : null;
+      writeJson(res, 202, {
+        agent: automationToLegacyAgent(automation),
+        run: run ? buildRunSummary(run) : queuedRun,
+      });
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/v1/automations") {
+      writeJson(res, 200, {
+        automations: await automationRuntime.listAutomations(),
+      });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/v1/automations") {
+      const body = await readJsonBody(req);
+      const name = String(body.name || "").trim();
+      const prompt = String(body.prompt || "").trim();
+      if (!name || !prompt || !body.trigger || typeof body.trigger !== "object") {
+        writeJson(res, 400, { error: "Invalid request", message: "name, prompt, and trigger are required" });
         return;
       }
-      const request: AssistRequest = {
-        task: typeof body.task === "string" && body.task.trim() ? body.task.trim() : agent.prompt,
-        mode: (body.mode as AssistMode) || "auto",
-        model: typeof body.model === "string" && body.model.trim() ? body.model.trim() : agent.model || "Binary IDE",
-        historySessionId: typeof body.historySessionId === "string" ? body.historySessionId : undefined,
-        tom:
-          body.tom && typeof body.tom === "object"
-            ? { enabled: (body.tom as { enabled?: unknown }).enabled === false ? false : true }
+      const automation = await automationRuntime.saveAutomation({
+        id: typeof body.id === "string" && body.id.trim() ? body.id.trim() : undefined,
+        name,
+        prompt,
+        trigger: body.trigger as BinaryAutomationDefinition["trigger"],
+        status: body.status === "paused" ? "paused" : "active",
+        policy:
+          body.policy === "observe_only" || body.policy === "approval_before_mutation"
+            ? body.policy
+            : "autonomous",
+        workspaceRoot:
+          typeof body.workspaceRoot === "string" && body.workspaceRoot.trim()
+            ? normalizeWorkspacePath(body.workspaceRoot)
             : undefined,
-        workspaceRoot,
-        detach: true,
-        client: {
-          surface: "desktop",
-          version: `background-agent:${agent.id}`,
-        },
-      };
-      const run = await createQueuedRun({
-        request,
-        workspaceTrustMode: deriveWorkspaceTrustMode(trustGrant),
+        model: typeof body.model === "string" && body.model.trim() ? body.model.trim() : undefined,
       });
-      agent.lastRunAt = nowIso();
-      agent.updatedAt = nowIso();
-      current.backgroundAgents = [
-        agent,
-        ...current.backgroundAgents.filter((item) => item.id !== agent.id),
-      ].slice(0, 60);
-      await savePreferences(current);
-      void startRunExecution(run.id);
-      writeJson(res, 202, {
-        agent,
-        run: buildRunSummary(run),
+      writeJson(res, 200, automation);
+      return;
+    }
+
+    const automationMatch = url.pathname.match(/^\/v1\/automations\/([^/]+)$/);
+    if (automationMatch && method === "GET") {
+      const automation = await automationRuntime.getAutomation(decodeURIComponent(automationMatch[1] || ""));
+      if (!automation) {
+        writeJson(res, 404, { error: "Not found", message: "Unknown automation." });
+        return;
+      }
+      writeJson(res, 200, automation);
+      return;
+    }
+    if (automationMatch && method === "PATCH") {
+      const body = await readJsonBody(req);
+      const existing = await automationRuntime.getAutomation(decodeURIComponent(automationMatch[1] || ""));
+      if (!existing) {
+        writeJson(res, 404, { error: "Not found", message: "Unknown automation." });
+        return;
+      }
+      const automation = await automationRuntime.saveAutomation({
+        ...existing,
+        ...body,
+        id: existing.id,
+        name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : existing.name,
+        prompt: typeof body.prompt === "string" && body.prompt.trim() ? body.prompt.trim() : existing.prompt,
+        trigger:
+          body.trigger && typeof body.trigger === "object"
+            ? (body.trigger as BinaryAutomationDefinition["trigger"])
+            : existing.trigger,
       });
+      writeJson(res, 200, automation);
+      return;
+    }
+
+    const automationRunMatch = url.pathname.match(/^\/v1\/automations\/([^/]+)\/run$/);
+    if (automationRunMatch && method === "POST") {
+      const automationId = decodeURIComponent(automationRunMatch[1] || "");
+      const queuedRun = await automationRuntime.runAutomation(automationId, "Automation run requested.");
+      if (!queuedRun) {
+        writeJson(res, 404, { error: "Not found", message: "Unknown automation." });
+        return;
+      }
+      const run = await loadRunRecord(queuedRun.id);
+      writeJson(res, 202, run ? buildRunSummary(run) : queuedRun);
+      return;
+    }
+
+    const automationControlMatch = url.pathname.match(/^\/v1\/automations\/([^/]+)\/control$/);
+    if (automationControlMatch && method === "POST") {
+      const automationId = decodeURIComponent(automationControlMatch[1] || "");
+      const body = await readJsonBody(req);
+      const action = body.action === "pause" ? "pause" : body.action === "resume" ? "resume" : null;
+      if (!action) {
+        writeJson(res, 400, { error: "Invalid request", message: "action must be pause or resume" });
+        return;
+      }
+      const automation = await automationRuntime.controlAutomation(automationId, action);
+      if (!automation) {
+        writeJson(res, 404, { error: "Not found", message: "Unknown automation." });
+        return;
+      }
+      writeJson(res, 200, automation);
+      return;
+    }
+
+    const automationEventsMatch = url.pathname.match(/^\/v1\/automations\/([^/]+)\/events$/);
+    if (automationEventsMatch && method === "GET") {
+      const automationId = decodeURIComponent(automationEventsMatch[1] || "");
+      const afterRaw = url.searchParams.get("after");
+      const after = afterRaw ? Number.parseInt(afterRaw, 10) : 0;
+      const response = await automationRuntime.getAutomationEvents(automationId, Number.isFinite(after) ? after : 0);
+      if (!response.automation) {
+        writeJson(res, 404, { error: "Not found", message: "Unknown automation." });
+        return;
+      }
+      writeJson(res, 200, response);
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/v1/webhooks/subscriptions") {
+      writeJson(res, 200, {
+        subscriptions: await automationRuntime.listWebhookSubscriptions(),
+      });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/v1/webhooks/subscriptions") {
+      const body = await readJsonBody(req);
+      const urlValue = String(body.url || "").trim();
+      if (!urlValue) {
+        writeJson(res, 400, { error: "Invalid request", message: "url is required" });
+        return;
+      }
+      writeJson(
+        res,
+        200,
+        await automationRuntime.saveWebhookSubscription({
+          id: typeof body.id === "string" && body.id.trim() ? body.id.trim() : undefined,
+          url: urlValue,
+          status: body.status === "paused" ? "paused" : "active",
+          secret: typeof body.secret === "string" && body.secret.trim() ? body.secret.trim() : undefined,
+          automationId: typeof body.automationId === "string" ? body.automationId : undefined,
+          events: Array.isArray(body.events) ? body.events.map((item: unknown) => String(item)) : undefined,
+        })
+      );
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/v1/notifications/intake") {
+      const body = await readJsonBody(req);
+      writeJson(
+        res,
+        202,
+        await automationRuntime.ingestNotification({
+          automationId: typeof body.automationId === "string" ? body.automationId : undefined,
+          topic: typeof body.topic === "string" ? body.topic : undefined,
+          summary: typeof body.summary === "string" ? body.summary : undefined,
+          payload: body.payload && typeof body.payload === "object" ? (body.payload as Record<string, unknown>) : {},
+        })
+      );
       return;
     }
 
@@ -2475,6 +2796,10 @@ const server = createServer(async (req, res) => {
         recentSessions: Array.isArray(body.recentSessions) ? (body.recentSessions as BinaryHostPreferences["recentSessions"]) : current.recentSessions,
         artifactHistory: Array.isArray(body.artifactHistory) ? (body.artifactHistory as BinaryHostPreferences["artifactHistory"]) : current.artifactHistory,
         backgroundAgents: Array.isArray(body.backgroundAgents) ? (body.backgroundAgents as BinaryHostBackgroundAgent[]) : current.backgroundAgents,
+        automations: Array.isArray(body.automations) ? (body.automations as BinaryAutomationDefinition[]) : current.automations,
+        webhookSubscriptions: Array.isArray(body.webhookSubscriptions)
+          ? (body.webhookSubscriptions as BinaryWebhookSubscription[])
+          : current.webhookSubscriptions,
         machineAutonomy:
           body.machineAutonomy && typeof body.machineAutonomy === "object"
             ? {
@@ -2485,6 +2810,7 @@ const server = createServer(async (req, res) => {
             : current.machineAutonomy,
       };
       await savePreferences(next);
+      await automationRuntime.refreshConfig();
       writeJson(res, 200, next);
       return;
     }
@@ -2507,6 +2833,7 @@ const server = createServer(async (req, res) => {
       };
       current.trustedWorkspaces = [grant, ...current.trustedWorkspaces.filter((item) => normalizeWorkspacePath(item.path) !== grant.path)].slice(0, 60);
       await savePreferences(current);
+      await automationRuntime.refreshConfig();
       writeJson(res, 200, current.trustedWorkspaces);
       return;
     }
@@ -2554,6 +2881,25 @@ const server = createServer(async (req, res) => {
         events: run.events.filter((event) => event.seq > (Number.isFinite(after) ? after : 0)),
         done: isTerminalStatus(run.status) || run.status === "takeover_required",
       });
+      return;
+    }
+
+    const streamMatch = url.pathname.match(/^\/v1\/runs\/([^/]+)\/stream$/);
+    if (method === "GET" && streamMatch) {
+      const runId = decodeURIComponent(streamMatch[1] || "");
+      const run = await loadRunRecord(runId);
+      if (!run) {
+        writeJson(res, 404, { error: "Not found", message: "Unknown Binary Host run." });
+        return;
+      }
+      const afterRaw = url.searchParams.get("after");
+      const after = afterRaw ? Number.parseInt(afterRaw, 10) : 0;
+      req.on("close", () => {
+        if (!res.writableEnded) {
+          res.end();
+        }
+      });
+      await streamExistingRun(runId, res, Number.isFinite(after) ? after : 0);
       return;
     }
 

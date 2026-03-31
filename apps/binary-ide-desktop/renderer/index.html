@@ -186,6 +186,67 @@
             <button id="cancelRun" class="button-danger" type="button">Cancel</button>
           </div>
         </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Automations</p>
+          <label class="field-stack">
+            <span>Name</span>
+            <input id="automationNameInput" type="text" placeholder="Daily repo triage" />
+          </label>
+          <label class="field-stack">
+            <span>Prompt</span>
+            <textarea id="automationPromptInput" rows="4" placeholder="Review new issues, summarize risk, and queue safe fixes."></textarea>
+          </label>
+          <div class="form-grid">
+            <label class="field-stack">
+              <span>Trigger</span>
+              <select id="automationTriggerSelect">
+                <option value="manual">Manual</option>
+                <option value="schedule_nl">Schedule</option>
+                <option value="file_event">File event</option>
+                <option value="process_event">Process event</option>
+                <option value="notification">Notification</option>
+              </select>
+            </label>
+            <label class="field-stack">
+              <span>Policy</span>
+              <select id="automationPolicySelect">
+                <option value="autonomous">Autonomous</option>
+                <option value="observe_only">Observe only</option>
+                <option value="approval_before_mutation">Approval before mutation</option>
+              </select>
+            </label>
+          </div>
+          <label class="field-stack">
+            <span>Workspace override</span>
+            <input id="automationWorkspaceInput" type="text" placeholder="Defaults to the selected workspace" />
+          </label>
+          <label class="field-stack">
+            <span>Schedule / query / topic</span>
+            <input id="automationDetailInput" type="text" placeholder="Every weekday at 9am, chrome, or sentry" />
+          </label>
+          <div class="button-row">
+            <button id="saveAutomation" type="button">Save automation</button>
+            <button id="clearAutomationEditor" class="button-secondary" type="button">Clear</button>
+          </div>
+          <div id="automationList" class="history-list empty">No automations yet.</div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Webhooks</p>
+          <label class="field-stack">
+            <span>Webhook URL</span>
+            <input id="webhookUrlInput" type="text" placeholder="https://example.com/binary/webhook" />
+          </label>
+          <label class="field-stack">
+            <span>Events (comma separated)</span>
+            <input id="webhookEventsInput" type="text" placeholder="automation.run_completed,automation.webhook_failed" />
+          </label>
+          <div class="button-row">
+            <button id="saveWebhook" type="button">Save webhook</button>
+          </div>
+          <div id="webhookList" class="history-list empty">No webhook subscriptions yet.</div>
+        </div>
       </aside>
     </section>
 
@@ -213,6 +274,11 @@
         <div class="sheet__section">
           <p class="sheet__label">Artifacts</p>
           <div id="artifactHistory" class="history-list empty">No artifacts yet.</div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Automation Timeline</p>
+          <div id="automationTimeline" class="history-list empty">Select an automation to inspect its event timeline.</div>
         </div>
       </aside>
     </section>

@@ -133,6 +133,93 @@ export type BinaryHostClientInfo = {
   version?: string;
 };
 
+export type BinaryAutomationPolicy = "autonomous" | "observe_only" | "approval_before_mutation";
+
+export type BinaryAutomationTrigger =
+  | {
+      kind: "manual";
+      workspaceRoot?: string;
+    }
+  | {
+      kind: "schedule_nl";
+      scheduleText: string;
+      workspaceRoot?: string;
+    }
+  | {
+      kind: "file_event";
+      workspaceRoot: string;
+      includes?: string[];
+      excludes?: string[];
+    }
+  | {
+      kind: "process_event";
+      workspaceRoot?: string;
+      query: string;
+    }
+  | {
+      kind: "notification";
+      workspaceRoot?: string;
+      topic?: string;
+      query?: string;
+    };
+
+export type BinaryAutomationDefinition = {
+  id: string;
+  name: string;
+  prompt: string;
+  status: "active" | "paused";
+  trigger: BinaryAutomationTrigger;
+  policy: BinaryAutomationPolicy;
+  workspaceRoot?: string;
+  model?: string;
+  createdAt: string;
+  updatedAt: string;
+  lastRunAt?: string;
+  lastTriggerAt?: string;
+  lastRunId?: string;
+  lastTriggerSummary?: string;
+  nextRunAt?: string;
+  lastDeliveryAt?: string;
+  lastDeliveryError?: string;
+  deliveryHealth?: "healthy" | "failing" | "idle";
+};
+
+export type BinaryAutomationRunSummary = {
+  automationId: string;
+  runId: string;
+  status: BinaryHostRunStatus;
+  queuedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  failedAt?: string;
+};
+
+export type BinaryAutomationEvent = SseEvent & {
+  id: string;
+  seq: number;
+  capturedAt: string;
+  scope: "automation" | "run" | "delivery";
+  automationId?: string;
+  runId?: string;
+  triggerKind?: BinaryAutomationTrigger["kind"];
+  source: "automation_runtime" | "scheduler" | "file_watch" | "process_watch" | "notification" | "host";
+  severity: "info" | "warn" | "error";
+};
+
+export type BinaryWebhookSubscription = {
+  id: string;
+  url: string;
+  status: "active" | "paused";
+  secret?: string;
+  automationId?: string;
+  events?: string[];
+  createdAt: string;
+  updatedAt: string;
+  lastAttemptAt?: string;
+  lastSuccessAt?: string;
+  failureCount?: number;
+};
+
 export type BinaryHostAuthStatus = {
   hasApiKey: boolean;
   maskedApiKey?: string | null;
@@ -209,6 +296,8 @@ export type BinaryHostPreferences = {
   recentSessions: Array<{ sessionId: string; runId?: string; updatedAt: string; workspaceRoot?: string }>;
   artifactHistory: Array<{ id: string; label: string; url?: string; createdAt: string }>;
   preferredTransport: "host" | "direct";
+  automations?: BinaryAutomationDefinition[];
+  webhookSubscriptions?: BinaryWebhookSubscription[];
 };
 
 export type BinaryHostAssistRequest = {
@@ -218,6 +307,9 @@ export type BinaryHostAssistRequest = {
   historySessionId?: string;
   workspaceRoot?: string;
   detach?: boolean;
+  automationId?: string;
+  automationTriggerKind?: BinaryAutomationTrigger["kind"];
+  automationEventId?: string;
   client?: BinaryHostClientInfo;
 };
 
@@ -243,6 +335,9 @@ export type BinaryHostRunRecord = {
   resumeToken: string;
   workspaceRoot?: string;
   workspaceTrustMode: BinaryHostWorkspaceTrustMode;
+  automationId?: string;
+  automationTriggerKind?: BinaryAutomationTrigger["kind"];
+  automationEventId?: string;
   client: BinaryHostClientInfo;
   request: BinaryHostAssistRequest;
   budgetState?: BinaryHostBudgetState | null;
@@ -279,6 +374,9 @@ export type BinaryHostRunSummary = Pick<
   | "resumeToken"
   | "workspaceRoot"
   | "workspaceTrustMode"
+  | "automationId"
+  | "automationTriggerKind"
+  | "automationEventId"
   | "client"
   | "request"
   | "budgetState"
@@ -297,6 +395,15 @@ export type BinaryHostRunEventsResponse = {
     event: SseEvent;
   }>;
   done: boolean;
+};
+
+export type BinaryAutomationEventsResponse = {
+  automation: BinaryAutomationDefinition;
+  events: Array<{
+    seq: number;
+    capturedAt: string;
+    event: BinaryAutomationEvent;
+  }>;
 };
 
 export type SseEvent = {

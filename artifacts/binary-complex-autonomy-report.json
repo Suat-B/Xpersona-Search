@@ -1,0 +1,56 @@
+{
+  "version": "binary_autonomy_benchmark_v1",
+  "createdAt": "2026-03-31T04:53:00.238Z",
+  "host": {
+    "url": "http://127.0.0.1:7777",
+    "version": "0.2.0"
+  },
+  "categories": [
+    {
+      "category": "complex_autonomy_delivery",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-complex_autonomy_delivery-yW53fi",
+      "status": "running",
+      "finishStatus": "running",
+      "eventCount": 2,
+      "artifactCorrect": false,
+      "validationPassed": false,
+      "totalToolCalls": 0,
+      "successfulToolCalls": 0,
+      "failedToolCalls": 0,
+      "toolCounts": {},
+      "stalledBeforeFirstTool": true,
+      "requiredCommandProof": false,
+      "matchedCommands": [],
+      "missingPaths": [
+        "launchpad-studio",
+        "launchpad-studio/package.json",
+        "launchpad-studio/README.md",
+        "launchpad-studio/docs/architecture.md",
+        "launchpad-studio/docs/usage.md",
+        "launchpad-studio/src/index.js",
+        "launchpad-studio/src/planner.js",
+        "launchpad-studio/src/format.js",
+        "launchpad-studio/src/validate.js",
+        "launchpad-studio/test/index.test.js",
+        "launchpad-studio/test/planner.test.js",
+        "launchpad-studio/.gitignore"
+      ],
+      "turns": 0,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": false,
+      "elapsedMs": 180310,
+      "traceId": "46634eb3-01fb-4c6d-830f-31e1d8a991b7",
+      "runId": "64c85954-9edc-4380-bc44-3341320fc2a6",
+      "hostedRunId": null,
+      "files": [],
+      "timedOut": true
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "takeoverRequired": 0,
+    "validationPassed": 0
+  }
+}

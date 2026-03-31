@@ -123,6 +123,15 @@ export class LocalHostClient {
             method: "GET",
         });
     }
+    async streamRun(runId, onEvent, after = 0) {
+        await requestSse({
+            baseUrl: this.baseUrl,
+            auth: {},
+            path: `/v1/runs/${encodeURIComponent(runId)}/stream?after=${encodeURIComponent(String(after))}`,
+            method: "GET",
+            onEvent,
+        });
+    }
     async controlRun(runId, action, note) {
         return requestJson({
             baseUrl: this.baseUrl,
@@ -138,6 +147,83 @@ export class LocalHostClient {
             auth: {},
             path: `/v1/runs/${encodeURIComponent(runId)}/export`,
             method: "GET",
+        });
+    }
+    async listAutomations() {
+        return requestJson({
+            baseUrl: this.baseUrl,
+            auth: {},
+            path: "/v1/automations",
+            method: "GET",
+        });
+    }
+    async saveAutomation(input) {
+        return requestJson({
+            baseUrl: this.baseUrl,
+            auth: {},
+            path: "/v1/automations",
+            method: "POST",
+            body: input,
+        });
+    }
+    async getAutomation(id) {
+        return requestJson({
+            baseUrl: this.baseUrl,
+            auth: {},
+            path: `/v1/automations/${encodeURIComponent(id)}`,
+            method: "GET",
+        });
+    }
+    async updateAutomation(id, patch) {
+        return requestJson({
+            baseUrl: this.baseUrl,
+            auth: {},
+            path: `/v1/automations/${encodeURIComponent(id)}`,
+            method: "PATCH",
+            body: patch,
+        });
+    }
+    async controlAutomation(id, action) {
+        return requestJson({
+            baseUrl: this.baseUrl,
+            auth: {},
+            path: `/v1/automations/${encodeURIComponent(id)}/control`,
+            method: "POST",
+            body: { action },
+        });
+    }
+    async runAutomation(id) {
+        return requestJson({
+            baseUrl: this.baseUrl,
+            auth: {},
+            path: `/v1/automations/${encodeURIComponent(id)}/run`,
+            method: "POST",
+            body: {},
+        });
+    }
+    async getAutomationEvents(id, after = 0) {
+        return requestJson({
+            baseUrl: this.baseUrl,
+            auth: {},
+            path: `/v1/automations/${encodeURIComponent(id)}/events?after=${encodeURIComponent(String(after))}`,
+            method: "GET",
+        });
+    }
+    async listWebhookSubscriptions() {
+        return requestJson({
+            baseUrl: this.baseUrl,
+            auth: {},
+            path: "/v1/webhooks/subscriptions",
+            method: "GET",
+        });
+    }
+    async saveWebhookSubscription(input) {
+        return requestJson({
+            baseUrl: this.baseUrl,
+            auth: {},
+            path: "/v1/webhooks/subscriptions",
+            method: "POST",
+            body: input,
         });
     }
 }

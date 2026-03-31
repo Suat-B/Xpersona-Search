@@ -1,5 +1,8 @@
 import { requestJson, requestSse } from "./http.js";
 import {
+  BinaryAutomationDefinition,
+  BinaryAutomationEventsResponse,
+  BinaryWebhookSubscription,
   BinaryHostAssistRequest,
   BinaryHostAuthStatus,
   BinaryHostHealth,
@@ -125,6 +128,18 @@ export class BinaryLocalHostClient {
     });
   }
 
+  async streamRun(
+    runId: string,
+    onEvent: (event: SseEvent) => void | Promise<void>,
+    after = 0
+  ): Promise<void> {
+    await requestSse({
+      url: `${this.baseUrl}/v1/runs/${encodeURIComponent(runId)}/stream?after=${encodeURIComponent(String(after))}`,
+      method: "GET",
+      onEvent,
+    });
+  }
+
   async controlRun(runId: string, action: BinaryHostRunControlAction, note?: string): Promise<BinaryHostRunSummary> {
     return requestJson<BinaryHostRunSummary>({
       url: `${this.baseUrl}/v1/runs/${encodeURIComponent(runId)}/control`,
@@ -137,6 +152,84 @@ export class BinaryLocalHostClient {
     return requestJson<BinaryHostRunRecord>({
       url: `${this.baseUrl}/v1/runs/${encodeURIComponent(runId)}/export`,
       method: "GET",
+    });
+  }
+
+  async listAutomations(): Promise<{ automations: BinaryAutomationDefinition[] }> {
+    return requestJson<{ automations: BinaryAutomationDefinition[] }>({
+      url: `${this.baseUrl}/v1/automations`,
+      method: "GET",
+    });
+  }
+
+  async saveAutomation(
+    input: Partial<BinaryAutomationDefinition> & Pick<BinaryAutomationDefinition, "name" | "prompt" | "trigger">
+  ): Promise<BinaryAutomationDefinition> {
+    return requestJson<BinaryAutomationDefinition>({
+      url: `${this.baseUrl}/v1/automations`,
+      method: "POST",
+      body: input,
+    });
+  }
+
+  async getAutomation(automationId: string): Promise<BinaryAutomationDefinition> {
+    return requestJson<BinaryAutomationDefinition>({
+      url: `${this.baseUrl}/v1/automations/${encodeURIComponent(automationId)}`,
+      method: "GET",
+    });
+  }
+
+  async updateAutomation(
+    automationId: string,
+    patch: Partial<BinaryAutomationDefinition>
+  ): Promise<BinaryAutomationDefinition> {
+    return requestJson<BinaryAutomationDefinition>({
+      url: `${this.baseUrl}/v1/automations/${encodeURIComponent(automationId)}`,
+      method: "PATCH",
+      body: patch,
+    });
+  }
+
+  async controlAutomation(
+    automationId: string,
+    action: "pause" | "resume"
+  ): Promise<BinaryAutomationDefinition> {
+    return requestJson<BinaryAutomationDefinition>({
+      url: `${this.baseUrl}/v1/automations/${encodeURIComponent(automationId)}/control`,
+      method: "POST",
+      body: { action },
+    });
+  }
+
+  async runAutomation(automationId: string): Promise<BinaryHostRunSummary> {
+    return requestJson<BinaryHostRunSummary>({
+      url: `${this.baseUrl}/v1/automations/${encodeURIComponent(automationId)}/run`,
+      method: "POST",
+      body: {},
+    });
+  }
+
+  async getAutomationEvents(automationId: string, after = 0): Promise<BinaryAutomationEventsResponse> {
+    return requestJson<BinaryAutomationEventsResponse>({
+      url: `${this.baseUrl}/v1/automations/${encodeURIComponent(automationId)}/events?after=${encodeURIComponent(String(after))}`,
+      method: "GET",
+    });
+  }
+
+  async listWebhookSubscriptions(): Promise<{ subscriptions: BinaryWebhookSubscription[] }> {
+    return requestJson<{ subscriptions: BinaryWebhookSubscription[] }>({
+      url: `${this.baseUrl}/v1/webhooks/subscriptions`,
+      method: "GET",
+    });
+  }
+
+  async saveWebhookSubscription(
+    input: Partial<BinaryWebhookSubscription> & Pick<BinaryWebhookSubscription, "url">
+  ): Promise<BinaryWebhookSubscription> {
+    return requestJson<BinaryWebhookSubscription>({
+      url: `${this.baseUrl}/v1/webhooks/subscriptions`,
+      method: "POST",
+      body: input,
     });
   }
 }

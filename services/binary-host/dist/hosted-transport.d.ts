@@ -4,6 +4,9 @@ export type HostedAssistRequest = {
     mode: AssistMode;
     model: string;
     historySessionId?: string;
+    tom?: {
+        enabled?: boolean;
+    };
     context?: Record<string, unknown>;
     clientCapabilities?: {
         toolLoop?: boolean;

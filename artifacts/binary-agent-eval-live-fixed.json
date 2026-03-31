@@ -1,0 +1,375 @@
+{
+  "version": "binary_autonomy_benchmark_v1",
+  "createdAt": "2026-03-31T07:55:07.265Z",
+  "host": {
+    "url": "http://127.0.0.1:7777",
+    "version": "0.2.0"
+  },
+  "categories": [
+    {
+      "category": "multi_file_project_generation",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-multi_file_project_generation-DMor66",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 87,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 11,
+      "successfulToolCalls": 8,
+      "failedToolCalls": 3,
+      "toolCounts": {
+        "list_files": 1,
+        "create_checkpoint": 1,
+        "mkdir": 1,
+        "write_file": 5,
+        "run_command": 3
+      },
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "turns": 10,
+      "repeatedCallCount": 1,
+      "repairCount": 3,
+      "takeoverRequired": true,
+      "elapsedMs": 174999,
+      "traceId": "607c8577-c6f1-4382-8c2b-b12472db82f9",
+      "runId": "53787749-a1eb-4dcc-973e-03c28e5c7c12",
+      "hostedRunId": "37f0e0d0-35c6-429b-9e0e-3c3cb7657e8e",
+      "files": [
+        {
+          "path": "duration-toolkit",
+          "type": "dir"
+        },
+        {
+          "path": "duration-toolkit/package.json",
+          "type": "file",
+          "size": 371,
+          "preview": "{\n  \"name\": \"duration-toolkit\",\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"description\": \"Lightweight utilities for parsing and formatting duration strings\",\n  \"main\": \"src/index.js\",\n  \"scripts\": {\n    \"test\": \"node --test test/duration.test.js\",\n    \"lint\": \"npx eslint\"\n  },\n  \"keywords\": [\"duration\", \"time\", \"parse\", \"format\"],\n  \"author\": \"\",\n  \"license\": \"MIT\"\n}"
+        },
+        {
+          "path": "duration-toolkit/README.md",
+          "type": "file",
+          "size": 1732,
+          "preview": "# duration-toolkit\n\nA lightweight, zero-dependency JavaScript utility for parsing and formatting human-readable duration strings.\n\n## Install\n\n```bash\nnpm install duration-toolkit\n```\n\n## Usage\n\n```js\nimport { parseDuration, formatDuration } from 'duration-toolkit';\n\n// Parse human-readable strings into milliseconds\nparseDuration('1h 30m');        // 5400000\nparseDuration('2d 12h');        // 216000000\nparseDuration('45s');           // 45000\nparseDuration('500ms');         // 500\n\n// Format milliseconds back into human-readable strings\nformatDuration(5400000);        // '1h 30m'\nformatDuratio"
+        },
+        {
+          "path": "duration-toolkit/src",
+          "type": "dir"
+        },
+        {
+          "path": "duration-toolkit/src/index.js",
+          "type": "file",
+          "size": 2029,
+          "preview": "/**\n * duration-toolkit\n * Plain-JS ESM helpers for human-readable durations.\n */\n\nconst UNITS = {\n  ms: 1,\n  s:  1000,\n  m:  60 * 1000,\n  h:  60 * 60 * 1000,\n  d:  24 * 60 * 60 * 1000\n};\n\n/**\n * Parse a human duration string into milliseconds.\n * Supports single units (\"5m\", \"2h\") and compound (\"1h 30m\", \"2d 3h 15m\").\n * @param {string} input\n * @returns {number} milliseconds\n * @throws {TypeError} on invalid input\n */\nexport function parseDuration(input) {\n  if (typeof input !== 'string' || !input.trim()) {\n    throw new TypeError('parseDuration expects a non-empty string');\n  }\n\n  const tri"
+        },
+        {
+          "path": "duration-toolkit/test",
+          "type": "dir"
+        },
+        {
+          "path": "duration-toolkit/test/duration.test.js",
+          "type": "file",
+          "size": 1536,
+          "preview": "import { test } from 'node:test';\nimport assert from 'node:assert';\nimport { parseDuration, formatDuration } from '../src/index.js';\n\ntest('parseDuration handles single units', () => {\n  assert.strictEqual(parseDuration('100ms'), 100);\n  assert.strictEqual(parseDuration('5s'), 5000);\n  assert.strictEqual(parseDuration('3m'), 180000);\n  assert.strictEqual(parseDuration('2h'), 7200000);\n  assert.strictEqual(parseDuration('1d'), 86400000);\n});\n\ntest('parseDuration handles compound input', () => {\n  assert.strictEqual(parseDuration('1h 30m'), 5400000);\n  assert.strictEqual(parseDuration('2h 30m 15"
+        }
+      ],
+      "timedOut": false
+    },
+    {
+      "category": "trusted_workspace_command_execution",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-trusted_workspace_command_execution-MPXF2F",
+      "status": "completed",
+      "finishStatus": "completed",
+      "eventCount": 51,
+      "artifactCorrect": true,
+      "validationPassed": true,
+      "totalToolCalls": 5,
+      "successfulToolCalls": 4,
+      "failedToolCalls": 1,
+      "toolCounts": {
+        "read_file": 1,
+        "create_checkpoint": 1,
+        "mkdir": 1,
+        "write_file": 1,
+        "run_command": 1
+      },
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "turns": 5,
+      "repeatedCallCount": 1,
+      "repairCount": 1,
+      "takeoverRequired": false,
+      "elapsedMs": 30287,
+      "traceId": "c2abb47b-5b14-46b4-8a9c-d1d424b84b2d",
+      "runId": "33cf379a-cdf4-4e1f-8548-e271ad00bdb8",
+      "hostedRunId": "39fd47f8-7d26-432d-a3fd-018c54f8d589",
+      "files": [
+        {
+          "path": "command-proof",
+          "type": "dir"
+        },
+        {
+          "path": "command-proof/result.txt",
+          "type": "file",
+          "size": 2,
+          "preview": "ok"
+        }
+      ],
+      "timedOut": false
+    },
+    {
+      "category": "long_run_task",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-long_run_task-206ql5",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 107,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 14,
+      "successfulToolCalls": 10,
+      "failedToolCalls": 4,
+      "toolCounts": {
+        "list_files": 1,
+        "create_checkpoint": 1,
+        "mkdir": 1,
+        "write_file": 7,
+        "run_command": 3,
+        "edit": 1
+      },
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "turns": 13,
+      "repeatedCallCount": 1,
+      "repairCount": 3,
+      "takeoverRequired": true,
+      "elapsedMs": 133642,
+      "traceId": "f670f8aa-e093-4761-9f1b-0fd048022829",
+      "runId": "dc9b8ee1-3483-4259-8bfa-3f62fb9d623c",
+      "hostedRunId": "b522c341-2fc3-42f8-9593-ca48f6f7bc46",
+      "files": [
+        {
+          "path": "notes-workbench",
+          "type": "dir"
+        },
+        {
+          "path": "notes-workbench/docs",
+          "type": "dir"
+        },
+        {
+          "path": "notes-workbench/docs/plan.md",
+          "type": "file",
+          "size": 1559,
+          "preview": "# Notes Workbench Plan\n\n## Project Overview\nA tiny notes summarizer that processes text notes and generates concise summaries.\n\n## Implementation Plan\n\n### Core Features\n1. **Note Parser** (`src/index.js`)\n   - Read and parse text notes\n   - Extract key information\n   - Handle basic text processing\n\n2. **Summarizer** (`src/summary.js`)\n   - Generate concise summaries from parsed notes\n   - Implement basic summarization algorithm\n   - Handle edge cases (empty notes, very long notes)\n\n3. **Tests** (`test/index.test.js`)\n   - Unit tests for note parsing\n   - Unit tests for summarization\n   - Inte"
+        },
+        {
+          "path": "notes-workbench/package.json",
+          "type": "file",
+          "size": 338,
+          "preview": "{\n  \"name\": \"notes-workbench\",\n  \"version\": \"1.0.0\",\n  \"description\": \"A tiny notes summarizer\",\n  \"main\": \"src/index.js\",\n  \"scripts\": {\n    \"test\": \"node test/index.test.js\",\n    \"lint\": \"eslint src/*.js\"\n  },\n  \"keywords\": [\"notes\", \"summarizer\"],\n  \"author\": \"\",\n  \"license\": \"MIT\",\n  \"devDependencies\": {\n    \"eslint\": \"^8.0.0\"\n  }\n}"
+        },
+        {
+          "path": "notes-workbench/README.md",
+          "type": "file",
+          "size": 488,
+          "preview": "# Notes Workbench\n\nA tiny notes summarizer that helps you organize and summarize your notes efficiently.\n\n## Features\n\n- Simple note management\n- Automatic summarization\n- Easy-to-use interface\n\n## Installation\n\n```bash\nnpm install\n```\n\n## Usage\n\n```bash\nnpm start\n```\n\n## Testing\n\n```bash\nnpm test\n```\n\n## Project Structure\n\n- `src/index.js` - Main entry point\n- `src/summary.js` - Summarization logic\n- `test/index.test.js` - Test suite\n- `docs/plan.md` - Project plan and documentation"
+        },
+        {
+          "path": "notes-workbench/src",
+          "type": "dir"
+        },
+        {
+          "path": "notes-workbench/src/index.js",
+          "type": "file",
+          "size": 1233,
+          "preview": "/**\n * A tiny notes summarizer\n * Takes an array of note strings and returns a concise summary\n */\n\n/**\n * Summarize an array of notes\n * @param {string[]} notes - Array of note strings\n * @returns {string} - Summary string\n */\nfunction summarizeNotes(notes) {\n  if (!Array.isArray(notes) || notes.length === 0) {\n    return 'No notes to summarize';\n  }\n\n  // Remove empty notes and trim whitespace\n  const cleanNotes = notes.filter(note => note && note.trim().length > 0);\n  \n  if (cleanNotes.length === 0) {\n    return 'No valid notes to summarize';\n  }\n\n  // Count total notes and unique keywords\n"
+        },
+        {
+          "path": "notes-workbench/src/summary.js",
+          "type": "file",
+          "size": 989,
+          "preview": "/**\n * Summarizes a list of notes by extracting key topics and counting them.\n * @param {string[]} notes - Array of note strings\n * @returns {{topics: string[], count: number}} Summary object with topics and count\n */\nfunction summarize(notes) {\n  if (!Array.isArray(notes)) {\n    throw new Error('Input must be an array of strings');\n  }\n\n  const topics = new Set();\n  \n  notes.forEach(note => {\n    if (typeof note !== 'string') {\n      throw new Error('Each note must be a string');\n    }\n    \n    // Simple topic extraction: look for hashtags or capitalize first word\n    const words = note.split"
+        },
+        {
+          "path": "notes-workbench/test",
+          "type": "dir"
+        },
+        {
+          "path": "notes-workbench/test/index.test.js",
+          "type": "file",
+          "size": 1208,
+          "preview": "const { summarizeNotes } = require('../src/index');\nconst { generateSummary } = require('../src/summary');\n\ndescribe('Notes Summarizer', () => {\n  test('summarizeNotes should return a summary string', () => {\n    const notes = [\n      'Meeting with team at 2pm',\n      'Review project requirements',\n      'Update documentation'\n    ];\n    const summary = summarizeNotes(notes);\n    expect(typeof summary).toBe('string');\n    expect(summary.length).toBeGreaterThan(0);\n  });\n\n  test('generateSummary should create a concise summary', () => {\n    const notes = [\n      'Buy groceries: milk, bread, egg"
+        }
+      ],
+      "timedOut": false
+    },
+    {
+      "category": "git_commit_workflow",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-git_commit_workflow-BHlt4y",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 118,
+      "artifactCorrect": true,
+      "validationPassed": true,
+      "totalToolCalls": 15,
+      "successfulToolCalls": 12,
+      "failedToolCalls": 3,
+      "toolCounts": {
+        "read_file": 1,
+        "create_checkpoint": 1,
+        "mkdir": 1,
+        "write_file": 7,
+        "run_command": 3,
+        "list_files": 2
+      },
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": false,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "turns": 15,
+      "repeatedCallCount": 1,
+      "repairCount": 3,
+      "takeoverRequired": true,
+      "elapsedMs": 78649,
+      "traceId": "ea74639f-b944-4bf7-ad98-a952971face7",
+      "runId": "d6b16bae-ac62-46fd-bd8f-f33bc62edb85",
+      "hostedRunId": "3b28eb74-0354-4e82-92a8-56c6e7a14bea",
+      "files": [
+        {
+          "path": "repo-proof",
+          "type": "dir"
+        },
+        {
+          "path": "repo-proof/package.json",
+          "type": "file",
+          "size": 299,
+          "preview": "{\n  \"name\": \"repo-proof\",\n  \"version\": \"1.0.0\",\n  \"description\": \"A tiny Node ESM utility for demonstration\",\n  \"main\": \"src/index.js\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test test/index.test.js\"\n  },\n  \"keywords\": [\"esm\", \"utility\", \"demo\"],\n  \"author\": \"\",\n  \"license\": \"MIT\"\n}"
+        },
+        {
+          "path": "repo-proof/README.md",
+          "type": "file",
+          "size": 196,
+          "preview": "# repo-proof\n\nA tiny Node ESM utility that proves autonomous development workflow.\n\n## Usage\n\n```js\nimport { prove } from './src/index.js';\nconsole.log(prove());\n```\n\n## Test\n\n```bash\nnpm test\n```"
+        },
+        {
+          "path": "repo-proof/src",
+          "type": "dir"
+        },
+        {
+          "path": "repo-proof/src/index.js",
+          "type": "file",
+          "size": 395,
+          "preview": "/**\n * A tiny Node ESM utility that returns the current timestamp.\n * @returns {number} Unix timestamp in milliseconds\n */\nexport function getTimestamp() {\n  return Date.now();\n}\n\n/**\n * A tiny Node ESM utility that returns a greeting message.\n * @param {string} name - Name to greet\n * @returns {string} Greeting message\n */\nexport function greet(name = 'World') {\n  return `Hello, ${name}!`;\n}"
+        },
+        {
+          "path": "repo-proof/test",
+          "type": "dir"
+        },
+        {
+          "path": "repo-proof/test/index.test.js",
+          "type": "file",
+          "size": 228,
+          "preview": "import { strict as assert } from 'node:assert';\nimport { test } from 'node:test';\nimport { greet } from '../src/index.js';\n\ntest('greet returns expected string', () => {\n  assert.strictEqual(greet('World'), 'Hello, World!');\n});"
+        }
+      ],
+      "timedOut": false
+    },
+    {
+      "category": "complex_autonomy_delivery",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-complex_autonomy_delivery-AmRqru",
+      "status": "running",
+      "finishStatus": "running",
+      "eventCount": 75,
+      "artifactCorrect": false,
+      "validationPassed": false,
+      "totalToolCalls": 9,
+      "successfulToolCalls": 8,
+      "failedToolCalls": 1,
+      "toolCounts": {
+        "read_file": 1,
+        "create_checkpoint": 1,
+        "mkdir": 1,
+        "write_file": 6
+      },
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": false,
+      "matchedCommands": [],
+      "missingPaths": [
+        "launchpad-studio/src/format.js",
+        "launchpad-studio/src/validate.js",
+        "launchpad-studio/test/index.test.js",
+        "launchpad-studio/test/planner.test.js",
+        "launchpad-studio/.gitignore"
+      ],
+      "turns": 9,
+      "repeatedCallCount": 1,
+      "repairCount": 3,
+      "takeoverRequired": false,
+      "elapsedMs": 181092,
+      "traceId": "3acb18ce-3a76-40a0-b3ea-602c6ffe5ec3",
+      "runId": "2929c2ae-b8ac-40b8-a7e2-a7727399a78f",
+      "hostedRunId": "519a14a1-8d10-4442-9200-85c9d03b677b",
+      "files": [
+        {
+          "path": "launchpad-studio",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/docs",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/docs/architecture.md",
+          "type": "file",
+          "size": 1097,
+          "preview": "# Architecture\n\n## Overview\nlaunchpad-studio is a tiny Node ESM toolkit that normalizes feature requests into release cards for streamlined release planning.\n\n## Components\n\n### Core Modules\n- **src/index.js** – entry point, exports public API\n- **src/planner.js** – normalizes raw feature requests into structured release cards\n- ** **src/format.js** – helpers for formatting release cards and CLI output\n- **src/validate.js** – validates incoming feature requests and release cards\n\n### Data Flow\n1. Feature request (raw object) → validate.js\n2. Valid request → planner.js → release card\n3. Release"
+        },
+        {
+          "path": "launchpad-studio/docs/usage.md",
+          "type": "file",
+          "size": 723,
+          "preview": "# Usage\n\n## Installation\n\n```bash\nnpm install launchpad-studio\n```\n\n## CLI\n\n```bash\nnpx launchpad-studio plan <feature-request.json>\n```\n\n## API\n\n```js\nimport { planRelease } from 'launchpad-studio';\n\nconst cards = planRelease([\n  { title: 'Dark mode', effort: 5, priority: 'high' },\n  { title: 'Offline sync', effort: 13, priority: 'medium' }\n]);\n\nconsole.table(cards);\n```\n\n## Release Card Schema\n\n- `id` – unique identifier\n- `title` – short description\n- `effort` – story points (1,2,3,5,8,13)\n- `priority` – low | medium | high\n- `milestone` – calculated sprint number\n- `risk` – low | medium | "
+        },
+        {
+          "path": "launchpad-studio/package.json",
+          "type": "file",
+          "size": 394,
+          "preview": "{\n  \"name\": \"launchpad-studio\",\n  \"version\": \"1.0.0\",\n  \"description\": \"A tiny Node ESM release-planning toolkit\",\n  \"type\": \"module\",\n  \"main\": \"src/index.js\",\n  \"scripts\": {\n    \"test\": \"node --test test/*.test.js\",\n    \"lint\": \"eslint src test\"\n  },\n  \"keywords\": [\"release-planning\", \"toolkit\", \"esm\"],\n  \"author\": \"\",\n  \"license\": \"MIT\",\n  \"devDependencies\": {\n    \"eslint\": \"^8.0.0\"\n  }\n}"
+        },
+        {
+          "path": "launchpad-studio/README.md",
+          "type": "file",
+          "size": 1083,
+          "preview": "# Launchpad Studio\n\nA tiny Node ESM release-planning toolkit that normalizes feature requests into release cards.\n\n## Features\n\n- Normalize feature requests into structured release cards\n- Format and validate release planning data\n- Lightweight and focused on core functionality\n\n## Installation\n\n```bash\nnpm install\n```\n\n## Usage\n\n```javascript\nimport { createPlanner } from './src/planner.js';\nimport { formatReleaseCard } from './src/format.js';\nimport { validateFeatureRequest } from './src/validate.js';\n\nconst planner = createPlanner();\nconst featureRequest = {\n  title: 'New Dashboard',\n  desc"
+        },
+        {
+          "path": "launchpad-studio/src",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/src/index.js",
+          "type": "file",
+          "size": 1567,
+          "preview": "#!/usr/bin/env node\nimport {readFileSync} from 'fs';\nimport {resolve} from 'path';\nimport {planRelease} from './planner.js';\nimport {formatRelease} from './format.js';\nimport {validateRelease} from './validate.js';\n\nexport {planRelease, formatRelease, validateRelease};\n\nexport function main(argv = process.argv.slice(2)) {\n  const [cmd, ...rest] = argv;\n  if (!cmd) nonsuch();\n  switch (cmd) {\n    case 'plan':\n      return planCmd(rest);\n    case 'format':\n      return formatCmd(rest);\n    case 'validate':\n      return validateCmd(rest);\n    default:\n      nonsuch();\n  }\n}\n\nfunction nonsuch() {\n"
+        },
+        {
+          "path": "launchpad-studio/src/planner.js",
+          "type": "file",
+          "size": 2173,
+          "preview": "/**\n * launchpad-studio release-card planner\n * Turns raw feature requests into normalized release cards.\n */\n\n/**\n * Normalize a feature request into a release card.\n * @param {object} req - Raw feature request\n * @param {string} req.title - Short title\n * @param {string} req.description - Longer description\n * @param {string} [req.type='feature'] - One of: feature, fix, chore\n * @param {number} [req.priority=1] - 1=high, 2=medium, 3=low\n * @param {string[]} [req.tags] - Optional labels\n * @returns {object} Normalized release card\n */\nexport function planCard(req) {\n  if (!req || typeof req !"
+        }
+      ],
+      "timedOut": true
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "passed": 1,
+    "takeoverRequired": 3,
+    "validationPassed": 2
+  }
+}

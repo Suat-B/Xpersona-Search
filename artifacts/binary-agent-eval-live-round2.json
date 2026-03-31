@@ -1,0 +1,345 @@
+{
+  "version": "binary_autonomy_benchmark_v1",
+  "createdAt": "2026-03-31T08:14:12.331Z",
+  "host": {
+    "url": "http://127.0.0.1:7777",
+    "version": "0.2.0"
+  },
+  "categories": [
+    {
+      "category": "multi_file_project_generation",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-multi_file_project_generation-GWO28D",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 81,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 10,
+      "successfulToolCalls": 7,
+      "failedToolCalls": 3,
+      "toolCounts": {
+        "list_files": 1,
+        "create_checkpoint": 1,
+        "mkdir": 1,
+        "write_file": 4,
+        "run_command": 3
+      },
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "turns": 10,
+      "repeatedCallCount": 2,
+      "repairCount": 2,
+      "takeoverRequired": true,
+      "elapsedMs": 139744,
+      "traceId": "7e19c441-8dfc-452c-a14c-dd038746a6ad",
+      "runId": "bcf9973e-6c83-496f-b6d2-4012cece4088",
+      "hostedRunId": "8a2cf8ef-4cd7-480c-b8b2-e81b787a11d2",
+      "files": [
+        {
+          "path": "duration-toolkit",
+          "type": "dir"
+        },
+        {
+          "path": "duration-toolkit/package.json",
+          "type": "file",
+          "size": 327,
+          "preview": "{\n  \"name\": \"duration-toolkit\",\n  \"version\": \"1.0.0\",\n  \"description\": \"Parse and format human-readable durations\",\n  \"type\": \"module\",\n  \"main\": \"src/index.js\",\n  \"scripts\": {\n    \"test\": \"node --test\",\n    \"lint\": \"node --check\"\n  },\n  \"keywords\": [\"duration\", \"time\", \"parse\", \"format\"],\n  \"author\": \"\",\n  \"license\": \"MIT\"\n}"
+        },
+        {
+          "path": "duration-toolkit/README.md",
+          "type": "file",
+          "size": 1529,
+          "preview": "# duration-toolkit\n\nA lightweight JavaScript utility for parsing and formatting human-readable duration strings.\n\n## Installation\n\n```bash\nnpm install duration-toolkit\n```\n\n## Usage\n\n```javascript\nimport { parseDuration, formatDuration } from 'duration-toolkit';\n\n// Parse duration strings\nparseDuration('1h 30m'); // 5400000 (milliseconds)\nparseDuration('2d 3h 4m 5s'); // 183845000 (milliseconds)\nparseDuration('500ms'); // 500 (milliseconds)\n\n// Format milliseconds to human-readable strings\nformatDuration(5400000); // '1h 30m'\nformatDuration(183845000); // '2d 3h 4m 5s'\nformatDuration(500); // "
+        },
+        {
+          "path": "duration-toolkit/src",
+          "type": "dir"
+        },
+        {
+          "path": "duration-toolkit/src/index.js",
+          "type": "file",
+          "size": 2060,
+          "preview": "/**\n * Parse a human-readable duration string into milliseconds.\n * Supports units: ms, s, m, h, d (case-insensitive).\n * Handles compound expressions like \"1h 30m\" or \"2d 3h 15m\".\n * @param {string} input\n * @returns {number} milliseconds\n */\nexport function parseDuration(input) {\n  if (typeof input !== 'string' || !input.trim()) {\n    throw new Error('Invalid input: expected non-empty string');\n  }\n\n  const tokens = input.trim().toLowerCase().split(/\\s+/);\n  let totalMs = 0;\n\n  for (const token of tokens) {\n    const match = token.match(/^(\\d+(?:\\.\\d+)?)\\s*(ms|s|m|h|d)$/);\n    if (!match) {\n"
+        },
+        {
+          "path": "duration-toolkit/test",
+          "type": "dir"
+        },
+        {
+          "path": "duration-toolkit/test/duration.test.js",
+          "type": "file",
+          "size": 2407,
+          "preview": "import { test } from 'node:test';\nimport assert from 'node:assert';\nimport { parseDuration, formatDuration } from '../src/index.js';\n\ntest('parseDuration parses milliseconds', () => {\n  assert.strictEqual(parseDuration('100ms'), 100);\n  assert.strictEqual(parseDuration('250ms'), 250);\n});\n\ntest('parseDuration parses seconds', () => {\n  assert.strictEqual(parseDuration('1s'), 1000);\n  assert.strictEqual(parseDuration('30s'), 30000);\n});\n\ntest('parseDuration parses minutes', () => {\n  assert.strictEqual(parseDuration('1m'), 60000);\n  assert.strictEqual(parseDuration('5m'), 300000);\n});\n\ntest('pa"
+        }
+      ],
+      "timedOut": false
+    },
+    {
+      "category": "trusted_workspace_command_execution",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-trusted_workspace_command_execution-8lRt79",
+      "status": "completed",
+      "finishStatus": "completed",
+      "eventCount": 51,
+      "artifactCorrect": true,
+      "validationPassed": true,
+      "totalToolCalls": 5,
+      "successfulToolCalls": 4,
+      "failedToolCalls": 1,
+      "toolCounts": {
+        "read_file": 1,
+        "create_checkpoint": 1,
+        "mkdir": 1,
+        "write_file": 1,
+        "run_command": 1
+      },
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "turns": 5,
+      "repeatedCallCount": 1,
+      "repairCount": 1,
+      "takeoverRequired": false,
+      "elapsedMs": 31594,
+      "traceId": "3ee2fc9d-1476-4d30-9ed9-f6575c87ac07",
+      "runId": "d9058b49-2353-44c8-8664-dad3b1542198",
+      "hostedRunId": "f043a29f-f914-4fd1-bda6-66e593bf9d47",
+      "files": [
+        {
+          "path": "command-proof",
+          "type": "dir"
+        },
+        {
+          "path": "command-proof/result.txt",
+          "type": "file",
+          "size": 2,
+          "preview": "ok"
+        }
+      ],
+      "timedOut": false
+    },
+    {
+      "category": "long_run_task",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-long_run_task-QmWEVM",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 51,
+      "artifactCorrect": false,
+      "validationPassed": false,
+      "totalToolCalls": 5,
+      "successfulToolCalls": 5,
+      "failedToolCalls": 0,
+      "toolCounts": {
+        "list_files": 1,
+        "create_checkpoint": 1,
+        "mkdir": 1,
+        "write_file": 2
+      },
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [
+        "notes-workbench/src/index.js",
+        "notes-workbench/src/summary.js",
+        "notes-workbench/test/index.test.js",
+        "notes-workbench/package.json"
+      ],
+      "turns": 5,
+      "repeatedCallCount": 1,
+      "repairCount": 1,
+      "takeoverRequired": true,
+      "elapsedMs": 52176,
+      "traceId": "66ca59c7-4a35-4de0-bf09-1f2e0a60f354",
+      "runId": "58f5707c-4fb4-4a32-a368-a3f88554559f",
+      "hostedRunId": "272a5442-706c-4693-931a-d9c0e1297488",
+      "files": [
+        {
+          "path": "notes-workbench",
+          "type": "dir"
+        },
+        {
+          "path": "notes-workbench/docs",
+          "type": "dir"
+        },
+        {
+          "path": "notes-workbench/docs/plan.md",
+          "type": "file",
+          "size": 669,
+          "preview": "# Notes Workbench Plan\n\n## Overview\nA tiny notes summarizer that processes text notes and generates concise summaries.\n\n## Features\n- Parse text notes\n- Extract key points\n- Generate summary\n- CLI interface\n\n## Implementation Steps\n1. Create package.json with dependencies\n2. Implement core summarizer in src/index.js\n3. Create summary utility in src/summary.js\n4. Write tests in test/index.test.js\n5. Run tests until passing\n6. Final validation\n\n## API Design\n- `summarize(notes)` - Main function\n- `extractKeyPoints(text)` - Helper\n- `generateSummary(points)` - Helper\n\n## Test Coverage\n- Basic sum"
+        },
+        {
+          "path": "notes-workbench/README.md",
+          "type": "file",
+          "size": 511,
+          "preview": "# Notes Workbench\n\nA tiny notes summarizer that helps organize and summarize your notes.\n\n## Features\n\n- Parse and organize notes\n- Generate summaries from note content\n- Simple command-line interface\n- Test coverage\n\n## Installation\n\n```bash\nnpm install\n```\n\n## Usage\n\n```bash\nnpm start\n```\n\n## Testing\n\n```bash\nnpm test\n```\n\n## Project Structure\n\n- `src/index.js` - Main entry point\n- `src/summary.js` - Summary generation logic\n- `test/index.test.js` - Test suite\n- `docs/plan.md` - Project planning document"
+        }
+      ],
+      "timedOut": false
+    },
+    {
+      "category": "git_commit_workflow",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-git_commit_workflow-920IiU",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 79,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 9,
+      "successfulToolCalls": 6,
+      "failedToolCalls": 3,
+      "toolCounts": {
+        "read_file": 1,
+        "create_checkpoint": 1,
+        "mkdir": 1,
+        "write_file": 5,
+        "run_command": 1
+      },
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": false,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "turns": 9,
+      "repeatedCallCount": 1,
+      "repairCount": 3,
+      "takeoverRequired": true,
+      "elapsedMs": 93607,
+      "traceId": "3087ef3b-e18c-4f57-9e7c-6c5de9db1616",
+      "runId": "5d09f19e-63e9-431e-8b1e-2a9afc35575d",
+      "hostedRunId": "fd7d3d01-55e5-4c33-a8f9-e8dbd2c0e2cf",
+      "files": [
+        {
+          "path": "repo-proof",
+          "type": "dir"
+        },
+        {
+          "path": "repo-proof/package.json",
+          "type": "file",
+          "size": 272,
+          "preview": "{\n  \"name\": \"repo-proof\",\n  \"version\": \"1.0.0\",\n  \"description\": \"Tiny Node ESM utility\",\n  \"type\": \"module\",\n  \"main\": \"src/index.js\",\n  \"scripts\": {\n    \"test\": \"node --experimental-loader ./test/index.test.js\"\n  },\n  \"keywords\": [],\n  \"author\": \"\",\n  \"license\": \"ISC\"\n}"
+        },
+        {
+          "path": "repo-proof/README.md",
+          "type": "file",
+          "size": 280,
+          "preview": "# repo-proof\n\nA tiny Node ESM utility that exports a single function `proof()` returning the string \"autonomy\".\n\n## Install\n\n```bash\nnpm install\n```\n\n## Usage\n\n```js\nimport { proof } from './src/index.js';\nconsole.log(proof()); // → \"autonomy\"\n```\n\n## Test\n\n```bash\nnpm test\n```"
+        },
+        {
+          "path": "repo-proof/src",
+          "type": "dir"
+        },
+        {
+          "path": "repo-proof/src/index.js",
+          "type": "file",
+          "size": 92,
+          "preview": "export function greet(name = 'World') {\n  return `Hello, ${name}!`;\n}\n\nexport default greet;"
+        },
+        {
+          "path": "repo-proof/test",
+          "type": "dir"
+        },
+        {
+          "path": "repo-proof/test/index.test.js",
+          "type": "file",
+          "size": 370,
+          "preview": "import { strict as assert } from 'node:assert';\nimport { describe, it } from 'node:test';\nimport { tinyUtil } from '../src/index.js';\n\ndescribe('tinyUtil', () => {\n  it('should export a function', () => {\n    assert.equal(typeof tinyUtil, 'function');\n  });\n\n  it('should return expected greeting', () => {\n    assert.equal(tinyUtil('world'), 'Hello, world!');\n  });\n});"
+        }
+      ],
+      "timedOut": false
+    },
+    {
+      "category": "complex_autonomy_delivery",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-complex_autonomy_delivery-oZLuKx",
+      "status": "running",
+      "finishStatus": "running",
+      "eventCount": 76,
+      "artifactCorrect": false,
+      "validationPassed": false,
+      "totalToolCalls": 9,
+      "successfulToolCalls": 8,
+      "failedToolCalls": 1,
+      "toolCounts": {
+        "read_file": 1,
+        "create_checkpoint": 1,
+        "mkdir": 1,
+        "write_file": 6
+      },
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": false,
+      "matchedCommands": [],
+      "missingPaths": [
+        "launchpad-studio/src/format.js",
+        "launchpad-studio/src/validate.js",
+        "launchpad-studio/test/index.test.js",
+        "launchpad-studio/test/planner.test.js",
+        "launchpad-studio/.gitignore"
+      ],
+      "turns": 9,
+      "repeatedCallCount": 1,
+      "repairCount": 2,
+      "takeoverRequired": false,
+      "elapsedMs": 181032,
+      "traceId": "cfc2a466-12c6-4875-91fa-56fac80853a2",
+      "runId": "3ddafec9-e4cd-45b7-98f4-8066936c958f",
+      "hostedRunId": "f7c7d732-2f09-45b5-a407-bfccef50bdc0",
+      "files": [
+        {
+          "path": "launchpad-studio",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/docs",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/docs/architecture.md",
+          "type": "file",
+          "size": 786,
+          "preview": "# Architecture\n\n## Overview\nlaunchpad-studio is a tiny Node ESM release-planning toolkit that normalizes feature requests into release cards.\n\n## Core Modules\n\n### planner.js\n- Parses raw feature requests\n- Transforms them into normalized release cards\n- Exports `normalizeFeature()` and `planRelease()`\n\n### format.js\n- Provides formatting helpers for release cards\n- Exports `formatCard()` and `formatRelease()`\n\n### validate.js\n- Validates release cards against schema\n- Exports `validateCard()` and `validateRelease()`\n\n### index.js\n- Main entry point\n- Re-exports all public APIs\n\n## Data Flow\n1"
+        },
+        {
+          "path": "launchpad-studio/docs/usage.md",
+          "type": "file",
+          "size": 483,
+          "preview": "# Usage\n\n## CLI\n```bash\nnpx launchpad-studio plan --features \"feat: login,feat: signup,fix: typo\"\n```\n\n## API\n```js\nimport { plan } from 'launchpad-studio';\n\nconst release = await plan([\n  'feat: user authentication',\n  'feat: dark mode',\n  'fix: broken link'\n]);\nconsole.log(release.cards);\n```\n\n## Release Card Schema\n- id: unique identifier\n- type: feat | fix | chore | breaking\n- title: normalized title\n- scope: optional module name\n- breaking: boolean\n- body: optional details\n"
+        },
+        {
+          "path": "launchpad-studio/package.json",
+          "type": "file",
+          "size": 380,
+          "preview": "{\n  \"name\": \"launchpad-studio\",\n  \"version\": \"1.0.0\",\n  \"description\": \"Tiny Node ESM release-planning toolkit\",\n  \"type\": \"module\",\n  \"main\": \"src/index.js\",\n  \"scripts\": {\n    \"test\": \"node --test\",\n    \"lint\": \"eslint src test\"\n  },\n  \"keywords\": [\"release\", \"planning\", \"toolkit\", \"esm\"],\n  \"author\": \"\",\n  \"license\": \"MIT\",\n  \"devDependencies\": {\n    \"eslint\": \"^8.0.0\"\n  }\n}"
+        },
+        {
+          "path": "launchpad-studio/README.md",
+          "type": "file",
+          "size": 767,
+          "preview": "# launchpad-studio\n\nA tiny Node ESM release-planning toolkit that normalizes feature requests into release cards.\n\n## Installation\n\n```bash\nnpm install launchpad-studio\n```\n\n## Usage\n\n```javascript\nimport { createPlanner, formatReleaseCard, validateFeature } from 'launchpad-studio';\n\nconst planner = createPlanner();\nconst feature = { title: 'Dark Mode', description: 'Add dark mode support' };\n\nif (validateFeature(feature)) {\n  const card = planner.normalize(feature);\n  console.log(formatReleaseCard(card));\n}\n```\n\n## API\n\n### createPlanner()\nReturns a planner instance with a `normalize(feature)"
+        },
+        {
+          "path": "launchpad-studio/src",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/src/index.js",
+          "type": "file",
+          "size": 1552,
+          "preview": "#!/usr/bin/env node\nimport { parseArgs } from 'node:util';\nimport { createPlanner } from './planner.js';\nimport { formatReleaseCard } from './format.js';\nimport { validateReleaseCard } from './validate.js';\n\nexport async function main(argv = process.argv) {\n  const { values, positionals } = parseArgs的信不信{\n    args: argv.slice(2),\n    options: {\n      help: { type: 'boolean', short: false },\n      version: { type: 'boolean', short: 'v' }\n    },\n    allowPositionals: true\n  });\n\n  if (values.help) {\n    console.log(`\nlaunchpad-studio – tiny Node ESM release-planning toolkit\n\nUSAGE\n  node src/ind"
+        },
+        {
+          "path": "launchpad-studio/src/planner.js",
+          "type": "file",
+          "size": 1589,
+          "preview": "/**\n * Planner – turns raw feature requests into normalized release cards.\n */\n\n/**\n * Normalise a single feature request.\n * @param {string|object} input\n * @returns {{id:string, title:string, description:string, type:'feature'|'fix'|'chore', effort:1|2|3|5|8, tags:string[]}}\n */\nexport function normalise(input) {\n  if (typeof input === 'string') {\n    input = { title: input };\n  }\n  if (!input || typeof input !== 'object' || Array.isArray(input)) {\n    throw new TypeError('Feature request must be a string or plain object');\n  }\n\n  const title = String(input.title || '').trim();\n  if (!title)"
+        }
+      ],
+      "timedOut": true
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "passed": 1,
+    "takeoverRequired": 3,
+    "validationPassed": 1
+  }
+}

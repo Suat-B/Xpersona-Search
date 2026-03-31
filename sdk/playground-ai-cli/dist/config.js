@@ -12,9 +12,13 @@ const DEFAULT_CONFIG = {
     reasoning: "medium",
     includeIdeContext: true,
     transport: process.env.BINARY_IDE_TRANSPORT ?? "auto",
+    tomEnabled: true,
 };
 function normalizeTransport(value) {
     return value === "host" || value === "direct" || value === "auto" ? value : DEFAULT_CONFIG.transport;
+}
+function normalizeTomEnabled(value) {
+    return value === false ? false : true;
 }
 export function getConfigDir() {
     return path.join(os.homedir(), CONFIG_DIR_NAME);
@@ -39,6 +43,7 @@ function normalizeConfig(config) {
         baseUrl: String(process.env.BINARY_IDE_BASE_URL || config.baseUrl || DEFAULT_CONFIG.baseUrl).replace(/\/+$/, ""),
         localHostUrl: String(process.env.BINARY_IDE_LOCAL_HOST_URL || config.localHostUrl || DEFAULT_CONFIG.localHostUrl).replace(/\/+$/, ""),
         transport: normalizeTransport(process.env.BINARY_IDE_TRANSPORT || config.transport),
+        tomEnabled: normalizeTomEnabled(config.tomEnabled),
     };
 }
 async function readConfigFile(configPath) {

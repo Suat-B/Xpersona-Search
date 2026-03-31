@@ -94,6 +94,7 @@ export async function streamHostedAssist(input, options = {}) {
             model: input.request.model || "Binary IDE",
             stream: true,
             historySessionId: input.request.historySessionId,
+            ...(input.request.tom ? { tom: input.request.tom } : {}),
             ...(input.request.context ? { context: input.request.context } : {}),
             ...(input.request.clientCapabilities ? { clientCapabilities: input.request.clientCapabilities } : {}),
             contextBudget: {

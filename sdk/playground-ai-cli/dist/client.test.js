@@ -69,3 +69,27 @@ describe("PlaygroundClient.continueRun", () => {
         });
     });
 });
+describe("PlaygroundClient assist TOM forwarding", () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+    it("includes TOM config in non-stream assists", async () => {
+        const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: { final: "ok" } }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+        }));
+        vi.stubGlobal("fetch", fetchMock);
+        const client = new PlaygroundClient({
+            baseUrl: "https://example.test",
+            auth: { apiKey: "secret" },
+        });
+        await client.assist({
+            task: "Ship it",
+            mode: "auto",
+            tom: { enabled: false },
+        });
+        const [, init] = fetchMock.mock.calls[0];
+        const body = JSON.parse(String(init.body));
+        expect(body.tom).toEqual({ enabled: false });
+    });
+});

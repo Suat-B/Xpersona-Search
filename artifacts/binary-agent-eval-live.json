@@ -1,0 +1,318 @@
+{
+  "version": "binary_autonomy_benchmark_v1",
+  "createdAt": "2026-03-31T07:35:17.680Z",
+  "host": {
+    "url": "http://127.0.0.1:7777",
+    "version": "0.2.0"
+  },
+  "categories": [
+    {
+      "category": "multi_file_project_generation",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-multi_file_project_generation-efLdHL",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 42,
+      "artifactCorrect": false,
+      "validationPassed": false,
+      "totalToolCalls": 4,
+      "successfulToolCalls": 4,
+      "failedToolCalls": 0,
+      "toolCounts": {
+        "list_files": 1,
+        "create_checkpoint": 1,
+        "mkdir": 1,
+        "write_file": 1
+      },
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [
+        "duration-toolkit/src/index.js",
+        "duration-toolkit/test/duration.test.js",
+        "duration-toolkit/README.md"
+      ],
+      "turns": 4,
+      "repeatedCallCount": 1,
+      "repairCount": 0,
+      "takeoverRequired": true,
+      "elapsedMs": 92165,
+      "traceId": "7d09e66f-04a2-4a4f-9e2f-3a94d740f7f0",
+      "runId": "4542b675-585a-495f-9018-75ad193eb07c",
+      "hostedRunId": "7503c183-edcb-4aaa-b438-3244dcbb83a9",
+      "files": [
+        {
+          "path": "duration-toolkit",
+          "type": "dir"
+        },
+        {
+          "path": "duration-toolkit/package.json",
+          "type": "file",
+          "size": 343,
+          "preview": "{\n  \"name\": \"duration-toolkit\",\n  \"version\": \"1.0.0\",\n  \"description\": \"Parse and format human-readable durations\",\n  \"type\": \"module\",\n  \"main\": \"src/index.js\",\n  \"scripts\": {\n    \"test\": \"node --test test/duration.test.js\",\n    \"lint\": \"eslint\"\n  },\n  \"keywords\": [\"duration\", \"time\", \"parse\", \"format\"],\n  \"author\": \"\",\n  \"license\": \"MIT\"\n}"
+        }
+      ],
+      "timedOut": false
+    },
+    {
+      "category": "trusted_workspace_command_execution",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-trusted_workspace_command_execution-rLEpjW",
+      "status": "completed",
+      "finishStatus": "completed",
+      "eventCount": 51,
+      "artifactCorrect": true,
+      "validationPassed": true,
+      "totalToolCalls": 5,
+      "successfulToolCalls": 4,
+      "failedToolCalls": 1,
+      "toolCounts": {
+        "read_file": 1,
+        "create_checkpoint": 1,
+        "mkdir": 1,
+        "write_file": 1,
+        "run_command": 1
+      },
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "turns": 5,
+      "repeatedCallCount": 1,
+      "repairCount": 1,
+      "takeoverRequired": false,
+      "elapsedMs": 27820,
+      "traceId": "4e3d9342-e8ca-4c6d-8642-d95a7a4df371",
+      "runId": "4f00f088-fc15-461f-beac-35e7a095bbac",
+      "hostedRunId": "2e2394cd-2fb2-470c-a841-51344f35aa3e",
+      "files": [
+        {
+          "path": "command-proof",
+          "type": "dir"
+        },
+        {
+          "path": "command-proof/result.txt",
+          "type": "file",
+          "size": 2,
+          "preview": "ok"
+        }
+      ],
+      "timedOut": false
+    },
+    {
+      "category": "long_run_task",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-long_run_task-DBQ74Y",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 49,
+      "artifactCorrect": false,
+      "validationPassed": false,
+      "totalToolCalls": 5,
+      "successfulToolCalls": 5,
+      "failedToolCalls": 0,
+      "toolCounts": {
+        "list_files": 1,
+        "create_checkpoint": 1,
+        "mkdir": 1,
+        "write_file": 2
+      },
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [
+        "notes-workbench/src/index.js",
+        "notes-workbench/src/summary.js",
+        "notes-workbench/test/index.test.js",
+        "notes-workbench/package.json"
+      ],
+      "turns": 5,
+      "repeatedCallCount": 1,
+      "repairCount": 0,
+      "takeoverRequired": true,
+      "elapsedMs": 66866,
+      "traceId": "3d084bb8-9180-4c72-9d70-871b9de2682b",
+      "runId": "9c7e805b-136e-4451-b9a7-a2c3010f3b75",
+      "hostedRunId": "7551b09e-b1eb-4628-87c3-774302d4c9cc",
+      "files": [
+        {
+          "path": "notes-workbench",
+          "type": "dir"
+        },
+        {
+          "path": "notes-workbench/docs",
+          "type": "dir"
+        },
+        {
+          "path": "notes-workbench/docs/plan.md",
+          "type": "file",
+          "size": 605,
+          "preview": "# Notes Workbench Plan\n\n## Overview\nA tiny notes summarizer that processes text notes and generates concise summaries.\n\n## Core Features\n1. Parse multi-line text notes\n2. Extract key topics/themes\n3. Generate summary (≤ 3 sentences)\n4. CLI interface\n\n## Implementation Steps\n1. Create package.json with dependencies (jest for testing)\n2. Implement src/index.js – CLI entry point\n3. Implement src/summary.js – summarization logic\n4. Write test/index.test.js – unit tests\n5. Run tests until green\n6. Update README with usage\n\n## Acceptance Criteria\n- All tests pass\n- No lint errors\n- Git diff clean"
+        },
+        {
+          "path": "notes-workbench/README.md",
+          "type": "file",
+          "size": 268,
+          "preview": "# Notes Workbench\n\nA tiny notes summarizer that processes and summarizes text notes.\n\n## Features\n\n- Process text notes\n- Generate summaries\n- Simple CLI interface\n\n## Usage\n\n```bash\nnpm install\nnpm test\nnpm start\n```\n\n## Development\n\n```bash\nnpm run lint\nnpm test\n```"
+        }
+      ],
+      "timedOut": false
+    },
+    {
+      "category": "git_commit_workflow",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-git_commit_workflow-7tK2L7",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 92,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 11,
+      "successfulToolCalls": 7,
+      "failedToolCalls": 4,
+      "toolCounts": {
+        "read_file": 1,
+        "create_checkpoint": 1,
+        "mkdir": 1,
+        "write_file": 5,
+        "run_command": 2,
+        "edit": 1
+      },
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": false,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "turns": 11,
+      "repeatedCallCount": 1,
+      "repairCount": 3,
+      "takeoverRequired": true,
+      "elapsedMs": 51392,
+      "traceId": "37330004-e599-4db0-ad0b-ebca9133f192",
+      "runId": "c95798d4-92e7-4d75-8303-d344f75cd31d",
+      "hostedRunId": "8531f859-f73f-4566-83f3-195d81b5a556",
+      "files": [
+        {
+          "path": "repo-proof",
+          "type": "dir"
+        },
+        {
+          "path": "repo-proof/package.json",
+          "type": "file",
+          "size": 277,
+          "preview": "{\n  \"name\": \"repo-proof\",\n  \"version\": \"1.0.0\",\n  \"description\": \"Tiny Node ESM utility\",\n  \"type\": \"module\",\n  \"main\": \"src/index.js\",\n  \"scripts\": {\n    \"test\": \"node --experimental-modulesloader test/index.test.js\"\n  },\n  \"keywords\": [],\n  \"author\": \"\",\n  \"license\": \"ISC\"\n}"
+        },
+        {
+          "path": "repo-proof/README.md",
+          "type": "file",
+          "size": 287,
+          "preview": "# repo-proof\n\nA tiny Node ESM utility package.\n\n## Installation\n\n```bash\nnpm install\n```\n\n## Usage\n\n```javascript\nimport { add, multiply } from './src/index.js';\n\nconsole.log(add(2, 3));       // 5\nconsole.log(multiply(2, 3));  // 6\n```\n\n## Testing\n\n```bash\nnpm test\n```\n\n## License\n\nMIT"
+        },
+        {
+          "path": "repo-proof/src",
+          "type": "dir"
+        },
+        {
+          "path": "repo-proof/src/index.js",
+          "type": "file",
+          "size": 97,
+          "preview": "export function add(a, b) {\n  return a + b;\n}\n\nexport function multiply(a, b) {\n  return a * b;\n}"
+        },
+        {
+          "path": "repo-proof/test",
+          "type": "dir"
+        },
+        {
+          "path": "repo-proof/test/index.test.js",
+          "type": "file",
+          "size": 327,
+          "preview": "import { strict as assert } from 'node:assert';\nimport { describe, it } from 'node:test';\nimport { add, multiply } from '../src/index.js';\n\ndescribe('index.js', () => {\n  it('adds two numbers', () => {\n    assert.equal(add(2, 3), 5);\n  });\n\n  it('multiplies two numbers', () => {\n    assert.equal(multiply(4, 5), 20);\n  });\n});"
+        }
+      ],
+      "timedOut": false
+    },
+    {
+      "category": "complex_autonomy_delivery",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-complex_autonomy_delivery-zRy6g8",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 72,
+      "artifactCorrect": false,
+      "validationPassed": false,
+      "totalToolCalls": 8,
+      "successfulToolCalls": 7,
+      "failedToolCalls": 1,
+      "toolCounts": {
+        "read_file": 1,
+        "create_checkpoint": 1,
+        "mkdir": 1,
+        "write_file": 5
+      },
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": false,
+      "matchedCommands": [],
+      "missingPaths": [
+        "launchpad-studio/src/planner.js",
+        "launchpad-studio/src/format.js",
+        "launchpad-studio/src/validate.js",
+        "launchpad-studio/test/index.test.js",
+        "launchpad-studio/test/planner.test.js",
+        "launchpad-studio/.gitignore"
+      ],
+      "turns": 8,
+      "repeatedCallCount": 1,
+      "repairCount": 2,
+      "takeoverRequired": true,
+      "elapsedMs": 104403,
+      "traceId": "d78f663f-0664-459f-adb8-9120fed974b3",
+      "runId": "fc00d18e-38fa-40b4-b978-9d72bc541f54",
+      "hostedRunId": "cd77f2d5-799a-48ff-bce4-acda417e60b0",
+      "files": [
+        {
+          "path": "launchpad-studio",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/docs",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/docs/architecture.md",
+          "type": "file",
+          "size": 589,
+          "preview": "# Architecture\n\n## Overview\nlaunchpad-studio is a tiny Node ESM release-planning toolkit that normalizes feature requests into release cards.\n\n## Core Modules\n\n### src/index.js\nEntry point. Re-exports planner, format, and validate helpers.\n\n### src/planner.js\nExports `normalizeFeature(request)` → `{id, title, description, type, effort, priority}`.\n\n### src/format.js\nExports `card(feature)` → pretty-printed release card string.\n\n### src/validate.js\nExports `isValidFeature(obj)` → boolean schema check.\n\n## Testing\nUses built-in `node:test` and `node:assert`. All modules covered."
+        },
+        {
+          "path": "launchpad-studio/docs/usage.md",
+          "type": "file",
+          "size": 567,
+          "preview": "# Usage\n\n## CLI\n\n```bash\nnpx launchpad-studio <feature-request.json\n```\n\n## Programmatic\n\n```js\nimport { planRelease } from 'launchpad-studio';\n\nconst cards = planRelease({\n  title: 'Dark-mode support',\n  description: 'Users want a toggle for dark mode',\n  scope: ['ui', 'theme']\n});\n```\n\n## Output\n\nReturns an array of release cards:\n\n```json\n[\n  {\n    \"id\": \"feat-dark-mode\",\n    \"title\": \"Dark-mode support\",\n    \"description\": \"Users want a toggle for dark mode\",\n    \"type\": \"feature\",\n    \"scope\": [\"ui\", \"theme\"],\n    \"priority\": 1,\n    \"estimate\": 3\n  }\n]\n```"
+        },
+        {
+          "path": "launchpad-studio/package.json",
+          "type": "file",
+          "size": 382,
+          "preview": "{\n  \"name\": \"launchpad-studio\",\n  \"version\": \"1.0.0\",\n  \"description\": \"Tiny Node ESM release-planning toolkit\",\n  \"type\": \"module\",\n  \"main\": \"src/index.js\",\n  \"scripts\": {\n    \"test\": \"node --test\",\n    \"lint\": \" eslint src test\"\n  },\n  \"keywords\": [\"release\", \"planning\", \"toolkit\", \"esm\"],\n  \"author\": \"\",\n  \"license\": \"MIT\",\n  \"devDependencies\": {\n    \"eslint\": \"^8.57.0\"\n  }\n}"
+        },
+        {
+          "path": "launchpad-studio/README.md",
+          "type": "file",
+          "size": 712,
+          "preview": "# Launchpad Studio\n\nA tiny Node ESM release-planning toolkit that normalizes feature requests into release cards.\n\n## Features\n\n- Normalize feature requests into structured release cards\n- Format and validate release planning data\n- Lightweight and focused on core functionality\n\n## Installation\n\n```bash\nnpm install\n```\n\n## Usage\n\n```javascript\nimport { createPlanner } from './src/index.js';\n\nconst planner = createPlanner();\nconst releaseCard = planner.normalizeFeatureRequest({\n  title: 'New Feature',\n  description: 'Feature description',\n  priority: 'high'\n});\n```\n\n## Testing\n\n```bash\nnpm test"
+        },
+        {
+          "path": "launchpad-studio/src",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/src/index.js",
+          "type": "file",
+          "size": 244,
+          "preview": "/**\n * Launchpad Studio – tiny Node E ESM release-planning toolkit\n * Entry point: re-exports the three core modules.\n */\n\nexport { planner } from './planner.js';\nexport { format } from './format.js';\nexport { validate } from './validate.js';"
+        }
+      ],
+      "timedOut": false
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "passed": 1,
+    "takeoverRequired": 4,
+    "validationPassed": 1
+  }
+}
