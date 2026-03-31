@@ -63,26 +63,43 @@ export default async function AgentHubPage() {
     <main className="mx-auto w-full max-w-6xl px-4 py-8 md:py-10">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
-      <header className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6">
-        <p className="text-xs uppercase tracking-wide text-[var(--text-tertiary)]">Agent Directory</p>
-        <h1 className="mt-2 text-3xl font-bold text-[var(--text-primary)]">Discover AI Agents By Intent</h1>
-        <p className="mt-3 max-w-3xl text-sm leading-relaxed text-[var(--text-secondary)]">
+      <header className="rounded-[2rem] border border-[var(--border)] bg-[radial-gradient(circle_at_top_left,rgba(255,112,138,0.18),transparent_34%),radial-gradient(circle_at_top_right,rgba(0,194,168,0.12),transparent_24%),linear-gradient(180deg,var(--bg-card),var(--bg-elevated))] p-6 md:p-8">
+        <p className="text-xs uppercase tracking-[0.22em] text-[var(--text-tertiary)]">Agent Directory</p>
+        <h1 className="mt-3 max-w-4xl text-4xl font-bold tracking-tight text-[var(--text-primary)] md:text-5xl">
+          Discover AI Agents Through Public Evidence
+        </h1>
+        <p className="mt-4 max-w-3xl text-sm leading-relaxed text-[var(--text-secondary)] md:text-base">
           This hub organizes agent profiles by protocol, source, and use case. Each agent profile includes trust,
           contract, and snapshot links plus editorial guidance to make selection safer and faster.
         </p>
-        <div className="mt-4 flex flex-wrap gap-2 text-sm">
-          <Link className="text-[var(--accent-heart)] hover:underline" href="/agent/trending">Trending</Link>
-          <Link className="text-[var(--accent-heart)] hover:underline" href="/agent/new">New</Link>
-          <Link className="text-[var(--accent-heart)] hover:underline" href="/agent/most-downloaded">Most downloaded</Link>
-          <Link className="text-[var(--accent-heart)] hover:underline" href="/agent/benchmarked">Benchmarked</Link>
-          <Link className="text-[var(--accent-heart)] hover:underline" href="/agent/openapi-ready">OpenAPI ready</Link>
-          <Link className="text-[var(--accent-heart)] hover:underline" href="/agent/security-reviewed">Security reviewed</Link>
-          <Link className="text-[var(--accent-heart)] hover:underline" href="/agent/recent-updates">Recent updates</Link>
+        <div className="mt-6 grid gap-3 md:grid-cols-4">
+          {[
+            "Public crawl records",
+            "Trust and contract signals",
+            "Protocol and source navigation",
+            "Shortlist-ready comparison pages",
+          ].map((item) => (
+            <div
+              key={item}
+              className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/80 p-4 text-sm text-[var(--text-secondary)]"
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+        <div className="mt-6 flex flex-wrap gap-3 text-sm">
+          <Link className="rounded-full border border-[var(--border)] bg-[var(--bg-card)] px-4 py-2 text-[var(--text-primary)] hover:border-[var(--accent-heart)]/30" href="/agent/trending">Trending</Link>
+          <Link className="rounded-full border border-[var(--border)] bg-[var(--bg-card)] px-4 py-2 text-[var(--text-primary)] hover:border-[var(--accent-heart)]/30" href="/agent/new">New</Link>
+          <Link className="rounded-full border border-[var(--border)] bg-[var(--bg-card)] px-4 py-2 text-[var(--text-primary)] hover:border-[var(--accent-heart)]/30" href="/agent/most-downloaded">Most downloaded</Link>
+          <Link className="rounded-full border border-[var(--border)] bg-[var(--bg-card)] px-4 py-2 text-[var(--text-primary)] hover:border-[var(--accent-heart)]/30" href="/agent/benchmarked">Benchmarked</Link>
+          <Link className="rounded-full border border-[var(--border)] bg-[var(--bg-card)] px-4 py-2 text-[var(--text-primary)] hover:border-[var(--accent-heart)]/30" href="/agent/openapi-ready">OpenAPI ready</Link>
+          <Link className="rounded-full border border-[var(--border)] bg-[var(--bg-card)] px-4 py-2 text-[var(--text-primary)] hover:border-[var(--accent-heart)]/30" href="/agent/security-reviewed">Security reviewed</Link>
+          <Link className="rounded-full border border-[var(--border)] bg-[var(--bg-card)] px-4 py-2 text-[var(--text-primary)] hover:border-[var(--accent-heart)]/30" href="/agent/recent-updates">Recent updates</Link>
         </div>
       </header>
 
       <div className="mt-6 space-y-6">
-        <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6">
+        <section className="rounded-[2rem] border border-[var(--border)] bg-[linear-gradient(180deg,var(--bg-card),var(--bg-elevated))] p-6">
           <h2 className="text-xl font-semibold text-[var(--text-primary)]">How to evaluate agents</h2>
           <p className="mt-2 text-sm text-[var(--text-secondary)] leading-relaxed">
             Xpersona helps you move from discovery to safe execution by pairing agent listings with verification
@@ -101,7 +118,7 @@ export default async function AgentHubPage() {
           </p>
         </section>
 
-        <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6">
+        <section className="rounded-[2rem] border border-[var(--border)] bg-[linear-gradient(180deg,var(--bg-card),var(--bg-elevated))] p-6">
           <h2 className="text-xl font-semibold text-[var(--text-primary)]">Trust and verification methodology</h2>
           <p className="mt-2 text-sm text-[var(--text-secondary)] leading-relaxed">
             Verification tiers highlight ownership signals, while handshake status and freshness reveal how recently an
@@ -136,7 +153,7 @@ export default async function AgentHubPage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6">
+        <section className="rounded-[2rem] border border-[var(--border)] bg-[linear-gradient(180deg,var(--bg-card),var(--bg-elevated))] p-6">
           <h2 className="text-xl font-semibold text-[var(--text-primary)]">Selection playbooks</h2>
           <p className="mt-2 text-sm text-[var(--text-secondary)]">
             Start with a playbook to shortlist agents that match your execution goals and trust requirements.
@@ -155,7 +172,7 @@ export default async function AgentHubPage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6">
+        <section className="rounded-[2rem] border border-[var(--border)] bg-[linear-gradient(180deg,var(--bg-card),var(--bg-elevated))] p-6">
           <h2 className="text-xl font-semibold text-[var(--text-primary)]">Crawl entry collections</h2>
           <p className="mt-2 text-sm text-[var(--text-secondary)]">
             These public pages are built to attract crawler attention with fresh, citation-friendly summaries before a licensed crawler requests deeper dossier access.
@@ -203,7 +220,7 @@ export default async function AgentHubPage() {
           agents={overview.mostDownloaded}
         />
 
-        <section id="protocols" className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+        <section id="protocols" className="rounded-[2rem] border border-[var(--border)] bg-[linear-gradient(180deg,var(--bg-card),var(--bg-elevated))] p-5">
           <h2 className="text-xl font-semibold text-[var(--text-primary)]">Browse By Protocol</h2>
           <p className="mt-1 text-sm text-[var(--text-secondary)]">
             Use protocol pages to compare agents that can run within the same integration contract.
@@ -221,7 +238,7 @@ export default async function AgentHubPage() {
           </div>
         </section>
 
-        <section id="sources" className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+        <section id="sources" className="rounded-[2rem] border border-[var(--border)] bg-[linear-gradient(180deg,var(--bg-card),var(--bg-elevated))] p-5">
           <h2 className="text-xl font-semibold text-[var(--text-primary)]">Browse By Source</h2>
           <p className="mt-1 text-sm text-[var(--text-secondary)]">
             Compare where listings come from across registries, repositories, and package ecosystems.
@@ -239,7 +256,7 @@ export default async function AgentHubPage() {
           </div>
         </section>
 
-        <section id="use-cases" className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+        <section id="use-cases" className="rounded-[2rem] border border-[var(--border)] bg-[linear-gradient(180deg,var(--bg-card),var(--bg-elevated))] p-5">
           <h2 className="text-xl font-semibold text-[var(--text-primary)]">Browse By Use Case</h2>
           <p className="mt-1 text-sm text-[var(--text-secondary)]">
             Navigate to curated use-case pages with practical selection criteria and alternatives.

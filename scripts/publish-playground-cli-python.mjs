@@ -20,21 +20,22 @@ function run(command, args, cwd) {
 }
 
 async function main() {
-  console.log(`[playground-python-cli] building in ${CLI_DIR}`);
+  console.log("[legacy-python-cli] legacy helper invoked; Binary IDE now ships the Node CLI as the public release.");
+  console.log(`[legacy-python-cli] building in ${CLI_DIR}`);
   await run("python", ["-m", "pip", "install", "--upgrade", "build", "twine"], CLI_DIR);
 
   await run("python", ["-m", "build"], CLI_DIR);
   if (dryRun) {
-    console.log("[playground-python-cli] dry run: twine check dist/*");
+    console.log("[legacy-python-cli] dry run: twine check dist/*");
     await run("python", ["-m", "twine", "check", "dist/*"], CLI_DIR);
     return;
   }
 
-  console.log("[playground-python-cli] uploading to PyPI");
+  console.log("[legacy-python-cli] uploading to PyPI");
   await run("python", ["-m", "twine", "upload", "dist/*"], CLI_DIR);
 }
 
 main().catch((err) => {
-  console.error("[playground-python-cli] publish failed", err);
+  console.error("[legacy-python-cli] publish failed", err);
   process.exit(1);
 });

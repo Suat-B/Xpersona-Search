@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 
 function runCapture(command, args, cwd = process.cwd()) {
   return new Promise((resolve, reject) => {
@@ -37,17 +39,18 @@ function assertNotContains(text, needle, label) {
 async function main() {
   await runCapture("npm", ["--prefix", "sdk/playground-ai-cli", "run", "build"]);
 
-  const nodeHelp = await runCapture("node", ["sdk/playground-ai-cli/dist/cli.js", "--help"]);
-  const pyHelp = await runCapture(
-    "python",
-    ["-m", "playground_ai_cli.cli", "--help"],
-    "playground_ai/python_cli"
+  const binaryHelp = await runCapture("npm", ["--prefix", "sdk/playground-ai-cli", "exec", "binary", "--", "--help"]);
+  const binaryIdeHelp = await runCapture("npm", ["--prefix", "sdk/playground-ai-cli", "exec", "binary-ide", "--", "--help"]);
+  const pkg = JSON.parse(
+    await readFile(path.join(process.cwd(), "sdk", "playground-ai-cli", "package.json"), "utf8")
   );
 
   const requiredTokens = [
-    "Playground AI CLI - Agentic coding runtime",
+    "Binary IDE CLI - Agentic coding runtime",
     "chat",
+    "debug-runtime",
     "run",
+    "runs",
     "sessions",
     "usage",
     "checkout",
@@ -59,14 +62,23 @@ async function main() {
   ];
 
   for (const token of requiredTokens) {
-    assertContains(nodeHelp.stdout, token, "node help");
-    assertContains(pyHelp.stdout, token, "python help");
+    assertContains(binaryHelp.stdout, token, "binary help");
+    assertContains(binaryIdeHelp.stdout, token, "binary-ide help");
   }
 
-  assertNotContains(nodeHelp.stdout, "Codex", "node help");
-  assertNotContains(pyHelp.stdout, "Codex", "python help");
+  assertContains(JSON.stringify(pkg.bin || {}), "\"binary\":\"dist/cli.js\"", "package.json bin map");
+  assertContains(JSON.stringify(pkg.bin || {}), "\"binary-ide\":\"dist/cli.js\"", "package.json bin map");
 
-  console.log("[parity] Playground AI CLI parity checks passed (Node + Python).");
+  for (const forbidden of ["Codex", "Playground AI", "playground", "pgai", "Cutie"]) {
+    assertNotContains(binaryHelp.stdout, forbidden, "binary help");
+    assertNotContains(binaryIdeHelp.stdout, forbidden, "binary-ide help");
+  }
+
+  if (binaryHelp.stdout !== binaryIdeHelp.stdout) {
+    throw new Error("[cli-check] binary and binary-ide help output diverged");
+  }
+
+  console.log("[cli-check] Binary IDE CLI checks passed.");
 }
 
 main().catch((err) => {

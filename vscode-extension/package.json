@@ -112,14 +112,14 @@
             "qwenCode"
           ],
           "enumItemLabels": [
-            "Cutie (hosted OpenHands)",
+            "Standard hosted profile",
             "Hosted agentic runtime",
             "Qwen profile (hosted OpenHands)"
           ],
           "enumDescriptions": [
-            "Use the hosted Binary IDE API with the shared OpenHands orchestration stack while preserving the legacy Cutie runtime label for compatibility.",
+            "Use the hosted Binary IDE API with the default OpenHands profile while preserving the legacy runtime key for compatibility.",
             "Use the hosted Binary IDE API with the shared agentic coding orchestrator (OpenHands).",
-            "Use the hosted Binary IDE API with the shared OpenHands orchestration stack while preserving the legacy Qwen runtime label for compatibility."
+            "Use the hosted Binary IDE API with the Qwen-flavored OpenHands profile while preserving the legacy runtime key for compatibility."
           ],
           "default": "cutie",
           "description": "Compatibility runtime selector for hosted OpenHands orchestration profiles."
@@ -137,7 +137,7 @@
         "xpersona.binary.cutie.model": {
           "type": "string",
           "default": "Qwen/Qwen2.5-Coder-32B-Instruct:fastest",
-          "description": "Legacy fallback for agent.modelAlias when unset. Cutie runtime uses the hosted registry; configure models on the server (PLAYGROUND_DEFAULT_MODEL / PLAYGROUND_MODEL_REGISTRY_JSON)."
+          "description": "Legacy fallback for agent.modelAlias when unset. The hosted Binary IDE profile resolves models on the server (PLAYGROUND_DEFAULT_MODEL / PLAYGROUND_MODEL_REGISTRY_JSON)."
         },
         "xpersona.binary.qwen.model": {
           "type": "string",

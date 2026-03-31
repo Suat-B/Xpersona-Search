@@ -261,6 +261,16 @@ def build_prompt(payload: dict[str, Any]) -> str:
         f"Mode: {request.get('mode') or 'auto'}",
         f"Preferred target: {target.get('path') or 'infer from context'}",
         f"Loop stats: steps={loop_summary.get('stepCount') or 0}, mutations={loop_summary.get('mutationCount') or 0}, repairs={loop_summary.get('repairCount') or 0}",
+        "Required task files:\n"
+        + (
+            "\n".join(
+                f"- {sanitize_relative_path(item) or str(item)}"
+                for item in (fallback_plan.get("files") or [])
+                if str(item or "").strip()
+            )
+            if isinstance(fallback_plan.get("files"), list) and fallback_plan.get("files")
+            else "none."
+        ),
         f"Available tools:\n{build_tool_catalog(tools) if tools else '- none'}",
         "Context files:\n" + ("\n".join(context_files) if context_files else "none."),
         build_history_prompt(request.get("conversationHistory") if isinstance(request.get("conversationHistory"), list) else None),
@@ -270,6 +280,7 @@ def build_prompt(payload: dict[str, Any]) -> str:
         repair_section,
         build_mutation_imperative(repair, target, tools),
         f"Plan objective: {compact_whitespace(fallback_plan.get('objective')) or compact_whitespace(request.get('task'))}",
+        "Do not keep rewriting the same file while explicit task files remain missing or uncreated unless the latest tool result proves that missing-file issue is blocked.",
         "Task:",
         str(request.get("task") or ""),
     ]
@@ -337,7 +348,7 @@ def normalize_tool_call(value: Any, available_tools: list[str]) -> dict[str, Any
     if not isinstance(value, dict):
         return None
 
-    name = str(value.get("name") or "").strip()
+    name = normalize_model_tool_name(value.get("name"), available_tools)
     if name not in available_tools:
         return None
 
@@ -349,9 +360,12 @@ def normalize_tool_call(value: Any, available_tools: list[str]) -> dict[str, Any
 
     if isinstance(normalized_args.get("path"), str):
         normalized_path = sanitize_relative_path(normalized_args.get("path"))
-        if not normalized_path:
+        if normalized_path:
+            normalized_args["path"] = normalized_path
+        elif name in {"read_file", "edit", "write_file", "mkdir"}:
             return None
-        normalized_args["path"] = normalized_path
+        else:
+            normalized_args.pop("path", None)
 
     kind = value.get("kind")
     if kind not in {"observe", "mutate", "command"}:
@@ -377,6 +391,131 @@ def normalize_tool_call(value: Any, available_tools: list[str]) -> dict[str, Any
     }
 
 
+def normalize_model_tool_name(value: Any, available_tools: list[str]) -> str:
+    raw = compact_whitespace(value)
+    if not raw:
+        return ""
+    if raw in available_tools:
+        return raw
+
+    alias_map = {
+        "repo_browser.read_file": "read_file",
+        "repo_browser.list_files": "list_files",
+        "repo_browser.search_workspace": "search_workspace",
+        "repo_browser.search": "search_workspace",
+        "repo_browser.run_command": "run_command",
+        "repo_browser.write_file": "write_file",
+        "repo_browser.mkdir": "mkdir",
+        "filesystem.read_file": "read_file",
+        "filesystem.write_file": "write_file",
+        "filesystem.mkdir": "mkdir",
+    }
+    mapped = alias_map.get(raw)
+    if mapped in available_tools:
+        return str(mapped)
+
+    tail = raw.split(".")[-1].strip()
+    tail_alias_map = {
+        "read_file": "read_file",
+        "write_file": "write_file",
+        "mkdir": "mkdir",
+        "run_command": "run_command",
+        "list_files": "list_files",
+        "search_workspace": "search_workspace",
+        "search": "search_workspace",
+        "list_dir": "list_files",
+    }
+    mapped_tail = tail_alias_map.get(tail, tail)
+    return mapped_tail if mapped_tail in available_tools else raw
+
+
+def normalize_failed_generation_arguments(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(arguments)
+    if name == "read_file":
+        if "line_start" in normalized and "startLine" not in normalized:
+            normalized["startLine"] = normalized.pop("line_start")
+        if "line_end" in normalized and "endLine" not in normalized:
+            normalized["endLine"] = normalized.pop("line_end")
+    return normalized
+
+
+def extract_hf_router_failed_generation(err_body: str, available_tools: list[str]) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(err_body)
+    except Exception:
+        return None
+
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(error, dict):
+        return None
+    failed_generation = error.get("failed_generation")
+    if isinstance(failed_generation, str):
+        try:
+            failed_generation = json.loads(failed_generation)
+        except Exception:
+            return None
+    if not isinstance(failed_generation, dict):
+        return None
+
+    normalized_name = normalize_model_tool_name(failed_generation.get("name"), available_tools)
+    if normalized_name not in available_tools:
+        return None
+
+    arguments = failed_generation.get("arguments")
+    if not isinstance(arguments, dict):
+        arguments = {}
+
+    tool_call = normalize_tool_call(
+        {
+            "id": "hf_failed_generation",
+            "name": normalized_name,
+            "arguments": normalize_failed_generation_arguments(normalized_name, arguments),
+            "summary": "Recovered tool call from HF router failed_generation payload.",
+        },
+        available_tools,
+    )
+    if not tool_call:
+        return None
+    return {
+        "toolCall": tool_call,
+    }
+
+
+def extract_tool_turn(value: Any, available_tools: list[str], depth: int = 0) -> dict[str, Any] | None:
+    if depth > 3 or value is None:
+        return None
+
+    if isinstance(value, str):
+        parsed = parse_json_candidate(value)
+        if not parsed:
+            return None
+        return extract_tool_turn(parsed, available_tools, depth + 1)
+
+    if not isinstance(value, dict):
+        return None
+
+    tool_call = normalize_tool_call(value.get("toolCall"), available_tools)
+    if tool_call:
+        nested = extract_tool_turn(value.get("final"), available_tools, depth + 1) if isinstance(value.get("final"), str) else None
+        nested_final = str(nested.get("final") or "").strip() if isinstance(nested, dict) else ""
+        final_text = str(value.get("final") or "").strip() or nested_final
+        return {
+            "final": final_text,
+            "toolCall": nested.get("toolCall") if isinstance(nested, dict) and nested.get("toolCall") else tool_call,
+        }
+
+    for candidate in (value.get("final"), value.get("message"), value.get("content"), value.get("response")):
+        nested = extract_tool_turn(candidate, available_tools, depth + 1)
+        if isinstance(nested, dict) and nested.get("toolCall"):
+            return nested
+
+    final = value.get("final")
+    if isinstance(final, str) and final.strip():
+        return {"final": final.strip()}
+
+    return None
+
+
 def is_hf_inference_router_base_url(base_url: str) -> bool:
     return "huggingface.co" in base_url.lower()
 
@@ -396,7 +535,9 @@ def _format_hf_router_http_error(status_code: int, err_body: str) -> str:
     return f"Hugging Face router HTTP {status_code}: {one_line}"
 
 
-def hf_router_chat_completion(base_url: str, api_key: str, model_id: str, user_prompt: str) -> str:
+def hf_router_chat_completion(
+    base_url: str, api_key: str, model_id: str, user_prompt: str, available_tools: list[str]
+) -> str:
     """
     Call HF Inference / OpenAI-compatible router with plain chat (no tools).
     Avoids OpenHands+LiteLLM sending tool schemas that some models misuse (e.g. calling tool 'summary').
@@ -441,6 +582,9 @@ def hf_router_chat_completion(base_url: str, api_key: str, model_id: str, user_p
             payload = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         err_body = exc.read().decode("utf-8", errors="replace")
+        recovered = extract_hf_router_failed_generation(err_body, available_tools)
+        if recovered:
+            return json.dumps(recovered)
         raise RuntimeError(_format_hf_router_http_error(exc.code, err_body)) from exc
 
     choices = payload.get("choices") if isinstance(payload, dict) else None
@@ -458,14 +602,9 @@ def hf_router_chat_completion(base_url: str, api_key: str, model_id: str, user_p
 def parse_turn_response(raw_text: str, available_tools: list[str]) -> dict[str, Any]:
     parsed = parse_json_candidate(raw_text)
     if parsed:
-        tool_call = normalize_tool_call(parsed.get("toolCall"), available_tools)
-        if tool_call:
-            return {
-                "final": str(parsed.get("final") or "").strip(),
-                "toolCall": tool_call,
-            }
-        if isinstance(parsed.get("final"), str) and parsed.get("final").strip():
-            return {"final": parsed.get("final").strip()}
+        extracted = extract_tool_turn(parsed, available_tools)
+        if extracted:
+            return extracted
     return {"final": raw_text.strip()}
 
 
@@ -538,7 +677,7 @@ def run_turn(payload: dict[str, Any]) -> dict[str, Any]:
             }
         model_label = raw_model_id
         try:
-            raw_text = hf_router_chat_completion(base_url, api_key, raw_model_id, prompt)
+            raw_text = hf_router_chat_completion(base_url, api_key, raw_model_id, prompt, available_tools)
             parsed_json = parse_json_candidate(raw_text)
             parsed = parse_turn_response(raw_text, available_tools)
             logs = ["runtime=hf_openai_compat", f"model={raw_model_id}"]
@@ -554,7 +693,7 @@ def run_turn(payload: dict[str, Any]) -> dict[str, Any]:
                         str(raw_text or ""),
                     ]
                 )
-                repaired = hf_router_chat_completion(base_url, api_key, raw_model_id, repair_prompt)
+                repaired = hf_router_chat_completion(base_url, api_key, raw_model_id, repair_prompt, available_tools)
                 parsed = parse_turn_response(str(repaired or ""), available_tools)
                 logs.append("repair=json_rewrite")
 

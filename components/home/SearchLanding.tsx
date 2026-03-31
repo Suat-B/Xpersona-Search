@@ -438,7 +438,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
 
       const requestParams = new URLSearchParams(urlParams.toString());
       requestParams.set("vertical", requestVertical);
-      requestParams.set("includeTotal", "0");
+      requestParams.set("includeTotal", "1");
       if (requestVertical === "agents") {
         requestParams.set("fields", "card");
       }

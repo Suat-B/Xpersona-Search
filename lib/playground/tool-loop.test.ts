@@ -50,6 +50,26 @@ vi.mock("@/lib/playground/store", () => ({
 }));
 
 vi.mock("@/lib/playground/tool-loop-adapters", () => ({
+  parseToolLoopJson: vi.fn((raw: string) => {
+    try {
+      const parsed = JSON.parse(String(raw || ""));
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const record = parsed as Record<string, any>;
+        if (record.toolCall && typeof record.toolCall === "object") {
+          return {
+            final: typeof record.final === "string" ? record.final : "",
+            toolCall: record.toolCall,
+          };
+        }
+        if (typeof record.final === "string") {
+          return { final: record.final };
+        }
+      }
+    } catch {
+      // Ignore invalid mock payloads.
+    }
+    return null;
+  }),
   requestToolLoopTurn: vi.fn(),
   selectToolLoopAdapter: vi.fn(() => ({
     adapter: "text_actions",
@@ -214,6 +234,125 @@ describe("playground tool loop", () => {
     expect(completed.loopState?.status).toBe("completed");
     expect(completed.final).toContain("Updated hello.py");
     expect(completed.toolTrace?.some((entry) => entry.toolCall?.name === "create_checkpoint")).toBe(true);
+  });
+
+  it("recovers a tool call leaked inside final text before finalizing the run", async () => {
+    mockedRequestToolLoopTurn.mockResolvedValueOnce(
+      openHandsTurn({
+        adapter: "text_actions",
+        final: JSON.stringify({
+          toolCall: {
+            id: "call_write",
+            name: "write_file",
+            arguments: { path: "hello.py", content: "print('hello')\n" },
+            kind: "mutate",
+            summary: "Write the updated file",
+          },
+        }),
+        logs: [],
+        modelSelection: {} as any,
+      })
+    );
+
+    const started = await startAssistToolLoop({
+      userId: "user-recover-final-toolcall",
+      sessionId: "session-recover-final-toolcall",
+      traceId: "trace-recover-final-toolcall",
+      request: {
+        mode: "auto",
+        task: "Update hello.py",
+        orchestrationProtocol: "tool_loop_v1",
+        clientCapabilities: {
+          toolLoop: true,
+          supportedTools: ["write_file"],
+          autoExecute: true,
+        },
+        context: {
+          activeFile: { path: "hello.py", content: "print('hi')\n" },
+        },
+      },
+    });
+
+    expect(started.pendingToolCall?.toolCall.name).toBe("write_file");
+    expect(started.pendingToolCall?.toolCall.id).toBe("call_write");
+    expect(started.final).toContain("Step 1 ready: write_file");
+  });
+
+  it("returns the latest persisted result when continue is retried for an already-recorded tool result", async () => {
+    mockedRequestToolLoopTurn
+      .mockResolvedValueOnce(
+        openHandsTurn({
+          adapter: "text_actions",
+          final: "",
+          toolCall: {
+            id: "call_read",
+            name: "read_file",
+            arguments: { path: "hello.py" },
+            kind: "observe",
+            summary: "Inspect hello.py",
+          },
+          logs: [],
+          modelSelection: {} as any,
+        })
+      )
+      .mockResolvedValueOnce(
+        openHandsTurn({
+          adapter: "text_actions",
+          final: "Completed successfully.",
+          logs: [],
+          modelSelection: {} as any,
+        })
+      );
+
+    const started = await startAssistToolLoop({
+      userId: "user-idempotent-continue",
+      sessionId: "session-idempotent-continue",
+      traceId: "trace-idempotent-continue",
+      request: {
+        mode: "auto",
+        task: "Tell me what hello.py contains.",
+        orchestrationProtocol: "tool_loop_v1",
+        clientCapabilities: {
+          toolLoop: true,
+          supportedTools: ["read_file"],
+          autoExecute: true,
+        },
+        context: {
+          activeFile: { path: "hello.py", content: "print('hi')\n" },
+        },
+      },
+    });
+
+    const first = await continueAssistToolLoop({
+      userId: "user-idempotent-continue",
+      traceId: "trace-idempotent-continue-2",
+      runId: started.runId!,
+      toolResult: {
+        toolCallId: "call_read",
+        name: "read_file",
+        ok: true,
+        summary: "Read hello.py.",
+        data: { path: "hello.py", content: "print('hi')\n" },
+      },
+    });
+
+    const retried = await continueAssistToolLoop({
+      userId: "user-idempotent-continue",
+      traceId: "trace-idempotent-continue-3",
+      runId: started.runId!,
+      toolResult: {
+        toolCallId: "call_read",
+        name: "read_file",
+        ok: true,
+        summary: "Read hello.py.",
+        data: { path: "hello.py", content: "print('hi')\n" },
+      },
+    });
+
+    expect(first.final).toContain("Completed successfully.");
+    expect(first.pendingToolCall).toBeNull();
+    expect(retried.final).toContain("Completed successfully.");
+    expect(retried.pendingToolCall).toBeNull();
   });
 
   it("injects an observation tool when OpenHands returns only final on step 0 for a code edit", async () => {
@@ -556,6 +695,192 @@ describe("playground tool loop", () => {
     expect(failed.objectiveState.status).toBe("blocked");
   });
 
+  it("repairs a multi-file code-edit run when a read step returns final-only text", async () => {
+    mockedRequestToolLoopTurn
+      .mockResolvedValueOnce(openHandsTurn({
+        adapter: "text_actions",
+        final: "",
+        toolCall: {
+          id: "call_read_multi",
+          name: "read_file",
+          arguments: { path: "duration-toolkit/src/index.js" },
+          kind: "observe",
+          summary: "Inspect duration-toolkit/src/index.js",
+        },
+        logs: ["adapter=text_actions"],
+        modelSelection: {} as any,
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
+        adapter: "text_actions",
+        final: "Awaiting package.json content.",
+        logs: ["adapter=text_actions"],
+        modelSelection: {} as any,
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
+        adapter: "text_actions",
+        final: "",
+        toolCall: {
+          id: "call_write_multi",
+          name: "write_file",
+          arguments: {
+            path: "duration-toolkit/test/duration.test.js",
+            content: "import test from 'node:test';\n",
+          },
+          kind: "mutate",
+          summary: "Add the missing duration tests",
+        },
+        logs: ["adapter=text_actions", "repair_attempt=true"],
+        modelSelection: {} as any,
+      }));
+
+    const started = await startAssistToolLoop({
+      userId: "user-5b",
+      sessionId: "session-5b",
+      traceId: "trace-12b",
+      request: {
+        mode: "auto",
+        task: "Create a duration toolkit project with package.json, src/index.js, test/duration.test.js, and README.md.",
+        orchestrationProtocol: "tool_loop_v1",
+        clientCapabilities: {
+          toolLoop: true,
+          supportedTools: ["read_file", "write_file", "mkdir", "create_checkpoint"],
+          autoExecute: true,
+        },
+      },
+    });
+
+    const repaired = await continueAssistToolLoop({
+      userId: "user-5b",
+      traceId: "trace-13b",
+      runId: started.runId!,
+      toolResult: {
+        toolCallId: started.pendingToolCall!.toolCall.id,
+        name: "read_file",
+        ok: true,
+        summary: "Read duration-toolkit/src/index.js.",
+        data: {
+          path: "duration-toolkit/src/index.js",
+          content: "export function parseDuration() {}\n",
+        },
+      },
+    });
+
+    expect(repaired.pendingToolCall?.toolCall.name).toBe("create_checkpoint");
+    expect(repaired.loopState?.repairCount).toBe(1);
+    const afterCheckpoint = await continueAssistToolLoop({
+      userId: "user-5b",
+      traceId: "trace-14b",
+      runId: started.runId!,
+      toolResult: {
+        toolCallId: repaired.pendingToolCall!.toolCall.id,
+        name: "create_checkpoint",
+        ok: true,
+        summary: "Checkpoint created.",
+        data: {},
+      },
+    });
+
+    expect(afterCheckpoint.pendingToolCall?.toolCall.name).toBe("write_file");
+    expect(afterCheckpoint.pendingToolCall?.toolCall.arguments.path).toBe("duration-toolkit/test/duration.test.js");
+    expect(afterCheckpoint.progressState.status).toBe("repairing");
+  });
+
+  it("retargets multi-file repair to the first missing required file", async () => {
+    mockedRequestToolLoopTurn
+      .mockResolvedValueOnce(openHandsTurn({
+        adapter: "text_actions",
+        final: "",
+        toolCall: {
+          id: "call_read_multifile_readme",
+          name: "read_file",
+          arguments: { path: "duration-toolkit/src/index.js" },
+          kind: "observe",
+          summary: "Inspect duration-toolkit/src/index.js",
+        },
+        logs: ["adapter=text_actions"],
+        modelSelection: {} as any,
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
+        adapter: "text_actions",
+        final: "Here is a general implementation guide.",
+        logs: ["adapter=text_actions"],
+        modelSelection: {} as any,
+      }))
+      .mockResolvedValueOnce(openHandsTurn({
+        adapter: "text_actions",
+        final: "",
+        toolCall: {
+          id: "call_write_readme",
+          name: "write_file",
+          arguments: {
+            path: "duration-toolkit/README.md",
+            content: "# duration-toolkit\n",
+          },
+          kind: "mutate",
+          summary: "Add the missing README",
+        },
+        logs: ["adapter=text_actions", "repair_attempt=true"],
+        modelSelection: {} as any,
+      }));
+
+    const started = await startAssistToolLoop({
+      userId: "user-5c",
+      sessionId: "session-5c",
+      traceId: "trace-12c",
+      request: {
+        mode: "auto",
+        task: "Create a duration toolkit project with package.json, src/index.js, test/duration.test.js, and README.md.",
+        orchestrationProtocol: "tool_loop_v1",
+        clientCapabilities: {
+          toolLoop: true,
+          supportedTools: ["read_file", "write_file", "mkdir", "create_checkpoint"],
+          autoExecute: true,
+        },
+      },
+    });
+
+    const repaired = await continueAssistToolLoop({
+      userId: "user-5c",
+      traceId: "trace-13c",
+      runId: started.runId!,
+      toolResult: {
+        toolCallId: started.pendingToolCall!.toolCall.id,
+        name: "read_file",
+        ok: true,
+        summary: "Read duration-toolkit/src/index.js.",
+        data: {
+          path: "duration-toolkit/src/index.js",
+          content: "export function parseDuration() {}\n",
+          changedFiles: [
+            "duration-toolkit/package.json",
+            "duration-toolkit/src/index.js",
+            "duration-toolkit/test/duration.test.js",
+          ],
+        },
+      },
+    });
+
+    expect(mockedRequestToolLoopTurn.mock.calls[2]?.[0]?.targetInference.path).toBe("duration-toolkit/README.md");
+    expect(mockedRequestToolLoopTurn.mock.calls[2]?.[0]?.repairDirective?.reason).toContain("duration-toolkit/README.md");
+    expect(repaired.pendingToolCall?.toolCall.name).toBe("create_checkpoint");
+
+    const afterCheckpoint = await continueAssistToolLoop({
+      userId: "user-5c",
+      traceId: "trace-14c",
+      runId: started.runId!,
+      toolResult: {
+        toolCallId: repaired.pendingToolCall!.toolCall.id,
+        name: "create_checkpoint",
+        ok: true,
+        summary: "Checkpoint created.",
+        data: {},
+      },
+    });
+
+    expect(afterCheckpoint.pendingToolCall?.toolCall.name).toBe("write_file");
+    expect(afterCheckpoint.pendingToolCall?.toolCall.arguments.path).toBe("duration-toolkit/README.md");
+  });
+
   it("escalates repeated pending tool signatures through repair before blocking", async () => {
     mockedRequestToolLoopTurn
       .mockResolvedValueOnce(openHandsTurn({
@@ -852,6 +1177,21 @@ describe("playground tool loop", () => {
             logs: [],
             modelSelection: {} as any,
           })
+        )
+        .mockResolvedValueOnce(
+          openHandsTurn({
+            adapter: "text_actions",
+            final: "",
+            toolCall: {
+              id: "call_edit",
+              name: "edit",
+              arguments: { path: "hello.py", patch: "@@\n-print('hi')\n+print('hello')\n" },
+              kind: "mutate",
+              summary: "Apply the requested update",
+            },
+            logs: [],
+            modelSelection: {} as any,
+          })
         );
 
       const started = await startAssistToolLoop({
@@ -888,7 +1228,7 @@ describe("playground tool loop", () => {
 
       expect(afterRead.loopState?.status).not.toBe("failed");
       expect(afterRead.missingRequirements ?? []).not.toContain("mutation_required_after_inspection");
-      expect(afterRead.pendingToolCall?.toolCall.name).toBe("list_files");
+      expect(afterRead.pendingToolCall?.toolCall.name).toBe("edit");
     });
 
     it("does not fail on repeated pending tool signature", async () => {
@@ -919,6 +1259,21 @@ describe("playground tool loop", () => {
               arguments: { path: "hello.py" },
               kind: "observe",
               summary: "Read again",
+            },
+            logs: [],
+            modelSelection: {} as any,
+          })
+        )
+        .mockResolvedValueOnce(
+          openHandsTurn({
+            adapter: "text_actions",
+            final: "",
+            toolCall: {
+              id: "call_edit_1",
+              name: "edit",
+              arguments: { path: "hello.py", patch: "@@\n-print('hi')\n+print('hello')\n" },
+              kind: "mutate",
+              summary: "Stop rereading and edit the file",
             },
             logs: [],
             modelSelection: {} as any,
@@ -959,8 +1314,8 @@ describe("playground tool loop", () => {
 
       expect(afterRead.loopState?.status).not.toBe("failed");
       expect(afterRead.missingRequirements ?? []).not.toContain("tool_repeat_without_progress");
-      expect(afterRead.pendingToolCall?.toolCall.name).toBe("read_file");
-      expect(afterRead.pendingToolCall?.toolCall.id).toBe("call_read_2");
+      expect(afterRead.pendingToolCall?.toolCall.name).toBe("edit");
+      expect(afterRead.pendingToolCall?.toolCall.id).toBe("call_edit_1");
     });
   });
 });

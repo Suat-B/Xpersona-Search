@@ -1,0 +1,16 @@
+{
+  "name": "@binary-ide/host",
+  "version": "0.1.0",
+  "description": "Local Binary IDE host service for desktop and CLI clients.",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "dev": "node ../../node_modules/tsx/dist/cli.mjs src/server.ts",
+    "start": "node dist/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

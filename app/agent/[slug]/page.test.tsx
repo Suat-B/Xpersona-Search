@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import React from "react";
 
 const mockGetAgentDossier = vi.hoisted(() => vi.fn());
-const mockGetPublicAgentEvidencePack = vi.hoisted(() => vi.fn());
+const mockGetCombinedPublicAgentEvidencePack = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/agents/agent-dossier", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/agents/agent-dossier")>();
@@ -14,7 +14,7 @@ vi.mock("@/lib/agents/agent-dossier", async (importOriginal) => {
 });
 
 vi.mock("@/lib/agents/public-facts", () => ({
-  getPublicAgentEvidencePack: mockGetPublicAgentEvidencePack,
+  getCombinedPublicAgentEvidencePack: mockGetCombinedPublicAgentEvidencePack,
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -53,11 +53,13 @@ vi.mock("@/components/agent/AgentTechnicalDossier", () => ({
   AgentTechnicalDossier: () => (
     <section data-testid="agent-technical-dossier">
       <h1>Agent Profile</h1>
-      <h2>Execution Readiness</h2>
+      <h2>Evidence Ledger</h2>
+      <h2>Artifacts Archive</h2>
+      <h2>Docs &amp; README</h2>
+      <h2>Contract &amp; API</h2>
       <h2>Reliability &amp; Benchmarks</h2>
       <h2>Machine Appendix</h2>
       <h2>Custom technical brief</h2>
-      <h2>Quick Facts</h2>
       <h2>Release &amp; Crawl Timeline</h2>
       <a href="https://github.com/demo/demo-agent">View Source</a>
     </section>
@@ -414,7 +416,7 @@ describe("Agent page dossier SSR", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetAgentDossier.mockResolvedValue(dossierFixture);
-    mockGetPublicAgentEvidencePack.mockResolvedValue({
+    mockGetCombinedPublicAgentEvidencePack.mockResolvedValue({
       card: {
         highlights: ["Schema refs published", "Trust evidence available"],
         stats: [
@@ -472,11 +474,13 @@ describe("Agent page dossier SSR", () => {
     const html = renderToStaticMarkup(element);
 
     expect(html).toContain("Agent Profile");
-    expect(html).toContain("Execution Readiness");
+    expect(html).toContain("Evidence Ledger");
+    expect(html).toContain("Artifacts Archive");
+    expect(html).toContain("Docs &amp; README");
+    expect(html).toContain("Contract &amp; API");
     expect(html).toContain("Reliability &amp; Benchmarks");
     expect(html).toContain("Machine Appendix");
     expect(html).toContain("Custom technical brief");
-    expect(html).toContain("Quick Facts");
     expect(html).toContain("Release &amp; Crawl Timeline");
     expect(html).toContain("answer-first brief");
     expect(html).toContain("Best For");

@@ -1,0 +1,59 @@
+{
+  "name": "@binary-ide/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Binary IDE desktop shell backed by the local Binary Host service.",
+  "type": "module",
+  "main": "dist/main.js",
+  "files": [
+    "dist",
+    "renderer",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json && node scripts/copy-renderer.mjs",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "dev": "npm run build && node -e \"console.log('Install electron in apps/binary-ide-desktop to run the desktop shell locally.')\"",
+    "dist": "npm run build && node -e \"console.log('Desktop packaging metadata is ready. Install electron-builder in this package to produce installers.')\""
+  },
+  "build": {
+    "appId": "ai.binary.desktop",
+    "productName": "Binary IDE",
+    "directories": {
+      "output": "release",
+      "buildResources": "resources"
+    },
+    "files": [
+      "dist/**/*",
+      "renderer/**/*"
+    ],
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://downloads.binaryide.ai/releases/${env.BINARY_RELEASE_CHANNEL}"
+      }
+    ],
+    "artifactName": "Binary-IDE-${version}-${os}-${arch}.${ext}",
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "tar.gz"
+      ],
+      "category": "Development"
+    }
+  }
+}

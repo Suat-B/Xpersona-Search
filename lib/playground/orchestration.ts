@@ -291,7 +291,7 @@ function extractMentionedPaths(task: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const match of matches) {
-    const normalized = sanitizeRelativePath(match);
+    const normalized = sanitizeRelativePath(String(match || "").replace(/[.,;:!?]+$/, ""));
     if (!normalized || seen.has(normalized)) continue;
     seen.add(normalized);
     out.push(normalized);
@@ -751,7 +751,13 @@ export function buildPlan(input: {
   targetInference: AssistTargetInference;
   contextSelection: AssistContextSelection;
 }): AssistPlan {
-  const files = pathListForPlan(input.targetInference, input.contextSelection);
+  const explicitPaths = extractMentionedPaths(input.task);
+  const files = Array.from(
+    new Set([
+      ...explicitPaths,
+      ...pathListForPlan(input.targetInference, input.contextSelection),
+    ])
+  ).slice(0, 8);
   const touchedLanguage = detectLanguageFromPath(files[0]);
   const acceptanceTests = files.length
     ? files.flatMap((filePath) => {

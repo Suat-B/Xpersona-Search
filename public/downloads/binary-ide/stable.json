@@ -1,0 +1,16 @@
+{
+  "channel": "stable",
+  "version": "0.1.0",
+  "releasedAt": "2026-03-30T19:21:12.846Z",
+  "notesUrl": "/downloads/binary-ide#stable",
+  "downloads": {
+    "windows": "https://downloads.binaryide.ai/releases/stable/Binary-IDE-0.1.0-win-x64.exe",
+    "macos": "https://downloads.binaryide.ai/releases/stable/Binary-IDE-0.1.0-mac-universal.dmg",
+    "linux": "https://downloads.binaryide.ai/releases/stable/Binary-IDE-0.1.0-linux-x86_64.AppImage"
+  },
+  "checksums": {
+    "windows": "pending",
+    "macos": "pending",
+    "linux": "pending"
+  }
+}

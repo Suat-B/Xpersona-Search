@@ -9,7 +9,7 @@ import type {
   ToolResultContract,
   ToolTraceEntryContract,
 } from "@/lib/playground/contracts";
-import { PLAYGROUND_TOOL_LOOP_TOOLS } from "@/lib/playground/model-registry";
+import { PLAYGROUND_TOOL_LOOP_TOOLS, resolvePlaygroundModelSelection } from "@/lib/playground/model-registry";
 import {
   appendSessionMessage,
   createAgentRun,
@@ -37,7 +37,12 @@ import {
   inferIntent,
 } from "@/lib/playground/orchestration";
 import { attachAssistArtifactIdentifiers } from "@/lib/playground/agent-os";
-import { requestToolLoopTurn, selectToolLoopAdapter, type ToolLoopTurnInput } from "@/lib/playground/tool-loop-adapters";
+import {
+  parseToolLoopJson,
+  requestToolLoopTurn,
+  selectToolLoopAdapter,
+  type ToolLoopTurnInput,
+} from "@/lib/playground/tool-loop-adapters";
 import { isOpenHandsPrimaryOrchestration } from "@/lib/playground/openhands-primary-orchestration";
 import type { ExecuteAction } from "@/lib/playground/policy";
 
@@ -172,6 +177,105 @@ function normalizeRelativePath(value: string | undefined | null): string {
     .replace(/\\/g, "/")
     .replace(/^\.\/+/, "")
     .replace(/^\/+/, "");
+}
+
+function pathDirname(value: string): string {
+  const normalized = normalizeRelativePath(value);
+  const idx = normalized.lastIndexOf("/");
+  return idx >= 0 ? normalized.slice(0, idx) : "";
+}
+
+function pathBasename(value: string): string {
+  const normalized = normalizeRelativePath(value);
+  const idx = normalized.lastIndexOf("/");
+  return idx >= 0 ? normalized.slice(idx + 1) : normalized;
+}
+
+function inferRequiredProjectRoot(requiredFiles: string[]): string | null {
+  const normalized = requiredFiles.map((file) => normalizeRelativePath(file)).filter(Boolean);
+  if (!normalized.length) return null;
+  const roots = new Set(
+    normalized
+      .filter((file) => file.includes("/"))
+      .map((file) => file.split("/")[0] || "")
+      .filter(Boolean)
+  );
+  return roots.size === 1 ? [...roots][0] || null : null;
+}
+
+function alignCandidatePathToRequiredFiles(
+  toolCall: ToolCallContract,
+  requiredFiles: string[]
+): ToolCallContract {
+  const rawPath = typeof toolCall.arguments.path === "string" ? String(toolCall.arguments.path) : "";
+  const candidatePath = normalizeRelativePath(rawPath);
+  if (!candidatePath || !requiredFiles.length) return toolCall;
+
+  const normalizedRequired = requiredFiles.map((file) => normalizeRelativePath(file)).filter(Boolean);
+  if (!normalizedRequired.length) return toolCall;
+  if (normalizedRequired.includes(candidatePath)) return toolCall;
+
+  const suffixMatches = normalizedRequired.filter(
+    (file) =>
+      file === candidatePath ||
+      file.endsWith(`/${candidatePath}`) ||
+      pathBasename(file) === candidatePath
+  );
+  const projectRoot = inferRequiredProjectRoot(normalizedRequired);
+  let rewrittenPath: string | null = null;
+
+  if (toolCall.name === "mkdir") {
+    if (suffixMatches.length === 1) {
+      rewrittenPath = pathDirname(suffixMatches[0]) || projectRoot;
+    } else if (projectRoot) {
+      if (!candidatePath.includes("/") && normalizedRequired.some((file) => file.startsWith(`${projectRoot}/${candidatePath}/`))) {
+        rewrittenPath = `${projectRoot}/${candidatePath}`;
+      } else if (/\.[A-Za-z0-9._-]{1,12}$/.test(candidatePath)) {
+        rewrittenPath = projectRoot;
+      }
+    }
+  } else if (
+    toolCall.name === "write_file" ||
+    toolCall.name === "edit" ||
+    toolCall.name === "read_file"
+  ) {
+    if (suffixMatches.length === 1) {
+      rewrittenPath = suffixMatches[0];
+    }
+  }
+
+  if (!rewrittenPath || rewrittenPath === candidatePath) return toolCall;
+  return {
+    ...toolCall,
+    arguments: {
+      ...toolCall.arguments,
+      path: rewrittenPath,
+    },
+    summary: toolCall.summary
+      ? `${toolCall.summary} [path aligned to required task files]`
+      : undefined,
+  };
+}
+
+function extractMentionedFilePaths(task: string): string[] {
+  const matches = String(task || "").match(/@?[A-Za-z0-9_./-]+\.[A-Za-z0-9._-]{1,12}/g) || [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const match of matches) {
+    const normalized = normalizeRelativePath(match.replace(/^@+/, "").replace(/[.,;:!?]+$/, ""));
+    if (!normalized || normalized.includes("..") || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+function pathMatchesMention(candidatePath: string | undefined | null, mentionedPath: string): boolean {
+  const candidate = normalizeRelativePath(candidatePath);
+  const mention = normalizeRelativePath(mentionedPath);
+  if (!candidate || !mention) return false;
+  return candidate === mention || candidate.endsWith(`/${mention}`);
 }
 
 function pendingToolCallSignature(value: PendingToolCallContract | ToolCallContract | null | undefined): string {
@@ -559,6 +663,62 @@ function actionsFromToolTrace(toolTrace: ToolTraceEntryContract[]): ExecuteActio
     }
   }
   return actions;
+}
+
+function unresolvedMentionedMutationPaths(task: string, toolTrace: ToolTraceEntryContract[]): string[] {
+  const mentions = extractMentionedFilePaths(task);
+  if (!mentions.length) return [];
+  const actions = actionsFromToolTrace(toolTrace);
+  return mentions.filter((mention) => !actions.some((action) => "path" in action && pathMatchesMention(action.path, mention)));
+}
+
+function unresolvedRequiredMutationPaths(requiredFiles: string[], toolTrace: ToolTraceEntryContract[]): string[] {
+  const provenChangedPaths = toolTrace.flatMap((entry) => {
+    if (entry.status !== "completed") return [];
+    const directPath =
+      typeof entry.toolCall?.arguments?.path === "string"
+        ? [normalizeRelativePath(String(entry.toolCall.arguments.path))]
+        : [];
+    const changedFiles = extractChangedFiles(entry.toolResult);
+    return [...directPath, ...changedFiles].filter(Boolean);
+  });
+  const observedProjectRoot = inferRequiredProjectRoot(provenChangedPaths);
+  const required = requiredFiles
+    .map((file) => normalizeRelativePath(file))
+    .filter((file) => Boolean(file) && /\.[A-Za-z0-9._-]{1,12}$/.test(file))
+    .map((file) => {
+      if (!observedProjectRoot || file.startsWith(`${observedProjectRoot}/`)) return file;
+      return `${observedProjectRoot}/${file}`;
+    });
+  if (!required.length) return [];
+  const actions = actionsFromToolTrace(toolTrace);
+  return required.filter(
+    (requiredPath) =>
+      !actions.some((action) => "path" in action && pathMatchesMention(action.path, requiredPath)) &&
+      !provenChangedPaths.some((path) => pathMatchesMention(path, requiredPath))
+  );
+}
+
+function selectRepairTargetPath(input: {
+  defaultTargetPath?: string;
+  unresolvedRequiredPaths: string[];
+  unresolvedMentionedPaths: string[];
+}): string | undefined {
+  return input.unresolvedRequiredPaths[0] || input.unresolvedMentionedPaths[0] || input.defaultTargetPath;
+}
+
+function buildRepairTargetInference(
+  targetInference: AssistTargetInference,
+  repairTargetPath: string | undefined
+): AssistTargetInference {
+  const normalizedRepairTarget = normalizeRelativePath(repairTargetPath);
+  if (!normalizedRepairTarget) return targetInference;
+  if (normalizeRelativePath(targetInference.path) === normalizedRepairTarget) return targetInference;
+  return {
+    path: normalizedRepairTarget,
+    confidence: Math.max(targetInference.confidence || 0, 0.92),
+    source: "mention",
+  };
 }
 
 function traceHasFailure(toolTrace: ToolTraceEntryContract[]): boolean {
@@ -1012,6 +1172,7 @@ function enforceLoopSafeguards(input: {
   final?: string;
   missingRequirements?: string[];
 } {
+  const alignedCandidate = alignCandidatePathToRequiredFiles(input.candidate, input.state.fallbackPlan.files);
   const nextStep = input.state.loopState.stepCount + 1;
   if (nextStep > input.state.loopState.maxSteps) {
     return {
@@ -1020,7 +1181,7 @@ function enforceLoopSafeguards(input: {
     };
   }
 
-  let candidate = input.candidate;
+  let candidate = alignedCandidate;
   let deferredToolCall = input.state.deferredToolCall ?? null;
   let checkpointCreated = input.state.checkpointCreated;
   let loopState = { ...input.state.loopState };
@@ -1149,6 +1310,15 @@ async function advanceWithCandidate(input: {
   let candidate = input.candidate;
   let orchestratorFinal = input.final;
   let logs = input.logs;
+
+  if (!candidate && orchestratorFinal) {
+    const recovered = parseToolLoopJson(orchestratorFinal, input.state.availableTools);
+    if (recovered?.toolCall) {
+      candidate = recovered.toolCall;
+      orchestratorFinal = recovered.final || "";
+      logs = [...logs, "repair=advance_with_candidate_final_toolcall_recovered"];
+    }
+  }
 
   // OpenHands (and other adapters) sometimes return {"final":"..."} on step 0 instead of a tool call.
   // Without a pending tool the IDE never executes tools. Force an observation step for agentic intents.
@@ -1503,9 +1673,47 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
   }
 
   const request = asRecord(record.input) as AssistRuntimeInput;
-  const pendingToolCall = persisted.pendingToolCall;
+  let pendingToolCall = persisted.pendingToolCall;
   if (!pendingToolCall) {
-    throw new Error("Run does not have a pending tool call.");
+    const latestTraceEntry = persisted.toolTrace[persisted.toolTrace.length - 1];
+    if (
+      latestTraceEntry?.toolResult?.toolCallId === input.toolResult.toolCallId &&
+      latestTraceEntry.toolResult.name === input.toolResult.name
+    ) {
+      const persistedOutput = asRecord(record.output);
+      const selection = resolvePlaygroundModelSelection({ requested: request.model });
+      return {
+        ...(persistedOutput as AssistResult),
+        loopState: persisted.loopState,
+        pendingToolCall: null,
+        toolTrace: persisted.toolTrace,
+        modelMetadata:
+          persistedOutput.modelMetadata && typeof persistedOutput.modelMetadata === "object"
+            ? (persistedOutput.modelMetadata as AssistResult["modelMetadata"])
+            : {
+                contractVersion: "tool_loop_v1",
+                adapter: `${persisted.adapter}_v1`,
+                modelRequested: selection.requested,
+                modelRequestedAlias: selection.requestedAlias,
+                modelResolved: selection.resolvedEntry.model,
+                modelResolvedAlias: selection.resolvedAlias,
+                providerResolved: selection.resolvedEntry.provider,
+                capabilities: { ...selection.resolvedEntry.capabilities },
+                certification: selection.resolvedEntry.certification,
+              },
+      };
+    }
+    const recovered = parseToolLoopJson(String(asRecord(record.output).final || ""), persisted.availableTools);
+    if (recovered?.toolCall) {
+      pendingToolCall = buildPendingToolCall(
+        recovered.toolCall,
+        Math.max(1, persisted.loopState.stepCount + 1),
+        persisted.adapter,
+        persisted.availableTools
+      );
+    } else {
+      throw new Error("Run does not have a pending tool call.");
+    }
   }
 
   const toolResultEntry = buildTraceEntry({
@@ -1585,82 +1793,71 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
     });
 
   if (!input.toolResult.ok || input.toolResult.blocked) {
-    if (isOpenHandsPrimaryOrchestration()) {
-      nextState = {
-        ...nextState,
-        loopState: {
-          ...nextState.loopState,
-          status: "running",
-        },
-      };
-      repairDirective = null;
-    } else {
-      const failureCategory = classifyToolFailure(input.toolResult, pendingToolCall);
-      const repairStage = nextRepairStage({
-        targetPath: nextState.targetInference.path,
-        repairHistory: nextState.repairHistory,
-        failureCategory,
+    const failureCategory = classifyToolFailure(input.toolResult, pendingToolCall);
+    const repairStage = nextRepairStage({
+      targetPath: nextState.targetInference.path,
+      repairHistory: nextState.repairHistory,
+      failureCategory,
+      latestToolResult: input.toolResult,
+      pendingToolCall,
+    });
+    if (nextState.loopState.repairCount >= MAX_REPAIR_ROUNDS || !repairStage) {
+      const failedResult = buildBlockedResult({
+        final: input.toolResult.summary,
+        missingRequirements: ["tool_result_failed", failureCategory],
+        logs: ["repair_limit_exceeded", `failure_category=${failureCategory}`],
+        stallReason: input.toolResult.summary,
+        nextDeterministicAction: "Return a blocked terminal result with exact missing proof.",
+      });
+      const nextFingerprint = buildProgressFingerprint({
+        pendingSignature: "",
+        loopState: failedResult.loopState || nextState.loopState,
+        objectiveState: failedResult.objectiveState,
+        missingRequirements: failedResult.missingRequirements,
         latestToolResult: input.toolResult,
-        pendingToolCall,
       });
-      if (nextState.loopState.repairCount >= MAX_REPAIR_ROUNDS || !repairStage) {
-        const failedResult = buildBlockedResult({
-          final: input.toolResult.summary,
-          missingRequirements: ["tool_result_failed", failureCategory],
-          logs: ["repair_limit_exceeded", `failure_category=${failureCategory}`],
-          stallReason: input.toolResult.summary,
-          nextDeterministicAction: "Return a blocked terminal result with exact missing proof.",
-        });
-        const nextFingerprint = buildProgressFingerprint({
-          pendingSignature: "",
+      return persistAndReturn({
+        record,
+        state: {
+          ...nextState,
           loopState: failedResult.loopState || nextState.loopState,
+          progressState: failedResult.progressState,
           objectiveState: failedResult.objectiveState,
-          missingRequirements: failedResult.missingRequirements,
-          latestToolResult: input.toolResult,
-        });
-        return persistAndReturn({
-          record,
-          state: {
-            ...nextState,
-            loopState: failedResult.loopState || nextState.loopState,
-            progressState: failedResult.progressState,
-            objectiveState: failedResult.objectiveState,
-            lastProgressFingerprint: nextFingerprint,
-          },
-          result: failedResult,
-          status: "failed",
-          errorMessage: input.toolResult.summary,
-        });
-      }
-      const guidance = buildRepairGuidance({
-        stage: repairStage,
-        targetPath: nextState.targetInference.path,
-        toolResult: input.toolResult,
-        failureCategory,
+          lastProgressFingerprint: nextFingerprint,
+        },
+        result: failedResult,
+        status: "failed",
+        errorMessage: input.toolResult.summary,
       });
-      repairDirective = {
-        stage: repairStage,
-        reason: `${guidance.reason} Next: ${guidance.nextDeterministicAction}`,
-      };
-      nextState = {
-        ...nextState,
-        loopState: {
-          ...nextState.loopState,
-          repairCount: nextState.loopState.repairCount + 1,
-          status: "running",
-        },
-        repairHistory: [...nextState.repairHistory, repairStage],
-        progressState: {
-          ...nextState.progressState,
-          status: "repairing",
-          lastMeaningfulProgressAtStep: pendingToolCall.step,
-          lastMeaningfulProgressSummary: input.toolResult.summary,
-          stallCount: nextState.progressState.stallCount + 1,
-          stallReason: guidance.reason,
-          nextDeterministicAction: guidance.nextDeterministicAction,
-        },
-      };
     }
+    const guidance = buildRepairGuidance({
+      stage: repairStage,
+      targetPath: nextState.targetInference.path,
+      toolResult: input.toolResult,
+      failureCategory,
+    });
+    repairDirective = {
+      stage: repairStage,
+      reason: `${guidance.reason} Next: ${guidance.nextDeterministicAction}`,
+    };
+    nextState = {
+      ...nextState,
+      loopState: {
+        ...nextState.loopState,
+        repairCount: nextState.loopState.repairCount + 1,
+        status: "running",
+      },
+      repairHistory: [...nextState.repairHistory, repairStage],
+      progressState: {
+        ...nextState.progressState,
+        status: "repairing",
+        lastMeaningfulProgressAtStep: pendingToolCall.step,
+        lastMeaningfulProgressSummary: input.toolResult.summary,
+        stallCount: nextState.progressState.stallCount + 1,
+        stallReason: guidance.reason,
+        nextDeterministicAction: guidance.nextDeterministicAction,
+      },
+    };
   } else {
     nextState = {
       ...nextState,
@@ -1708,24 +1905,42 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
     repairDirective,
   });
 
-  if (!isOpenHandsPrimaryOrchestration()) {
   const changeIntent = inferIntent({
     mode: request.mode,
     task: request.task,
     targetInference: nextState.targetInference,
   }).type === "code_edit";
+  const unresolvedMentionedPaths = unresolvedMentionedMutationPaths(request.task, toolTrace);
+  const unresolvedRequiredPaths = unresolvedRequiredMutationPaths(nextState.fallbackPlan.files, toolTrace);
+  const repairTargetPath = selectRepairTargetPath({
+    defaultTargetPath: nextState.targetInference.path,
+    unresolvedRequiredPaths,
+    unresolvedMentionedPaths,
+  });
+  const repairTargetInference = buildRepairTargetInference(nextState.targetInference, repairTargetPath);
+  const successfulReadInspection =
+    input.toolResult.ok && pendingToolCall.toolCall.name === "read_file";
   const inspectedTrustedTarget =
-    input.toolResult.ok &&
-    pendingToolCall.toolCall.name === "read_file" &&
+    successfulReadInspection &&
     normalizeRelativePath(String(pendingToolCall.toolCall.arguments.path || "")) ===
       normalizeRelativePath(nextState.targetInference.path);
+  const finalOnlyAfterRead = changeIntent && successfulReadInspection && !turn.toolCall;
+  const finalOnlyWithUnfinishedMentionedTargets =
+    changeIntent && !turn.toolCall && unresolvedMentionedPaths.length > 0;
+  const finalOnlyWithUnfinishedRequiredTargets =
+    changeIntent && !turn.toolCall && unresolvedRequiredPaths.length > 0;
   const repeatedPendingSignature =
     Boolean(turn.toolCall) &&
     pendingToolCallSignature(turn.toolCall) === pendingToolCallSignature(pendingToolCall.toolCall);
 
-  if (changeIntent && inspectedTrustedTarget && (!turn.toolCall || !isMutatingTool(turn.toolCall.name))) {
+  if (
+    finalOnlyAfterRead ||
+    finalOnlyWithUnfinishedRequiredTargets ||
+    finalOnlyWithUnfinishedMentionedTargets ||
+    (changeIntent && inspectedTrustedTarget && (!turn.toolCall || !isMutatingTool(turn.toolCall.name)))
+  ) {
     const repairStage = nextRepairStage({
-      targetPath: nextState.targetInference.path,
+      targetPath: repairTargetPath,
       repairHistory: nextState.repairHistory,
       latestToolResult: input.toolResult,
       pendingToolCall,
@@ -1733,10 +1948,13 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
     if (nextState.loopState.repairCount >= MAX_REPAIR_ROUNDS || !repairStage) {
       const failedResult = buildBlockedResult({
         final: turn.final || "The tool loop inspected the target file but did not produce a concrete mutation.",
-        missingRequirements: ["mutation_required_after_inspection"],
+        missingRequirements: [
+          "mutation_required_after_inspection",
+          ...unresolvedRequiredPaths.slice(0, 4).map((path) => `required_mutation_missing:${path}`),
+        ],
         logs: [...turn.logs, "stall=post_inspection_without_mutation"],
-        stallReason: `Inspected ${nextState.targetInference.path || "the target file"} without selecting a mutation.`,
-        nextDeterministicAction: `Choose one concrete mutation for ${nextState.targetInference.path || "the target file"} or return a blocked terminal result.`,
+        stallReason: `Inspected ${repairTargetPath || nextState.targetInference.path || "the target file"} without selecting a mutation.`,
+        nextDeterministicAction: `Choose one concrete mutation for ${repairTargetPath || nextState.targetInference.path || "the target file"} or return a blocked terminal result.`,
       });
       const nextFingerprint = buildProgressFingerprint({
         pendingSignature: "",
@@ -1761,12 +1979,22 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
     }
     const guidance = buildRepairGuidance({
       stage: repairStage,
-      targetPath: nextState.targetInference.path,
+      targetPath: repairTargetPath,
       toolResult: input.toolResult,
     });
+    const unresolvedReason = [
+      finalOnlyWithUnfinishedRequiredTargets && unresolvedRequiredPaths.length > 0
+        ? ` The task still has required file targets without mutations: ${unresolvedRequiredPaths.slice(0, 6).join(", ")}.`
+        : "",
+      finalOnlyWithUnfinishedMentionedTargets && unresolvedMentionedPaths.length > 0
+        ? ` The task still has explicit file targets without mutations: ${unresolvedMentionedPaths.slice(0, 6).join(", ")}.`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("");
     const repairedTurn = await requestToolLoopTurn({
       request,
-      targetInference: nextState.targetInference,
+      targetInference: repairTargetInference,
       contextSelection: nextState.contextSelection,
       fallbackPlan: nextState.fallbackPlan,
       toolTrace,
@@ -1780,7 +2008,7 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
       orchestratorRunId: nextState.orchestratorRunId,
       repairDirective: {
         stage: repairStage,
-        reason: `${guidance.reason} Next: ${guidance.nextDeterministicAction}`,
+        reason: `${guidance.reason}${unresolvedReason} Next: ${guidance.nextDeterministicAction}`,
       },
     });
     nextState = {
@@ -1794,7 +2022,10 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
     if (!repairedTurn.toolCall || !isMutatingTool(repairedTurn.toolCall.name)) {
       const failedResult = buildBlockedResult({
         final: repairedTurn.final || "The tool loop still did not produce a concrete mutation after repair.",
-        missingRequirements: ["mutation_required_after_inspection"],
+        missingRequirements: [
+          "mutation_required_after_inspection",
+          ...unresolvedRequiredPaths.slice(0, 4).map((path) => `required_mutation_missing:${path}`),
+        ],
         logs: [...repairedTurn.logs, "stall=repair_exhausted_without_mutation"],
         stallReason: guidance.reason,
         nextDeterministicAction: guidance.nextDeterministicAction,
@@ -1826,6 +2057,7 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
       state: {
         ...nextState,
         adapter: repairedTurn.adapter,
+        targetInference: repairTargetInference,
         orchestrator: repairedTurn.orchestrator ?? nextState.orchestrator,
         orchestratorVersion: repairedTurn.orchestratorVersion ?? nextState.orchestratorVersion ?? null,
         orchestratorRunId: repairedTurn.orchestratorRunId ?? nextState.orchestratorRunId ?? null,
@@ -1844,7 +2076,7 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
 
   if (repeatedPendingSignature && input.toolResult.ok && !repairDirective) {
     const repairStage = nextRepairStage({
-      targetPath: nextState.targetInference.path,
+      targetPath: repairTargetPath,
       repairHistory: nextState.repairHistory,
       latestToolResult: input.toolResult,
       pendingToolCall,
@@ -1880,12 +2112,12 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
     }
     const guidance = buildRepairGuidance({
       stage: repairStage,
-      targetPath: nextState.targetInference.path,
+      targetPath: repairTargetPath,
       toolResult: input.toolResult,
     });
     const repairedTurn = await requestToolLoopTurn({
       request,
-      targetInference: nextState.targetInference,
+      targetInference: repairTargetInference,
       contextSelection: nextState.contextSelection,
       fallbackPlan: nextState.fallbackPlan,
       toolTrace,
@@ -1956,6 +2188,7 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
       state: {
         ...nextState,
         adapter: repairedTurn.adapter,
+        targetInference: repairTargetInference,
         orchestrator: repairedTurn.orchestrator ?? nextState.orchestrator,
         orchestratorVersion: repairedTurn.orchestratorVersion ?? nextState.orchestratorVersion ?? null,
         orchestratorRunId: repairedTurn.orchestratorRunId ?? nextState.orchestratorRunId ?? null,
@@ -1971,8 +2204,6 @@ export async function continueAssistToolLoop(input: ContinueToolLoopInput): Prom
       logs: repairedTurn.logs,
     });
   }
-  }
-
   return advanceWithCandidate({
     record,
     request,

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import blackLogo from "@/assets/logo-black.png";
 import { GlobalSearchBar } from "@/components/search/GlobalSearchBar";
 import {
   firePlaygroundAnalyticsEvent,
@@ -242,7 +243,7 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
             <span className="text-lg font-black tracking-tight text-black sm:text-xl">Xpersona</span>
           ) : (
             <Image
-              src="/xpersona-logo-1.png"
+              src={blackLogo}
               alt="Xpersona"
               width={112}
               height={28}

@@ -3720,7 +3720,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     if (hosted) {
       lines.push(
         hosted.runtime === "cutie"
-          ? "=== Cutie (hosted OpenHands, last run) ==="
+          ? "=== Standard Profile (hosted OpenHands, last run) ==="
           : hosted.runtime === "qwenCode"
             ? "=== Qwen Profile (hosted OpenHands, last run) ==="
             : "=== Hosted API (last run) ==="
@@ -3755,7 +3755,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
 
     if (!qwen && !hosted) {
       lines.push(
-        "No debug snapshots captured yet. Send a prompt with Cutie, Qwen Code, or the hosted OpenHands runtime to populate."
+        "No debug snapshots captured yet. Send a prompt with the standard profile, Qwen Code, or the hosted OpenHands runtime to populate."
       );
     }
 

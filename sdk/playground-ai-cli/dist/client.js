@@ -1,4 +1,9 @@
 import { requestJson, requestSse } from "./http.js";
+export function toHostedAssistMode(mode) {
+    if (mode === "generate" || mode === "debug")
+        return "yolo";
+    return mode;
+}
 export class PlaygroundClient {
     baseUrl;
     auth;
@@ -15,7 +20,7 @@ export class PlaygroundClient {
             auth: this.auth,
             path: "/api/v1/playground/sessions",
             method: "POST",
-            body: { title, mode },
+            body: { title, mode: mode ? toHostedAssistMode(mode) : undefined },
         });
         return res.data?.id ?? null;
     }
@@ -26,8 +31,8 @@ export class PlaygroundClient {
             path: "/api/v1/playground/assist",
             body: {
                 task: input.task,
-                mode: input.mode,
-                model: input.model || "Playground AI",
+                mode: toHostedAssistMode(input.mode),
+                model: input.model || "Binary IDE",
                 stream: input.stream ?? true,
                 historySessionId: input.historySessionId,
                 contextBudget: {
@@ -46,8 +51,8 @@ export class PlaygroundClient {
             method: "POST",
             body: {
                 task: input.task,
-                mode: input.mode,
-                model: input.model || "Playground AI",
+                mode: toHostedAssistMode(input.mode),
+                model: input.model || "Binary IDE",
                 stream: false,
                 historySessionId: input.historySessionId,
             },
@@ -78,9 +83,20 @@ export class PlaygroundClient {
             body: {
                 sessionId,
                 workspaceFingerprint,
-                mode,
+                mode: toHostedAssistMode(mode),
             },
         });
+    }
+    async continueRun(runId, toolResult, sessionId) {
+        const response = await requestJson({
+            baseUrl: this.baseUrl,
+            auth: this.auth,
+            path: `/api/v1/playground/runs/${encodeURIComponent(runId)}/continue`,
+            method: "POST",
+            body: sessionId ? { toolResult, sessionId } : { toolResult },
+        });
+        const record = response;
+        return (record?.data || response);
     }
     async execute(sessionId, workspaceFingerprint, actions) {
         return requestJson({

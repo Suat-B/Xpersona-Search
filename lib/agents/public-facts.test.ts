@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectStoredFirstEvidence } from "@/lib/agents/public-facts";
+import { combinePublicEvidence, selectStoredFirstEvidence } from "@/lib/agents/public-facts";
 
 const derivedFact = {
   factKey: "derived_key",
@@ -66,3 +66,33 @@ describe("selectStoredFirstEvidence", () => {
   });
 });
 
+describe("combinePublicEvidence", () => {
+  it("merges stored and derived evidence, dedupes, and sorts by recency", () => {
+    const merged = combinePublicEvidence({
+      storedFacts: [storedFact, derivedFact],
+      storedEvents: [storedEvent],
+      derivedFacts: [
+        {
+          ...derivedFact,
+          factKey: "newer_derived_key",
+          label: "Newer Derived",
+          value: "Newer derived value",
+          observedAt: "2026-03-25T00:00:00.000Z",
+        },
+      ],
+      derivedEvents: [
+        derivedEvent,
+        {
+          ...derivedEvent,
+          title: "Newest derived event",
+          observedAt: "2026-03-26T00:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(merged.facts).toHaveLength(3);
+    expect(merged.facts[0]?.label).toBe("Newer Derived");
+    expect(merged.changeEvents).toHaveLength(3);
+    expect(merged.changeEvents[0]?.title).toBe("Newest derived event");
+  });
+});

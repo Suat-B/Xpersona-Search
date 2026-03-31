@@ -20,17 +20,17 @@ function run(command, args, cwd) {
 }
 
 async function main() {
-  console.log(`[playground-node-cli] building in ${CLI_DIR}`);
+  console.log(`[binary-ide-cli] building in ${CLI_DIR}`);
   await run("npm", ["run", "clean"], CLI_DIR);
   await run("npm", ["run", "build"], CLI_DIR);
 
   const publishArgs = ["publish", "--access", "public"];
   if (dryRun) publishArgs.push("--dry-run");
-  console.log(`[playground-node-cli] npm ${publishArgs.join(" ")}`);
+  console.log(`[binary-ide-cli] npm ${publishArgs.join(" ")}`);
   await run("npm", publishArgs, CLI_DIR);
 }
 
 main().catch((err) => {
-  console.error("[playground-node-cli] publish failed", err);
+  console.error("[binary-ide-cli] publish failed", err);
   process.exit(1);
 });

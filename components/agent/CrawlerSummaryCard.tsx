@@ -28,31 +28,31 @@ export function CrawlerSummaryCard({
   links,
 }: CrawlerSummaryCardProps) {
   return (
-    <section className="rounded-2xl border border-[var(--accent-heart)]/20 bg-[linear-gradient(180deg,rgba(255,112,138,0.08),rgba(255,112,138,0.02))] p-5 md:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="max-w-3xl">
+    <section className="rounded-[2rem] border border-[var(--accent-heart)]/20 bg-[radial-gradient(circle_at_top_left,rgba(255,112,138,0.16),transparent_36%),linear-gradient(180deg,var(--bg-card),var(--bg-elevated))] p-5 md:p-6">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <div className="max-w-4xl">
           <p className="text-xs uppercase tracking-[0.22em] text-[var(--text-tertiary)]">{eyebrow}</p>
-          <h2 className="mt-2 text-2xl font-semibold text-[var(--text-primary)]">{title}</h2>
-          <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">{summary}</p>
+          <h2 className="mt-3 text-2xl font-semibold text-[var(--text-primary)] md:text-3xl">{title}</h2>
+          <p className="mt-4 text-sm leading-relaxed text-[var(--text-secondary)] md:text-base">{summary}</p>
         </div>
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3 text-sm text-[var(--text-secondary)]">
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-4 text-sm text-[var(--text-secondary)]">
           <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">Freshness</p>
           <p className="mt-2 font-medium text-[var(--text-primary)]">{freshness}</p>
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-2">
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4">
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-4">
           <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">Best For</p>
           <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">{bestFor}</p>
         </div>
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4">
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-4">
           <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">Not Ideal For</p>
           <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">{notIdealFor}</p>
         </div>
       </div>
 
-      <div className="mt-5 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4">
+      <div className="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-4">
         <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">Evidence Sources Checked</p>
         <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
           {evidenceSources.join(", ")}

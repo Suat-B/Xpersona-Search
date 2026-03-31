@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Binary IDE</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <p class="eyebrow">Binary IDE</p>
+          <h1>Guided workspace desktop shell</h1>
+          <p class="lede">A local-host-first app that keeps chat, artifacts, trust, and runtime logs in one place.</p>
+        </div>
+
+        <section class="panel compact">
+          <h2>Host</h2>
+          <div id="hostStatus" class="status-card">Checking Binary Host...</div>
+        </section>
+
+        <section class="panel compact">
+          <h2>Workspace</h2>
+          <label class="stack">
+            <span>Selected root</span>
+            <input id="workspaceInput" type="text" placeholder="Choose a workspace folder" />
+          </label>
+          <div class="row">
+            <button id="chooseWorkspace">Choose folder</button>
+            <button id="trustWorkspace" class="secondary">Trust for runs</button>
+          </div>
+        </section>
+
+        <section class="panel compact">
+          <h2>Auth</h2>
+          <label class="stack">
+            <span>Binary IDE API key</span>
+            <input id="apiKeyInput" type="password" placeholder="xp_..." />
+          </label>
+          <div class="row">
+            <button id="saveApiKey">Save key</button>
+            <button id="clearApiKey" class="secondary">Clear</button>
+          </div>
+        </section>
+      </aside>
+
+      <main class="main">
+        <section class="hero panel">
+          <div>
+            <p class="eyebrow">Binary Host Runtime</p>
+            <h2>Desktop becomes the default surface. The host stays the contract.</h2>
+          </div>
+          <div class="hero-meta" id="runtimeMeta">Loading desktop runtime info...</div>
+        </section>
+
+        <section class="composer panel">
+          <div class="composer-head">
+            <h2>Run a task</h2>
+            <div class="row">
+              <select id="modeSelect">
+                <option value="auto">auto</option>
+                <option value="plan">plan</option>
+                <option value="yolo">yolo</option>
+                <option value="generate">generate</option>
+                <option value="debug">debug</option>
+              </select>
+              <input id="modelInput" type="text" value="Binary IDE" />
+            </div>
+          </div>
+          <textarea id="taskInput" rows="5" placeholder="Describe what you want Binary IDE to do in this workspace."></textarea>
+          <div class="row">
+            <button id="runTask">Run with Binary Host</button>
+            <button id="refreshState" class="secondary">Refresh state</button>
+          </div>
+        </section>
+
+        <section class="grid">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Stream</h2>
+              <span class="pill">Hosted-first orchestration</span>
+            </div>
+            <pre id="streamLog" class="log">No run started yet.</pre>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Recent sessions</h2>
+              <span class="pill">Shared by desktop and CLI</span>
+            </div>
+            <div id="recentSessions" class="list empty">No sessions yet.</div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Artifacts</h2>
+              <span class="pill">Binary build spine</span>
+            </div>
+            <div id="artifactHistory" class="list empty">No artifacts yet.</div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>

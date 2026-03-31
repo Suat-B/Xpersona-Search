@@ -64,7 +64,7 @@ function describeRuntimePhase(phase) {
         case "collecting_context":
             return "Collecting context";
         case "waiting_for_cutie":
-            return "Waiting for local Cutie";
+            return "Waiting for the standard runtime profile";
         case "waiting_for_qwen":
             return "Waiting for local Qwen";
         case "awaiting_approval":
@@ -87,7 +87,7 @@ function buildSlashStatusMessage(input) {
         ? "Hosted OpenHands runtime"
         : input.runtime === "qwenCode"
             ? "Local Qwen Code (legacy)"
-            : "Local Cutie (legacy)";
+            : "Hosted standard profile";
     const lines = [
         "Binary IDE status:",
         `- Runtime: ${runtimeLabel}`,

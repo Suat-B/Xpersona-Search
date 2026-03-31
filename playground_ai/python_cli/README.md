@@ -1,20 +1,22 @@
-# Playground AI CLI (Python)
+# Legacy Python CLI
 
-Python runtime for **Playground AI CLI**.
+Legacy Python runtime retained for internal compatibility only.
 
-## Install locally
+The public Binary IDE CLI now ships from the Node package under `sdk/playground-ai-cli`.
+
+## Legacy Local Install
 
 ```bash
 python -m pip install -e playground_ai/python_cli
-playground --help
+python -m playground_ai_cli.cli --help
 ```
 
-## Quick start
+## Legacy Quick Start
 
 ```bash
-playground auth set-key YOUR_API_KEY
-playground chat
-playground run "summarize this repository"
-playground usage
-playground checkout
+python -m playground_ai_cli.cli auth set-key YOUR_API_KEY
+python -m playground_ai_cli.cli chat
+python -m playground_ai_cli.cli run "summarize this repository"
+python -m playground_ai_cli.cli usage
+python -m playground_ai_cli.cli checkout
 ```

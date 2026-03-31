@@ -1,5 +1,5 @@
 import { AuthHeadersInput, requestJson, requestSse, SseEvent } from "./http.js";
-import { AssistMode, BillingCycle, PlanTier } from "./types.js";
+import { AssistMode, AssistRunEnvelope, BillingCycle, PlanTier, ToolResult } from "./types.js";
 
 type ClientOptions = {
   baseUrl: string;
@@ -28,6 +28,13 @@ type IndexChunk = {
   metadata?: Record<string, unknown>;
 };
 
+export type HostedAssistMode = "auto" | "plan" | "yolo";
+
+export function toHostedAssistMode(mode: AssistMode): HostedAssistMode {
+  if (mode === "generate" || mode === "debug") return "yolo";
+  return mode;
+}
+
 export class PlaygroundClient {
   private readonly baseUrl: string;
   private auth: AuthHeadersInput;
@@ -47,7 +54,7 @@ export class PlaygroundClient {
       auth: this.auth,
       path: "/api/v1/playground/sessions",
       method: "POST",
-      body: { title, mode },
+      body: { title, mode: mode ? toHostedAssistMode(mode) : undefined },
     });
     return res.data?.id ?? null;
   }
@@ -59,8 +66,8 @@ export class PlaygroundClient {
       path: "/api/v1/playground/assist",
       body: {
         task: input.task,
-        mode: input.mode,
-        model: input.model || "Playground AI",
+        mode: toHostedAssistMode(input.mode),
+        model: input.model || "Binary IDE",
         stream: input.stream ?? true,
         historySessionId: input.historySessionId,
         contextBudget: {
@@ -80,8 +87,8 @@ export class PlaygroundClient {
       method: "POST",
       body: {
         task: input.task,
-        mode: input.mode,
-        model: input.model || "Playground AI",
+        mode: toHostedAssistMode(input.mode),
+        model: input.model || "Binary IDE",
         stream: false,
         historySessionId: input.historySessionId,
       },
@@ -117,9 +124,21 @@ export class PlaygroundClient {
       body: {
         sessionId,
         workspaceFingerprint,
-        mode,
+        mode: toHostedAssistMode(mode),
       },
     });
+  }
+
+  async continueRun(runId: string, toolResult: ToolResult, sessionId?: string): Promise<AssistRunEnvelope> {
+    const response = await requestJson<{ data?: AssistRunEnvelope } | AssistRunEnvelope>({
+      baseUrl: this.baseUrl,
+      auth: this.auth,
+      path: `/api/v1/playground/runs/${encodeURIComponent(runId)}/continue`,
+      method: "POST",
+      body: sessionId ? { toolResult, sessionId } : { toolResult },
+    });
+    const record = response as { data?: AssistRunEnvelope };
+    return (record?.data || response) as AssistRunEnvelope;
   }
 
   async execute(sessionId: string | undefined, workspaceFingerprint: string, actions: ExecuteAction[]): Promise<unknown> {

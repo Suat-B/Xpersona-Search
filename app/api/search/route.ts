@@ -1825,7 +1825,7 @@ export async function GET(req: NextRequest) {
       });
 
       const nextCursor = hasMore
-        ? (diversified[diversified.length - 1]?.id as string | undefined) ?? null
+        ? (resultRows[resultRows.length - 1]?.id as string | undefined) ?? null
         : null;
       const facets = await getFacets(conditions);
       let didYouMean: string | null = null;
@@ -2385,7 +2385,7 @@ export async function GET(req: NextRequest) {
     }
 
     const nextCursor = hasMore
-      ? (executionDecorated[executionDecorated.length - 1]?.row?.id as string) ?? null
+      ? (resultRows[resultRows.length - 1]?.id as string | undefined) ?? null
       : null;
 
     // --- Facets (single query, not separate) ---

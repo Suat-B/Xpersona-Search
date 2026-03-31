@@ -196,6 +196,9 @@ function buildToolLoopUserPrompt(input: ToolLoopTurnInput, tools: PlaygroundTool
     `Mode: ${input.request.mode}`,
     input.targetInference.path ? `Preferred target: ${input.targetInference.path}` : "Preferred target: infer from context.",
     `Loop stats: steps=${input.loopSummary.stepCount}, mutations=${input.loopSummary.mutationCount}, repairs=${input.loopSummary.repairCount}`,
+    input.fallbackPlan.files.length
+      ? `Required task files:\n${input.fallbackPlan.files.map((file) => `- ${file}`).join("\n")}`
+      : "Required task files: none.",
     `Available tools:\n${buildToolCatalog(tools)}`,
     input.contextSelection.files.length
       ? `Context files:\n${input.contextSelection.files.map((item) => `- ${item.path} (${item.reason})`).join("\n")}`
@@ -209,6 +212,7 @@ function buildToolLoopUserPrompt(input: ToolLoopTurnInput, tools: PlaygroundTool
     "Return either one toolCall or a final answer. Do not return an actions array in tool_loop_v1.",
     "If a repair directive is present, follow it strictly and choose the narrowest next tool that can prove progress.",
     "After inspecting the trusted target on a code edit request, do not choose another observation tool unless the latest tool result explicitly blocked mutation or the repair directive requires a path check.",
+    "Do not keep rewriting the same file while explicit task files remain missing or uncreated unless the latest tool result proves that missing-file issue is blocked.",
     `Task:\n${input.request.task}`,
   ].join("\n\n");
 }
@@ -304,8 +308,27 @@ function normalizeToolCall(value: unknown, availableTools: PlaygroundToolName[])
 
   if (typeof args.path === "string") {
     const normalizedPath = sanitizeRelativePath(args.path);
-    if (!normalizedPath) return null;
-    args.path = normalizedPath;
+    if (normalizedPath) {
+      args.path = normalizedPath;
+    } else if (name === "read_file" || name === "edit" || name === "write_file" || name === "mkdir") {
+      return null;
+    } else {
+      delete args.path;
+    }
+  }
+
+  if (name === "run_command") {
+    const command = typeof args.command === "string" ? args.command.trim() : "";
+    if (!command) return null;
+    args.command = command;
+  }
+
+  if (name === "write_file" && typeof args.content === "string") {
+    args.content = decodeLikelyEscapedMultilineText(args.content);
+  }
+
+  if (name === "edit" && typeof args.patch === "string") {
+    args.patch = decodeLikelyEscapedMultilineText(args.patch);
   }
 
   const id = compactWhitespace(String(record.id || `call_${Date.now().toString(36)}`)).slice(0, 120);
@@ -327,6 +350,59 @@ function normalizeToolCall(value: unknown, availableTools: PlaygroundToolName[])
   };
 }
 
+function decodeLikelyEscapedMultilineText(value: string): string {
+  const raw = String(value || "");
+  if (!raw || /[\r\n]/.test(raw) || !/\\n|\\r|\\t|\\"/.test(raw)) return raw;
+  const decoded = raw
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\\"/g, "\"")
+    .replace(/\\\\/g, "\\");
+  return decoded.includes("\n") || decoded !== raw ? decoded : raw;
+}
+
+function extractToolLoopPayload(
+  value: unknown,
+  availableTools: PlaygroundToolName[],
+  depth = 0
+): { final: string; toolCall?: ToolCallContract } | null {
+  if (depth > 3 || value == null) return null;
+
+  if (typeof value === "string") {
+    const parsed = parseJsonCandidate(value);
+    if (!parsed) return null;
+    return extractToolLoopPayload(parsed, availableTools, depth + 1);
+  }
+
+  if (typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+
+  const toolCall = normalizeToolCall(record.toolCall, availableTools);
+  if (toolCall) {
+    const nested =
+      typeof record.final === "string" ? extractToolLoopPayload(record.final, availableTools, depth + 1) : null;
+    return {
+      final:
+        typeof record.final === "string"
+          ? record.final.trim()
+          : nested?.final || "",
+      toolCall: nested?.toolCall || toolCall,
+    };
+  }
+
+  for (const candidate of [record.final, record.message, record.content, record.response]) {
+    const nested = extractToolLoopPayload(candidate, availableTools, depth + 1);
+    if (nested?.toolCall) return nested;
+  }
+
+  if (typeof record.final === "string" && record.final.trim()) {
+    return { final: record.final.trim() };
+  }
+
+  return null;
+}
+
 export function parseToolLoopJson(
   raw: string,
   availableTools: PlaygroundToolName[]
@@ -337,17 +413,12 @@ export function parseToolLoopJson(
   const parsed = parseJsonCandidate(raw);
   if (!parsed) return null;
 
-  const toolCall = normalizeToolCall(parsed.toolCall, availableTools);
-  if (toolCall) {
-    return {
-      final: typeof parsed.final === "string" ? parsed.final.trim() : "",
-      toolCall,
-    };
-  }
+  const extracted = extractToolLoopPayload(parsed, availableTools);
+  if (extracted?.toolCall) return extracted;
 
   if (Array.isArray(parsed.actions)) return null;
 
-  const final = typeof parsed.final === "string" ? parsed.final.trim() : "";
+  const final = extracted?.final || (typeof parsed.final === "string" ? parsed.final.trim() : "");
   if (final) return { final };
   return null;
 }
@@ -385,14 +456,27 @@ async function requestOpenHandsTurn(input: {
       })
     : await startOpenHandsGatewayRun(payload);
 
+  let final = response.final;
+  let toolCall = response.toolCall;
+  const logs = [
+    "adapter=openhands_gateway",
+    ...(response.logs || []),
+  ];
+
+  if (!toolCall && final) {
+    const recovered = parseToolLoopJson(final, input.availableTools);
+    if (recovered?.toolCall) {
+      toolCall = recovered.toolCall;
+      final = recovered.final || "";
+      logs.push("repair=adapter_final_toolcall_recovered");
+    }
+  }
+
   return {
     adapter: response.adapter,
-    final: response.final,
-    toolCall: response.toolCall,
-    logs: [
-      "adapter=openhands_gateway",
-      ...(response.logs || []),
-    ],
+    final,
+    toolCall,
+    logs,
     modelSelection: input.selection,
     orchestrator: "openhands",
     orchestratorVersion: response.version || null,

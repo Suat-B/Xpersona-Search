@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { notFound, permanentRedirect } from "next/navigation";
 import { AgentTechnicalDossier } from "@/components/agent/AgentTechnicalDossier";
 import { CrawlerSummaryCard } from "@/components/agent/CrawlerSummaryCard";
-import { getPublicAgentEvidencePack } from "@/lib/agents/public-facts";
+import { getCombinedPublicAgentEvidencePack } from "@/lib/agents/public-facts";
 import { auth } from "@/lib/auth";
 import { getAgentDossier } from "@/lib/agents/agent-dossier";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
@@ -30,7 +30,7 @@ function getEntitySeoLabel(entityType: PublicEntityType): string {
 
 function buildJsonLd(
   dossier: NonNullable<Awaited<ReturnType<typeof getAgentDossier>>>,
-  evidencePack: Awaited<ReturnType<typeof getPublicAgentEvidencePack>> | null
+  evidencePack: Awaited<ReturnType<typeof getCombinedPublicAgentEvidencePack>> | null
 ) {
   const baseUrl = new URL(dossier.canonicalUrl).origin;
   const entityLabel = getEntityLabel(dossier.entityType);
@@ -229,7 +229,7 @@ export async function renderPublicEntityPage(input: {
   const viewerUserId = await resolveViewerUserId();
   const [dossier, evidencePack] = await Promise.all([
     getAgentDossier(input.slug, viewerUserId),
-    getPublicAgentEvidencePack(input.slug),
+    getCombinedPublicAgentEvidencePack(input.slug),
   ]);
   if (!dossier) notFound();
   if (dossier.entityType !== input.expectedEntityType) {

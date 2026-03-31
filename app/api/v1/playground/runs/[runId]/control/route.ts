@@ -16,6 +16,8 @@ const RECOMMENDED_ACTION: Record<string, string> = {
   resume: "Continue the run and refresh the receipt in Playground.",
   cancel: "Run cancelled. Use the receipt as the source of truth for any follow-up.",
   repair: "Retry the run with the receipt as the source of truth.",
+  takeover: "Take over the run manually and use the current receipt as the source of truth.",
+  retry_last_turn: "Retry the last hosted turn with the current receipt and tool trace as the source of truth.",
 };
 
 export async function POST(request: NextRequest, ctx: Ctx): Promise<Response> {
@@ -47,8 +49,12 @@ export async function POST(request: NextRequest, ctx: Ctx): Promise<Response> {
   const nextStatus =
     parsed.data.action === "cancel"
       ? "failed"
-      : parsed.data.action === "resume" || parsed.data.action === "repair"
+      : parsed.data.action === "resume" ||
+          parsed.data.action === "repair" ||
+          parsed.data.action === "retry_last_turn"
         ? "running"
+        : parsed.data.action === "takeover"
+          ? "needs_review"
         : existing.status;
 
   const updated = await updateAgentRun({

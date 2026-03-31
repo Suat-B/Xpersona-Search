@@ -300,6 +300,22 @@ function dedupeEvents(events: PublicAgentChangeEvent[]): PublicAgentChangeEvent[
   });
 }
 
+function sortFactsByObservedAt(facts: PublicAgentFact[]): PublicAgentFact[] {
+  return [...facts].sort((a, b) => {
+    const aTime = a.observedAt ? Date.parse(a.observedAt) : 0;
+    const bTime = b.observedAt ? Date.parse(b.observedAt) : 0;
+    return bTime - aTime;
+  });
+}
+
+function sortEventsByObservedAt(events: PublicAgentChangeEvent[]): PublicAgentChangeEvent[] {
+  return [...events].sort((a, b) => {
+    const aTime = a.observedAt ? Date.parse(a.observedAt) : 0;
+    const bTime = b.observedAt ? Date.parse(b.observedAt) : 0;
+    return bTime - aTime;
+  });
+}
+
 async function getStoredFacts(agentId: string): Promise<PublicAgentFact[]> {
   if (!(await hasOptionalTable("agent_facts"))) return [];
   const rows = await db
@@ -943,6 +959,20 @@ export function selectStoredFirstEvidence(input: {
   };
 }
 
+export function combinePublicEvidence(input: {
+  storedFacts: PublicAgentFact[];
+  storedEvents: PublicAgentChangeEvent[];
+  derivedFacts: PublicAgentFact[];
+  derivedEvents: PublicAgentChangeEvent[];
+}): { facts: PublicAgentFact[]; changeEvents: PublicAgentChangeEvent[] } {
+  return {
+    facts: sortFactsByObservedAt(dedupeFacts([...input.storedFacts, ...input.derivedFacts])),
+    changeEvents: sortEventsByObservedAt(
+      dedupeEvents([...input.storedEvents, ...input.derivedEvents])
+    ),
+  };
+}
+
 type EvidencePackMode = "stored-first" | "derived-only" | "combined";
 
 async function resolveEvidencePack(
@@ -962,7 +992,8 @@ async function resolveEvidencePack(
     sourceUrl: publicData.sourceUrl,
   });
 
-  const derivedFacts = dedupeFacts(
+  const derivedFacts = sortFactsByObservedAt(
+    dedupeFacts(
     buildDerivedFacts({
       publicData,
       dossier,
@@ -970,24 +1001,19 @@ async function resolveEvidencePack(
       mediaAssets,
       documents,
     })
-  ).sort((a, b) => {
-    const aTime = a.observedAt ? Date.parse(a.observedAt) : 0;
-    const bTime = b.observedAt ? Date.parse(b.observedAt) : 0;
-    return bTime - aTime;
-  });
+    )
+  );
 
-  const derivedEvents = dedupeEvents(
+  const derivedEvents = sortEventsByObservedAt(
+    dedupeEvents(
     buildDerivedEvents({
       publicData,
       dossier,
       mediaAssets,
       documents,
     })
-  ).sort((a, b) => {
-    const aTime = a.observedAt ? Date.parse(a.observedAt) : 0;
-    const bTime = b.observedAt ? Date.parse(b.observedAt) : 0;
-    return bTime - aTime;
-  });
+    )
+  );
 
   let facts = derivedFacts;
   let changeEvents = derivedEvents;
@@ -999,16 +1025,14 @@ async function resolveEvidencePack(
     ]);
 
     if (mode === "combined") {
-      facts = dedupeFacts([...storedFacts, ...derivedFacts]).sort((a, b) => {
-        const aTime = a.observedAt ? Date.parse(a.observedAt) : 0;
-        const bTime = b.observedAt ? Date.parse(b.observedAt) : 0;
-        return bTime - aTime;
+      const combined = combinePublicEvidence({
+        storedFacts,
+        storedEvents,
+        derivedFacts,
+        derivedEvents,
       });
-      changeEvents = dedupeEvents([...storedEvents, ...derivedEvents]).sort((a, b) => {
-        const aTime = a.observedAt ? Date.parse(a.observedAt) : 0;
-        const bTime = b.observedAt ? Date.parse(b.observedAt) : 0;
-        return bTime - aTime;
-      });
+      facts = combined.facts;
+      changeEvents = combined.changeEvents;
     } else {
       const selected = selectStoredFirstEvidence({
         storedFacts,
@@ -1056,4 +1080,10 @@ export async function getPublicAgentChangeEvents(slug: string): Promise<PublicAg
 
 export async function getDerivedPublicAgentEvidencePack(slug: string): Promise<PublicAgentEvidencePack | null> {
   return resolveEvidencePack(slug, "derived-only");
+}
+
+export async function getCombinedPublicAgentEvidencePack(
+  slug: string
+): Promise<PublicAgentEvidencePack | null> {
+  return resolveEvidencePack(slug, "combined");
 }

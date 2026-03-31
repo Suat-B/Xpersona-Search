@@ -228,7 +228,7 @@ export const zRunContinueRequest = z.object({
 });
 
 export const zRunControlRequest = z.object({
-  action: z.enum(["pause", "resume", "cancel", "repair"]),
+  action: z.enum(["pause", "resume", "cancel", "repair", "takeover", "retry_last_turn"]),
   note: z.string().max(4000).optional(),
 });
 

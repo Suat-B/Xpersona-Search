@@ -506,6 +506,33 @@ describe("GET /api/search", () => {
     expect(data.results).toHaveLength(1);
   });
 
+  it("uses the raw ranked page boundary for nextCursor even when display diversification reorders items", async () => {
+    mockDb.execute.mockResolvedValue({
+      rows: [
+        mockAgent({ id: "id-1", slug: "agent-1", source: "SAME_SOURCE", total_count: null, canonical_agent_id: null }),
+        mockAgent({ id: "id-2", slug: "agent-2", source: "SAME_SOURCE", total_count: null, canonical_agent_id: null }),
+        mockAgent({ id: "id-3", slug: "agent-3", source: "SAME_SOURCE", total_count: null, canonical_agent_id: null }),
+        mockAgent({ id: "id-4", slug: "agent-4", source: "OTHER_SOURCE", total_count: null, canonical_agent_id: null }),
+        mockAgent({ id: "id-5", slug: "agent-5", source: "THIRD_SOURCE", total_count: null, canonical_agent_id: null }),
+      ],
+    });
+
+    const res = await GET(
+      new NextRequest("http://localhost/api/search?sort=rank&limit=4&includeTotal=0")
+    );
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.pagination.hasMore).toBe(true);
+    expect(data.results.map((result: { id: string }) => result.id)).toEqual([
+      "id-1",
+      "id-2",
+      "id-4",
+      "id-3",
+    ]);
+    expect(data.pagination.nextCursor).toBe("id-4");
+  });
+
   it("includes rankingDebug only with debug=1 in non-production", async () => {
     vi.stubEnv("NODE_ENV", "development");
     vi.stubEnv("SEARCH_HYBRID_RANKING", "1");

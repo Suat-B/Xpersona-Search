@@ -4,8 +4,8 @@ import { Pool } from "pg";
 import * as schema from "./schema";
 
 // Ensure env vars are available even when this module is imported before script-level dotenv setup.
-config({ path: ".env.local" });
-config();
+config({ path: ".env.local", quiet: true });
+config({ quiet: true });
 
 const rawUrl = process.env.DATABASE_URL;
 

@@ -66,7 +66,7 @@ export default async function RootLayout({
   const isBot = headerStore.get("x-is-bot") === "1";
   const botPath = headerStore.get("x-bot-path") || "/";
   const adsenseClientId = getAdSenseClientId();
-  const shouldLoadGoogleAdScripts = shouldLoadAdSenseForRequest(isBot);
+  const shouldLoadGoogleAdScripts = shouldLoadAdSenseForRequest();
   const loadGpt = shouldLoadGoogleAdScripts && shouldLoadPublisherTagScript();
   let isAuthenticated = false;
 

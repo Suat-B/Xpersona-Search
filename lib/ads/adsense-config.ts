@@ -4,12 +4,9 @@ export function getAdSenseClientId(): string {
   return ADSENSE_CLIENT_ID;
 }
 
-/**
- * Auto Ads only needs the AdSense script on human page loads.
- * Crawlers continue to use our internal fallback inventory.
- */
-export function shouldLoadAdSenseForRequest(isBotRequest: boolean): boolean {
-  return !isBotRequest;
+/** Whether to inject the AdSense script for this HTML response. */
+export function shouldLoadAdSenseForRequest(): boolean {
+  return true;
 }
 
 /**

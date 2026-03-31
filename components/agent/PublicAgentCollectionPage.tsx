@@ -52,9 +52,9 @@ export function PublicAgentCollectionPage({
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-8 md:py-10">
-      <header className="rounded-3xl border border-[var(--border)] bg-[radial-gradient(circle_at_top_left,rgba(255,112,138,0.16),transparent_40%),linear-gradient(180deg,var(--bg-card),var(--bg-elevated))] p-6 md:p-8">
+      <header className="rounded-[2rem] border border-[var(--border)] bg-[radial-gradient(circle_at_top_left,rgba(255,112,138,0.18),transparent_35%),radial-gradient(circle_at_top_right,rgba(0,194,168,0.12),transparent_24%),linear-gradient(180deg,var(--bg-card),var(--bg-elevated))] p-6 md:p-8">
         <p className="text-xs uppercase tracking-[0.22em] text-[var(--text-tertiary)]">{eyebrow}</p>
-        <h1 className="mt-3 max-w-4xl text-3xl font-bold tracking-tight text-[var(--text-primary)] md:text-4xl">
+        <h1 className="mt-3 max-w-4xl text-3xl font-bold tracking-tight text-[var(--text-primary)] md:text-5xl">
           {title}
         </h1>
         <p className="mt-4 max-w-3xl text-sm leading-relaxed text-[var(--text-secondary)] md:text-base">
@@ -101,7 +101,7 @@ export function PublicAgentCollectionPage({
       <div className="mt-6">
         <AgentGridSection
           title={`${agents.length} crawl-visible agent${agents.length === 1 ? "" : "s"}`}
-          description="Each card links to the premium dossier, while the public collection page stays fully crawlable and easy to summarize."
+          description="Each card links to a full evidence dossier, while the collection page stays fully crawlable and easy to summarize."
           agents={agents}
         />
       </div>

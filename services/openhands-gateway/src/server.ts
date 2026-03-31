@@ -4,8 +4,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import path from "node:path";
 import { config as loadEnv } from "dotenv";
 
-loadEnv({ path: path.resolve(process.cwd(), ".env.local"), override: false });
-loadEnv();
+loadEnv({ path: path.resolve(process.cwd(), ".env.local"), override: false, quiet: true });
+loadEnv({ quiet: true });
 
 type GatewayModelPayload = {
   alias?: string;

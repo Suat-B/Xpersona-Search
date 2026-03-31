@@ -144,8 +144,21 @@ function normalizeToolCall(value: unknown, availableTools: PlaygroundToolName[])
 
   if (typeof args.path === "string") {
     const normalizedPath = sanitizeRelativePath(args.path);
-    if (!normalizedPath) return null;
-    args.path = normalizedPath;
+    if (normalizedPath) {
+      args.path = normalizedPath;
+    } else if (name === "read_file" || name === "edit" || name === "write_file" || name === "mkdir") {
+      return null;
+    } else {
+      delete args.path;
+    }
+  }
+
+  if (name === "write_file" && typeof args.content === "string") {
+    args.content = decodeLikelyEscapedMultilineText(args.content);
+  }
+
+  if (name === "edit" && typeof args.patch === "string") {
+    args.patch = decodeLikelyEscapedMultilineText(args.patch);
   }
 
   const id = compactWhitespace(String(record.id || `openhands_${Date.now().toString(36)}`)).slice(0, 120);
@@ -165,6 +178,113 @@ function normalizeToolCall(value: unknown, availableTools: PlaygroundToolName[])
     kind,
     summary: typeof record.summary === "string" ? record.summary.slice(0, 4_000) : undefined,
   };
+}
+
+function decodeLikelyEscapedMultilineText(value: string): string {
+  const raw = String(value || "");
+  if (!raw || /[\r\n]/.test(raw) || !/\\n|\\r|\\t|\\"/.test(raw)) return raw;
+  const decoded = raw
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\\"/g, "\"")
+    .replace(/\\\\/g, "\\");
+  return decoded.includes("\n") || decoded !== raw ? decoded : raw;
+}
+
+function extractBalancedJsonObject(text: string): string | null {
+  const input = String(text || "");
+  const start = input.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < input.length; i += 1) {
+    const char = input[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === "\"") inString = false;
+      continue;
+    }
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return input.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+function parseJsonCandidate(text: string): Record<string, unknown> | null {
+  const normalized = String(text || "").trim();
+  const candidates = [
+    normalized,
+    /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(normalized)?.[1] || "",
+    extractBalancedJsonObject(normalized) || "",
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return null;
+}
+
+function extractGatewayToolTurn(
+  value: unknown,
+  availableTools: PlaygroundToolName[],
+  depth = 0
+): { final: string; toolCall?: ToolCallContract } | null {
+  if (depth > 3 || value == null) return null;
+
+  if (typeof value === "string") {
+    const parsed = parseJsonCandidate(value);
+    if (!parsed) return null;
+    return extractGatewayToolTurn(parsed, availableTools, depth + 1);
+  }
+
+  if (typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const toolCall = normalizeToolCall(record.toolCall, availableTools);
+  if (toolCall) {
+    const nested =
+      typeof record.final === "string" ? extractGatewayToolTurn(record.final, availableTools, depth + 1) : null;
+    return {
+      final:
+        typeof record.final === "string"
+          ? record.final.trim()
+          : nested?.final || "",
+      toolCall: nested?.toolCall || toolCall,
+    };
+  }
+
+  for (const candidate of [record.final, record.message, record.content, record.response]) {
+    const nested = extractGatewayToolTurn(candidate, availableTools, depth + 1);
+    if (nested?.toolCall) return nested;
+  }
+
+  if (typeof record.final === "string" && record.final.trim()) {
+    return { final: record.final.trim() };
+  }
+
+  return null;
 }
 
 function getOpenHandsGatewayUrl(): string | null {
@@ -308,11 +428,21 @@ async function requestGatewayTurn(
     parsed.adapter === "native_tools" || parsed.adapter === "text_actions" || parsed.adapter === "deterministic_batch"
       ? parsed.adapter
       : "text_actions";
-  const toolCall = normalizeToolCall(parsed.toolCall, availableTools);
-  const final = typeof parsed.final === "string" ? parsed.final.trim() : "";
+  const recovered = extractGatewayToolTurn(parsed.final, availableTools);
+  const normalizedToolCall = normalizeToolCall(parsed.toolCall, availableTools);
+  const toolCall = normalizedToolCall || recovered?.toolCall || null;
+  const final =
+    typeof parsed.final === "string"
+      ? toolCall && recovered?.toolCall
+        ? recovered.final
+        : parsed.final.trim()
+      : recovered?.final || "";
   const logs = Array.isArray(parsed.logs)
     ? parsed.logs.filter((value): value is string => typeof value === "string")
     : [];
+  if (!normalizedToolCall && recovered?.toolCall) {
+    logs.push("repair=final_toolcall_recovered");
+  }
 
   return {
     runId,

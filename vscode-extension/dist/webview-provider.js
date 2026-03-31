@@ -3229,7 +3229,7 @@ class PlaygroundViewProvider {
         const hosted = this.lastHostedDebugSnapshot;
         if (hosted) {
             lines.push(hosted.runtime === "cutie"
-                ? "=== Cutie (hosted OpenHands, last run) ==="
+                ? "=== Standard Profile (hosted OpenHands, last run) ==="
                 : hosted.runtime === "qwenCode"
                     ? "=== Qwen Profile (hosted OpenHands, last run) ==="
                     : "=== Hosted API (last run) ===");
@@ -3266,7 +3266,7 @@ class PlaygroundViewProvider {
             lines.push("");
         }
         if (!qwen && !hosted) {
-            lines.push("No debug snapshots captured yet. Send a prompt with Cutie, Qwen Code, or the hosted OpenHands runtime to populate.");
+            lines.push("No debug snapshots captured yet. Send a prompt with the standard profile, Qwen Code, or the hosted OpenHands runtime to populate.");
         }
         return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
     }

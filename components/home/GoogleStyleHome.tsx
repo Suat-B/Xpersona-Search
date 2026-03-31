@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import blackLogo from "@/assets/logo-black.png";
 import { HomeThemePicker } from "@/components/home/HomeThemePicker";
 import { SearchSuggestions, type SearchSuggestionsHandle, type SuggestionAgent } from "@/components/search/SearchSuggestions";
 import { applyPreset, HOME_ACCENT_STORAGE_KEY, type ThemePresetId } from "@/lib/theme-presets";
@@ -282,7 +283,7 @@ export function GoogleStyleHome({
               Xpersona
             </span>
             <Image
-              src="/xpersona-logo-1.png"
+              src={blackLogo}
               alt="Xpersona logo"
               width={64}
               height={64}
