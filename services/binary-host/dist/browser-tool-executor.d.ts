@@ -29,12 +29,14 @@ export declare function collectBrowserContext(input: {
     policy: MachineAutonomyPolicy;
     pageLimit?: number;
     elementLimit?: number;
+    fast?: boolean;
 }): Promise<Record<string, unknown>>;
 export declare class BrowserToolExecutor {
     private readonly runtime;
     private readonly policy;
     private readonly executionController?;
     constructor(runtime: BrowserRuntimeController, policy: MachineAutonomyPolicy, executionController?: AutonomyExecutionController | undefined);
+    private resolvePageId;
     execute(pendingToolCall: PendingToolCall): Promise<ToolResult>;
 }
 export {};

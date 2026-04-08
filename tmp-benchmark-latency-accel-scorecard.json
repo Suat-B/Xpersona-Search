@@ -1,0 +1,91 @@
+{
+  "thresholds": {
+    "codingCompletionRate": 0.8,
+    "validationSuccessRate": 0.8,
+    "gitCloseoutSuccessRate": 1,
+    "maxAvoidableTakeoverRate": 0.2
+  },
+  "metrics": {
+    "codingCompletionRate": 1,
+    "validationSuccessRate": 1,
+    "repairSuccessRate": 0,
+    "gitCloseoutSuccessRate": 1,
+    "endToEndCompletionRate": 0.75,
+    "closureCompletionRate": 0,
+    "meanStepsToClosure": 19,
+    "meanRepairsToClosure": 0,
+    "avoidableTakeoverRate": 0
+  },
+  "latency": {
+    "thresholds": {
+      "chatFirstToolImprovement": 0.3,
+      "codingTotalRunImprovement": 0.15,
+      "desktopElapsedImprovement": 0.2
+    },
+    "baselineAvailable": false,
+    "baseline": null,
+    "current": {
+      "laneMedians": {
+        "chat": {
+          "count": 1,
+          "ttfrMs": 12,
+          "firstToolMs": null,
+          "totalRunMs": 4940,
+          "elapsedMs": 6146
+        },
+        "desktop": {
+          "count": 1,
+          "ttfrMs": 12,
+          "firstToolMs": 189,
+          "totalRunMs": 45427,
+          "elapsedMs": 45998
+        },
+        "coding": {
+          "count": 2,
+          "ttfrMs": 13.5,
+          "firstToolMs": 5413.5,
+          "totalRunMs": 22027.5,
+          "elapsedMs": 22960.5
+        }
+      },
+      "chatProbeCount": 1,
+      "desktopProbeCount": 1,
+      "codingTargetCount": 2,
+      "medianChatTtfrMs": 12,
+      "medianChatFirstToolMs": null,
+      "medianCodingElapsedMs": 22960.5,
+      "medianCodingTotalRunMs": 22027.5,
+      "medianDesktopElapsedMs": 45998,
+      "medianFallbackCount": 0
+    },
+    "chatFirstToolImprovement": null,
+    "codingTotalRunImprovement": null,
+    "desktopElapsedImprovement": null,
+    "passing": true,
+    "failingReasons": []
+  },
+  "codingLaneCoverage": {
+    "repo_scaffold": {
+      "total": 0,
+      "completed": 0
+    },
+    "single_file_edit": {
+      "total": 0,
+      "completed": 0
+    },
+    "multi_file_feature_delivery": {
+      "total": 1,
+      "completed": 1
+    },
+    "validation_repair": {
+      "total": 0,
+      "completed": 0
+    },
+    "git_closeout": {
+      "total": 1,
+      "completed": 1
+    }
+  },
+  "passing": true,
+  "failingReasons": []
+}

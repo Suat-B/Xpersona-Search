@@ -126,4 +126,41 @@ describe("PlaygroundClient assist TOM forwarding", () => {
     const body = JSON.parse(String(init.body)) as { tom?: { enabled?: boolean } };
     expect(body.tom).toEqual({ enabled: false });
   });
+
+  it("includes MCP config in non-stream assists", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ data: { final: "ok" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new PlaygroundClient({
+      baseUrl: "https://example.test",
+      auth: { apiKey: "secret" },
+    });
+
+    await client.assist({
+      task: "Ship it",
+      mode: "auto",
+      mcp: {
+        mcpServers: {
+          Docs: {
+            url: "https://example.com/mcp",
+            transport: "http",
+          },
+        },
+      },
+    } as any);
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as {
+      mcp?: { mcpServers?: Record<string, Record<string, unknown>> };
+    };
+    expect(body.mcp?.mcpServers?.Docs).toEqual({
+      url: "https://example.com/mcp",
+      transport: "http",
+    });
+  });
 });

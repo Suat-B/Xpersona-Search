@@ -28,6 +28,7 @@ type GatewayToolCall = {
 
 type GatewayPayload = {
   protocol: "xpersona_openhands_gateway_v1";
+  runId?: string;
   request: {
     mode?: string;
     task?: string;
@@ -42,6 +43,9 @@ type GatewayPayload = {
     sessionId?: string | null;
     traceId?: string | null;
     turnPhase?: "start" | "continue" | null;
+  } | null;
+  mcp?: {
+    mcpServers?: Record<string, Record<string, unknown>>;
   } | null;
   targetInference?: { path?: string | null; [key: string]: unknown };
   contextSelection?: {
@@ -89,16 +93,91 @@ type PythonTurnResult = {
   version?: string | null;
   error?: string;
   details?: string;
+  runtimeKind?: "docker" | "local-python" | "remote" | "reduced-local" | "unknown";
+  runtimeProfile?: "full" | "code-only" | "chat-only" | "unavailable";
+  pythonVersion?: string | null;
+  packageFamily?: "openhands" | "openhands-sdk" | "unknown";
+  packageVersion?: string | null;
+  supportedTools?: string[];
+  degradedReasons?: string[];
+  availableActions?: string[];
+  adapterMode?: "auto" | "force_binary_tool_adapter";
+  latencyPolicy?: "default" | "detached_15s_cap";
+  timeoutPolicy?: string;
+  budgetProfile?: string;
+  firstTurnBudgetMs?: number | null;
+  smallModelForced?: boolean;
+  coercionApplied?: boolean;
+  seedToolInjected?: boolean;
+  invalidToolNameRecovered?: boolean;
+  modelCandidate?: Record<string, unknown> | null;
+  fallbackAttempt?: number | null;
+  failureReason?: string | null;
+  persistenceDir?: string | null;
+  conversationId?: string | null;
+  fallbackTrail?: unknown[];
+  executionLane?: string;
+  pluginPacks?: unknown[];
+  skillSources?: unknown[];
+  traceId?: string | null;
+  jsonlPath?: string | null;
 };
 
 const PORT = Number(process.env.OPENHANDS_GATEWAY_PORT || 8010);
 const HOST = String(process.env.OPENHANDS_GATEWAY_HOST || "127.0.0.1");
-const PYTHON_BIN = String(process.env.OPENHANDS_GATEWAY_PYTHON || "python");
+type PythonCommand = {
+  command: string;
+  argsPrefix: string[];
+};
+
+function resolvePythonCommands(): PythonCommand[] {
+  const candidates: PythonCommand[] = [];
+  const configured = compactWhitespace(process.env.OPENHANDS_GATEWAY_PYTHON || "");
+  if (configured) {
+    const parts = configured.split(/\s+/).filter(Boolean);
+    if (parts.length > 0) {
+      candidates.push({
+        command: parts[0],
+        argsPrefix: parts.slice(1),
+      });
+    }
+  }
+  if (process.platform === "win32") {
+    candidates.push({ command: "py", argsPrefix: ["-3.12"] });
+  }
+  candidates.push({ command: "python", argsPrefix: [] });
+
+  const seen = new Set<string>();
+  return candidates.filter((entry) => {
+    const key = `${entry.command} ${entry.argsPrefix.join(" ")}`.trim().toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function shouldTryNextPythonCandidate(result: PythonTurnResult): boolean {
+  if (result.ok) return false;
+  const reason = compactWhitespace(result.error || "").toLowerCase();
+  const details = compactWhitespace(result.details || "").toLowerCase();
+  const degraded = Array.isArray(result.degradedReasons)
+    ? result.degradedReasons.map((entry) => compactWhitespace(entry).toLowerCase())
+    : [];
+  return (
+    reason.includes("sdk is not installed") ||
+    details.includes("sdk is not installed") ||
+    degraded.includes("sdk_not_importable")
+  );
+}
+
+const PYTHON_COMMANDS = resolvePythonCommands();
 const RUNNER_PATH = path.resolve(process.cwd(), "services/openhands-gateway/agent_turn.py");
 const GATEWAY_API_KEY = String(process.env.OPENHANDS_GATEWAY_API_KEY || "").trim();
 const JSON_BODY_LIMIT_BYTES = 1_500_000;
 const parsedRunTtlMs = Number(process.env.OPENHANDS_GATEWAY_RUN_TTL_MS);
 const RUN_TTL_MS = Number.isFinite(parsedRunTtlMs) ? Math.max(60_000, parsedRunTtlMs) : 30 * 60 * 1000;
+const parsedHealthCacheMs = Number(process.env.OPENHANDS_GATEWAY_HEALTH_CACHE_MS);
+const HEALTH_CACHE_MS = Number.isFinite(parsedHealthCacheMs) ? Math.max(1_000, parsedHealthCacheMs) : 30_000;
 
 type GatewayRunState = {
   runId: string;
@@ -114,6 +193,14 @@ type GatewayRunState = {
 };
 
 const runState = new Map<string, GatewayRunState>();
+let cachedHealth:
+  | {
+      expiresAt: number;
+      statusCode: number;
+      body: Record<string, unknown>;
+    }
+  | null = null;
+let pendingHealthCheck: Promise<{ statusCode: number; body: Record<string, unknown> }> | null = null;
 
 function writeJson(
   res: ServerResponse,
@@ -190,6 +277,13 @@ function withTomTurnPhase(payload: GatewayPayload, turnPhase: "start" | "continu
   };
 }
 
+function withRunContext(payload: GatewayPayload, runId: string, turnPhase: "start" | "continue"): GatewayPayload {
+  return {
+    ...withTomTurnPhase(payload, turnPhase),
+    runId,
+  };
+}
+
 function buildRequestFingerprint(payload: GatewayPayload): string {
   return JSON.stringify({
     task: payload.request?.task || "",
@@ -260,15 +354,26 @@ function validateGatewayPayload(body: Record<string, unknown>): body is GatewayP
   );
 }
 
-async function invokePythonTurn(input: {
-  payload?: GatewayPayload;
-  doctor?: boolean;
-}): Promise<PythonTurnResult> {
+async function invokePythonTurnWithCommand(
+  pythonCommand: PythonCommand,
+  input: {
+    payload?: GatewayPayload;
+    doctor?: boolean;
+  }
+): Promise<PythonTurnResult> {
   return await new Promise((resolve, reject) => {
-    const args = input.doctor ? [RUNNER_PATH, "--doctor"] : [RUNNER_PATH];
-    const child = spawn(PYTHON_BIN, args, {
+    const args = input.doctor
+      ? [...pythonCommand.argsPrefix, RUNNER_PATH, "--doctor"]
+      : [...pythonCommand.argsPrefix, RUNNER_PATH];
+    const pythonEnv = {
+      ...process.env,
+      PYTHONIOENCODING: process.env.PYTHONIOENCODING || "utf-8",
+      PYTHONUTF8: process.env.PYTHONUTF8 || "1",
+      PYTHONUNBUFFERED: process.env.PYTHONUNBUFFERED || "1",
+    };
+    const child = spawn(pythonCommand.command, args, {
       cwd: process.cwd(),
-      env: process.env,
+      env: pythonEnv,
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -281,14 +386,10 @@ async function invokePythonTurn(input: {
     child.on("close", (code) => {
       const rawOut = Buffer.concat(stdout).toString("utf8").trim();
       const rawErr = Buffer.concat(stderr).toString("utf8").trim();
-      try {
-        const parsed = rawOut ? (JSON.parse(rawOut) as PythonTurnResult) : null;
-        if (parsed) {
-          resolve(parsed);
-          return;
-        }
-      } catch {
-        // Fall through to structured error below.
+      const parsed = tryParsePythonTurnResult(rawOut);
+      if (parsed) {
+        resolve(parsed);
+        return;
       }
 
       reject(
@@ -312,6 +413,120 @@ async function invokePythonTurn(input: {
   });
 }
 
+async function invokePythonTurn(input: {
+  payload?: GatewayPayload;
+  doctor?: boolean;
+}): Promise<PythonTurnResult> {
+  let lastError: Error | null = null;
+  for (const pythonCommand of PYTHON_COMMANDS) {
+    try {
+      const result = await invokePythonTurnWithCommand(pythonCommand, input);
+      if (shouldTryNextPythonCandidate(result)) {
+        continue;
+      }
+      return result;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      continue;
+    }
+  }
+  throw (
+    lastError ||
+    new Error("Failed to execute OpenHands helper with all configured Python interpreters.")
+  );
+}
+
+function tryParsePythonTurnResult(rawOut: string): PythonTurnResult | null {
+  if (!rawOut) return null;
+  try {
+    return JSON.parse(rawOut) as PythonTurnResult;
+  } catch {
+    // Fall through to last-line parsing.
+  }
+  const lines = rawOut
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (!line.startsWith("{") || !line.endsWith("}")) continue;
+    try {
+      return JSON.parse(line) as PythonTurnResult;
+    } catch {
+      // Keep scanning backward for the terminal JSON payload.
+    }
+  }
+  return null;
+}
+
+async function resolveHealthResponse(): Promise<{ statusCode: number; body: Record<string, unknown> }> {
+  if (cachedHealth && cachedHealth.expiresAt > Date.now()) {
+    return {
+      statusCode: cachedHealth.statusCode,
+      body: cachedHealth.body,
+    };
+  }
+  if (pendingHealthCheck) {
+    return await pendingHealthCheck;
+  }
+  pendingHealthCheck = (async () => {
+    try {
+      const result = await invokePythonTurn({ doctor: true });
+      if (!result.ok) {
+        return {
+          statusCode: 503,
+          body: {
+            status: "unhealthy",
+            title: "OpenHands Gateway",
+            error: result.error || "OpenHands SDK setup is incomplete.",
+            details: result.details || "Run `npm run openhands:gateway:setup` to install the Python SDK.",
+            version: result.version || null,
+            doctor: result,
+          },
+        };
+      }
+      const degradedReasons = Array.isArray(result.degradedReasons) ? result.degradedReasons : [];
+      const runtimeProfile = result.runtimeProfile || "unavailable";
+      const status = runtimeProfile === "full" && degradedReasons.length === 0 ? "healthy" : "degraded";
+      return {
+        statusCode: 200,
+        body: {
+          status,
+          title: "OpenHands Gateway",
+          version: result.version || "unknown",
+          runtime: "openhands_sdk",
+          message:
+            status === "healthy"
+              ? "Managed coding runtime is ready."
+              : "Binary runtime is ready with limited capabilities.",
+          doctor: result,
+        },
+      };
+    } catch (error) {
+      return {
+        statusCode: 503,
+        body: {
+          status: "unhealthy",
+          title: "OpenHands Gateway",
+          error: error instanceof Error ? error.message : String(error),
+          details: "Run `npm run openhands:gateway:setup` and restart the gateway.",
+        },
+      };
+    }
+  })();
+  try {
+    const resolved = await pendingHealthCheck;
+    cachedHealth = {
+      expiresAt: Date.now() + HEALTH_CACHE_MS,
+      statusCode: resolved.statusCode,
+      body: resolved.body,
+    };
+    return resolved;
+  } finally {
+    pendingHealthCheck = null;
+  }
+}
+
 const server = createServer(async (req, res) => {
   const method = String(req.method || "GET").toUpperCase();
   const pathname = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`).pathname;
@@ -333,33 +548,9 @@ const server = createServer(async (req, res) => {
   }
 
   if (method === "GET" && pathname === "/health") {
-    try {
-      const result = await invokePythonTurn({ doctor: true });
-      if (!result.ok) {
-        writeJson(res, 503, {
-          status: "unhealthy",
-          title: "OpenHands Gateway",
-          error: result.error || "OpenHands SDK setup is incomplete.",
-          details: result.details || "Run `npm run openhands:gateway:setup` to install the Python SDK.",
-        });
-        return;
-      }
-      writeJson(res, 200, {
-        status: "healthy",
-        title: "OpenHands Gateway",
-        version: result.version || "unknown",
-        runtime: "openhands_sdk",
-      });
-      return;
-    } catch (error) {
-      writeJson(res, 503, {
-        status: "unhealthy",
-        title: "OpenHands Gateway",
-        error: error instanceof Error ? error.message : String(error),
-        details: "Run `npm run openhands:gateway:setup` and restart the gateway.",
-      });
-      return;
-    }
+    const health = await resolveHealthResponse();
+    writeJson(res, health.statusCode, health.body);
+    return;
   }
 
   if (method === "POST" && pathname === "/v1/runs/start") {
@@ -373,17 +564,37 @@ const server = createServer(async (req, res) => {
         return;
       }
 
-      const payload = withTomTurnPhase(body, "start");
+      const runId = randomUUID();
+      const payload = withRunContext(body, runId, "start");
       const result = await invokePythonTurn({ payload });
       if (!result.ok) {
         writeJson(res, 502, {
           error: result.error || "OpenHands failed to produce the next tool turn.",
           details: result.details || "Check the OpenHands SDK installation and model credentials.",
+          failureReason: result.failureReason || undefined,
+          modelCandidate: result.modelCandidate || undefined,
+          fallbackAttempt: result.fallbackAttempt ?? undefined,
+          fallbackTrail: result.fallbackTrail || undefined,
+          adapterMode: result.adapterMode || undefined,
+          latencyPolicy: result.latencyPolicy || undefined,
+          timeoutPolicy: result.timeoutPolicy || undefined,
+          budgetProfile: result.budgetProfile || undefined,
+          firstTurnBudgetMs:
+            typeof result.firstTurnBudgetMs === "number" ? result.firstTurnBudgetMs : undefined,
+          smallModelForced:
+            typeof result.smallModelForced === "boolean" ? result.smallModelForced : undefined,
+          coercionApplied:
+            typeof result.coercionApplied === "boolean" ? result.coercionApplied : undefined,
+          seedToolInjected:
+            typeof result.seedToolInjected === "boolean" ? result.seedToolInjected : undefined,
+          invalidToolNameRecovered:
+            typeof result.invalidToolNameRecovered === "boolean"
+              ? result.invalidToolNameRecovered
+              : undefined,
         });
         return;
       }
 
-      const runId = randomUUID();
       const state = upsertRunState({
         runId,
         payload,
@@ -401,6 +612,33 @@ const server = createServer(async (req, res) => {
           ...(result.logs || []),
         ],
         version: result.version || null,
+        adapterMode: result.adapterMode || undefined,
+        latencyPolicy: result.latencyPolicy || undefined,
+        timeoutPolicy: result.timeoutPolicy || undefined,
+        budgetProfile: result.budgetProfile || undefined,
+        firstTurnBudgetMs:
+          typeof result.firstTurnBudgetMs === "number" ? result.firstTurnBudgetMs : undefined,
+        smallModelForced:
+          typeof result.smallModelForced === "boolean" ? result.smallModelForced : undefined,
+        coercionApplied:
+          typeof result.coercionApplied === "boolean" ? result.coercionApplied : undefined,
+        seedToolInjected:
+          typeof result.seedToolInjected === "boolean" ? result.seedToolInjected : undefined,
+        invalidToolNameRecovered:
+          typeof result.invalidToolNameRecovered === "boolean"
+            ? result.invalidToolNameRecovered
+            : undefined,
+        modelCandidate: result.modelCandidate || undefined,
+        fallbackAttempt: result.fallbackAttempt ?? undefined,
+        failureReason: result.failureReason || undefined,
+        persistenceDir: result.persistenceDir || undefined,
+        conversationId: result.conversationId || undefined,
+        fallbackTrail: result.fallbackTrail || undefined,
+        executionLane: result.executionLane || undefined,
+        pluginPacks: result.pluginPacks || undefined,
+        skillSources: result.skillSources || undefined,
+        traceId: result.traceId || undefined,
+        jsonlPath: result.jsonlPath || undefined,
       });
       return;
     } catch (error) {
@@ -425,7 +663,7 @@ const server = createServer(async (req, res) => {
       }
 
       const existing = getRunState(runId);
-      const payload = withTomTurnPhase(clonePayload(body), "continue");
+      const payload = withRunContext(clonePayload(body), runId, "continue");
       const effectiveState =
         existing ||
         upsertRunState({
@@ -433,30 +671,31 @@ const server = createServer(async (req, res) => {
           payload,
           rehydrated: true,
         });
-
-      const mergedPayload = clonePayload(payload);
-      const existingHistory = Array.isArray(mergedPayload.request.conversationHistory)
-        ? mergedPayload.request.conversationHistory
-        : [];
-      if (effectiveState.turns.length > 0) {
-        mergedPayload.request.conversationHistory = [
-          ...existingHistory,
-          ...effectiveState.turns
-            .filter((turn) => turn.toolName || turn.finalPreview)
-            .map((turn) => ({
-              role: "assistant",
-              content: turn.toolName
-                ? `Gateway turn used tool ${turn.toolName}.${turn.finalPreview ? ` ${turn.finalPreview}` : ""}`
-                : String(turn.finalPreview || ""),
-            })),
-        ].slice(-12);
-      }
-
-      const result = await invokePythonTurn({ payload: mergedPayload });
+      const result = await invokePythonTurn({ payload });
       if (!result.ok) {
         writeJson(res, 502, {
           error: result.error || "OpenHands failed to continue the run.",
           details: result.details || "Check the OpenHands SDK installation and model credentials.",
+          failureReason: result.failureReason || undefined,
+          modelCandidate: result.modelCandidate || undefined,
+          fallbackAttempt: result.fallbackAttempt ?? undefined,
+          fallbackTrail: result.fallbackTrail || undefined,
+          adapterMode: result.adapterMode || undefined,
+          latencyPolicy: result.latencyPolicy || undefined,
+          timeoutPolicy: result.timeoutPolicy || undefined,
+          budgetProfile: result.budgetProfile || undefined,
+          firstTurnBudgetMs:
+            typeof result.firstTurnBudgetMs === "number" ? result.firstTurnBudgetMs : undefined,
+          smallModelForced:
+            typeof result.smallModelForced === "boolean" ? result.smallModelForced : undefined,
+          coercionApplied:
+            typeof result.coercionApplied === "boolean" ? result.coercionApplied : undefined,
+          seedToolInjected:
+            typeof result.seedToolInjected === "boolean" ? result.seedToolInjected : undefined,
+          invalidToolNameRecovered:
+            typeof result.invalidToolNameRecovered === "boolean"
+              ? result.invalidToolNameRecovered
+              : undefined,
         });
         return;
       }
@@ -478,6 +717,33 @@ const server = createServer(async (req, res) => {
           ...(result.logs || []),
         ],
         version: result.version || null,
+        adapterMode: result.adapterMode || undefined,
+        latencyPolicy: result.latencyPolicy || undefined,
+        timeoutPolicy: result.timeoutPolicy || undefined,
+        budgetProfile: result.budgetProfile || undefined,
+        firstTurnBudgetMs:
+          typeof result.firstTurnBudgetMs === "number" ? result.firstTurnBudgetMs : undefined,
+        smallModelForced:
+          typeof result.smallModelForced === "boolean" ? result.smallModelForced : undefined,
+        coercionApplied:
+          typeof result.coercionApplied === "boolean" ? result.coercionApplied : undefined,
+        seedToolInjected:
+          typeof result.seedToolInjected === "boolean" ? result.seedToolInjected : undefined,
+        invalidToolNameRecovered:
+          typeof result.invalidToolNameRecovered === "boolean"
+            ? result.invalidToolNameRecovered
+            : undefined,
+        modelCandidate: result.modelCandidate || undefined,
+        fallbackAttempt: result.fallbackAttempt ?? undefined,
+        failureReason: result.failureReason || undefined,
+        persistenceDir: result.persistenceDir || undefined,
+        conversationId: result.conversationId || undefined,
+        fallbackTrail: result.fallbackTrail || undefined,
+        executionLane: result.executionLane || undefined,
+        pluginPacks: result.pluginPacks || undefined,
+        skillSources: result.skillSources || undefined,
+        traceId: result.traceId || undefined,
+        jsonlPath: result.jsonlPath || undefined,
       });
       return;
     } catch (error) {

@@ -1,0 +1,67 @@
+   ▲ Next.js 15.5.12
+   - Local:        http://localhost:3000
+   - Network:      http://10.0.0.52:3000
+   - Environments: .env.local
+   - Experiments (use with caution):
+     · serverActions
+
+ ✓ Starting...
+ ✓ Ready in 4.7s
+ ○ Compiling /middleware ...
+ ✓ Compiled /middleware in 854ms (123 modules)
+ ○ Compiling / ...
+ ✓ Compiled / in 15.2s (1161 modules)
+ ✓ Compiled in 8.2s (312 modules)
+ ○ Compiling /api/v1/search ...
+ ✓ Compiled /api/v1/search in 7.2s (1213 modules)
+ ○ Compiling /api/v1/[...path] ...
+ GET /api/v1/search?sort=freshness&limit=10 200 in 17994ms
+ GET /api/v1/search?sort=popularity&limit=30&intent=discover 200 in 5875ms
+ GET /api/v1/home 502 in 18908ms
+ ✓ Compiled /api/v1/[...path] in 13.4s (1427 modules)
+ ○ Compiling /api/search/trending ...
+ ✓ Compiled /api/search/trending in 1273ms (1430 modules)
+ GET /api/search/trending 200 in 2808ms
+[api.v1] {"requestId":"afd2a651-e842-4ad1-a2e6-80dc5dec7378","route":"/api/v1/search/trending","status":200,"latencyMs":2850}
+ ○ Compiling /api/v1/playground/assist ...
+ ✓ Compiled /api/v1/playground/assist in 944ms (771 modules)
+ POST /api/v1/playground/assist 200 in 3225ms
+ POST /api/v1/playground/assist 200 in 987ms
+ POST /api/v1/playground/assist 200 in 1000ms
+ POST /api/v1/playground/assist 200 in 2014ms
+ POST /api/v1/playground/assist 200 in 1056ms
+ POST /api/v1/playground/assist 200 in 2252ms
+ POST /api/v1/playground/assist 200 in 1114ms
+ POST /api/v1/playground/assist 200 in 9386ms
+ POST /api/v1/playground/assist 200 in 29433ms
+ POST /api/v1/playground/assist 200 in 12815ms
+ POST /api/v1/playground/assist 200 in 12215ms
+ ○ Compiling /api/v1/playground/runs/[runId]/continue ...
+ ✓ Compiled /api/v1/playground/runs/[runId]/continue in 702ms (773 modules)
+ POST /api/v1/playground/runs/4c16836d-98a3-46a5-a1fe-5db490583674/continue 200 in 59972ms
+ POST /api/v1/playground/runs/4c16836d-98a3-46a5-a1fe-5db490583674/continue 200 in 60648ms
+ ✓ Compiled in 1348ms (471 modules)
+ ✓ Compiled in 22ms
+ ○ Compiling /api/v1/playground/assist ...
+ ✓ Compiled /api/v1/playground/assist in 1059ms (472 modules)
+ ✓ Compiled in 441ms (472 modules)
+ POST /api/v1/playground/assist 200 in 26306ms
+ POST /api/v1/playground/assist 200 in 10507ms
+ ✓ Compiled /api/v1/playground/runs/[runId]/continue in 224ms (474 modules)
+ POST /api/v1/playground/assist 200 in 67263ms
+ POST /api/v1/playground/runs/d4800cf9-c25e-4814-b8bd-50ad8605ac0a/continue 200 in 59970ms
+ POST /api/v1/playground/runs/d4800cf9-c25e-4814-b8bd-50ad8605ac0a/continue 200 in 59955ms
+ POST /api/v1/playground/assist 200 in 67508ms
+ POST /api/v1/playground/assist 200 in 47116ms
+ POST /api/v1/playground/assist 200 in 32588ms
+ ✓ Compiled in 532ms (472 modules)
+ POST /api/v1/playground/assist 200 in 78048ms
+ POST /api/v1/playground/assist 200 in 2338ms
+ POST /api/v1/playground/assist 200 in 1700ms
+ ✓ Compiled in 27ms
+ ✓ Compiled in 2.1s (422 modules)
+ ✓ Compiled in 1702ms (313 modules)
+ ✓ Compiled in 1172ms (313 modules)
+ ✓ Compiled in 1604ms (313 modules)
+ ✓ Compiled in 1136ms (313 modules)
+ ✓ Compiled in 1118ms (313 modules)

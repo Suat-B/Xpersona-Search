@@ -1,0 +1,13 @@
+{
+  "name": "duration-toolkit",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A simple toolkit for parsing and formatting durations",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node --test test/duration.test.js"
+  },
+  "keywords": ["duration", "time", "parse", "format"],
+  "author": "",
+  "license": "MIT"
+}

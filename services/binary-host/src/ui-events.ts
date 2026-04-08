@@ -2,6 +2,10 @@ type UiEventCategory =
   | "run_status"
   | "tool_request"
   | "tool_result"
+  | "closure_started"
+  | "closure_item_completed"
+  | "closure_blocked"
+  | "closure_completed"
   | "proof_captured"
   | "verification_passed"
   | "verification_failed"
@@ -41,7 +45,7 @@ function laneFromToolName(toolName: string | undefined): UiEventLane | undefined
   if (!toolName) return undefined;
   if (toolName.startsWith("browser_")) return "browser_native";
   if (toolName.startsWith("desktop_")) return "desktop_fallback";
-  if (toolName === "run_command") return "terminal";
+  if (toolName === "run_command" || toolName.startsWith("terminal_")) return "terminal";
   return undefined;
 }
 
@@ -137,6 +141,28 @@ function buildStatusUi(eventName: string, data: Record<string, unknown> | null):
       },
     };
   }
+  if (eventName === "host.closure_blocked") {
+    return {
+      category: "closure_blocked",
+      title: "Closure blocked",
+      summary: message,
+      surfaceHint: "intervention",
+      confidence: "blocked",
+      intervention: {
+        reason: reason || message,
+        suggestedActions: ["repair", "resume", "takeover", "cancel"],
+      },
+    };
+  }
+  if (eventName === "host.closure_completed") {
+    return {
+      category: "closure_completed",
+      title: "Closure completed",
+      summary: message,
+      surfaceHint: "control_center",
+      confidence: "confident",
+    };
+  }
   if (eventName === "host.checkpoint") {
     const checkpoint = asRecord(data?.checkpoint);
     return {
@@ -159,20 +185,42 @@ function buildStatusUi(eventName: string, data: Record<string, unknown> | null):
 
 function buildMetaUi(data: Record<string, unknown> | null): UiEventDescriptor {
   const progressState = asRecord(data?.progressState);
+  const loopState = asRecord(data?.loopState);
   const pendingToolCall = asRecord(data?.pendingToolCall);
   const pendingTool = asRecord(pendingToolCall?.toolCall);
+  const closurePhase = asString(loopState?.closurePhase);
+  const unfinishedChecklistItems = Array.isArray(data?.unfinishedChecklistItems)
+    ? (data?.unfinishedChecklistItems as unknown[]).filter((item): item is string => typeof item === "string")
+    : [];
   const summaryParts = [
-    asString(progressState?.status),
+    closurePhase ? `closure ${closurePhase.replace(/_/g, " ")}` : asString(progressState?.status),
     asString(progressState?.nextDeterministicAction),
     asString(pendingTool?.name),
   ].filter(Boolean);
+  const category: UiEventCategory =
+    closurePhase === "blocked"
+      ? "closure_blocked"
+      : closurePhase === "complete"
+        ? "closure_completed"
+        : closurePhase
+          ? unfinishedChecklistItems.length > 0
+            ? "closure_started"
+            : "closure_item_completed"
+          : "run_status";
   return {
-    category: "run_status",
-    title: "Plan updated",
+    category,
+    title:
+      category === "closure_blocked"
+        ? "Closure blocked"
+        : category === "closure_completed"
+          ? "Closure completed"
+          : closurePhase
+            ? "Closure update"
+            : "Plan updated",
     summary: summaryParts.join(" | ") || "Binary updated its plan state.",
     surfaceHint: "control_center",
     lane: laneFromToolName(asString(pendingTool?.name)),
-    confidence: "verifying",
+    confidence: category === "closure_blocked" ? "blocked" : category === "closure_completed" ? "confident" : "verifying",
   };
 }
 

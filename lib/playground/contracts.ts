@@ -35,34 +35,25 @@ export const zPlaygroundToolName = z.enum([
   "desktop_keypress",
   "desktop_scroll",
   "desktop_wait",
-  "browser_list_pages",
-  "browser_get_active_page",
-  "browser_open_page",
-  "browser_focus_page",
-  "browser_navigate",
-  "browser_snapshot_dom",
-  "browser_query_elements",
-  "browser_click",
-  "browser_type",
-  "browser_press_keys",
-  "browser_scroll",
-  "browser_wait_for",
-  "browser_read_text",
-  "browser_read_form_state",
-  "browser_capture_page",
-  "browser_get_network_activity",
-  "browser_get_console_messages",
   "world_get_summary",
   "world_get_active_context",
   "world_query_graph",
   "world_get_neighbors",
   "world_get_recent_changes",
+  "world_get_route_stats",
   "world_get_affordances",
   "world_find_routine",
   "world_record_observation",
   "world_record_proof",
   "world_commit_memory",
+  "world_record_route_outcome",
   "world_score_route",
+  "repo_get_summary",
+  "repo_query_symbols",
+  "repo_find_references",
+  "repo_get_change_impact",
+  "repo_get_validation_plan",
+  "repo_record_verification",
 ]);
 export const zPlaygroundAdapter = z.enum(["native_tools", "text_actions", "deterministic_batch"]);
 export const zExecutionVisibility = z.enum(["background", "low_focus", "visible_required"]);
@@ -76,6 +67,10 @@ export const zInteractionMode = z.enum([
 ]);
 export const zFocusPolicy = z.enum(["never_steal", "avoid_if_possible", "allowed"]);
 export const zSessionPolicy = z.enum(["attach_carefully", "managed_only", "live_session"]);
+export const zSpeedProfile = z.enum(["fast", "balanced", "thorough"]);
+export const zLatencyTier = z.enum(["fast", "balanced", "thorough"]);
+export const zIntendedUse = z.enum(["chat", "action", "repair"]);
+export const zStartupPhase = z.enum(["fast_start", "context_enrichment", "full_run"]);
 
 const zContextFile = z.object({
   path: z.string().min(1).max(4096).optional(),
@@ -197,12 +192,25 @@ const zWorldModelAffordances = z.object({
   highConfidence: z.array(z.string().min(1).max(240)).max(40).optional(),
 });
 
+const zWorldModelRouteRecommendation = z.object({
+  id: z.string().min(1).max(240),
+  kind: z.string().min(1).max(240),
+  score: z.number().min(0).max(1),
+  reason: z.string().min(1).max(4000),
+  informedBy: z.array(z.string().min(1).max(4000)).max(16).optional(),
+  preferred: z.boolean().optional(),
+});
+
 const zWorldModelContext = z.object({
   graphVersion: z.number().int().min(0).max(10_000_000).optional(),
   sliceId: z.string().min(1).max(240).optional(),
   summary: z.string().max(20_000).optional(),
   activeContext: z
     .object({
+      machineRoot: z.string().max(4000).optional(),
+      homeRootPath: z.string().max(4000).optional(),
+      focusedWorkspace: z.string().max(4000).optional(),
+      focusedRepo: z.string().max(4000).optional(),
       activeWindow: z.string().max(4000).optional(),
       activePage: z.string().max(4000).optional(),
       activeWorkspace: z.string().max(4000).optional(),
@@ -211,8 +219,10 @@ const zWorldModelContext = z.object({
       focusLeaseActive: z.boolean().optional(),
     })
     .optional(),
+  knownDrives: z.array(z.string().min(1).max(4000)).max(16).optional(),
   recentChanges: z.array(zWorldModelChange).max(20).optional(),
   affordanceSummary: zWorldModelAffordances.optional(),
+  routeRecommendations: z.array(zWorldModelRouteRecommendation).max(8).optional(),
   environmentFreshness: z
     .object({
       lastUpdatedAt: z.string().datetime().optional(),
@@ -222,6 +232,72 @@ const zWorldModelContext = z.object({
   machineRoutineIds: z.array(z.string().min(1).max(240)).max(20).optional(),
 });
 
+
+const zRepoModelContext = z.object({
+  contextVersion: z.number().int().min(0).max(10_000_000).optional(),
+  workspaceRoot: z.string().max(4096).optional(),
+  summary: z.string().max(20_000).optional(),
+  stack: z.enum(["node_js_ts", "python", "generic"]).optional(),
+  primaryValidationCommand: z.string().max(2000).optional(),
+  projectRoots: z.array(z.string().min(1).max(4096)).max(20).optional(),
+  hotspots: z.array(z.string().min(1).max(4096)).max(20).optional(),
+  likelyEntrypoints: z.array(z.string().min(1).max(4096)).max(20).optional(),
+  likelyTests: z.array(z.string().min(1).max(4096)).max(20).optional(),
+  symbolIndex: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(256),
+        kind: z.string().min(1).max(120),
+        path: z.string().min(1).max(4096),
+        line: z.number().int().min(1).max(1_000_000).optional(),
+        exported: z.boolean().optional(),
+      })
+    )
+    .max(80)
+    .optional(),
+  routeHints: z
+    .object({
+      preferredRoute: z.string().min(1).max(120).optional(),
+      reason: z.string().max(4000).optional(),
+      informedBy: z.array(z.string().min(1).max(4000)).max(16).optional(),
+    })
+    .optional(),
+  memory: z
+    .object({
+      preferredValidationCommand: z.string().max(2000).optional(),
+      preferredBranchPrefix: z.string().max(240).optional(),
+      knownRepairPatterns: z.array(z.string().min(1).max(4000)).max(20).optional(),
+      proofTemplates: z.array(z.string().min(1).max(4000)).max(20).optional(),
+    })
+    .optional(),
+});
+
+const zVerificationPlan = z.object({
+  status: z.enum(["pending", "running", "passed", "failed"]).optional(),
+  primaryCommand: z.string().max(2000).optional(),
+  checks: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(240),
+        label: z.string().min(1).max(2000),
+        command: z.string().max(2000).optional(),
+        kind: z.enum(["test", "lint", "typecheck", "build", "verify"]).optional(),
+        status: z.enum(["pending", "running", "passed", "failed"]).optional(),
+        reason: z.string().max(4000).optional(),
+      })
+    )
+    .max(40)
+    .optional(),
+  receipts: z.array(z.string().min(1).max(4000)).max(20).optional(),
+  reason: z.string().max(4000).optional(),
+});
+
+const zWorkerAssignment = z.object({
+  role: z.string().min(1).max(120),
+  target: z.string().max(4096).optional(),
+  objective: z.string().max(2000).optional(),
+  status: z.string().max(120).optional(),
+});
 const zOpenFile = z.object({
   path: z.string().min(1).max(4096),
   language: z.string().min(1).max(64).optional(),
@@ -252,6 +328,42 @@ const zAssistTomConfig = z.object({
   enabled: z.boolean().optional(),
 });
 
+const zAssistMcpConfig = z.object({
+  mcpServers: z.record(z.string(), z.record(z.string(), z.unknown())),
+});
+
+const zAssistRoutePolicy = z.object({
+  turnBudgetMs: z.number().int().min(1_000).max(900_000).optional(),
+  maxIterations: z.number().int().min(1).max(200).optional(),
+  stallTimeoutMs: z.number().int().min(1_000).max(600_000).optional(),
+  missionFirstBrowser: z.boolean().optional(),
+  toolConcurrencyLimit: z.number().int().min(1).max(16).optional(),
+  requireConfirmation: z.boolean().optional(),
+  enableContextCondenser: z.boolean().optional(),
+  condenserMaxSize: z.number().int().min(8).max(500).optional(),
+  condenserKeepFirst: z.number().int().min(1).max(64).optional(),
+});
+
+const zUserConnectedModelCandidate = z.object({
+  alias: z.string().min(1).max(256),
+  provider: z.string().min(1).max(120),
+  displayName: z.string().min(1).max(240),
+  model: z.string().min(1).max(256),
+  baseUrl: z.string().min(1).max(2000),
+  apiKey: z.string().min(1).max(4000),
+  routeKind: z.string().min(1).max(240).optional(),
+  routeLabel: z.string().min(1).max(4000).optional(),
+  routeReason: z.string().min(1).max(4000).optional(),
+  modelFamilies: z.array(z.string().min(1).max(120)).max(16).optional(),
+  extraHeaders: z.record(z.string(), z.string()).optional(),
+  authSource: z.literal("user_connected").optional(),
+  candidateSource: z.literal("user_connected").optional(),
+  preferred: z.boolean().optional(),
+  latencyTier: zLatencyTier.optional(),
+  reasoningDefault: z.enum(["low", "medium", "high"]).optional(),
+  intendedUse: zIntendedUse.optional(),
+});
+
 export const zAssistRequest = z.object({
   mode: zAssistMode.default("auto"),
   task: z.string().min(1).max(120_000),
@@ -262,8 +374,13 @@ export const zAssistRequest = z.object({
   orchestratorModelSource: z.enum(["platform_owned", "user_connected"]).optional(),
   fallbackToPlatformModel: z.boolean().optional(),
   orchestrationProtocol: zOrchestrationProtocol.default("tool_loop_v1").optional(),
+  speedProfile: zSpeedProfile.default("fast").optional(),
+  startupPhase: zStartupPhase.optional(),
+  routePolicy: zAssistRoutePolicy.optional(),
   clientCapabilities: zClientCapabilities.optional(),
   tom: zAssistTomConfig.optional(),
+  mcp: zAssistMcpConfig.optional(),
+  userConnectedModels: z.array(zUserConnectedModelCandidate).max(16).optional(),
   historySessionId: z.string().uuid().optional(),
   conversationHistory: z.array(zConversationTurn).max(24).optional(),
   context: z
@@ -290,7 +407,7 @@ export const zAssistRequest = z.object({
         .optional(),
       browser: z
         .object({
-          mode: z.enum(["unavailable", "attached", "managed"]).optional(),
+          mode: z.enum(["unavailable", "attached", "managed", "profile"]).optional(),
           browserName: z.string().max(240).optional(),
           activePage: zBrowserPage.optional(),
           openPages: z.array(zBrowserPage).max(30).optional(),
@@ -307,6 +424,8 @@ export const zAssistRequest = z.object({
         })
         .optional(),
       worldModel: zWorldModelContext.optional(),
+      repoModel: zRepoModelContext.optional(),
+      verificationPlan: zVerificationPlan.optional(),
     })
     .optional(),
   retrievalHints: zRetrievalHints.optional(),
@@ -359,6 +478,12 @@ export const zLoopState = z.object({
   maxSteps: z.number().int().min(1).max(1000),
   maxMutations: z.number().int().min(0).max(1000),
   lastToolCallKey: z.string().max(1000).optional(),
+  closurePhase: z
+    .enum(["grounding", "implementation", "verification", "closeout", "final_summary", "complete", "blocked"])
+    .optional(),
+  closureBudgetRemaining: z.number().int().min(0).max(1000).optional(),
+  closureStallCount: z.number().int().min(0).max(1000).optional(),
+  blockingRequirementIds: z.array(z.string().min(1).max(240)).max(80).optional(),
   autonomyLane: z.string().min(1).max(120).optional(),
   failureCategory: z.string().min(1).max(120).optional(),
   repairDirective: z.string().max(20_000).optional(),
@@ -380,6 +505,12 @@ export const zLoopState = z.object({
     })
     .optional(),
   machineRoutineIds: z.array(z.string().min(1).max(240)).max(20).optional(),
+  chosenRoute: z.string().min(1).max(120).optional(),
+  routeReason: z.string().max(4000).optional(),
+  verificationStatus: z.string().min(1).max(120).optional(),
+  verificationReceipts: z.array(z.string().min(1).max(4000)).max(20).optional(),
+  repoContextVersion: z.number().int().min(0).max(10_000_000).optional(),
+  workerAssignments: z.array(zWorkerAssignment).max(12).optional(),
 });
 
 export const zPendingToolCall = z.object({
@@ -421,6 +552,12 @@ export const zProgressState = z.object({
     })
     .optional(),
   machineRoutineIds: z.array(z.string().min(1).max(240)).max(20).optional(),
+  chosenRoute: z.string().min(1).max(120).optional(),
+  routeReason: z.string().max(4000).optional(),
+  verificationStatus: z.string().min(1).max(120).optional(),
+  verificationReceipts: z.array(z.string().min(1).max(4000)).max(20).optional(),
+  repoContextVersion: z.number().int().min(0).max(10_000_000).optional(),
+  workerAssignments: z.array(zWorkerAssignment).max(12).optional(),
 });
 
 const zCompletionChecklistItem = z.object({
@@ -457,6 +594,12 @@ export const zObjectiveState = z.object({
   observedProof: z.array(z.string().min(1).max(240)).max(20),
   missingProof: z.array(z.string().min(1).max(240)).max(20),
   completionChecklist: z.array(zCompletionChecklistItem).max(40).optional(),
+  chosenRoute: z.string().min(1).max(120).optional(),
+  routeReason: z.string().max(4000).optional(),
+  verificationStatus: z.string().min(1).max(120).optional(),
+  verificationReceipts: z.array(z.string().min(1).max(4000)).max(20).optional(),
+  repoContextVersion: z.number().int().min(0).max(10_000_000).optional(),
+  workerAssignments: z.array(zWorkerAssignment).max(12).optional(),
 });
 
 export const zRunContinueRequest = z.object({
@@ -673,6 +816,10 @@ export type ForegroundDisruptionRisk = z.infer<typeof zForegroundDisruptionRisk>
 export type InteractionMode = z.infer<typeof zInteractionMode>;
 export type FocusPolicy = z.infer<typeof zFocusPolicy>;
 export type SessionPolicy = z.infer<typeof zSessionPolicy>;
+export type SpeedProfile = z.infer<typeof zSpeedProfile>;
+export type LatencyTier = z.infer<typeof zLatencyTier>;
+export type IntendedUse = z.infer<typeof zIntendedUse>;
+export type StartupPhase = z.infer<typeof zStartupPhase>;
 export type ToolCallContract = z.infer<typeof zToolCall>;
 export type ToolResultContract = z.infer<typeof zToolResult>;
 export type ToolTraceEntryContract = z.infer<typeof zToolTraceEntry>;
@@ -682,3 +829,13 @@ export type ProgressStateContract = z.infer<typeof zProgressState>;
 export type ObjectiveStateContract = z.infer<typeof zObjectiveState>;
 export type ExecuteRequestContract = z.infer<typeof zExecuteRequest>;
 export type DesktopSnapshotUploadRequestContract = z.infer<typeof zDesktopSnapshotUploadRequest>;
+
+
+
+
+
+
+
+
+
+

@@ -11,7 +11,7 @@ export type JsonRequestInput = {
     baseUrl: string;
     auth: AuthHeadersInput;
     path: string;
-    method?: "GET" | "POST" | "PUT" | "DELETE";
+    method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
     body?: unknown;
 };
 export declare function requestJson<T>(input: JsonRequestInput): Promise<T>;
@@ -24,7 +24,8 @@ export type StreamRequestInput = {
     baseUrl: string;
     auth: AuthHeadersInput;
     path: string;
-    body: unknown;
+    method?: "GET" | "POST";
+    body?: unknown;
     onEvent: (event: SseEvent) => void | Promise<void>;
 };
 export declare function requestSse(input: StreamRequestInput): Promise<void>;

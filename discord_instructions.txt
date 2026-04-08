@@ -1,0 +1,28 @@
+How to open Discord on Windows:
+
+Method 1: Start Menu
+1. Click the Windows Start button
+2. Type "Discord" in the search box
+3. Click on the Discord app when it appears
+
+Method 2: Desktop Shortcut
+1. Look for Discord icon on your desktop
+2. Double-click the Discord icon
+
+Method 3: Taskbar
+1. Check if Discord is pinned to your taskbar
+2. Click the Discord icon if visible
+
+Method 4: Windows Run
+1. Press Windows Key + R
+2. Type: %localappdata%\Discord\Update.exe --processStart Discord.exe
+3. Press Enter
+
+Method 5: File Explorer
+1. Open File Explorer
+2. Navigate to: C:\Users\[YourUsername]\AppData\Local\Discord
+3. Double-click Update.exe or look for Discord.exe in app-* folders
+
+If Discord is not installed:
+- Download from: https://discord.com/download
+- Run the installer and follow setup instructions

@@ -92,11 +92,19 @@ export async function streamHostedAssist(input, options = {}) {
             task: input.request.task,
             mode: toHostedMode(input.request.mode),
             model: input.request.model || "Binary IDE",
+            ...(input.request.chatModelSource ? { chatModelSource: input.request.chatModelSource } : {}),
+            ...(input.request.fallbackToPlatformModel !== undefined
+                ? { fallbackToPlatformModel: input.request.fallbackToPlatformModel }
+                : {}),
+            ...(input.request.execution ? { execution: input.request.execution } : {}),
+            ...(input.request.routePolicy ? { routePolicy: input.request.routePolicy } : {}),
             stream: true,
             historySessionId: input.request.historySessionId,
             ...(input.request.tom ? { tom: input.request.tom } : {}),
+            ...(input.request.mcp ? { mcp: input.request.mcp } : {}),
             ...(input.request.context ? { context: input.request.context } : {}),
             ...(input.request.clientCapabilities ? { clientCapabilities: input.request.clientCapabilities } : {}),
+            ...(input.request.userConnectedModels ? { userConnectedModels: input.request.userConnectedModels } : {}),
             contextBudget: {
                 strategy: "hybrid",
                 maxTokens: 16384,
@@ -180,4 +188,20 @@ export async function continueHostedRun(input, options = {}) {
     const parsed = (await response.json().catch(() => ({})));
     const envelope = ("data" in parsed ? parsed.data : parsed) || {};
     return envelope;
+}
+export async function runHostedAgentProbe(input, options = {}) {
+    const fetchImpl = options.fetchImpl || fetch;
+    const fetchTimeoutMs = options.fetchTimeoutMs ?? getHostedContinueFetchTimeoutMs();
+    const response = await fetchWithTimeout(fetchImpl, `${input.baseUrl}/api/v1/playground/debug/agent-probe`, {
+        method: "POST",
+        headers: buildHostedHeaders(input.apiKey),
+        body: JSON.stringify(input.request),
+    }, fetchTimeoutMs, `Timed out waiting for hosted agent probe after ${fetchTimeoutMs}ms.`);
+    if (!response.ok) {
+        const failure = await parseHostedError(response);
+        throw new Error(failure.message);
+    }
+    const parsed = (await response.json().catch(() => ({})));
+    const payload = ("data" in parsed ? parsed.data : parsed) || {};
+    return payload;
 }

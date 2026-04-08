@@ -1,1 +1,1 @@
-hello. host
+Hello from Binary CLI! Agent is reachable.

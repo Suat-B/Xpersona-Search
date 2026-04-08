@@ -4,8 +4,7 @@ import type {
   ToolCallContract,
   ToolResultContract,
 } from "@/lib/playground/contracts";
-import type { PlaygroundResolvedModelSelection } from "@/lib/playground/model-registry";
-import { resolvePlaygroundModelToken } from "@/lib/playground/model-registry";
+import { resolvePlaygroundModelSelection, resolvePlaygroundModelToken, type PlaygroundResolvedModelSelection } from "@/lib/playground/model-registry";
 import type {
   AssistContextSelection,
   AssistConversationTurn,
@@ -29,6 +28,9 @@ type OpenHandsGatewayRunRequest = {
     sessionId?: string;
     traceId?: string;
   };
+  mcp?: {
+    mcpServers: Record<string, Record<string, unknown>>;
+  };
   targetInference: AssistTargetInference;
   contextSelection: AssistContextSelection;
   fallbackPlan: AssistPlan;
@@ -46,6 +48,11 @@ type OpenHandsGatewayRunRequest = {
     reason: string;
   } | null;
   modelSelection: PlaygroundResolvedModelSelection;
+  probe?: {
+    enabled: boolean;
+    sessionId?: string;
+    workspaceRoot?: string;
+  } | null;
 };
 
 export type OpenHandsGatewayTurn = {
@@ -53,15 +60,45 @@ export type OpenHandsGatewayTurn = {
   adapter: PlaygroundAdapter;
   final: string;
   logs: string[];
+  executionLane?: "local_interactive" | "openhands_headless" | "openhands_remote";
+  pluginPacks?: Array<Record<string, unknown>>;
+  skillSources?: Array<Record<string, unknown>>;
+  traceId?: string | null;
   toolCall?: ToolCallContract;
   version?: string | null;
+  modelCandidate?: {
+    alias?: string;
+    model?: string;
+    provider?: string;
+    baseUrl?: string;
+  } | null;
+  fallbackAttempt?: number;
+  failureReason?: string | null;
+  persistenceDir?: string | null;
+  conversationId?: string | null;
+  jsonlPath?: string | null;
+  fallbackTrail?: Array<Record<string, unknown>>;
 };
 
 export type OpenHandsGatewayHealth =
   | {
-      status: "healthy";
+      status: "healthy" | "degraded";
       message: string;
       gatewayUrl: string;
+      runtimeKind?: "docker" | "local-python" | "remote" | "reduced-local" | "unknown";
+      runtimeProfile?: "full" | "code-only" | "chat-only" | "unavailable";
+      supportedTools?: string[];
+      degradedReasons?: string[];
+      availableActions?: string[];
+      version?: string | null;
+      packageFamily?: "openhands" | "openhands-sdk" | "unknown";
+      packageVersion?: string | null;
+      pythonVersion?: string | null;
+      currentModelCandidate?: Record<string, unknown> | null;
+      lastProviderFailureReason?: string | null;
+      fallbackAvailable?: boolean;
+      lastFallbackRecovered?: boolean;
+      lastPersistenceDir?: string | null;
     }
   | {
       status: "missing_config" | "unauthorized" | "unreachable";
@@ -85,6 +122,12 @@ export class OpenHandsGatewayError extends Error {
     this.name = "OpenHandsGatewayError";
   }
 }
+
+export type OpenHandsGatewayEvent = Record<string, unknown>;
+
+type OpenHandsGatewayRequestOptions = {
+  onEvent?: (event: OpenHandsGatewayEvent) => Promise<void> | void;
+};
 
 /** Node/undici often throws `TypeError: fetch failed` with syscall detail on `cause`. */
 function extractFetchFailureDetail(error: unknown): string {
@@ -320,11 +363,17 @@ function gatewayPostInit(): { signal: AbortSignal | undefined } {
 
 function buildGatewayPayload(input: OpenHandsGatewayRunRequest): Record<string, unknown> {
   const token = resolvePlaygroundModelToken(input.modelSelection.resolvedEntry);
+  const routePolicy = input.request.routePolicy && typeof input.request.routePolicy === "object"
+    ? input.request.routePolicy
+    : undefined;
   return {
     protocol: "xpersona_openhands_gateway_v1",
     request: {
       mode: input.request.mode,
       task: input.request.task,
+      speedProfile: input.request.speedProfile,
+      startupPhase: input.request.startupPhase,
+      ...(routePolicy ? { routePolicy } : {}),
       conversationHistory: (input.request.conversationHistory || []).map((turn: AssistConversationTurn) => ({
         role: turn.role,
         content: turn.content,
@@ -341,11 +390,13 @@ function buildGatewayPayload(input: OpenHandsGatewayRunRequest): Record<string, 
           traceId: input.tom.traceId || null,
         }
       : null,
+    mcp: input.mcp || null,
     targetInference: input.targetInference,
     contextSelection: input.contextSelection,
     fallbackPlan: input.fallbackPlan,
     toolTrace: input.toolTrace,
     loopSummary: input.loopSummary,
+    ...(routePolicy ? { routePolicy } : {}),
     availableTools: input.availableTools,
     latestToolResult: input.latestToolResult || null,
     repairDirective: input.repairDirective || null,
@@ -353,82 +404,93 @@ function buildGatewayPayload(input: OpenHandsGatewayRunRequest): Record<string, 
       alias: input.modelSelection.resolvedAlias,
       requested: input.modelSelection.requested,
       model: input.modelSelection.resolvedEntry.model,
+      openhandsModel:
+        input.modelSelection.resolvedEntry.openhands.providerModel || input.modelSelection.resolvedEntry.model,
+      openhandsCompatible: input.modelSelection.resolvedEntry.openhands.compatible,
+      openhandsFallbackAliases: [...input.modelSelection.resolvedEntry.openhands.fallbackAliases],
       provider: input.modelSelection.resolvedEntry.provider,
       baseUrl: input.modelSelection.resolvedEntry.baseUrl,
       authSource: input.modelSelection.resolvedEntry.authSource,
       apiKey: token,
+      ...(input.modelSelection.resolvedEntry.routeKind ? { routeKind: input.modelSelection.resolvedEntry.routeKind } : {}),
+      ...(input.modelSelection.resolvedEntry.routeLabel ? { routeLabel: input.modelSelection.resolvedEntry.routeLabel } : {}),
+      ...(input.modelSelection.resolvedEntry.routeReason ? { routeReason: input.modelSelection.resolvedEntry.routeReason } : {}),
+      ...(Array.isArray(input.modelSelection.resolvedEntry.modelFamilies)
+        ? { modelFamilies: input.modelSelection.resolvedEntry.modelFamilies }
+        : {}),
+      ...(input.modelSelection.resolvedEntry.extraHeaders
+        ? { extraHeaders: input.modelSelection.resolvedEntry.extraHeaders }
+        : {}),
       capabilities: input.modelSelection.resolvedEntry.capabilities,
+      candidates: [input.modelSelection.resolvedEntry, ...input.modelSelection.fallbackChain].map((entry) => ({
+        alias: entry.alias,
+        requested: input.modelSelection.requested,
+        model: entry.model,
+        openhandsModel: entry.openhands.providerModel || entry.model,
+        provider: entry.provider,
+        baseUrl: entry.baseUrl,
+        authSource: entry.authSource,
+        apiKey: resolvePlaygroundModelToken(entry),
+        ...(entry.routeKind ? { routeKind: entry.routeKind } : {}),
+        ...(entry.routeLabel ? { routeLabel: entry.routeLabel } : {}),
+        ...(entry.routeReason ? { routeReason: entry.routeReason } : {}),
+        ...(Array.isArray(entry.modelFamilies) ? { modelFamilies: entry.modelFamilies } : {}),
+        ...(entry.extraHeaders ? { extraHeaders: entry.extraHeaders } : {}),
+        capabilities: entry.capabilities,
+      })),
     },
+    probe: input.probe || null,
   };
 }
 
-async function requestGatewayTurn(
-  url: string,
-  body: Record<string, unknown>,
-  availableTools: PlaygroundToolName[]
-): Promise<OpenHandsGatewayTurn> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  const apiKey = getOpenHandsGatewayApiKey();
-  if (apiKey) {
-    headers.Authorization = `Bearer ${apiKey}`;
-  }
+function isModelCompatibilityFailure(error: unknown): boolean {
+  if (!(error instanceof OpenHandsGatewayError)) return false;
+  const detail = `${error.message} ${error.details || ""}`.toLowerCase();
+  return (
+    detail.includes("model_provider_mismatch") ||
+    detail.includes("provider not provided") ||
+    detail.includes("does not exist") ||
+    detail.includes("notfounderror") ||
+    detail.includes("badrequesterror")
+  );
+}
 
-  const { signal } = gatewayPostInit();
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      ...(signal ? { signal } : {}),
-    });
-  } catch (error) {
+async function parseGatewayErrorResponse(response: Response): Promise<never> {
+  const raw = await response.text().catch(() => "");
+  let detail = raw || response.statusText || "request failed";
+  if (response.status === 401 || response.status === 403) {
     throw new OpenHandsGatewayError(
-      describeGatewayFetchFailure(url, error),
-      "OPENHANDS_GATEWAY_UNREACHABLE",
-      503,
-      extractFetchFailureDetail(error)
-    );
-  }
-
-  if (!response.ok) {
-    const raw = await response.text().catch(() => "");
-    let detail = raw || response.statusText || "request failed";
-    if (response.status === 401 || response.status === 403) {
-      throw new OpenHandsGatewayError(
-        "OpenHands is configured but rejected the gateway request. Check OPENHANDS_GATEWAY_API_KEY and gateway auth.",
-        "OPENHANDS_GATEWAY_UNAUTHORIZED",
-        response.status,
-        detail
-      );
-    }
-    if (response.status === 502) {
-      try {
-        const parsed = JSON.parse(raw) as { error?: string; details?: string };
-        if (typeof parsed?.error === "string" && parsed.error.trim()) {
-          detail = parsed.details?.trim() ? `${parsed.error.trim()}: ${parsed.details.trim()}` : parsed.error.trim();
-        }
-      } catch {
-        /* keep raw */
-      }
-      throw new OpenHandsGatewayError(
-        `OpenHands gateway reported a turn error: ${detail}`,
-        "OPENHANDS_GATEWAY_INVALID_RESPONSE",
-        502,
-        raw
-      );
-    }
-    throw new OpenHandsGatewayError(
-      "OpenHands is unavailable right now. Verify the gateway URL and make sure the OpenHands service is running.",
-      "OPENHANDS_GATEWAY_UNREACHABLE",
-      503,
+      "OpenHands is configured but rejected the gateway request. Check OPENHANDS_GATEWAY_API_KEY and gateway auth.",
+      "OPENHANDS_GATEWAY_UNAUTHORIZED",
+      response.status,
       detail
     );
   }
+  if (response.status === 502) {
+    try {
+      const parsed = JSON.parse(raw) as { error?: string; details?: string };
+      if (typeof parsed?.error === "string" && parsed.error.trim()) {
+        detail = parsed.details?.trim() ? `${parsed.error.trim()}: ${parsed.details.trim()}` : parsed.error.trim();
+      }
+    } catch {
+      /* keep raw */
+    }
+    throw new OpenHandsGatewayError(
+      `OpenHands gateway reported a turn error: ${detail}`,
+      "OPENHANDS_GATEWAY_INVALID_RESPONSE",
+      502,
+      raw
+    );
+  }
+  throw new OpenHandsGatewayError(
+    "OpenHands is unavailable right now. Verify the gateway URL and make sure the OpenHands service is running.",
+    "OPENHANDS_GATEWAY_UNREACHABLE",
+    503,
+    detail
+  );
+}
 
-  const parsed = (await response.json()) as Record<string, unknown>;
+function parseGatewayTurnPayload(parsed: Record<string, unknown>, availableTools: PlaygroundToolName[]): OpenHandsGatewayTurn {
   const runId = compactWhitespace(String(parsed.runId || parsed.id || ""));
   if (!runId) {
     throw new OpenHandsGatewayError(
@@ -465,14 +527,194 @@ async function requestGatewayTurn(
     toolCall: toolCall || undefined,
     logs,
     version: typeof parsed.version === "string" ? parsed.version.trim() : null,
+    modelCandidate:
+      parsed.modelCandidate && typeof parsed.modelCandidate === "object"
+        ? (parsed.modelCandidate as OpenHandsGatewayTurn["modelCandidate"])
+        : null,
+    fallbackAttempt: typeof parsed.fallbackAttempt === "number" ? parsed.fallbackAttempt : 0,
+    failureReason: typeof parsed.failureReason === "string" ? parsed.failureReason : null,
+    persistenceDir: typeof parsed.persistenceDir === "string" ? parsed.persistenceDir : null,
+    conversationId: typeof parsed.conversationId === "string" ? parsed.conversationId : null,
+    fallbackTrail: Array.isArray(parsed.fallbackTrail)
+      ? parsed.fallbackTrail.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+      : [],
   };
+}
+
+async function parseGatewaySseTurn(
+  response: Response,
+  availableTools: PlaygroundToolName[],
+  options?: OpenHandsGatewayRequestOptions
+): Promise<OpenHandsGatewayTurn> {
+  if (!response.body) {
+    throw new OpenHandsGatewayError(
+      "OpenHands gateway streaming response had no body.",
+      "OPENHANDS_GATEWAY_INVALID_RESPONSE",
+      502
+    );
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalPayload: Record<string, unknown> | null = null;
+  let gatewayError: Record<string, unknown> | null = null;
+  let runEnvelope: Record<string, unknown> | null = null;
+
+  const processFrame = async (rawFrame: string): Promise<void> => {
+    const raw = rawFrame.trim();
+    if (!raw) return;
+
+    let payload = "";
+    for (const line of raw.split(/\r?\n/)) {
+      if (line.startsWith("data:")) payload += line.slice(5).trimStart();
+    }
+    if (!payload || payload === "[DONE]") return;
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(payload) as Record<string, unknown>;
+    } catch {
+      parsed = { event: "raw", data: payload };
+    }
+
+    if (options?.onEvent) {
+      try {
+        await options.onEvent(parsed);
+      } catch {
+        // Observer callback failures should never break orchestration.
+      }
+    }
+
+    const eventName = typeof parsed.event === "string" ? parsed.event : "";
+    if (eventName === "run" && parsed.data && typeof parsed.data === "object") {
+      runEnvelope = parsed.data as Record<string, unknown>;
+    } else if (eventName === "gateway.result" && parsed.data && typeof parsed.data === "object") {
+      finalPayload = parsed.data as Record<string, unknown>;
+    } else if (eventName === "gateway.error" && parsed.data && typeof parsed.data === "object") {
+      gatewayError = parsed.data as Record<string, unknown>;
+    }
+  };
+
+  const consumeFramedEvents = async (): Promise<void> => {
+    while (true) {
+      const lfBoundary = buffer.indexOf("\n\n");
+      const crlfBoundary = buffer.indexOf("\r\n\r\n");
+      const useLf = lfBoundary >= 0 && (crlfBoundary < 0 || lfBoundary < crlfBoundary);
+      const boundary = useLf ? lfBoundary : crlfBoundary;
+      if (boundary < 0) break;
+
+      const separatorLength = useLf ? 2 : 4;
+      const raw = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + separatorLength);
+      await processFrame(raw);
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    await consumeFramedEvents();
+  }
+  buffer += decoder.decode();
+  await consumeFramedEvents();
+  if (buffer.trim()) {
+    await processFrame(buffer);
+    buffer = "";
+  }
+
+  const gatewayErrorRecord = gatewayError as Record<string, unknown> | null;
+  if (gatewayErrorRecord) {
+    const errorMessage =
+      typeof gatewayErrorRecord.error === "string" && gatewayErrorRecord.error.trim()
+        ? gatewayErrorRecord.error
+        : "OpenHands gateway reported a streaming turn error.";
+    const details =
+      typeof gatewayErrorRecord.details === "string" && gatewayErrorRecord.details.trim()
+        ? gatewayErrorRecord.details
+        : undefined;
+    throw new OpenHandsGatewayError(
+      details ? `${errorMessage}: ${details}` : errorMessage,
+      "OPENHANDS_GATEWAY_INVALID_RESPONSE",
+      502,
+      details
+    );
+  }
+
+  const parsedFinalPayload = finalPayload as Record<string, unknown> | null;
+  const parsedRunEnvelope = runEnvelope as Record<string, unknown> | null;
+  if (!parsedFinalPayload) {
+    throw new OpenHandsGatewayError(
+      "OpenHands streaming response completed without a final gateway result payload.",
+      "OPENHANDS_GATEWAY_INVALID_RESPONSE",
+      502
+    );
+  }
+
+  if (!parsedFinalPayload.runId && parsedRunEnvelope?.runId) {
+    parsedFinalPayload.runId = parsedRunEnvelope.runId;
+  }
+  if (!parsedFinalPayload.adapter && parsedRunEnvelope?.adapter) {
+    parsedFinalPayload.adapter = parsedRunEnvelope.adapter;
+  }
+
+  return parseGatewayTurnPayload(parsedFinalPayload, availableTools);
+}
+
+async function requestGatewayTurn(
+  url: string,
+  body: Record<string, unknown>,
+  availableTools: PlaygroundToolName[],
+  options?: OpenHandsGatewayRequestOptions
+): Promise<OpenHandsGatewayTurn> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options?.onEvent ? { Accept: "text/event-stream" } : {}),
+  };
+  const apiKey = getOpenHandsGatewayApiKey();
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  const { signal } = gatewayPostInit();
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      ...(signal ? { signal } : {}),
+    });
+  } catch (error) {
+    throw new OpenHandsGatewayError(
+      describeGatewayFetchFailure(url, error),
+      "OPENHANDS_GATEWAY_UNREACHABLE",
+      503,
+      extractFetchFailureDetail(error)
+    );
+  }
+
+  if (!response.ok) {
+    return await parseGatewayErrorResponse(response);
+  }
+
+  const contentType = String(response?.headers?.get("content-type") || "").toLowerCase();
+  if (options?.onEvent && contentType.includes("text/event-stream")) {
+    return await parseGatewaySseTurn(response, availableTools, options);
+  }
+
+  const parsed = (await response.json()) as Record<string, unknown>;
+  return parseGatewayTurnPayload(parsed, availableTools);
 }
 
 export function isOpenHandsGatewayEnabled(): boolean {
   return Boolean(getOpenHandsGatewayUrl());
 }
 
-export async function startOpenHandsGatewayRun(input: OpenHandsGatewayRunRequest): Promise<OpenHandsGatewayTurn> {
+export async function startOpenHandsGatewayRun(
+  input: OpenHandsGatewayRunRequest,
+  options?: OpenHandsGatewayRequestOptions
+): Promise<OpenHandsGatewayTurn> {
   const baseUrl = getOpenHandsGatewayUrl();
   if (!baseUrl) {
     throw new OpenHandsGatewayError(
@@ -481,12 +723,13 @@ export async function startOpenHandsGatewayRun(input: OpenHandsGatewayRunRequest
       503
     );
   }
-  return requestGatewayTurn(`${baseUrl}/v1/runs/start`, buildGatewayPayload(input), input.availableTools);
+  return requestGatewayTurn(`${baseUrl}/v1/runs/start`, buildGatewayPayload(input), input.availableTools, options);
 }
 
 export async function continueOpenHandsGatewayRun(input: {
   runId: string;
   payload: OpenHandsGatewayRunRequest;
+  onEvent?: (event: OpenHandsGatewayEvent) => Promise<void> | void;
 }): Promise<OpenHandsGatewayTurn> {
   const baseUrl = getOpenHandsGatewayUrl();
   if (!baseUrl) {
@@ -499,8 +742,75 @@ export async function continueOpenHandsGatewayRun(input: {
   return requestGatewayTurn(
     `${baseUrl}/v1/runs/${encodeURIComponent(input.runId)}/continue`,
     buildGatewayPayload(input.payload),
-    input.payload.availableTools
+    input.payload.availableTools,
+    input.onEvent ? { onEvent: input.onEvent } : undefined
   );
+}
+
+export async function runOpenHandsGatewayProbeTurn(input: {
+  message: string;
+  requestedModel?: string;
+  gatewayRunId?: string | null;
+  conversationHistory?: AssistConversationTurn[];
+  context?: Record<string, unknown> | null;
+  workspaceRoot?: string;
+  tom?: {
+    enabled: boolean;
+    userKey?: string;
+    sessionId?: string;
+    traceId?: string;
+  };
+}): Promise<OpenHandsGatewayTurn> {
+  const selection = resolvePlaygroundModelSelection({ requested: input.requestedModel });
+  const payload: OpenHandsGatewayRunRequest = {
+    request: {
+      mode: "auto",
+      task: input.message,
+      interactionKind: "repo_code",
+      conversationHistory: input.conversationHistory || [],
+      context: input.context || undefined,
+      model: selection.requested,
+    },
+    tom: input.tom,
+    mcp: undefined,
+    targetInference: {
+      confidence: 0,
+      source: "unknown",
+    },
+    contextSelection: {
+      files: [],
+      snippets: 0,
+      usedCloudIndex: false,
+    },
+    fallbackPlan: {
+      objective: input.message,
+      files: [],
+      steps: [],
+      acceptanceTests: [],
+      risks: [],
+    },
+    toolTrace: [],
+    loopSummary: {
+      stepCount: 0,
+      mutationCount: 0,
+      repairCount: 0,
+    },
+    availableTools: [],
+    latestToolResult: null,
+    repairDirective: null,
+    modelSelection: selection,
+    probe: {
+      enabled: true,
+      workspaceRoot: input.workspaceRoot,
+    },
+  };
+  if (input.gatewayRunId) {
+    return continueOpenHandsGatewayRun({
+      runId: input.gatewayRunId,
+      payload,
+    });
+  }
+  return startOpenHandsGatewayRun(payload);
 }
 
 export async function getOpenHandsGatewayHealth(): Promise<OpenHandsGatewayHealth> {
@@ -521,15 +831,67 @@ export async function getOpenHandsGatewayHealth(): Promise<OpenHandsGatewayHealt
       method: "GET",
       headers,
     });
+    const raw = await response.text().catch(() => "");
+    let parsed: Record<string, unknown> = {};
+    try {
+      parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    } catch {
+      parsed = {};
+    }
     if (response.ok) {
+      const doctor =
+        parsed.doctor && typeof parsed.doctor === "object" ? (parsed.doctor as Record<string, unknown>) : {};
       return {
-        status: "healthy",
-        message: "OpenHands is connected.",
+        status: parsed.status === "degraded" ? "degraded" : "healthy",
+        message:
+          typeof parsed.message === "string" && parsed.message.trim()
+            ? parsed.message
+            : parsed.status === "degraded"
+              ? "OpenHands is connected with limited capabilities."
+              : "OpenHands is connected.",
         gatewayUrl: baseUrl,
+        runtimeKind:
+          doctor.runtimeKind === "docker" ||
+          doctor.runtimeKind === "local-python" ||
+          doctor.runtimeKind === "remote" ||
+          doctor.runtimeKind === "reduced-local" ||
+          doctor.runtimeKind === "unknown"
+            ? doctor.runtimeKind
+            : undefined,
+        runtimeProfile:
+          doctor.runtimeProfile === "full" ||
+          doctor.runtimeProfile === "code-only" ||
+          doctor.runtimeProfile === "chat-only" ||
+          doctor.runtimeProfile === "unavailable"
+            ? doctor.runtimeProfile
+            : undefined,
+        supportedTools: Array.isArray(doctor.supportedTools)
+          ? doctor.supportedTools.filter((item): item is string => typeof item === "string")
+          : [],
+        degradedReasons: Array.isArray(doctor.degradedReasons)
+          ? doctor.degradedReasons.filter((item): item is string => typeof item === "string")
+          : [],
+        availableActions: Array.isArray(doctor.availableActions)
+          ? doctor.availableActions.filter((item): item is string => typeof item === "string")
+          : [],
+        version: typeof parsed.version === "string" ? parsed.version : null,
+        packageFamily:
+          doctor.packageFamily === "openhands" || doctor.packageFamily === "openhands-sdk"
+            ? doctor.packageFamily
+            : "unknown",
+        packageVersion: typeof doctor.packageVersion === "string" ? doctor.packageVersion : null,
+        pythonVersion: typeof doctor.pythonVersion === "string" ? doctor.pythonVersion : null,
+        currentModelCandidate:
+          doctor.currentModelCandidate && typeof doctor.currentModelCandidate === "object"
+            ? (doctor.currentModelCandidate as Record<string, unknown>)
+            : null,
+        lastProviderFailureReason:
+          typeof doctor.lastProviderFailureReason === "string" ? doctor.lastProviderFailureReason : null,
+        fallbackAvailable: doctor.fallbackAvailable === true,
+        lastFallbackRecovered: doctor.lastFallbackRecovered === true,
+        lastPersistenceDir: typeof doctor.lastPersistenceDir === "string" ? doctor.lastPersistenceDir : null,
       };
     }
-
-    const raw = await response.text().catch(() => "");
     if (response.status === 401 || response.status === 403) {
       return {
         status: "unauthorized",

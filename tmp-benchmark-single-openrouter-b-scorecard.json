@@ -1,0 +1,47 @@
+{
+  "thresholds": {
+    "codingCompletionRate": 0.8,
+    "validationSuccessRate": 0.8,
+    "gitCloseoutSuccessRate": 1,
+    "maxAvoidableTakeoverRate": 0.2
+  },
+  "metrics": {
+    "codingCompletionRate": 0,
+    "validationSuccessRate": 0,
+    "repairSuccessRate": 0,
+    "gitCloseoutSuccessRate": 0,
+    "endToEndCompletionRate": 0,
+    "closureCompletionRate": 0,
+    "meanStepsToClosure": 0,
+    "meanRepairsToClosure": 0,
+    "avoidableTakeoverRate": 0
+  },
+  "codingLaneCoverage": {
+    "repo_scaffold": {
+      "total": 0,
+      "completed": 0
+    },
+    "single_file_edit": {
+      "total": 1,
+      "completed": 0
+    },
+    "multi_file_feature_delivery": {
+      "total": 0,
+      "completed": 0
+    },
+    "validation_repair": {
+      "total": 0,
+      "completed": 0
+    },
+    "git_closeout": {
+      "total": 0,
+      "completed": 0
+    }
+  },
+  "passing": false,
+  "failingReasons": [
+    "coding completion 0.00 < 0.80",
+    "validation success 0.00 < 0.80",
+    "git closeout 0.00 < 1.00"
+  ]
+}

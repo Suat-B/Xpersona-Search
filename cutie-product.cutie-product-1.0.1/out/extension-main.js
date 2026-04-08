@@ -37,6 +37,8 @@ exports.createCutieProductServices = createCutieProductServices;
 exports.activateCutieProduct = activateCutieProduct;
 const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
+const fs_1 = require("fs");
+const crypto_1 = require("crypto");
 const auth_1 = require("./auth");
 const cutie_binary_controller_1 = require("./cutie-binary-controller");
 const cutie_autonomy_controller_1 = require("./cutie-autonomy-controller");
@@ -60,6 +62,8 @@ const cutie_policy_1 = require("./cutie-policy");
 const binary_portable_context_1 = require("./binary-portable-context");
 const selection_prefill_1 = require("./selection-prefill");
 const cutie_playground_chat_bridge_1 = require("./cutie-playground-chat-bridge");
+const cutie_cli_parity_client_1 = require("./cutie-cli-parity-client");
+const cutie_cli_parity_1 = require("./cutie-cli-parity");
 function goalLabel(goal) {
     switch (goal) {
         case "code_change":
@@ -208,6 +212,101 @@ function escapeWebviewFailureHtml(value) {
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
+}
+function asObjectRecord(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+function asUnknownArray(value) {
+    return Array.isArray(value) ? value : [];
+}
+function unwrapData(value) {
+    const root = asObjectRecord(value);
+    return ("data" in root ? root.data : value);
+}
+function readString(value, fallback = "") {
+    return typeof value === "string" ? value : fallback;
+}
+function readNumber(value, fallback = 0) {
+    return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+function prettyJson(value) {
+    return JSON.stringify(value, null, 2);
+}
+function formatMaybeList(label, values, fallback = "none") {
+    const items = asUnknownArray(values)
+        .map((item) => readString(item).trim())
+        .filter(Boolean);
+    return `${label}: ${items.length ? items.join(", ") : fallback}`;
+}
+function detectBinaryKind(buffer) {
+    if (buffer.length >= 2 && buffer[0] === 0x4d && buffer[1] === 0x5a)
+        return "PE / Windows executable";
+    if (buffer.length >= 4 && buffer[0] === 0x7f && buffer[1] === 0x45 && buffer[2] === 0x4c && buffer[3] === 0x46)
+        return "ELF";
+    if (buffer.length >= 4 && buffer[0] === 0xcf && buffer[1] === 0xfa && buffer[2] === 0xed && buffer[3] === 0xfe)
+        return "Mach-O 64-bit";
+    if (buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04)
+        return "ZIP archive";
+    if (buffer.length >= 8 && buffer.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])))
+        return "PNG image";
+    return "Unknown binary";
+}
+function formatHexdump(bytes, offset = 0) {
+    const lines = [];
+    for (let lineOffset = 0; lineOffset < bytes.length; lineOffset += 16) {
+        const slice = bytes.slice(lineOffset, lineOffset + 16);
+        const hex = Array.from(slice.values())
+            .map((value) => value.toString(16).padStart(2, "0"))
+            .join(" ")
+            .padEnd(16 * 3 - 1, " ");
+        const ascii = Array.from(slice.values())
+            .map((value) => (value >= 32 && value <= 126 ? String.fromCharCode(value) : "."))
+            .join("");
+        lines.push(`${(offset + lineOffset).toString(16).padStart(8, "0")}  ${hex}  ${ascii}`);
+    }
+    return lines.join("\n");
+}
+async function collectIndexableFiles(rootPath, limit = 120) {
+    const out = [];
+    const ignored = new Set([".git", "node_modules", ".next", "dist", "out", "coverage", "build"]);
+    async function walk(currentPath) {
+        if (out.length >= limit)
+            return;
+        const entries = await fs_1.promises.readdir(currentPath, { withFileTypes: true });
+        for (const entry of entries) {
+            if (out.length >= limit)
+                return;
+            if (ignored.has(entry.name))
+                continue;
+            const fullPath = path.join(currentPath, entry.name);
+            if (entry.isDirectory()) {
+                await walk(fullPath);
+                continue;
+            }
+            out.push(fullPath);
+        }
+    }
+    await walk(rootPath);
+    return out;
+}
+function chunkTextForIndex(relativePath, content, chunkSize = 3000) {
+    const chunks = [];
+    for (let index = 0; index < content.length; index += chunkSize) {
+        const chunk = content.slice(index, index + chunkSize);
+        const pathHash = (0, crypto_1.createHash)("sha256").update(relativePath).digest("hex");
+        const chunkHash = (0, crypto_1.createHash)("sha256").update(`${relativePath}:${index}:${chunk}`).digest("hex");
+        chunks.push({
+            pathHash,
+            chunkHash,
+            pathDisplay: relativePath,
+            content: chunk,
+            metadata: {
+                relativePath,
+                startOffset: index,
+            },
+        });
+    }
+    return chunks;
 }
 function buildWebviewFailureHtml(message) {
     const safeMessage = escapeWebviewFailureHtml(message || "Unknown Cutie webview error.");
@@ -422,6 +521,7 @@ class CutieSidebarProvider {
         this.workspaceAdapter = new cutie_workspace_adapter_1.CutieWorkspaceAdapter();
         this.modelClient = new cutie_model_client_1.CutieModelClient();
         this.modelAdapter = new cutie_model_adapter_1.CutieModelAdapter(this.modelClient);
+        this.parityClient = new cutie_cli_parity_client_1.CutieCliParityClient();
         this.sessionStore = new cutie_session_store_1.CutieSessionStore(context);
         this.playgroundChatBridge = new cutie_playground_chat_bridge_1.CutiePlaygroundChatBridge(context, auth);
         this.toolRegistry = new cutie_tool_registry_1.CutieToolRegistry(new cutie_workspace_adapter_1.CutieWorkspaceAdapter(), this.desktop);
@@ -1625,6 +1725,69 @@ class CutieSidebarProvider {
         }
         return next;
     }
+    async runBinaryHostAssistTurn(input) {
+        let assistantText = "";
+        let runId;
+        let sessionId;
+        let statusNarration = "";
+        const workspaceRoot = (0, config_1.getWorkspaceRootPath)() || undefined;
+        await this.parityClient.assistStream({
+            task: input.task,
+            mode: "auto",
+            model: (0, config_1.getModelHint)() || "Binary IDE",
+            ...(workspaceRoot ? { workspaceRoot } : {}),
+            ...(input.historySessionId ? { historySessionId: input.historySessionId } : {}),
+            client: {
+                surface: "vsix",
+                version: (0, config_1.getExtensionVersion)(this.context),
+            },
+        }, async (event) => {
+            if (input.signal.aborted)
+                return;
+            const eventName = String(event?.event || "");
+            const data = Object.prototype.hasOwnProperty.call(event || {}, "data") ? event.data : undefined;
+            if (eventName === "run" && data && typeof data === "object") {
+                if (typeof data.runId === "string")
+                    runId = String(data.runId || "");
+                if (typeof data.sessionId === "string") {
+                    sessionId = String(data.sessionId || "");
+                }
+                return;
+            }
+            if ((eventName === "partial" || eventName === "final") && typeof data === "string") {
+                assistantText = data;
+                input.onProgress?.(assistantText);
+                return;
+            }
+            if (eventName === "host.status" && data && typeof data === "object") {
+                const message = String(data.message || "").trim();
+                if (message) {
+                    statusNarration = message;
+                    input.onProgress?.(statusNarration);
+                }
+                if (typeof data.runId === "string")
+                    runId = String(data.runId || "");
+                return;
+            }
+            if (eventName === "tool_request" && data && typeof data === "object") {
+                const toolCall = data.toolCall;
+                const toolName = String(toolCall?.name || "tool").replace(/_/g, " ");
+                const summary = String(toolCall?.summary || "").trim();
+                input.onProgress?.(summary || `Binary is using ${toolName}.`);
+                return;
+            }
+            if (eventName === "tool_result" && data && typeof data === "object") {
+                const summary = String(data.summary || "").trim();
+                if (summary)
+                    input.onProgress?.(summary);
+            }
+        }, input.signal);
+        return {
+            assistantText: assistantText || statusNarration || "Binary completed the request.",
+            ...(runId ? { runId } : {}),
+            ...(sessionId ? { sessionId } : {}),
+        };
+    }
     clearWebviewReadyTimeout() {
         if (this.webviewReadyTimeout) {
             clearTimeout(this.webviewReadyTimeout);
@@ -1797,6 +1960,496 @@ class CutieSidebarProvider {
             .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
             .map((m) => ({ role: m.role, content: m.content }));
     }
+    async appendChatMessage(session, role, content) {
+        const next = await this.sessionStore.appendMessage(session, { role, content });
+        if (this.activeSessionId === next.id) {
+            this.activeSession = next;
+        }
+        return next;
+    }
+    formatRecentEvents(value) {
+        const root = asObjectRecord(unwrapData(value));
+        const events = asUnknownArray(root.events)
+            .slice(-12)
+            .map((item) => {
+            const row = asObjectRecord(item);
+            const event = asObjectRecord(row.event);
+            const eventName = readString(event.event || row.type || event.type, "event");
+            const capturedAt = readString(row.capturedAt || row.timestamp, "");
+            const data = asObjectRecord(event.data);
+            const summary = readString(data.summary) ||
+                readString(data.message) ||
+                readString(data.status) ||
+                readString(data.phase);
+            return `- ${eventName}${capturedAt ? ` @ ${capturedAt}` : ""}${summary ? `: ${summary}` : ""}`;
+        });
+        return events.length ? events.join("\n") : "No events yet.";
+    }
+    formatHostedSessionMessages(value) {
+        const rows = asUnknownArray(unwrapData(value));
+        if (!rows.length)
+            return "No hosted session messages were returned.";
+        return rows
+            .slice(-12)
+            .map((item) => {
+            const row = asObjectRecord(item);
+            const role = readString(row.role, "message");
+            const content = readString(row.content).trim().replace(/\s+/g, " ");
+            return `- ${role}: ${content.slice(0, 220) || "(empty)"}`;
+        })
+            .join("\n");
+    }
+    formatConnections(value) {
+        const root = asObjectRecord(unwrapData(value));
+        const rows = asUnknownArray(root.connections);
+        if (!rows.length)
+            return "No Cutie connections are configured yet.";
+        return rows
+            .map((item) => {
+            const row = asObjectRecord(item);
+            return `- ${readString(row.name, readString(row.id, "connection"))} (${readString(row.status, "unknown")})\n  ${readString(row.transport, "http")} ${readString(row.url)}\n  auth ${readString(row.authMode, "none")}${row.enabled === false ? " • disabled" : ""}`;
+        })
+            .join("\n");
+    }
+    formatProviders(value) {
+        const root = asObjectRecord(unwrapData(value));
+        const rows = asUnknownArray(root.providers);
+        if (!rows.length)
+            return "No provider profiles are available in this Binary Host build.";
+        return rows
+            .map((item) => {
+            const row = asObjectRecord(item);
+            const status = readString(row.status, row.connected ? "connected" : "disconnected");
+            const bits = [
+                row.isDefault ? "default" : "",
+                row.connected ? "connected" : "not connected",
+                readString(row.runtimeReadinessReason),
+            ].filter(Boolean);
+            return `- ${readString(row.displayName, readString(row.id, "provider"))} (${status})${bits.length ? ` • ${bits.join(" • ")}` : ""}`;
+        })
+            .join("\n");
+    }
+    formatRuns(value, noun = "runs") {
+        const root = asObjectRecord(unwrapData(value));
+        const key = noun === "jobs" ? "jobs" : noun === "automations" ? "automations" : "runs";
+        const rows = asUnknownArray(root[key]);
+        if (!rows.length)
+            return `No ${noun} found.`;
+        return rows
+            .map((item) => {
+            const row = asObjectRecord(item);
+            const id = readString(row.id, readString(row.runId, "unknown"));
+            const status = readString(row.status, "unknown");
+            const label = noun === "jobs"
+                ? readString(row.task, id)
+                : noun === "automations"
+                    ? readString(row.name, id)
+                    : readString(asObjectRecord(row.request).task, id);
+            return `- ${label}\n  id ${id} • ${status}${readString(row.executionLane) ? ` • ${readString(row.executionLane)}` : ""}`;
+        })
+            .join("\n");
+    }
+    formatAutomation(value) {
+        const row = asObjectRecord(unwrapData(value));
+        if (!Object.keys(row).length)
+            return "Automation not found.";
+        const trigger = asObjectRecord(row.trigger);
+        return [
+            `Automation ${readString(row.name, readString(row.id, "unknown"))}`,
+            `- id ${readString(row.id)}`,
+            `- status ${readString(row.status, "unknown")}`,
+            `- policy ${readString(row.policy, "autonomous")}`,
+            `- trigger ${readString(trigger.kind, "manual")}`,
+            trigger.scheduleText ? `- schedule ${readString(trigger.scheduleText)}` : "",
+            trigger.query ? `- query ${readString(trigger.query)}` : "",
+            readString(row.prompt) ? `- prompt ${readString(row.prompt)}` : "",
+        ]
+            .filter(Boolean)
+            .join("\n");
+    }
+    formatUsage(value) {
+        const root = asObjectRecord(unwrapData(value));
+        const today = asObjectRecord(root.today);
+        const month = asObjectRecord(root.thisMonth);
+        const cycle = asObjectRecord(root.cycle);
+        return [
+            `Plan: ${readString(root.plan, "inactive")} (${readString(root.status, "inactive")})`,
+            `Today: ${readNumber(today.requestsUsed)} used / ${readNumber(today.requestsLimit)} requests`,
+            `Cycle: ${readNumber(cycle.requestsUsed)} used / ${readNumber(cycle.requestsLimit)} requests`,
+            `Month tokens: ${readNumber(month.tokensTotal)} / ${readNumber(month.tokensLimit)}`,
+            `Estimated spend: $${readNumber(month.estimatedCostUsd).toFixed(2)}`,
+            readString(root.nextResetAt) ? `Next reset: ${readString(root.nextResetAt)}` : "",
+        ]
+            .filter(Boolean)
+            .join("\n");
+    }
+    async resolveHostedAuthForParity() {
+        return this.requireAuth();
+    }
+    async runBinaryUtility(command) {
+        const targetPath = path.resolve(command.path);
+        const stat = await fs_1.promises.stat(targetPath);
+        const bytes = await fs_1.promises.readFile(targetPath);
+        if (command.kind === "binary_hash") {
+            const sha256 = (0, crypto_1.createHash)("sha256").update(bytes).digest("hex");
+            return `SHA-256 for \`${targetPath}\`\n- size ${stat.size} bytes\n- hash ${sha256}`;
+        }
+        if (command.kind === "binary_hexdump") {
+            const offset = Math.max(0, command.offset || 0);
+            const length = Math.max(1, command.length || 256);
+            const slice = bytes.slice(offset, offset + length);
+            return `Hexdump for \`${targetPath}\`\n\`\`\`\n${formatHexdump(slice, offset)}\n\`\`\``;
+        }
+        const sha256 = (0, crypto_1.createHash)("sha256").update(bytes).digest("hex");
+        return [
+            `Binary inspection for \`${targetPath}\``,
+            `- type ${detectBinaryKind(bytes.slice(0, 32))}`,
+            `- size ${stat.size} bytes`,
+            `- modified ${stat.mtime.toISOString()}`,
+            `- sha256 ${sha256}`,
+            `- first bytes ${bytes.slice(0, 16).toString("hex") || "n/a"}`,
+        ].join("\n");
+    }
+    async buildIndexChunks(rootPath) {
+        const files = await collectIndexableFiles(rootPath, 120);
+        const chunks = [];
+        for (const filePath of files) {
+            const relative = path.relative(rootPath, filePath).replace(/\\/g, "/");
+            const raw = await fs_1.promises.readFile(filePath, "utf8").catch(() => "");
+            if (!raw || raw.includes("\u0000"))
+                continue;
+            chunks.push(...chunkTextForIndex(relative, raw));
+            if (chunks.length >= 400)
+                break;
+        }
+        return chunks;
+    }
+    async executeParityCommand(command) {
+        switch (command.kind) {
+            case "auth_status": {
+                const [hostHealth, hostAuth] = await Promise.all([
+                    this.parityClient.checkHostHealth(),
+                    this.parityClient.authStatus().catch((error) => ({ error: error instanceof Error ? error.message : String(error) })),
+                ]);
+                return [
+                    "Cutie auth status",
+                    `- hosted auth ${this.authState.kind} (${this.authState.label})`,
+                    hostHealth ? `- local host ready` : "- local host unavailable",
+                    `- local key ${prettyJson(unwrapData(hostAuth))}`,
+                ].join("\n");
+            }
+            case "auth_sign_in":
+                await this.auth.signInWithBrowser();
+                return "Opened browser sign-in for Cutie.";
+            case "auth_sign_out":
+                await this.auth.signOut();
+                return "Signed out of Cutie.";
+            case "auth_set_key":
+                await this.auth.setApiKeyInteractive();
+                return "Opened Cutie API key prompt.";
+            case "config_show": {
+                const preferences = await this.parityClient.preferences().catch(() => ({}));
+                return [
+                    "Cutie config",
+                    `- baseApiUrl ${(0, config_1.getBaseApiUrl)()}`,
+                    `- runtime ${(0, config_1.getBinaryIdeChatRuntime)()}`,
+                    `- model ${(0, config_1.getModelHint)()}`,
+                    `- reasoning ${(0, config_1.getReasoningLevel)()}`,
+                    `- local host ${prettyJson(unwrapData(preferences))}`,
+                ].join("\n");
+            }
+            case "usage": {
+                const auth = await this.resolveHostedAuthForParity();
+                if (!auth)
+                    throw new Error("Sign in or set an API key before checking usage.");
+                return this.formatUsage(await this.parityClient.usage(auth));
+            }
+            case "checkout": {
+                const auth = await this.resolveHostedAuthForParity();
+                if (!auth)
+                    throw new Error("Sign in or set an API key before opening checkout.");
+                const response = asObjectRecord(unwrapData(await this.parityClient.checkout(auth, command.tier, command.billing)));
+                const url = readString(response.url);
+                if (url) {
+                    await vscode.env.openExternal(vscode.Uri.parse(url));
+                }
+                return `Opened ${command.tier}/${command.billing} checkout${url ? `:\n- ${url}` : "."}`;
+            }
+            case "connections_list":
+                return this.formatConnections(await this.parityClient.listConnections());
+            case "connections_add":
+                if (command.mode === "web") {
+                    return this.formatConnections(await this.parityClient.saveConnection({
+                        name: "Web starter",
+                        transport: "sse",
+                        url: process.env.BINARY_CONNECTIONS_WEB_STARTER_URL || "http://127.0.0.1:8081/sse",
+                        authMode: "none",
+                        enabled: true,
+                        source: "starter",
+                    }));
+                }
+                if (!command.name || !command.url) {
+                    throw new Error("Remote connection add needs a name and URL.");
+                }
+                return this.formatConnections(await this.parityClient.saveConnection({
+                    name: command.name,
+                    transport: command.transport || "http",
+                    url: command.url,
+                    authMode: command.authMode || "none",
+                    enabled: true,
+                    source: "guided",
+                }));
+            case "connections_import": {
+                const raw = await fs_1.promises.readFile(path.resolve(command.file), "utf8");
+                return this.formatConnections(await this.parityClient.importConnections(raw, path.resolve(command.file)));
+            }
+            case "connections_test":
+                return prettyJson(unwrapData(await this.parityClient.testConnection(command.id)));
+            case "connections_enable":
+                return prettyJson(unwrapData(await this.parityClient.enableConnection(command.id)));
+            case "connections_disable":
+                return prettyJson(unwrapData(await this.parityClient.disableConnection(command.id)));
+            case "connections_remove":
+                await this.parityClient.removeConnection(command.id);
+                return `Removed connection \`${command.id}\`.`;
+            case "providers_list": {
+                const [catalog, providers] = await Promise.all([
+                    this.parityClient.listProviderCatalog().catch(() => ({})),
+                    this.parityClient.listProviders(),
+                ]);
+                return [
+                    this.formatProviders(providers),
+                    formatMaybeList("Catalog", asObjectRecord(unwrapData(catalog)).providers),
+                ].join("\n");
+            }
+            case "providers_open": {
+                const response = asObjectRecord(unwrapData(await this.parityClient.openProviderBrowser(command.providerId)));
+                const url = readString(response.url);
+                if (url)
+                    await vscode.env.openExternal(vscode.Uri.parse(url));
+                return `Opened ${command.providerId} in your browser.${url ? `\n- ${url}` : ""}`;
+            }
+            case "providers_import":
+                return prettyJson(unwrapData(await this.parityClient.importProviderLocalAuth({
+                    providerId: command.providerId,
+                    ...(command.baseUrl ? { baseUrl: command.baseUrl } : {}),
+                    ...(command.model ? { defaultModel: command.model } : {}),
+                    ...(command.setDefault ? { setDefault: true } : {}),
+                })));
+            case "providers_login": {
+                const catalog = asObjectRecord(unwrapData(await this.parityClient.listProviderCatalog()));
+                const providers = asUnknownArray(catalog.providers);
+                const provider = asObjectRecord(providers.find((item) => readString(asObjectRecord(item).id) === command.providerId));
+                const connectionMode = readString(provider.connectionMode);
+                if (connectionMode === "portal_session" || connectionMode === "local_credential_adapter") {
+                    const started = asObjectRecord(unwrapData(await this.parityClient.startProviderBrowserSession({
+                        providerId: command.providerId,
+                        ...(command.baseUrl ? { baseUrl: command.baseUrl } : {}),
+                        ...(command.model ? { defaultModel: command.model } : {}),
+                        ...(command.setDefault ? { setDefault: true } : {}),
+                    })));
+                    const launchUrl = readString(started.launchUrl);
+                    if (launchUrl)
+                        await vscode.env.openExternal(vscode.Uri.parse(launchUrl));
+                    return `Started browser linking for ${command.providerId}.${launchUrl ? `\n- ${launchUrl}` : ""}`;
+                }
+                const started = asObjectRecord(unwrapData(await this.parityClient.startProviderOAuth({
+                    providerId: command.providerId,
+                    ...(command.baseUrl ? { baseUrl: command.baseUrl } : {}),
+                    ...(command.model ? { defaultModel: command.model } : {}),
+                    ...(command.setDefault ? { setDefault: true } : {}),
+                })));
+                const launchUrl = readString(started.launchUrl);
+                if (launchUrl)
+                    await vscode.env.openExternal(vscode.Uri.parse(launchUrl));
+                return `Started provider auth for ${command.providerId}.${launchUrl ? `\n- ${launchUrl}` : ""}`;
+            }
+            case "providers_status": {
+                const response = asObjectRecord(unwrapData(await this.parityClient.listProviders()));
+                const provider = asUnknownArray(response.providers).find((item) => readString(asObjectRecord(item).id) === command.providerId);
+                return provider ? prettyJson(provider) : `Provider ${command.providerId} is not available.`;
+            }
+            case "providers_test":
+                return prettyJson(unwrapData(await this.parityClient.testProvider(command.providerId)));
+            case "providers_refresh":
+                return prettyJson(unwrapData(await this.parityClient.refreshProvider(command.providerId)));
+            case "providers_default":
+                return prettyJson(unwrapData(await this.parityClient.setDefaultProvider(command.providerId)));
+            case "providers_logout":
+                await this.parityClient.disconnectProvider(command.providerId);
+                return `Disconnected provider \`${command.providerId}\`.`;
+            case "runs_list":
+                return this.formatRuns(await this.parityClient.listRuns(command.limit), "runs");
+            case "runs_show":
+                return prettyJson(unwrapData(await this.parityClient.getRun(command.id)));
+            case "runs_tail":
+            case "runs_stream":
+                return this.formatRecentEvents(await this.parityClient.getRunEvents(command.id));
+            case "runs_export":
+                return prettyJson(unwrapData(await this.parityClient.exportRun(command.id)));
+            case "runs_control":
+                return prettyJson(unwrapData(await this.parityClient.controlRun(command.id, command.action)));
+            case "jobs_list":
+                return this.formatRuns(await this.parityClient.listAgentJobs(command.limit), "jobs");
+            case "jobs_run":
+                return prettyJson(unwrapData(await this.parityClient.createAgentJob({
+                    task: command.task,
+                    mode: command.mode || "auto",
+                    model: (0, config_1.getModelHint)(),
+                    workspaceRoot: command.workspace || (0, config_1.getWorkspaceRootPath)() || undefined,
+                    executionLane: command.lane,
+                    client: {
+                        surface: "vsix",
+                        version: (0, config_1.getExtensionVersion)(this.context),
+                    },
+                })));
+            case "jobs_show":
+                return prettyJson(unwrapData(await this.parityClient.getAgentJob(command.id)));
+            case "jobs_tail":
+                return this.formatRecentEvents(await this.parityClient.getAgentJobEvents(command.id));
+            case "jobs_control":
+                return prettyJson(unwrapData(await this.parityClient.controlAgentJob(command.id, command.action)));
+            case "jobs_remote_health":
+                return prettyJson(unwrapData(await this.parityClient.getRemoteAgentHealth()));
+            case "automations_list":
+                return this.formatRuns(await this.parityClient.listAutomations(), "automations");
+            case "automations_create": {
+                const payload = {
+                    name: command.name,
+                    prompt: command.prompt,
+                    trigger: command.trigger === "manual"
+                        ? { kind: "manual", ...(command.workspace ? { workspaceRoot: command.workspace } : {}) }
+                        : command.trigger === "schedule_nl"
+                            ? { kind: "schedule_nl", scheduleText: command.scheduleText || "every weekday at 9am", ...(command.workspace ? { workspaceRoot: command.workspace } : {}) }
+                            : command.trigger === "file_event"
+                                ? { kind: "file_event", workspaceRoot: command.workspace || (0, config_1.getWorkspaceRootPath)() || "", ...(command.includes?.length ? { includes: command.includes } : {}), ...(command.excludes?.length ? { excludes: command.excludes } : {}) }
+                                : command.trigger === "process_event"
+                                    ? { kind: "process_event", query: command.query || "code", ...(command.workspace ? { workspaceRoot: command.workspace } : {}) }
+                                    : { kind: "notification", ...(command.topic ? { topic: command.topic } : {}), ...(command.query ? { query: command.query } : {}), ...(command.workspace ? { workspaceRoot: command.workspace } : {}) },
+                };
+                return this.formatAutomation(await this.parityClient.saveAutomation(payload));
+            }
+            case "automations_show":
+                return this.formatAutomation(await this.parityClient.getAutomation(command.id));
+            case "automations_run":
+                return prettyJson(unwrapData(await this.parityClient.runAutomation(command.id)));
+            case "automations_tail":
+                return this.formatRecentEvents(await this.parityClient.getAutomationEvents(command.id));
+            case "automations_control":
+                return this.formatAutomation(await this.parityClient.controlAutomation(command.id, command.action));
+            case "debug_agent_chat":
+                if (command.sessionId) {
+                    return prettyJson(unwrapData(await this.parityClient.submitAgentProbeMessage(command.sessionId, command.message || "Continue.")));
+                }
+                return prettyJson(unwrapData(await this.parityClient.createAgentProbeSession({
+                    title: "Cutie debug-agent session",
+                    model: (0, config_1.getModelHint)(),
+                    workspaceRoot: (0, config_1.getWorkspaceRootPath)() || undefined,
+                    ...(command.message ? { message: command.message } : {}),
+                })));
+            case "debug_agent_show":
+                return prettyJson(unwrapData(await this.parityClient.getAgentProbeSession(command.sessionId)));
+            case "debug_agent_tail":
+                return this.formatRecentEvents(await this.parityClient.getAgentProbeEvents(command.sessionId));
+            case "sessions_list": {
+                const auth = await this.resolveHostedAuthForParity();
+                if (!auth)
+                    throw new Error("Sign in or set an API key before listing hosted sessions.");
+                return prettyJson(unwrapData(await this.parityClient.listSessions(auth, command.limit)));
+            }
+            case "sessions_show": {
+                const auth = await this.resolveHostedAuthForParity();
+                if (!auth)
+                    throw new Error("Sign in or set an API key before reading hosted sessions.");
+                return this.formatHostedSessionMessages(await this.parityClient.getSessionMessages(auth, command.sessionId, true));
+            }
+            case "execute": {
+                const auth = await this.resolveHostedAuthForParity();
+                if (!auth)
+                    throw new Error("Sign in or set an API key before execute.");
+                const raw = await fs_1.promises.readFile(path.resolve(command.file), "utf8");
+                const parsed = JSON.parse(raw);
+                const root = asObjectRecord(parsed);
+                const actions = Array.isArray(root.actions) ? root.actions : Array.isArray(parsed) ? parsed : [];
+                if (!actions.length)
+                    throw new Error("No valid actions found in execute file.");
+                return prettyJson(unwrapData(await this.parityClient.execute(auth, command.sessionId || (0, cutie_policy_1.randomId)("playground_exec"), (0, config_1.getWorkspaceHash)(), actions)));
+            }
+            case "replay": {
+                const auth = await this.resolveHostedAuthForParity();
+                if (!auth)
+                    throw new Error("Sign in or set an API key before replay.");
+                return prettyJson(unwrapData(await this.parityClient.replay(auth, command.sessionId, (0, config_1.getWorkspaceHash)(), command.mode)));
+            }
+            case "index_upsert": {
+                const auth = await this.resolveHostedAuthForParity();
+                if (!auth)
+                    throw new Error("Sign in or set an API key before indexing.");
+                const rootPath = path.resolve(command.path || (0, config_1.getWorkspaceRootPath)() || ".");
+                const chunks = await this.buildIndexChunks(rootPath);
+                return prettyJson(unwrapData(await this.parityClient.indexUpsert(auth, {
+                    projectKey: command.projectKey,
+                    chunks,
+                    cursor: null,
+                    stats: {
+                        fileCount: chunks.length,
+                        chunkCount: chunks.length,
+                    },
+                })));
+            }
+            case "index_query": {
+                const auth = await this.resolveHostedAuthForParity();
+                if (!auth)
+                    throw new Error("Sign in or set an API key before querying the index.");
+                return prettyJson(unwrapData(await this.parityClient.indexQuery(auth, {
+                    projectKey: command.projectKey,
+                    query: command.query,
+                    limit: command.limit,
+                })));
+            }
+            case "binary_inspect":
+            case "binary_hexdump":
+            case "binary_hash":
+                return this.runBinaryUtility(command);
+            default:
+                return prettyJson(command);
+        }
+    }
+    async runParityPrompt(trimmedPrompt) {
+        const command = (0, cutie_cli_parity_1.resolveCutieParityCommand)(trimmedPrompt);
+        if (!command)
+            return false;
+        let session = await this.ensureSession(trimmedPrompt);
+        session = await this.appendChatMessage(session, "user", trimmedPrompt);
+        this.activeSession = session;
+        this.activeSessionId = session.id;
+        this.activeRun = null;
+        this.activeRunSessionId = session.id;
+        this.streamingAssistantText = "";
+        this.playgroundLiveNarration = "";
+        this.suppressedAssistantArtifactText = "";
+        this.submitState = "running";
+        this.status = "Running Cutie parity action...";
+        await this.emitState();
+        try {
+            const output = await this.executeParityCommand(command);
+            session = await this.appendChatMessage(session, "assistant", output);
+            this.activeSession = session;
+            this.status = "Cutie parity action completed.";
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            session = await this.appendChatMessage(session, "assistant", `Cutie parity action failed.\n- ${message}`);
+            this.activeSession = session;
+            this.status = `Cutie parity failed: ${message}`;
+            void vscode.window.showErrorMessage(this.status);
+        }
+        finally {
+            this.submitState = "settled";
+            await this.emitState();
+        }
+        return true;
+    }
     async runIdeRuntimePrompt(trimmedPrompt, mentions) {
         const runtime = (0, config_1.getBinaryIdeChatRuntime)();
         const task = this.appendMentionsToPrompt(trimmedPrompt, mentions);
@@ -1814,6 +2467,9 @@ class CutieSidebarProvider {
         this.submitState = "submitting";
         await this.emitState();
         try {
+            const hostAssistAvailable = runtime !== "qwenCode" && runtime !== "openCode"
+                ? Boolean(await this.parityClient.checkHostHealth().catch(() => null))
+                : false;
             if (runtime === "qwenCode") {
                 const auth = await this.getCachedRequestAuth();
                 if (!auth?.apiKey) {
@@ -1830,7 +2486,7 @@ class CutieSidebarProvider {
                     throw new Error(health.details ? `${health.message} ${health.details}` : health.message);
                 }
             }
-            else if (runtime === "playgroundApi") {
+            else if (runtime === "playgroundApi" && !hostAssistAvailable) {
                 const auth = await this.requireAuth();
                 if (!auth) {
                     this.submitState = "idle";
@@ -1894,56 +2550,88 @@ class CutieSidebarProvider {
                     };
                 }
                 else {
-                    const health = await this.playgroundChatBridge.getOpenHandsStatus(abortController.signal);
-                    if (health.status !== "healthy") {
-                        throw new Error(`OpenHands unavailable: ${health.message}`);
+                    if (hostAssistAvailable) {
+                        const hostTurn = await this.runBinaryHostAssistTurn({
+                            task,
+                            historySessionId: session.playgroundHistorySessionId ?? null,
+                            signal: abortController.signal,
+                            onProgress: (text) => {
+                                if (runRequestVersion !== this.runRequestVersion)
+                                    return;
+                                if (abortController.signal.aborted)
+                                    return;
+                                this.playgroundLiveNarration = text;
+                                void this.emitState();
+                            },
+                        });
+                        assistantText = hostTurn.assistantText;
+                        if (hostTurn.sessionId) {
+                            session = { ...session, playgroundHistorySessionId: hostTurn.sessionId };
+                        }
+                        if (runRequestVersion !== this.runRequestVersion)
+                            return;
+                        session = await this.persistPlaygroundLiveNarrationToSession(session);
+                        session = await this.sessionStore.appendMessage(session, {
+                            role: "assistant",
+                            content: assistantText,
+                            ...(hostTurn.runId ? { runId: hostTurn.runId } : {}),
+                        });
+                        if (this.activeSessionId === session.id) {
+                            this.activeSession = session;
+                        }
                     }
-                    const playgroundTurn = await this.playgroundChatBridge.runPlaygroundApiTurn({
-                        task,
-                        mode: "auto",
-                        historySessionId: session.playgroundHistorySessionId ?? null,
-                        history,
-                        signal: abortController.signal,
-                        onPlaygroundProgress: (text) => {
-                            if (runRequestVersion !== this.runRequestVersion)
-                                return;
-                            if (abortController.signal.aborted)
-                                return;
-                            this.playgroundLiveNarration = text;
-                            void this.emitState();
-                        },
-                    });
-                    assistantText = playgroundTurn.assistantText;
-                    if (playgroundTurn.playgroundSessionId) {
-                        session = { ...session, playgroundHistorySessionId: playgroundTurn.playgroundSessionId };
-                    }
-                    if (runRequestVersion !== this.runRequestVersion)
-                        return;
-                    session = await this.persistPlaygroundLiveNarrationToSession(session);
-                    const playgroundRunId = playgroundTurn.playgroundRunId;
-                    const fileMutations = playgroundTurn.fileMutations;
-                    session = await this.sessionStore.appendMessage(session, {
-                        role: "assistant",
-                        content: assistantText,
-                        ...(playgroundRunId && fileMutations.length ? { runId: playgroundRunId } : {}),
-                    });
-                    if (this.activeSessionId === session.id) {
-                        this.activeSession = session;
-                    }
-                    if (playgroundRunId && fileMutations.length) {
-                        for (const mutation of fileMutations) {
-                            if (runRequestVersion !== this.runRequestVersion)
-                                return;
-                            const info = {
-                                sessionId: session.id,
-                                runId: playgroundRunId,
-                                relativePath: mutation.relativePath,
-                                toolName: mutation.toolName,
-                                previousContent: mutation.previousContent,
-                                nextContent: mutation.nextContent,
-                            };
-                            await this.recordChatWorkspaceDiff(info);
-                            await this.finishHostWorkspaceMutationUi(info);
+                    else {
+                        const health = await this.playgroundChatBridge.getOpenHandsStatus(abortController.signal);
+                        if (health.status !== "healthy") {
+                            throw new Error(`OpenHands unavailable: ${health.message}`);
+                        }
+                        const playgroundTurn = await this.playgroundChatBridge.runPlaygroundApiTurn({
+                            task,
+                            mode: "auto",
+                            historySessionId: session.playgroundHistorySessionId ?? null,
+                            history,
+                            signal: abortController.signal,
+                            onPlaygroundProgress: (text) => {
+                                if (runRequestVersion !== this.runRequestVersion)
+                                    return;
+                                if (abortController.signal.aborted)
+                                    return;
+                                this.playgroundLiveNarration = text;
+                                void this.emitState();
+                            },
+                        });
+                        assistantText = playgroundTurn.assistantText;
+                        if (playgroundTurn.playgroundSessionId) {
+                            session = { ...session, playgroundHistorySessionId: playgroundTurn.playgroundSessionId };
+                        }
+                        if (runRequestVersion !== this.runRequestVersion)
+                            return;
+                        session = await this.persistPlaygroundLiveNarrationToSession(session);
+                        const playgroundRunId = playgroundTurn.playgroundRunId;
+                        const fileMutations = playgroundTurn.fileMutations;
+                        session = await this.sessionStore.appendMessage(session, {
+                            role: "assistant",
+                            content: assistantText,
+                            ...(playgroundRunId && fileMutations.length ? { runId: playgroundRunId } : {}),
+                        });
+                        if (this.activeSessionId === session.id) {
+                            this.activeSession = session;
+                        }
+                        if (playgroundRunId && fileMutations.length) {
+                            for (const mutation of fileMutations) {
+                                if (runRequestVersion !== this.runRequestVersion)
+                                    return;
+                                const info = {
+                                    sessionId: session.id,
+                                    runId: playgroundRunId,
+                                    relativePath: mutation.relativePath,
+                                    toolName: mutation.toolName,
+                                    previousContent: mutation.previousContent,
+                                    nextContent: mutation.nextContent,
+                                };
+                                await this.recordChatWorkspaceDiff(info);
+                                await this.finishHostWorkspaceMutationUi(info);
+                            }
                         }
                     }
                 }
@@ -2281,6 +2969,9 @@ class CutieSidebarProvider {
         const trimmedPrompt = String(prompt || "").trim();
         if (!trimmedPrompt) {
             await this.emitState();
+            return;
+        }
+        if (await this.runParityPrompt(trimmedPrompt)) {
             return;
         }
         if ((0, config_1.getBinaryIdeChatRuntime)() !== "cutie") {

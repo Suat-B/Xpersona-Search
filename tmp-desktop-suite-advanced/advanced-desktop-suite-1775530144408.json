@@ -1,0 +1,44 @@
+{
+  "generatedAt": "2026-04-07T02:49:01.827Z",
+  "summary": {
+    "total": 6,
+    "completed": 0,
+    "takeover_required": 0,
+    "failed": 0,
+    "cancelled": 0,
+    "timedOut": 0,
+    "avgElapsedMs": 0
+  },
+  "results": [
+    {
+      "id": "notepad_draft",
+      "task": "Open Notepad and create a draft called groceries with lines milk, eggs, bread",
+      "error": "Trust C:\\Users\\suatb\\Desktop\\Frieren\\Xpersona with POST /v1/workspaces/trust before running local tool execution through Binary Host."
+    },
+    {
+      "id": "calculator_divide",
+      "task": "Launch Calculator and tell me what 144 divided by 12 is",
+      "error": "Trust C:\\Users\\suatb\\Desktop\\Frieren\\Xpersona with POST /v1/workspaces/trust before running local tool execution through Binary Host."
+    },
+    {
+      "id": "explorer_drive_transition",
+      "task": "Open File Explorer and go to C drive then D drive and confirm both transitions",
+      "error": "Trust C:\\Users\\suatb\\Desktop\\Frieren\\Xpersona with POST /v1/workspaces/trust before running local tool execution through Binary Host."
+    },
+    {
+      "id": "mixed_notepad_calculator",
+      "task": "Open Notepad and Calculator. In Notepad type: Daily total: 81. In Calculator compute 9*9 and report result.",
+      "error": "Trust C:\\Users\\suatb\\Desktop\\Frieren\\Xpersona with POST /v1/workspaces/trust before running local tool execution through Binary Host."
+    },
+    {
+      "id": "focus_background_compute",
+      "task": "Launch Calculator in the background and compute 45*2, then tell me the result.",
+      "error": "Trust C:\\Users\\suatb\\Desktop\\Frieren\\Xpersona with POST /v1/workspaces/trust before running local tool execution through Binary Host."
+    },
+    {
+      "id": "calculator_sequence",
+      "task": "Open Calculator and compute 12*12, then plus 10, and tell me the final result.",
+      "error": "Trust C:\\Users\\suatb\\Desktop\\Frieren\\Xpersona with POST /v1/workspaces/trust before running local tool execution through Binary Host."
+    }
+  ]
+}

@@ -11,7 +11,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json && node scripts/copy-renderer.mjs",
+    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json && node scripts/copy-renderer.mjs && node scripts/copy-codex-compat-renderer.mjs",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "dev": "npm run build && node -e \"console.log('Install electron in apps/binary-ide-desktop to run the desktop shell locally.')\"",
     "dist": "npm run build && node -e \"console.log('Desktop packaging metadata is ready. Install electron-builder in this package to produce installers.')\""
@@ -57,6 +57,7 @@
     }
   },
   "devDependencies": {
+    "@electron/asar": "^4.2.0",
     "electron": "^41.1.0"
   }
 }

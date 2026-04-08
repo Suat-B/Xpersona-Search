@@ -1,0 +1,1 @@
+export function formatName(name: unknown): string;

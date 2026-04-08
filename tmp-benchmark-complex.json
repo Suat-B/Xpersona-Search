@@ -1,0 +1,117 @@
+{
+  "version": "binary_autonomy_benchmark_v1",
+  "createdAt": "2026-04-05T02:32:32.997Z",
+  "host": {
+    "url": "http://127.0.0.1:7777",
+    "version": "0.2.0"
+  },
+  "categories": [
+    {
+      "category": "complex_autonomy_delivery",
+      "gateLane": "multi_file_feature_delivery",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-complex_autonomy_delivery-mQK0i2",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 33,
+      "artifactCorrect": false,
+      "validationPassed": false,
+      "totalToolCalls": 0,
+      "successfulToolCalls": 0,
+      "failedToolCalls": 0,
+      "toolCounts": {},
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": false,
+      "matchedCommands": [],
+      "missingPaths": [
+        "launchpad-studio",
+        "launchpad-studio/package.json",
+        "launchpad-studio/README.md",
+        "launchpad-studio/docs/architecture.md",
+        "launchpad-studio/docs/usage.md",
+        "launchpad-studio/src/index.js",
+        "launchpad-studio/src/planner.js",
+        "launchpad-studio/src/format.js",
+        "launchpad-studio/src/validate.js",
+        "launchpad-studio/test/index.test.js",
+        "launchpad-studio/test/planner.test.js",
+        "launchpad-studio/.gitignore"
+      ],
+      "missingContent": [],
+      "missingRequirements": [],
+      "turns": 0,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": true,
+      "elapsedMs": 96595,
+      "traceId": "73898ab5-305c-4503-9e2c-21dc5a85911f",
+      "runId": "5911d4a4-0a3f-47a0-aad0-10a43e9c37c8",
+      "hostedRunId": null,
+      "files": [],
+      "timedOut": false
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "takeoverRequired": 1,
+    "validationPassed": 0,
+    "scorecard": {
+      "thresholds": {
+        "codingCompletionRate": 0.8,
+        "validationSuccessRate": 0.8,
+        "gitCloseoutSuccessRate": 1,
+        "maxAvoidableTakeoverRate": 0.2
+      },
+      "metrics": {
+        "codingCompletionRate": 0,
+        "validationSuccessRate": 0,
+        "repairSuccessRate": 0,
+        "gitCloseoutSuccessRate": 0,
+        "endToEndCompletionRate": 0,
+        "closureCompletionRate": 0,
+        "meanStepsToClosure": 0,
+        "meanRepairsToClosure": 0,
+        "avoidableTakeoverRate": 0
+      },
+      "codingLaneCoverage": {
+        "repo_scaffold": {
+          "total": 0,
+          "completed": 0
+        },
+        "single_file_edit": {
+          "total": 0,
+          "completed": 0
+        },
+        "multi_file_feature_delivery": {
+          "total": 1,
+          "completed": 0
+        },
+        "validation_repair": {
+          "total": 0,
+          "completed": 0
+        },
+        "git_closeout": {
+          "total": 0,
+          "completed": 0
+        }
+      },
+      "passing": false,
+      "failingReasons": [
+        "coding completion 0.00 < 0.80",
+        "validation success 0.00 < 0.80",
+        "git closeout 0.00 < 1.00"
+      ]
+    }
+  }
+}

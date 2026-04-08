@@ -54,6 +54,28 @@ describe("decorateUiEvent", () => {
     });
   });
 
+  it("surfaces closure metadata from meta events", () => {
+    const decorated = decorateUiEvent({
+      event: "meta",
+      data: {
+        loopState: {
+          closurePhase: "closeout",
+        },
+        unfinishedChecklistItems: ["Finish requested git closeout"],
+        progressState: {
+          nextDeterministicAction: 'cd "repo-proof" && git init',
+        },
+      },
+    });
+
+    expect(decorated.ui).toMatchObject({
+      category: "closure_started",
+      title: "Closure update",
+      summary: expect.stringContaining("closure closeout"),
+      confidence: "verifying",
+    });
+  });
+
   it("keeps unknown events unchanged", () => {
     const event = { event: "token", data: "partial text" };
     expect(decorateUiEvent(event)).toEqual(event);

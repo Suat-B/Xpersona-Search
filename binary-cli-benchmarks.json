@@ -1,0 +1,359 @@
+{
+  "version": "binary_cli_benchmark_v1",
+  "createdAt": "2026-04-02T23:08:29.324Z",
+  "runtime": {
+    "node": "v24.14.1",
+    "platform": "win32",
+    "cliDistPath": "C:\\Users\\suatb\\Desktop\\Frieren\\Xpersona\\sdk\\playground-ai-cli\\dist\\tool-executor.js"
+  },
+  "categories": [
+    {
+      "id": "personal_notes_workflow",
+      "title": "Organize personal notes and find the right file",
+      "score": 100,
+      "elapsedMs": 57,
+      "toolCalls": 6,
+      "failedToolCalls": 0,
+      "checks": [
+        {
+          "name": "created expected files",
+          "pass": true,
+          "weight": 30
+        },
+        {
+          "name": "listed workspace files",
+          "pass": true,
+          "weight": 20
+        },
+        {
+          "name": "search found the needed note",
+          "pass": true,
+          "weight": 25
+        },
+        {
+          "name": "read returned friendly content",
+          "pass": true,
+          "weight": 25
+        }
+      ],
+      "metrics": {
+        "validationRelevant": false,
+        "validationPassed": false,
+        "gitRelevant": false,
+        "gitPassed": false,
+        "binarySafetyRelevant": false,
+        "binarySafetyPassed": false
+      },
+      "files": [
+        {
+          "path": "family-hub",
+          "type": "dir"
+        },
+        {
+          "path": "family-hub/checklist.txt",
+          "type": "file",
+          "size": 38,
+          "preview": "Pack passport\nPack charger\nCall hotel\n"
+        },
+        {
+          "path": "family-hub/day1.md",
+          "type": "file",
+          "size": 36,
+          "preview": "# Day 1\nBreakfast at 9\nMuseum at 11\n"
+        }
+      ],
+      "workspace": null
+    },
+    {
+      "id": "repair_and_validation",
+      "title": "Repair a broken project and prove it with tests",
+      "score": 100,
+      "elapsedMs": 904,
+      "toolCalls": 8,
+      "failedToolCalls": 1,
+      "checks": [
+        {
+          "name": "detected the original failure",
+          "pass": true,
+          "weight": 20
+        },
+        {
+          "name": "read showed the buggy implementation",
+          "pass": true,
+          "weight": 15
+        },
+        {
+          "name": "edit repaired the code",
+          "pass": true,
+          "weight": 20
+        },
+        {
+          "name": "tests passed after repair",
+          "pass": true,
+          "weight": 30
+        },
+        {
+          "name": "project files exist",
+          "pass": true,
+          "weight": 15
+        }
+      ],
+      "metrics": {
+        "validationRelevant": true,
+        "validationPassed": true,
+        "gitRelevant": false,
+        "gitPassed": false,
+        "binarySafetyRelevant": false,
+        "binarySafetyPassed": false
+      },
+      "files": [
+        {
+          "path": "budget-helper",
+          "type": "dir"
+        },
+        {
+          "path": "budget-helper/package.json",
+          "type": "file",
+          "size": 117,
+          "preview": "{\n  \"name\": \"budget-helper\",\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}"
+        },
+        {
+          "path": "budget-helper/src",
+          "type": "dir"
+        },
+        {
+          "path": "budget-helper/src/index.js",
+          "type": "file",
+          "size": 131,
+          "preview": "export function total(values) {\n  return Array.isArray(values) ? values.reduce((sum, value) => sum + Number(value || 0), 0) : 0;\n}\n"
+        },
+        {
+          "path": "budget-helper/test",
+          "type": "dir"
+        },
+        {
+          "path": "budget-helper/test/index.test.js",
+          "type": "file",
+          "size": 224,
+          "preview": "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { total } from '../src/index.js';\n\ntest('total adds all values', () => {\n  assert.equal(total([4, 6, 10]), 20);\n  assert.equal(total([]), 0);\n});\n"
+        }
+      ],
+      "workspace": null
+    },
+    {
+      "id": "git_closeout_workflow",
+      "title": "Create, review, and close out a small git change",
+      "score": 100,
+      "elapsedMs": 656,
+      "toolCalls": 15,
+      "failedToolCalls": 0,
+      "checks": [
+        {
+          "name": "checkpoint worked",
+          "pass": true,
+          "weight": 15
+        },
+        {
+          "name": "created a feature branch",
+          "pass": true,
+          "weight": 25
+        },
+        {
+          "name": "edited the file",
+          "pass": true,
+          "weight": 15
+        },
+        {
+          "name": "git diff showed the change",
+          "pass": true,
+          "weight": 20
+        },
+        {
+          "name": "commit succeeded",
+          "pass": true,
+          "weight": 15
+        },
+        {
+          "name": "repo is clean after commit",
+          "pass": true,
+          "weight": 10
+        }
+      ],
+      "metrics": {
+        "validationRelevant": false,
+        "validationPassed": false,
+        "gitRelevant": true,
+        "gitPassed": true,
+        "binarySafetyRelevant": false,
+        "binarySafetyPassed": false
+      },
+      "files": [
+        {
+          "path": "home-manual",
+          "type": "dir"
+        },
+        {
+          "path": "home-manual/docs",
+          "type": "dir"
+        },
+        {
+          "path": "home-manual/docs/tips.md",
+          "type": "file",
+          "size": 72,
+          "preview": "Morning checklist\n- Open the blinds\n\nWeekend routine\n- Water the plants\n"
+        }
+      ],
+      "workspace": null
+    },
+    {
+      "id": "binary_inspection_and_patch",
+      "title": "Inspect and safely patch a regular binary file",
+      "score": 100,
+      "elapsedMs": 13,
+      "toolCalls": 10,
+      "failedToolCalls": 0,
+      "checks": [
+        {
+          "name": "binary file was written",
+          "pass": true,
+          "weight": 15
+        },
+        {
+          "name": "metadata identifies a low-risk regular file",
+          "pass": true,
+          "weight": 15
+        },
+        {
+          "name": "analysis surfaced strings",
+          "pass": true,
+          "weight": 15
+        },
+        {
+          "name": "chunk preview is available",
+          "pass": true,
+          "weight": 15
+        },
+        {
+          "name": "search found the byte pattern",
+          "pass": true,
+          "weight": 15
+        },
+        {
+          "name": "dry run produced a patch plan",
+          "pass": true,
+          "weight": 10
+        },
+        {
+          "name": "approved patch changed the hash",
+          "pass": true,
+          "weight": 15
+        }
+      ],
+      "metrics": {
+        "validationRelevant": false,
+        "validationPassed": false,
+        "gitRelevant": false,
+        "gitPassed": false,
+        "binarySafetyRelevant": false,
+        "binarySafetyPassed": false
+      },
+      "files": [
+        {
+          "path": "downloads",
+          "type": "dir"
+        },
+        {
+          "path": "downloads/receipt-cache.bin",
+          "type": "file",
+          "size": 22,
+          "preview": "BINARY\u0000receipt:84\u0000DONE"
+        }
+      ],
+      "workspace": null
+    },
+    {
+      "id": "binary_safety_guardrails",
+      "title": "Block unsafe binary behavior and steer the user to safe tools",
+      "score": 100,
+      "elapsedMs": 325,
+      "toolCalls": 5,
+      "failedToolCalls": 2,
+      "checks": [
+        {
+          "name": "text tools refuse binary files",
+          "pass": true,
+          "weight": 40
+        },
+        {
+          "name": "binary redirect suggests safer tools",
+          "pass": true,
+          "weight": 20
+        },
+        {
+          "name": "high-risk executable patch is blocked",
+          "pass": true,
+          "weight": 40
+        }
+      ],
+      "metrics": {
+        "validationRelevant": false,
+        "validationPassed": false,
+        "gitRelevant": false,
+        "gitPassed": false,
+        "binarySafetyRelevant": true,
+        "binarySafetyPassed": true
+      },
+      "files": [
+        {
+          "path": "safe-downloads",
+          "type": "dir"
+        },
+        {
+          "path": "safe-downloads/photo-cache.bin",
+          "type": "file",
+          "size": 17,
+          "preview": "PHOTO\u0000cache\u0000frame"
+        }
+      ],
+      "workspace": null
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "averageToolCalls": 9,
+    "scorecard": {
+      "overallScore": 100,
+      "passed": 5,
+      "failed": 0,
+      "validationPassRate": 1,
+      "binarySafetyPassRate": 1,
+      "gitPassRate": 1
+    }
+  },
+  "comparison": {
+    "available": true,
+    "overallScoreDelta": 3,
+    "perScenario": [
+      {
+        "id": "personal_notes_workflow",
+        "scoreDelta": 0
+      },
+      {
+        "id": "repair_and_validation",
+        "scoreDelta": 0
+      },
+      {
+        "id": "git_closeout_workflow",
+        "scoreDelta": 0
+      },
+      {
+        "id": "binary_inspection_and_patch",
+        "scoreDelta": 15
+      },
+      {
+        "id": "binary_safety_guardrails",
+        "scoreDelta": 0
+      }
+    ]
+  }
+}

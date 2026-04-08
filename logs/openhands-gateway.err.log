@@ -1,0 +1,2181 @@
+[openhands-gateway] TOM setup failed, falling back to standard agent: Missing TOM SDK helpers: TomConsultTool, SleeptimeComputeTool
+[03/31/26 18:43:11] INFO     Created new conversation              state.py:359
+                             bdc3e7fb-27a9-508f-aff7-d6079862306d              
+                             State: {'id':                                     
+                             UUID('bdc3e7fb-27a9-508f-aff7-d607986             
+                             2306d'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona', 'kind': 'LocalWorkspace'},             
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\bdc3e7fb27a9508faff7d607986230             
+                             6d', 'max_iterations': 80,                        
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.IDLE:                
+                             'idle'>, 'confirmation_policy':                   
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id': None,                     
+                             'stats': {'usage_to_metrics': {}},                
+                             'secret_registry': {'secret_sources':             
+                             {}}, 'agent_state': {}}                           
+                             Agent: {'llm': {'model':                          
+                             'huggingface/Qwen/Qwen2.5-Coder-32B-I             
+                             nstruct:fastest', 'api_key':                      
+                             SecretStr('**********'), 'base_url':              
+                             'https://router.huggingface.co/v1',               
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 0.9,                 
+                             'stream': False, 'drop_params': True,             
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': True,                           
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': True,               
+                             'prompt_cache_retention': '24h',                  
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'FileEditorTool', 'params':             
+                             {}}], 'mcp_config': {},                           
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[03/31/26 18:43:11] INFO     FileEditor initialized with cwd:      editor.py:95
+                             C:\Users\suatb\Desktop\Frieren\Xperso             
+                             na                                                
+[03/31/26 18:43:11] INFO     Loaded 1 tools from spec:              base.py:341
+                             ['file_editor']                                   
+[03/31/26 18:43:21] ERROR    Tool 'run_terminal_validation' not    agent.py:505
+                             found. Available: ['file_editor',                 
+                             'finish', 'think']                                
+[openhands-gateway] TOM setup failed, falling back to standard agent: Missing TOM SDK helpers: TomConsultTool, SleeptimeComputeTool
+[03/31/26 18:43:23] INFO     Created new conversation              state.py:359
+                             82a3cdf6-7a40-f57b-581f-9f23b9b63361              
+                             State: {'id':                                     
+                             UUID('82a3cdf6-7a40-f57b-581f-9f23b9b             
+                             63361'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona', 'kind': 'LocalWorkspace'},             
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\82a3cdf67a40f57b581f9f23b9b633             
+                             61', 'max_iterations': 80,                        
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.IDLE:                
+                             'idle'>, 'confirmation_policy':                   
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id': None,                     
+                             'stats': {'usage_to_metrics': {}},                
+                             'secret_registry': {'secret_sources':             
+                             {}}, 'agent_state': {}}                           
+                             Agent: {'llm': {'model':                          
+                             'huggingface/Qwen/Qwen2.5-Coder-32B-I             
+                             nstruct:fastest', 'api_key':                      
+                             SecretStr('**********'), 'base_url':              
+                             'https://router.huggingface.co/v1',               
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 0.9,                 
+                             'stream': False, 'drop_params': True,             
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': True,                           
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': True,               
+                             'prompt_cache_retention': '24h',                  
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'FileEditorTool', 'params':             
+                             {}}], 'mcp_config': {},                           
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[03/31/26 18:43:24] INFO     FileEditor initialized with cwd:      editor.py:95
+                             C:\Users\suatb\Desktop\Frieren\Xperso             
+                             na                                                
+[03/31/26 18:43:24] INFO     Loaded 1 tools from spec:              base.py:341
+                             ['file_editor']                                   
+[openhands-gateway] TOM setup failed, falling back to standard agent: Missing TOM SDK helpers: TomConsultTool, SleeptimeComputeTool
+[03/31/26 18:52:08] INFO     Created new conversation              state.py:359
+                             cabe8fe7-7293-ad64-fce0-965324fa4023              
+                             State: {'id':                                     
+                             UUID('cabe8fe7-7293-ad64-fce0-965324f             
+                             a4023'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona', 'kind': 'LocalWorkspace'},             
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\cabe8fe77293ad64fce0965324fa40             
+                             23', 'max_iterations': 80,                        
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.IDLE:                
+                             'idle'>, 'confirmation_policy':                   
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id': None,                     
+                             'stats': {'usage_to_metrics': {}},                
+                             'secret_registry': {'secret_sources':             
+                             {}}, 'agent_state': {}}                           
+                             Agent: {'llm': {'model':                          
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'api_key':                                  
+                             SecretStr('**********'), 'base_url':              
+                             'https://router.huggingface.co/v1',               
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 0.9,                 
+                             'stream': False, 'drop_params': True,             
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': True,                           
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': True,               
+                             'prompt_cache_retention': '24h',                  
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'FileEditorTool', 'params':             
+                             {}}], 'mcp_config': {},                           
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[03/31/26 18:52:08] INFO     FileEditor initialized with cwd:      editor.py:95
+                             C:\Users\suatb\Desktop\Frieren\Xperso             
+                             na                                                
+[03/31/26 18:52:08] INFO     Loaded 1 tools from spec:              base.py:341
+                             ['file_editor']                                   
+[openhands-gateway] TOM setup failed, falling back to standard agent: Missing TOM SDK helpers: TomConsultTool, SleeptimeComputeTool
+[03/31/26 18:52:23] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00000-412ff7bd-d01                   
+                             5-4c84-a899-87e02f920b45.json                     
+[03/31/26 18:52:23] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00001-94defd42-c13                   
+                             b-42a4-b117-46ca16c992b9.json                     
+[03/31/26 18:52:23] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00002-00a7c863-ae4                   
+                             5-4bef-9604-460112d7b797.json                     
+[03/31/26 18:52:23] INFO     Resumed conversation                  state.py:331
+                             cabe8fe7-7293-ad64-fce0-965324fa4023              
+                             from persistent storage.                          
+                             State: {'id':                                     
+                             UUID('cabe8fe7-7293-ad64-fce0-965324f             
+                             a4023'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona', 'kind': 'LocalWorkspace'},             
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\cabe8fe77293ad64fce0965324fa40             
+                             23', 'max_iterations': 80,                        
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.FINISHED             
+                             : 'finished'>, 'confirmation_policy':             
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id':                           
+                             '94defd42-c13b-42a4-b117-46ca16c992b9             
+                             ', 'stats': {'usage_to_metrics':                  
+                             {'default': {'model_name':                        
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'accumulated_cost': 0.0,                    
+                             'max_budget_per_task': None,                      
+                             'accumulated_token_usage': {'model':              
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'prompt_tokens': 5633,                      
+                             'completion_tokens': 98,                          
+                             'cache_read_tokens': 0,                           
+                             'cache_write_tokens': 0,                          
+                             'reasoning_tokens': 0,                            
+                             'context_window': 0,                              
+                             'per_turn_token': 5731,                           
+                             'response_id': ''}, 'costs': [],                  
+                             'response_latencies': [{'model':                  
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'latency': 5.354209661483765,               
+                             'response_id':                                    
+                             '03d49ce19737266f9bc23625a191963a'}],             
+                             'token_usages': [{'model':                        
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'prompt_tokens': 5633,                      
+                             'completion_tokens': 98,                          
+                             'cache_read_tokens': 0,                           
+                             'cache_write_tokens': 0,                          
+                             'reasoning_tokens': 0,                            
+                             'context_window': 0,                              
+                             'per_turn_token': 5731,                           
+                             'response_id':                                    
+                             '03d49ce19737266f9bc23625a191963a'}]}             
+                             }}, 'secret_registry':                            
+                             {'secret_sources': {}},                           
+                             'agent_state': {}}                                
+                             Agent: {'llm': {'model':                          
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'api_key':                                  
+                             SecretStr('**********'), 'base_url':              
+                             'https://router.huggingface.co/v1',               
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 0.9,                 
+                             'stream': False, 'drop_params': True,             
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': True,                           
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': True,               
+                             'prompt_cache_retention': '24h',                  
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'FileEditorTool', 'params':             
+                             {}}], 'mcp_config': {},                           
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[03/31/26 18:52:23] INFO     FileEditor initialized with cwd:      editor.py:95
+                             C:\Users\suatb\Desktop\Frieren\Xperso             
+                             na                                                
+[03/31/26 18:52:23] INFO     Loaded 1 tools from spec:              base.py:341
+                             ['file_editor']                                   
+[openhands-gateway] TOM setup failed, falling back to standard agent: Missing TOM SDK helpers: TomConsultTool, SleeptimeComputeTool
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00000-412ff7bd-d01                   
+                             5-4c84-a899-87e02f920b45.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00000-f2001269-a15                   
+                             c-4ed6-9271-a89731186e28.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00001-1f33cb42-d08                   
+                             9-46e6-b2fd-2779c53b9924.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00001-94defd42-c13                   
+                             b-42a4-b117-46ca16c992b9.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00002-00a7c863-ae4                   
+                             5-4bef-9604-460112d7b797.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00002-ed01e9ba-ffb                   
+                             c-43ee-a0de-9d7997567da6.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00003-61ba9543-9a0                   
+                             0-49fd-b827-84c5444a64e2.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00004-4b91c7a8-98f                   
+                             0-4499-9224-c7fb47af44c3.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00005-f525a283-a6d                   
+                             2-4099-a1f3-fff399673c01.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00006-f3e6e052-27c                   
+                             a-4893-963e-b005974f937d.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00007-552fac62-5cb                   
+                             0-490e-9833-690c681337e2.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00008-d12abfcb-fff                   
+                             8-446b-ab20-fdef9e38a79b.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00009-f16ab63b-e42                   
+                             f-422c-bc92-a97fdd36f7dc.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00010-630a6233-34e                   
+                             3-4c01-ae0b-387c93126317.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00011-fef2a700-396                   
+                             a-4247-8496-c345cfd1d161.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00012-77a782a2-76b                   
+                             8-4b10-b162-599c4bc41af5.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00013-aa48d695-19a                   
+                             c-467d-a960-ab303f8d3f34.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00014-b3e07518-2c8                   
+                             f-472a-b467-9d27aa0363f2.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00015-2fd065d8-177                   
+                             b-45e1-98c3-445c73b45776.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00016-067c0077-d19                   
+                             4-44c0-a34e-d6c223c5fc37.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00017-71f64217-9eb                   
+                             8-4ed0-8f47-dcf1862f4154.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00018-60185330-20f                   
+                             d-46c8-9ae3-567e37c606ed.json                     
+[03/31/26 18:53:21] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00019-53e9a3ba-8a5                   
+                             6-4dd1-a96f-e818c1f964e2.json                     
+[03/31/26 18:53:21] INFO     Resumed conversation                  state.py:331
+                             cabe8fe7-7293-ad64-fce0-965324fa4023              
+                             from persistent storage.                          
+                             State: {'id':                                     
+                             UUID('cabe8fe7-7293-ad64-fce0-965324f             
+                             a4023'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona', 'kind': 'LocalWorkspace'},             
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\cabe8fe77293ad64fce0965324fa40             
+                             23', 'max_iterations': 80,                        
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.RUNNING:             
+                             'running'>, 'confirmation_policy':                
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id':                           
+                             '1f33cb42-d089-46e6-b2fd-2779c53b9924             
+                             ', 'stats': {'usage_to_metrics':                  
+                             {'default': {'model_name':                        
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'accumulated_cost': 0.0,                    
+                             'max_budget_per_task': None,                      
+                             'accumulated_token_usage': {'model':              
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'prompt_tokens': 5633,                      
+                             'completion_tokens': 98,                          
+                             'cache_read_tokens': 0,                           
+                             'cache_write_tokens': 0,                          
+                             'reasoning_tokens': 0,                            
+                             'context_window': 0,                              
+                             'per_turn_token': 5731,                           
+                             'response_id': ''}, 'costs': [],                  
+                             'response_latencies': [{'model':                  
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'latency': 5.354209661483765,               
+                             'response_id':                                    
+                             '03d49ce19737266f9bc23625a191963a'}],             
+                             'token_usages': [{'model':                        
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'prompt_tokens': 5633,                      
+                             'completion_tokens': 98,                          
+                             'cache_read_tokens': 0,                           
+                             'cache_write_tokens': 0,                          
+                             'reasoning_tokens': 0,                            
+                             'context_window': 0,                              
+                             'per_turn_token': 5731,                           
+                             'response_id':                                    
+                             '03d49ce19737266f9bc23625a191963a'}]}             
+                             }}, 'secret_registry':                            
+                             {'secret_sources': {}},                           
+                             'agent_state': {}}                                
+                             Agent: {'llm': {'model':                          
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'api_key':                                  
+                             SecretStr('**********'), 'base_url':              
+                             'https://router.huggingface.co/v1',               
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 0.9,                 
+                             'stream': False, 'drop_params': True,             
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': True,                           
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': True,               
+                             'prompt_cache_retention': '24h',                  
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'FileEditorTool', 'params':             
+                             {}}], 'mcp_config': {},                           
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[03/31/26 18:53:21] INFO     FileEditor initialized with cwd:      editor.py:95
+                             C:\Users\suatb\Desktop\Frieren\Xperso             
+                             na                                                
+[03/31/26 18:53:21] INFO     Loaded 1 tools from spec:              base.py:341
+                             ['file_editor']                                   
+[03/31/26 18:54:17] ERROR    Tool 'execute_bash' not found.        agent.py:505
+                             Available: ['file_editor', 'finish',              
+                             'think']                                          
+[openhands-gateway] TOM setup failed, falling back to standard agent: Missing TOM SDK helpers: TomConsultTool, SleeptimeComputeTool
+[03/31/26 18:56:56] INFO     Created new conversation              state.py:359
+                             4af54c0e-66ed-0ebe-db8a-4c4518024b48              
+                             State: {'id':                                     
+                             UUID('4af54c0e-66ed-0ebe-db8a-4c45180             
+                             24b48'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona', 'kind': 'LocalWorkspace'},             
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\4af54c0e66ed0ebedb8a4c4518024b             
+                             48', 'max_iterations': 80,                        
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.IDLE:                
+                             'idle'>, 'confirmation_policy':                   
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id': None,                     
+                             'stats': {'usage_to_metrics': {}},                
+                             'secret_registry': {'secret_sources':             
+                             {}}, 'agent_state': {}}                           
+                             Agent: {'llm': {'model':                          
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'api_key':                                  
+                             SecretStr('**********'), 'base_url':              
+                             'https://router.huggingface.co/v1',               
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 0.9,                 
+                             'stream': False, 'drop_params': True,             
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': True,                           
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': True,               
+                             'prompt_cache_retention': '24h',                  
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'FileEditorTool', 'params':             
+                             {}}], 'mcp_config': {},                           
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[03/31/26 18:56:56] INFO     FileEditor initialized with cwd:      editor.py:95
+                             C:\Users\suatb\Desktop\Frieren\Xperso             
+                             na                                                
+[03/31/26 18:56:56] INFO     Loaded 1 tools from spec:              base.py:341
+                             ['file_editor']                                   
+[openhands-gateway] TOM setup failed, falling back to standard agent: Missing TOM SDK helpers: TomConsultTool, SleeptimeComputeTool
+[03/31/26 18:57:15] INFO     Created new conversation              state.py:359
+                             64c1f122-f849-6c92-fa9c-505abbf86d78              
+                             State: {'id':                                     
+                             UUID('64c1f122-f849-6c92-fa9c-505abbf             
+                             86d78'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona', 'kind': 'LocalWorkspace'},             
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\64c1f122f8496c92fa9c505abbf86d             
+                             78', 'max_iterations': 80,                        
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.IDLE:                
+                             'idle'>, 'confirmation_policy':                   
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id': None,                     
+                             'stats': {'usage_to_metrics': {}},                
+                             'secret_registry': {'secret_sources':             
+                             {}}, 'agent_state': {}}                           
+                             Agent: {'llm': {'model':                          
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'api_key':                                  
+                             SecretStr('**********'), 'base_url':              
+                             'https://router.huggingface.co/v1',               
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 0.9,                 
+                             'stream': False, 'drop_params': True,             
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': True,                           
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': True,               
+                             'prompt_cache_retention': '24h',                  
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'FileEditorTool', 'params':             
+                             {}}], 'mcp_config': {},                           
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[03/31/26 18:57:15] INFO     FileEditor initialized with cwd:      editor.py:95
+                             C:\Users\suatb\Desktop\Frieren\Xperso             
+                             na                                                
+[03/31/26 18:57:15] INFO     Loaded 1 tools from spec:              base.py:341
+                             ['file_editor']                                   
+[openhands-gateway] TOM setup failed, falling back to standard agent: Missing TOM SDK helpers: TomConsultTool, SleeptimeComputeTool
+[03/31/26 18:57:16] INFO     Created new conversation              state.py:359
+                             c360f1f5-5da4-d75d-cff5-e2c40dcfe84e              
+                             State: {'id':                                     
+                             UUID('c360f1f5-5da4-d75d-cff5-e2c40dc             
+                             fe84e'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona', 'kind': 'LocalWorkspace'},             
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\c360f1f55da4d75dcff5e2c40dcfe8             
+                             4e', 'max_iterations': 80,                        
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.IDLE:                
+                             'idle'>, 'confirmation_policy':                   
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id': None,                     
+                             'stats': {'usage_to_metrics': {}},                
+                             'secret_registry': {'secret_sources':             
+                             {}}, 'agent_state': {}}                           
+                             Agent: {'llm': {'model':                          
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'api_key':                                  
+                             SecretStr('**********'), 'base_url':              
+                             'https://router.huggingface.co/v1',               
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 0.9,                 
+                             'stream': False, 'drop_params': True,             
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': True,                           
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': True,               
+                             'prompt_cache_retention': '24h',                  
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'FileEditorTool', 'params':             
+                             {}}], 'mcp_config': {},                           
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[03/31/26 18:57:16] INFO     FileEditor initialized with cwd:      editor.py:95
+                             C:\Users\suatb\Desktop\Frieren\Xperso             
+                             na                                                
+[03/31/26 18:57:16] INFO     Loaded 1 tools from spec:              base.py:341
+                             ['file_editor']                                   
+[openhands-gateway] TOM setup failed, falling back to standard agent: Missing TOM SDK helpers: TomConsultTool, SleeptimeComputeTool
+[03/31/26 18:57:26] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00000-180a380d-1b7                   
+                             5-43a5-8c6b-ffa593931a46.json                     
+[03/31/26 18:57:26] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00001-b7044bf3-6d8                   
+                             e-4524-a2cb-49660064626a.json                     
+[03/31/26 18:57:26] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00002-45aafcba-11e                   
+                             1-42dd-ba45-ccb06ef09791.json                     
+[03/31/26 18:57:26] INFO     Resumed conversation                  state.py:331
+                             64c1f122-f849-6c92-fa9c-505abbf86d78              
+                             from persistent storage.                          
+                             State: {'id':                                     
+                             UUID('64c1f122-f849-6c92-fa9c-505abbf             
+                             86d78'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona', 'kind': 'LocalWorkspace'},             
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\64c1f122f8496c92fa9c505abbf86d             
+                             78', 'max_iterations': 80,                        
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.FINISHED             
+                             : 'finished'>, 'confirmation_policy':             
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id':                           
+                             'b7044bf3-6d8e-4524-a2cb-49660064626a             
+                             ', 'stats': {'usage_to_metrics':                  
+                             {'default': {'model_name':                        
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'accumulated_cost': 0.0,                    
+                             'max_budget_per_task': None,                      
+                             'accumulated_token_usage': {'model':              
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'prompt_tokens': 5582,                      
+                             'completion_tokens': 47,                          
+                             'cache_read_tokens': 0,                           
+                             'cache_write_tokens': 0,                          
+                             'reasoning_tokens': 0,                            
+                             'context_window': 0,                              
+                             'per_turn_token': 5629,                           
+                             'response_id': ''}, 'costs': [],                  
+                             'response_latencies': [{'model':                  
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'latency': 2.8208281993865967,              
+                             'response_id':                                    
+                             '2b310e8ca1227e9c8116c9d7d7579af8'}],             
+                             'token_usages': [{'model':                        
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'prompt_tokens': 5582,                      
+                             'completion_tokens': 47,                          
+                             'cache_read_tokens': 0,                           
+                             'cache_write_tokens': 0,                          
+                             'reasoning_tokens': 0,                            
+                             'context_window': 0,                              
+                             'per_turn_token': 5629,                           
+                             'response_id':                                    
+                             '2b310e8ca1227e9c8116c9d7d7579af8'}]}             
+                             }}, 'secret_registry':                            
+                             {'secret_sources': {}},                           
+                             'agent_state': {}}                                
+                             Agent: {'llm': {'model':                          
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'api_key':                                  
+                             SecretStr('**********'), 'base_url':              
+                             'https://router.huggingface.co/v1',               
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 0.9,                 
+                             'stream': False, 'drop_params': True,             
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': True,                           
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': True,               
+                             'prompt_cache_retention': '24h',                  
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'FileEditorTool', 'params':             
+                             {}}], 'mcp_config': {},                           
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[03/31/26 18:57:26] INFO     FileEditor initialized with cwd:      editor.py:95
+                             C:\Users\suatb\Desktop\Frieren\Xperso             
+                             na                                                
+[03/31/26 18:57:26] INFO     Loaded 1 tools from spec:              base.py:341
+                             ['file_editor']                                   
+[openhands-gateway] TOM setup failed, falling back to standard agent: Missing TOM SDK helpers: TomConsultTool, SleeptimeComputeTool
+[03/31/26 18:58:26] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00000-180a380d-1b7                   
+                             5-43a5-8c6b-ffa593931a46.json                     
+[03/31/26 18:58:26] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00000-406dc9ea-ea1                   
+                             c-4ddc-b969-d5833c9eeb50.json                     
+[03/31/26 18:58:27] WARNING  Unrecognized event file name:   [openhands-gateway] TOM setup failed, falling back to standard agent: Missing TOM SDK helpers: TomConsultTool, SleeptimeComputeTool
+event_store.py:198
+                             events\event-00001-49715cdf-e0c                   
+                             d-4b5a-855c-2e2d8516c909.json                     
+[03/31/26 18:58:28] INFO     Created new conversation              state.py:359
+                             8ece7754-2576-37a3-5235-f2329a08e718              
+                             State: {'id':                                     
+                             UUID('8ece7754-2576-37a3-5235-f2329a0             
+                             8e718'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona', 'kind': 'LocalWorkspace'},             
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\8ece7754257637a35235f2329a08e7             
+                             18', 'max_iterations': 80,                        
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.IDLE:                
+                             'idle'>, 'confirmation_policy':                   
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id': None,                     
+                             'stats': {'usage_to_metrics': {}},                
+                             'secret_registry': {'secret_sources':             
+                             {}}, 'agent_state': {}}                           
+                             Agent: {'llm': {'model':                          
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'api_key':                                  
+                             SecretStr('**********'), 'base_url':              
+                             'https://router.huggingface.co/v1',               
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 0.9,                 
+                             'stream': False, 'drop_params': True,             
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': True,                           
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': True,               
+                             'prompt_cache_retention': '24h',                  
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'FileEditorTool', 'params':             
+                             {}}], 'mcp_config': {},                           
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[03/31/26 18:58:29] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00001-b7044bf3-6d8                   
+                             e-4524-a2cb-49660064626a.json                     
+[03/31/26 18:58:36] INFO     FileEditor initialized with cwd:      editor.py:95
+                             C:\Users\suatb\Desktop\Frieren\Xperso             
+                             na                                                
+[03/31/26 18:58:36] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00002-45aafcba-11e                   
+                             1-42dd-ba45-ccb06ef09791.json                     
+[03/31/26 18:58:36] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00002-7d02ab8d-179                   
+                             b-42ef-b4e1-9f0abb876596.json                     
+[03/31/26 18:58:36] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00003-0c8a934b-905                   
+                             9-4f2f-a879-01c53dc71f57.json                     
+[03/31/26 18:58:36] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00004-853d8db3-b56                   
+                             d-4e87-9516-65eac7e61dda.json                     
+[03/31/26 18:58:36] INFO     Loaded 1 tools from spec:              base.py:341
+                             ['file_editor']                                   
+[03/31/26 18:58:36] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00005-f8ef0b6f-3fe                   
+                             9-4143-b170-bc46daa80024.json                     
+[03/31/26 18:58:36] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00006-7097c55c-254                   
+                             5-43d9-b536-34e5de55e552.json                     
+[03/31/26 18:58:36] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00007-33fac541-0ca                   
+                             3-4107-bb12-2881b2827662.json                     
+[03/31/26 18:58:36] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00008-65ffefcd-3bd                   
+                             5-463e-9f55-b9e93d694930.json                     
+[03/31/26 18:58:36] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00009-df5cc600-9ee                   
+                             7-4cb0-a979-0fe3cf2342d4.json                     
+[03/31/26 18:58:36] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00010-29fe8aae-2c5                   
+                             8-46a8-b805-ac8d7ebc828b.json                     
+[03/31/26 18:58:36] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00011-87df5778-fda                   
+                             f-4f8e-878c-a238e6998d66.json                     
+[03/31/26 18:58:37] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00012-26ec8f4b-4c1                   
+                             c-4689-a175-896a5bb20fad.json                     
+[03/31/26 18:58:37] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00013-28ea653e-fd4                   
+                             9-4139-9a65-ae4949ab009e.json                     
+[03/31/26 18:58:37] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00014-d7805594-3a5                   
+                             4-4211-ba21-f3fb0b2a4ea8.json                     
+[03/31/26 18:58:37] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00015-ee49290a-2a2                   
+                             2-4d68-a4a5-dccfc0fd3a8b.json                     
+[03/31/26 18:58:37] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00016-91f3c1ee-733                   
+                             8-4450-b520-38a243d966fa.json                     
+[03/31/26 18:58:37] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00017-e74a5551-950                   
+                             d-4827-9391-74355284b72e.json                     
+[03/31/26 18:58:37] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00018-7c773453-391                   
+                             9-405e-ac30-5d1bebf49a96.json                     
+[03/31/26 18:58:37] WARNING  Unrecognized event file name:   event_store.py:198
+                             events\event-00019-bf1a67bf-3c4                   
+                             d-4e82-bc7e-46ba5f13ead9.json                     
+[03/31/26 18:58:37] INFO     Resumed conversation                  state.py:331
+                             64c1f122-f849-6c92-fa9c-505abbf86d78              
+                             from persistent storage.                          
+                             State: {'id':                                     
+                             UUID('64c1f122-f849-6c92-fa9c-505abbf             
+                             86d78'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona', 'kind': 'LocalWorkspace'},             
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\64c1f122f8496c92fa9c505abbf86d             
+                             78', 'max_iterations': 80,                        
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.RUNNING:             
+                             'running'>, 'confirmation_policy':                
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id':                           
+                             '49715cdf-e0cd-4b5a-855c-2e2d8516c909             
+                             ', 'stats': {'usage_to_metrics':                  
+                             {'default': {'model_name':                        
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'accumulated_cost': 0.0,                    
+                             'max_budget_per_task': None,                      
+                             'accumulated_token_usage': {'model':              
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'prompt_tokens': 5582,                      
+                             'completion_tokens': 47,                          
+                             'cache_read_tokens': 0,                           
+                             'cache_write_tokens': 0,                          
+                             'reasoning_tokens': 0,                            
+                             'context_window': 0,                              
+                             'per_turn_token': 5629,                           
+                             'response_id': ''}, 'costs': [],                  
+                             'response_latencies': [{'model':                  
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'latency': 2.8208281993865967,              
+                             'response_id':                                    
+                             '2b310e8ca1227e9c8116c9d7d7579af8'}],             
+                             'token_usages': [{'model':                        
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'prompt_tokens': 5582,                      
+                             'completion_tokens': 47,                          
+                             'cache_read_tokens': 0,                           
+                             'cache_write_tokens': 0,                          
+                             'reasoning_tokens': 0,                            
+                             'context_window': 0,                              
+                             'per_turn_token': 5629,                           
+                             'response_id':                                    
+                             '2b310e8ca1227e9c8116c9d7d7579af8'}]}             
+                             }}, 'secret_registry':                            
+                             {'secret_sources': {}},                           
+                             'agent_state': {}}                                
+                             Agent: {'llm': {'model':                          
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'api_key':                                  
+                             SecretStr('**********'), 'base_url':              
+                             'https://router.huggingface.co/v1',               
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 0.9,                 
+                             'stream': False, 'drop_params': True,             
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': True,                           
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': True,               
+                             'prompt_cache_retention': '24h',                  
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'FileEditorTool', 'params':             
+                             {}}], 'mcp_config': {},                           
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[03/31/26 18:58:37] INFO     FileEditor initialized with cwd:      editor.py:95
+                             C:\Users\suatb\Desktop\Frieren\Xperso             
+                             na                                                
+[03/31/26 18:58:37] INFO     Loaded 1 tools from spec:              base.py:341
+                             ['file_editor']                                   
+[03/31/26 18:58:45] ERROR    Tool 'run_terminal_validation' not    agent.py:505
+                             found. Available: ['file_editor',                 
+                             'finish', 'think']                                
+[openhands-gateway] TOM setup failed, falling back to standard agent: Missing TOM SDK helpers: TomConsultTool, SleeptimeComputeTool
+[03/31/26 18:58:49] INFO     Created new conversation              state.py:359
+                             6c7bd971-ed61-3c2e-0da4-7358d20f995b              
+                             State: {'id':                                     
+                             UUID('6c7bd971-ed61-3c2e-0da4-7358d20             
+                             f995b'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona', 'kind': 'LocalWorkspace'},             
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\6c7bd971ed613c2e0da47358d20f99             
+                             5b', 'max_iterations': 80,                        
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.IDLE:                
+                             'idle'>, 'confirmation_policy':                   
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id': None,                     
+                             'stats': {'usage_to_metrics': {}},                
+                             'secret_registry': {'secret_sources':             
+                             {}}, 'agent_state': {}}                           
+                             Agent: {'llm': {'model':                          
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'api_key':                                  
+                             SecretStr('**********'), 'base_url':              
+                             'https://router.huggingface.co/v1',               
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 0.9,                 
+                             'stream': False, 'drop_params': True,             
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': True,                           
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': True,               
+                             'prompt_cache_retention': '24h',                  
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'FileEditorTool', 'params':             
+                             {}}], 'mcp_config': {},                           
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[03/31/26 18:58:49] INFO     FileEditor initialized with cwd:      editor.py:95
+                             C:\Users\suatb\Desktop\Frieren\Xperso             
+                             na                                                
+[03/31/26 18:58:49] INFO     Loaded 1 tools from spec:              base.py:341
+                             ['file_editor']                                   
+[03/31/26 18:58:53] ERROR    Tool 'run_terminal_validation' not    agent.py:505
+                             found. Available: ['file_editor',                 
+                             'finish', 'think']                                
+[openhands-gateway] TOM setup failed, falling back to standard agent: Missing TOM SDK helpers: TomConsultTool, SleeptimeComputeTool
+[03/31/26 19:00:18] INFO     Created new conversation              state.py:359
+                             826a7ade-d80f-8417-24c4-afba1b8ea684              
+                             State: {'id':                                     
+                             UUID('826a7ade-d80f-8417-24c4-afba1b8             
+                             ea684'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona', 'kind': 'LocalWorkspace'},             
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\826a7aded80f841724c4afba1b8ea6             
+                             84', 'max_iterations': 80,                        
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.IDLE:                
+                             'idle'>, 'confirmation_policy':                   
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id': None,                     
+                             'stats': {'usage_to_metrics': {}},                
+                             'secret_registry': {'secret_sources':             
+                             {}}, 'agent_state': {}}                           
+                             Agent: {'llm': {'model':                          
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'api_key':                                  
+                             SecretStr('**********'), 'base_url':              
+                             'https://router.huggingface.co/v1',               
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 0.9,                 
+                             'stream': False, 'drop_params': True,             
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': True,                           
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': True,               
+                             'prompt_cache_retention': '24h',                  
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'FileEditorTool', 'params':             
+                             {}}], 'mcp_config': {},                           
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[03/31/26 19:00:18] INFO     FileEditor initialized with cwd:      editor.py:95
+                             C:\Users\suatb\Desktop\Frieren\Xperso             
+                             na                                                
+[03/31/26 19:00:18] INFO     Loaded 1 tools from spec:              base.py:341
+                             ['file_editor']                                   
+[03/31/26 19:00:23] ERROR    Tool 'run_terminal_validation' not    agent.py:505
+                             found. Available: ['file_editor',                 
+                             'finish', 'think']                                
+[03/31/26 19:00:26] ERROR    Tool 'run_terminal_validation' not    agent.py:505
+                             found. Available: ['file_editor',                 
+                             'finish', 'think']                                
+[openhands-gateway] TOM setup failed, falling back to standard agent: Missing TOM SDK helpers: TomConsultTool, SleeptimeComputeTool
+[03/31/26 19:00:38] INFO     Created new conversation              state.py:359
+                             bb6e392a-aadb-e6cf-c225-f9c79ae6867b              
+                             State: {'id':                                     
+                             UUID('bb6e392a-aadb-e6cf-c225-f9c79ae             
+                             6867b'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona', 'kind': 'LocalWorkspace'},             
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\bb6e392aaadbe6cfc225f9c79ae686             
+                             7b', 'max_iterations': 80,                        
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.IDLE:                
+                             'idle'>, 'confirmation_policy':                   
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id': None,                     
+                             'stats': {'usage_to_metrics': {}},                
+                             'secret_registry': {'secret_sources':             
+                             {}}, 'agent_state': {}}                           
+                             Agent: {'llm': {'model':                          
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'api_key':                                  
+                             SecretStr('**********'), 'base_url':              
+                             'https://router.huggingface.co/v1',               
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 0.9,                 
+                             'stream': False, 'drop_params': True,             
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': True,                           
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': True,               
+                             'prompt_cache_retention': '24h',                  
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'FileEditorTool', 'params':             
+                             {}}], 'mcp_config': {},                           
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[03/31/26 19:00:38] INFO     FileEditor initialized with cwd:      editor.py:95
+                             C:\Users\suatb\Desktop\Frieren\Xperso             
+                             na                                                
+[03/31/26 19:00:39] INFO     Loaded 1 tools from spec:              base.py:341
+                             ['file_editor']                                   
+[03/31/26 19:00:50] ERROR    Tool 'run_terminal_validation' not    agent.py:505
+                             found. Available: ['file_editor',                 
+                             'finish', 'think']                                
+[03/31/26 19:00:50] WARNING  LLM produced empty response -         agent.py:357
+                             continuing agent loop                             
+[03/31/26 19:01:07] WARNING  LLM produced empty response -         agent.py:357
+                             continuing agent loop                             
+[openhands-gateway] TOM setup failed, falling back to standard agent: Missing TOM SDK helpers: TomConsultTool, SleeptimeComputeTool
+[03/31/26 19:03:59] INFO     Created new conversation              state.py:359
+                             e32c3ab6-42a0-8d59-3631-bde84204f29a              
+                             State: {'id':                                     
+                             UUID('e32c3ab6-42a0-8d59-3631-bde8420             
+                             4f29a'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona', 'kind': 'LocalWorkspace'},             
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\e32c3ab642a08d593631bde84204f2             
+                             9a', 'max_iterations': 80,                        
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.IDLE:                
+                             'idle'>, 'confirmation_policy':                   
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id': None,                     
+                             'stats': {'usage_to_metrics': {}},                
+                             'secret_registry': {'secret_sources':             
+                             {}}, 'agent_state': {}}                           
+                             Agent: {'llm': {'model':                          
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'api_key':                                  
+                             SecretStr('**********'), 'base_url':              
+                             'https://router.huggingface.co/v1',               
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 0.9,                 
+                             'stream': False, 'drop_params': True,             
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': True,                           
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': True,               
+                             'prompt_cache_retention': '24h',                  
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'FileEditorTool', 'params':             
+                             {}}], 'mcp_config': {},                           
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[03/31/26 19:03:59] INFO     FileEditor initialized with cwd:      editor.py:95
+                             C:\Users\suatb\Desktop\Frieren\Xperso             
+                             na                                                
+[03/31/26 19:03:59] INFO     Loaded 1 tools from spec:              base.py:341
+                             ['file_editor']                                   
+[openhands-gateway] run_turn error model='huggingface/moonshotai/Kimi-K2-Instruct': Conversation run failed for id=e32c3ab6-42a0-8d59-3631-bde84204f29a: litellm.APIError: HuggingfaceException - {"error":"You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers. Alternatively, subscribe to PRO to get 20x more included usage."}
+
+Conversation logs are stored at: C:\Users\suatb\.openhands\binary-runs\e32c3ab642a08d593631bde84204f29a
+
+To help debug this issue, please file a bug report at:
+  https://github.com/OpenHands/software-agent-sdk/issues/new
+and attach the conversation logs from the directory above.
+Traceback (most recent call last):
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\llm_http_handler.py", line 217, in _make_common_sync_call
+    response = sync_httpx_client.post(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\http_handler.py", line 979, in post
+    raise e
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\http_handler.py", line 961, in post
+    response.raise_for_status()
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\httpx\_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '402 Payment Required' for url 'https://router.huggingface.co/v1/chat/completions'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/402
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\main.py", line 2779, in completion
+    response = base_llm_http_handler.completion(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\llm_http_handler.py", line 520, in completion
+    response = self._make_common_sync_call(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\llm_http_handler.py", line 242, in _make_common_sync_call
+    raise self._handle_error(e=e, provider_config=provider_config)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\llm_http_handler.py", line 3617, in _handle_error
+    raise provider_config.get_error_class(
+litellm.llms.huggingface.common_utils.HuggingFaceError: {"error":"You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers. Alternatively, subscribe to PRO to get 20x more included usage."}
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\conversation\impl\local_conversation.py", line 578, in run
+    self.agent.step(
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\lmnr\opentelemetry_lib\decorators\__init__.py", line 161, in wrap
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\agent\agent.py", line 265, in step
+    llm_response = make_llm_completion(
+                   ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\agent\utils.py", line 226, in make_llm_completion
+    return llm.completion(
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\llm\llm.py", line 754, in completion
+    return self._handle_error(
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\llm\llm.py", line 735, in completion
+    resp = _one_attempt()
+           ^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\tenacity\__init__.py", line 331, in wrapped_f
+    return copy(f, *args, **kw)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\tenacity\__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\tenacity\__init__.py", line 371, in iter
+    result = action(retry_state)
+             ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\tenacity\__init__.py", line 393, in <lambda>
+    self._add_action_func(lambda rs: rs.outcome.result())
+                                     ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py", line 401, in __get_result
+    raise self._exception
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\tenacity\__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\llm\llm.py", line 709, in _one_attempt
+    resp = self._transport_call(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\llm\llm.py", line 1016, in _transport_call
+    ret = litellm_completion(
+          ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\utils.py", line 1385, in wrapper
+    raise e
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\utils.py", line 1254, in wrapper
+    result = original_function(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\main.py", line 4046, in completion
+    raise exception_type(
+          ^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\litellm_core_utils\exception_mapping_utils.py", line 2340, in exception_type
+    raise e
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\litellm_core_utils\exception_mapping_utils.py", line 1636, in exception_type
+    raise APIError(
+litellm.exceptions.APIError: litellm.APIError: HuggingfaceException - {"error":"You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers. Alternatively, subscribe to PRO to get 20x more included usage."}
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 1532, in run_turn
+    version = None
+            ^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\lmnr\opentelemetry_lib\decorators\__init__.py", line 161, in wrap
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\conversation\impl\local_conversation.py", line 625, in run
+    raise ConversationRunError(
+openhands.sdk.conversation.exceptions.ConversationRunError: Conversation run failed for id=e32c3ab6-42a0-8d59-3631-bde84204f29a: litellm.APIError: HuggingfaceException - {"error":"You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers. Alternatively, subscribe to PRO to get 20x more included usage."}
+
+Conversation logs are stored at: C:\Users\suatb\.openhands\binary-runs\e32c3ab642a08d593631bde84204f29a
+
+To help debug this issue, please file a bug report at:
+  https://github.com/OpenHands/software-agent-sdk/issues/new
+and attach the conversation logs from the directory above.
+[openhands-gateway] run_turn error model='huggingface/moonshotai/Kimi-K2-Instruct': Conversation run failed for id=64c1f122-f849-6c92-fa9c-505abbf86d78: litellm.APIError: HuggingfaceException - <!DOCTYPE html>
+<html class="" lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <meta
+            name="description"
+            content="We're on a journey to advance and democratize artificial intelligence through open source and open science."
+    />
+    <meta property="fb:app_id" content="1321688464574422" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@huggingface" />
+    <meta
+            property="og:title"
+            content="Hugging Face - The AI community building the future."
+    />
+    <meta property="og:type" content="website" />
+
+    <title>Hugging Face - The AI community building the future.</title>
+    <style>
+        body {
+            margin: 0;
+        }
+
+        main {
+            background-color: white;
+            min-height: 100vh;
+            padding: 7rem 1rem 8rem 1rem;
+            text-align: center;
+            font-family: Source Sans Pro, ui-sans-serif, system-ui, -apple-system,
+            BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans,
+            sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol,
+            Noto Color Emoji;
+        }
+
+        img {
+            width: 6rem;
+            height: 6rem;
+            margin: 0 auto 1rem;
+        }
+
+        h1 {
+            font-size: 3.75rem;
+            line-height: 1;
+            color: rgba(31, 41, 55, 1);
+            font-weight: 700;
+            box-sizing: border-box;
+            margin: 0 auto;
+        }
+
+        p, a {
+            color: rgba(107, 114, 128, 1);
+            font-size: 1.125rem;
+            line-height: 1.75rem;
+            max-width: 28rem;
+            box-sizing: border-box;
+            margin: 0 auto;
+        }
+
+        .dark main {
+            background-color: rgb(11, 15, 25);
+        }
+        .dark h1 {
+            color: rgb(209, 213, 219);
+        }
+        .dark p, .dark a {
+            color: rgb(156, 163, 175);
+        }
+    </style>
+    <script>
+        // On page load or when changing themes, best to add inline in `head` to avoid FOUC
+        const key = "_tb_global_settings";
+        let theme = window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+        try {
+            const storageTheme = JSON.parse(window.localStorage.getItem(key)).theme;
+            if (storageTheme) {
+                theme = storageTheme === "dark" ? "dark" : "light";
+            }
+        } catch (e) {}
+        if (theme === "dark") {
+            document.documentElement.classList.add("dark");
+        } else {
+            document.documentElement.classList.remove("dark");
+        }
+    </script>
+</head>
+
+<body>
+<main>
+    <img
+            src="https://cdn-media.huggingface.co/assets/huggingface_logo.svg"
+            alt=""
+    />
+    <div>
+        <h1>504</h1>
+        <p>Gateway Timeout</p>
+    </div>
+</main>
+</body>
+</html>
+
+Conversation logs are stored at: C:\Users\suatb\.openhands\binary-runs\64c1f122f8496c92fa9c505abbf86d78
+
+To help debug this issue, please file a bug report at:
+  https://github.com/OpenHands/software-agent-sdk/issues/new
+and attach the conversation logs from the directory above.
+Traceback (most recent call last):
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\llm_http_handler.py", line 217, in _make_common_sync_call
+    response = sync_httpx_client.post(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\http_handler.py", line 979, in post
+    raise e
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\http_handler.py", line 961, in post
+    response.raise_for_status()
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\httpx\_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Server error '504 Gateway Time-out' for url 'https://router.huggingface.co/v1/chat/completions'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/504
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\main.py", line 2779, in completion
+    response = base_llm_http_handler.completion(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\llm_http_handler.py", line 520, in completion
+    response = self._make_common_sync_call(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\llm_http_handler.py", line 242, in _make_common_sync_call
+    raise self._handle_error(e=e, provider_config=provider_config)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\llm_http_handler.py", line 3617, in _handle_error
+    raise provider_config.get_error_class(
+litellm.llms.huggingface.common_utils.HuggingFaceError: <!DOCTYPE html>
+<html class="" lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <meta
+            name="description"
+            content="We're on a journey to advance and democratize artificial intelligence through open source and open science."
+    />
+    <meta property="fb:app_id" content="1321688464574422" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@huggingface" />
+    <meta
+            property="og:title"
+            content="Hugging Face - The AI community building the future."
+    />
+    <meta property="og:type" content="website" />
+
+    <title>Hugging Face - The AI community building the future.</title>
+    <style>
+        body {
+            margin: 0;
+        }
+
+        main {
+            background-color: white;
+            min-height: 100vh;
+            padding: 7rem 1rem 8rem 1rem;
+            text-align: center;
+            font-family: Source Sans Pro, ui-sans-serif, system-ui, -apple-system,
+            BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans,
+            sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol,
+            Noto Color Emoji;
+        }
+
+        img {
+            width: 6rem;
+            height: 6rem;
+            margin: 0 auto 1rem;
+        }
+
+        h1 {
+            font-size: 3.75rem;
+            line-height: 1;
+            color: rgba(31, 41, 55, 1);
+            font-weight: 700;
+            box-sizing: border-box;
+            margin: 0 auto;
+        }
+
+        p, a {
+            color: rgba(107, 114, 128, 1);
+            font-size: 1.125rem;
+            line-height: 1.75rem;
+            max-width: 28rem;
+            box-sizing: border-box;
+            margin: 0 auto;
+        }
+
+        .dark main {
+            background-color: rgb(11, 15, 25);
+        }
+        .dark h1 {
+            color: rgb(209, 213, 219);
+        }
+        .dark p, .dark a {
+            color: rgb(156, 163, 175);
+        }
+    </style>
+    <script>
+        // On page load or when changing themes, best to add inline in `head` to avoid FOUC
+        const key = "_tb_global_settings";
+        let theme = window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+        try {
+            const storageTheme = JSON.parse(window.localStorage.getItem(key)).theme;
+            if (storageTheme) {
+                theme = storageTheme === "dark" ? "dark" : "light";
+            }
+        } catch (e) {}
+        if (theme === "dark") {
+            document.documentElement.classList.add("dark");
+        } else {
+            document.documentElement.classList.remove("dark");
+        }
+    </script>
+</head>
+
+<body>
+<main>
+    <img
+            src="https://cdn-media.huggingface.co/assets/huggingface_logo.svg"
+            alt=""
+    />
+    <div>
+        <h1>504</h1>
+        <p>Gateway Timeout</p>
+    </div>
+</main>
+</body>
+</html>
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\conversation\impl\local_conversation.py", line 578, in run
+    self.agent.step(
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\lmnr\opentelemetry_lib\decorators\__init__.py", line 161, in wrap
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\agent\agent.py", line 265, in step
+    llm_response = make_llm_completion(
+                   ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\agent\utils.py", line 226, in make_llm_completion
+    return llm.completion(
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\llm\llm.py", line 754, in completion
+    return self._handle_error(
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\llm\llm.py", line 735, in completion
+    resp = _one_attempt()
+           ^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\tenacity\__init__.py", line 331, in wrapped_f
+    return copy(f, *args, **kw)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\tenacity\__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\tenacity\__init__.py", line 371, in iter
+    result = action(retry_state)
+             ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\tenacity\__init__.py", line 393, in <lambda>
+    self._add_action_func(lambda rs: rs.outcome.result())
+                                     ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py", line 401, in __get_result
+    raise self._exception
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\tenacity\__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\llm\llm.py", line 709, in _one_attempt
+    resp = self._transport_call(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\llm\llm.py", line 1016, in _transport_call
+    ret = litellm_completion(
+          ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\utils.py", line 1385, in wrapper
+    raise e
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\utils.py", line 1254, in wrapper
+    result = original_function(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\main.py", line 4046, in completion
+    raise exception_type(
+          ^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\litellm_core_utils\exception_mapping_utils.py", line 2340, in exception_type
+    raise e
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\litellm_core_utils\exception_mapping_utils.py", line 1636, in exception_type
+    raise APIError(
+litellm.exceptions.APIError: litellm.APIError: HuggingfaceException - <!DOCTYPE html>
+<html class="" lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <meta
+            name="description"
+            content="We're on a journey to advance and democratize artificial intelligence through open source and open science."
+    />
+    <meta property="fb:app_id" content="1321688464574422" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@huggingface" />
+    <meta
+            property="og:title"
+            content="Hugging Face - The AI community building the future."
+    />
+    <meta property="og:type" content="website" />
+
+    <title>Hugging Face - The AI community building the future.</title>
+    <style>
+        body {
+            margin: 0;
+        }
+
+        main {
+            background-color: white;
+            min-height: 100vh;
+            padding: 7rem 1rem 8rem 1rem;
+            text-align: center;
+            font-family: Source Sans Pro, ui-sans-serif, system-ui, -apple-system,
+            BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans,
+            sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol,
+            Noto Color Emoji;
+        }
+
+        img {
+            width: 6rem;
+            height: 6rem;
+            margin: 0 auto 1rem;
+        }
+
+        h1 {
+            font-size: 3.75rem;
+            line-height: 1;
+            color: rgba(31, 41, 55, 1);
+            font-weight: 700;
+            box-sizing: border-box;
+            margin: 0 auto;
+        }
+
+        p, a {
+            color: rgba(107, 114, 128, 1);
+            font-size: 1.125rem;
+            line-height: 1.75rem;
+            max-width: 28rem;
+            box-sizing: border-box;
+            margin: 0 auto;
+        }
+
+        .dark main {
+            background-color: rgb(11, 15, 25);
+        }
+        .dark h1 {
+            color: rgb(209, 213, 219);
+        }
+        .dark p, .dark a {
+            color: rgb(156, 163, 175);
+        }
+    </style>
+    <script>
+        // On page load or when changing themes, best to add inline in `head` to avoid FOUC
+        const key = "_tb_global_settings";
+        let theme = window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+        try {
+            const storageTheme = JSON.parse(window.localStorage.getItem(key)).theme;
+            if (storageTheme) {
+                theme = storageTheme === "dark" ? "dark" : "light";
+            }
+        } catch (e) {}
+        if (theme === "dark") {
+            document.documentElement.classList.add("dark");
+        } else {
+            document.documentElement.classList.remove("dark");
+        }
+    </script>
+</head>
+
+<body>
+<main>
+    <img
+            src="https://cdn-media.huggingface.co/assets/huggingface_logo.svg"
+            alt=""
+    />
+    <div>
+        <h1>504</h1>
+        <p>Gateway Timeout</p>
+    </div>
+</main>
+</body>
+</html>
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 1532, in run_turn
+    version = None
+            ^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\lmnr\opentelemetry_lib\decorators\__init__.py", line 161, in wrap
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\conversation\impl\local_conversation.py", line 625, in run
+    raise ConversationRunError(
+openhands.sdk.conversation.exceptions.ConversationRunError: Conversation run failed for id=64c1f122-f849-6c92-fa9c-505abbf86d78: litellm.APIError: HuggingfaceException - <!DOCTYPE html>
+<html class="" lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <meta
+            name="description"
+            content="We're on a journey to advance and democratize artificial intelligence through open source and open science."
+    />
+    <meta property="fb:app_id" content="1321688464574422" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@huggingface" />
+    <meta
+            property="og:title"
+            content="Hugging Face - The AI community building the future."
+    />
+    <meta property="og:type" content="website" />
+
+    <title>Hugging Face - The AI community building the future.</title>
+    <style>
+        body {
+            margin: 0;
+        }
+
+        main {
+            background-color: white;
+            min-height: 100vh;
+            padding: 7rem 1rem 8rem 1rem;
+            text-align: center;
+            font-family: Source Sans Pro, ui-sans-serif, system-ui, -apple-system,
+            BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans,
+            sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol,
+            Noto Color Emoji;
+        }
+
+        img {
+            width: 6rem;
+            height: 6rem;
+            margin: 0 auto 1rem;
+        }
+
+        h1 {
+            font-size: 3.75rem;
+            line-height: 1;
+            color: rgba(31, 41, 55, 1);
+            font-weight: 700;
+            box-sizing: border-box;
+            margin: 0 auto;
+        }
+
+        p, a {
+            color: rgba(107, 114, 128, 1);
+            font-size: 1.125rem;
+            line-height: 1.75rem;
+            max-width: 28rem;
+            box-sizing: border-box;
+            margin: 0 auto;
+        }
+
+        .dark main {
+            background-color: rgb(11, 15, 25);
+        }
+        .dark h1 {
+            color: rgb(209, 213, 219);
+        }
+        .dark p, .dark a {
+            color: rgb(156, 163, 175);
+        }
+    </style>
+    <script>
+        // On page load or when changing themes, best to add inline in `head` to avoid FOUC
+        const key = "_tb_global_settings";
+        let theme = window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+        try {
+            const storageTheme = JSON.parse(window.localStorage.getItem(key)).theme;
+            if (storageTheme) {
+                theme = storageTheme === "dark" ? "dark" : "light";
+            }
+        } catch (e) {}
+        if (theme === "dark") {
+            document.documentElement.classList.add("dark");
+        } else {
+            document.documentElement.classList.remove("dark");
+        }
+    </script>
+</head>
+
+<body>
+<main>
+    <img
+            src="https://cdn-media.huggingface.co/assets/huggingface_logo.svg"
+            alt=""
+    />
+    <div>
+        <h1>504</h1>
+        <p>Gateway Timeout</p>
+    </div>
+</main>
+</body>
+</html>
+
+Conversation logs are stored at: C:\Users\suatb\.openhands\binary-runs\64c1f122f8496c92fa9c505abbf86d78
+
+To help debug this issue, please file a bug report at:
+  https://github.com/OpenHands/software-agent-sdk/issues/new
+and attach the conversation logs from the directory above.
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 62090)
+Traceback (most recent call last):
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\socketserver.py", line 692, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\socketserver.py", line 761, in __init__
+    self.handle()
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\server.py", line 175, in do_POST
+    except Exception as exc:
+        ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\server.py", line 24, in write_json
+    handler.wfile.write(payload)
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\socketserver.py", line 840, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+[openhands-gateway] TOM setup failed, falling back to standard agent: Missing TOM SDK helpers: TomConsultTool, SleeptimeComputeTool
+[03/31/26 19:05:49] INFO     Created new conversation              state.py:359
+                             cc92527b-65af-189a-0f83-56fd06fdbda8              
+                             State: {'id':                                     
+                             UUID('cc92527b-65af-189a-0f83-56fd06f             
+                             dbda8'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona', 'kind': 'LocalWorkspace'},             
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\cc92527b65af189a0f8356fd06fdbd             
+                             a8', 'max_iterations': 80,                        
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.IDLE:                
+                             'idle'>, 'confirmation_policy':                   
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id': None,                     
+                             'stats': {'usage_to_metrics': {}},                
+                             'secret_registry': {'secret_sources':             
+                             {}}, 'agent_state': {}}                           
+                             Agent: {'llm': {'model':                          
+                             'huggingface/moonshotai/Kimi-K2-Instr             
+                             uct', 'api_key':                                  
+                             SecretStr('**********'), 'base_url':              
+                             'https://router.huggingface.co/v1',               
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 0.9,                 
+                             'stream': False, 'drop_params': True,             
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': True,                           
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': True,               
+                             'prompt_cache_retention': '24h',                  
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'FileEditorTool', 'params':             
+                             {}}], 'mcp_config': {},                           
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[03/31/26 19:05:49] INFO     FileEditor initialized with cwd:      editor.py:95
+                             C:\Users\suatb\Desktop\Frieren\Xperso             
+                             na                                                
+[03/31/26 19:05:49] INFO     Loaded 1 tools from spec:              base.py:341
+                             ['file_editor']                                   
+[openhands-gateway] run_turn error model='huggingface/moonshotai/Kimi-K2-Instruct': Conversation run failed for id=cc92527b-65af-189a-0f83-56fd06fdbda8: litellm.APIError: HuggingfaceException - {"error":"You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers. Alternatively, subscribe to PRO to get 20x more included usage."}
+
+Conversation logs are stored at: C:\Users\suatb\.openhands\binary-runs\cc92527b65af189a0f8356fd06fdbda8
+
+To help debug this issue, please file a bug report at:
+  https://github.com/OpenHands/software-agent-sdk/issues/new
+and attach the conversation logs from the directory above.
+Traceback (most recent call last):
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\llm_http_handler.py", line 217, in _make_common_sync_call
+    response = sync_httpx_client.post(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\http_handler.py", line 979, in post
+    raise e
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\http_handler.py", line 961, in post
+    response.raise_for_status()
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\httpx\_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '402 Payment Required' for url 'https://router.huggingface.co/v1/chat/completions'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/402
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\main.py", line 2779, in completion
+    response = base_llm_http_handler.completion(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\llm_http_handler.py", line 520, in completion
+    response = self._make_common_sync_call(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\llm_http_handler.py", line 242, in _make_common_sync_call
+    raise self._handle_error(e=e, provider_config=provider_config)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\llms\custom_httpx\llm_http_handler.py", line 3617, in _handle_error
+    raise provider_config.get_error_class(
+litellm.llms.huggingface.common_utils.HuggingFaceError: {"error":"You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers. Alternatively, subscribe to PRO to get 20x more included usage."}
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\conversation\impl\local_conversation.py", line 578, in run
+    self.agent.step(
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\lmnr\opentelemetry_lib\decorators\__init__.py", line 161, in wrap
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\agent\agent.py", line 265, in step
+    llm_response = make_llm_completion(
+                   ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\agent\utils.py", line 226, in make_llm_completion
+    return llm.completion(
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\llm\llm.py", line 754, in completion
+    return self._handle_error(
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\llm\llm.py", line 735, in completion
+    resp = _one_attempt()
+           ^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\tenacity\__init__.py", line 331, in wrapped_f
+    return copy(f, *args, **kw)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\tenacity\__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\tenacity\__init__.py", line 371, in iter
+    result = action(retry_state)
+             ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\tenacity\__init__.py", line 393, in <lambda>
+    self._add_action_func(lambda rs: rs.outcome.result())
+                                     ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py", line 401, in __get_result
+    raise self._exception
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\tenacity\__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\llm\llm.py", line 709, in _one_attempt
+    resp = self._transport_call(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\llm\llm.py", line 1016, in _transport_call
+    ret = litellm_completion(
+          ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\utils.py", line 1385, in wrapper
+    raise e
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\utils.py", line 1254, in wrapper
+    result = original_function(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\main.py", line 4046, in completion
+    raise exception_type(
+          ^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\litellm_core_utils\exception_mapping_utils.py", line 2340, in exception_type
+    raise e
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\litellm\litellm_core_utils\exception_mapping_utils.py", line 1636, in exception_type
+    raise APIError(
+litellm.exceptions.APIError: litellm.APIError: HuggingfaceException - {"error":"You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers. Alternatively, subscribe to PRO to get 20x more included usage."}
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 1532, in run_turn
+    version = None
+            ^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\lmnr\opentelemetry_lib\decorators\__init__.py", line 161, in wrap
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\conversation\impl\local_conversation.py", line 625, in run
+    raise ConversationRunError(
+openhands.sdk.conversation.exceptions.ConversationRunError: Conversation run failed for id=cc92527b-65af-189a-0f83-56fd06fdbda8: litellm.APIError: HuggingfaceException - {"error":"You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers. Alternatively, subscribe to PRO to get 20x more included usage."}
+
+Conversation logs are stored at: C:\Users\suatb\.openhands\binary-runs\cc92527b65af189a0f8356fd06fdbda8
+
+To help debug this issue, please file a bug report at:
+  https://github.com/OpenHands/software-agent-sdk/issues/new
+and attach the conversation logs from the directory above.

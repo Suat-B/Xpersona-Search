@@ -72,3 +72,8 @@ Mitigations:
 - `OPENHANDS_GATEWAY_HOST` default: `127.0.0.1`
 - `OPENHANDS_GATEWAY_PYTHON` default: `python`
 - `OPENHANDS_GATEWAY_WORKSPACE` default: current repo root
+- `OPENHANDS_TOOL_CONCURRENCY_LIMIT` default: `1` (try `2-4` for faster independent tool calls)
+- `OPENHANDS_ENABLE_CONTEXT_CONDENSER` default: `1`
+- `OPENHANDS_CONDENSER_MAX_SIZE` default: `64`
+- `OPENHANDS_CONDENSER_KEEP_FIRST` default: `3`
+- `OPENHANDS_AUTONOMOUS_NEVER_CONFIRM` default: `1` (prevents confirmation stalls in autonomous mode)

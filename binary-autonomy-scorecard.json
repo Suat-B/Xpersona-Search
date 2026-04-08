@@ -1,0 +1,101 @@
+{
+  "thresholds": {
+    "codingCompletionRate": 0.8,
+    "validationSuccessRate": 0.8,
+    "gitCloseoutSuccessRate": 1,
+    "maxAvoidableTakeoverRate": 0.2
+  },
+  "metrics": {
+    "codingCompletionRate": 0.6666666666666666,
+    "validationSuccessRate": 0.5,
+    "repairSuccessRate": 0,
+    "gitCloseoutSuccessRate": 1,
+    "endToEndCompletionRate": 0.7142857142857143,
+    "closureCompletionRate": 0,
+    "meanStepsToClosure": 15,
+    "meanRepairsToClosure": 0,
+    "avoidableTakeoverRate": 0,
+    "desktopCompletionRate": 0.6666666666666666,
+    "desktopWrongTargetTotal": 0,
+    "desktopTimeoutCount": 0
+  },
+  "latency": {
+    "thresholds": {
+      "chatFirstToolImprovement": 0.3,
+      "codingTotalRunImprovement": 0.15,
+      "desktopElapsedImprovement": 0.2
+    },
+    "baselineAvailable": false,
+    "baseline": null,
+    "current": {
+      "laneMedians": {
+        "chat": {
+          "count": 1,
+          "ttfrMs": 5,
+          "firstToolMs": null,
+          "firstVisibleMs": 5,
+          "totalRunMs": 8228,
+          "elapsedMs": 8503
+        },
+        "desktop": {
+          "count": 6,
+          "ttfrMs": 5.5,
+          "firstToolMs": 715.5,
+          "firstVisibleMs": 715.5,
+          "totalRunMs": 53017,
+          "elapsedMs": 55189.5
+        },
+        "coding": {
+          "count": 6,
+          "ttfrMs": 5,
+          "firstToolMs": 1208,
+          "firstVisibleMs": 1208,
+          "totalRunMs": 16422.5,
+          "elapsedMs": 17226.5
+        }
+      },
+      "chatProbeCount": 1,
+      "desktopProbeCount": 6,
+      "codingTargetCount": 2,
+      "medianChatTtfrMs": 5,
+      "medianChatFirstToolMs": 5,
+      "medianCodingElapsedMs": 17226.5,
+      "medianCodingTotalRunMs": 16422.5,
+      "medianDesktopElapsedMs": 55189.5,
+      "medianFallbackCount": 0
+    },
+    "chatFirstToolImprovement": null,
+    "codingTotalRunImprovement": null,
+    "desktopElapsedImprovement": null,
+    "passing": true,
+    "failingReasons": []
+  },
+  "codingLaneCoverage": {
+    "repo_scaffold": {
+      "total": 1,
+      "completed": 1
+    },
+    "single_file_edit": {
+      "total": 1,
+      "completed": 0
+    },
+    "multi_file_feature_delivery": {
+      "total": 2,
+      "completed": 2
+    },
+    "validation_repair": {
+      "total": 1,
+      "completed": 0
+    },
+    "git_closeout": {
+      "total": 1,
+      "completed": 1
+    }
+  },
+  "passing": false,
+  "failingReasons": [
+    "coding completion 0.67 < 0.80",
+    "validation success 0.50 < 0.80",
+    "desktop completion 0.67 < 1.00"
+  ]
+}

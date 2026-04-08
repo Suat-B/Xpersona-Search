@@ -1,0 +1,3 @@
+@echo off
+echo Opening Discord...
+start discord

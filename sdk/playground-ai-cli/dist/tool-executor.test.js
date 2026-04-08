@@ -229,4 +229,96 @@ describe("CliToolExecutor", () => {
         expect(result.ok).toBe(false);
         expect(result.summary).toContain("Unsupported tool teleport_file");
     });
+    it("redirects binary files away from read_file", async () => {
+        const workspace = await makeWorkspace();
+        tempDirs.push(workspace);
+        const binaryPath = path.join(workspace, "fixtures", "logo.png");
+        await fs.mkdir(path.dirname(binaryPath), { recursive: true });
+        await fs.writeFile(binaryPath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]));
+        const executor = new CliToolExecutor(workspace);
+        const result = await executor.execute(toolCall("read_file", { path: "fixtures/logo.png" }));
+        expect(result.ok).toBe(false);
+        expect(result.blocked).toBe(true);
+        expect(result.summary).toContain("Use stat_binary, read_binary_chunk, analyze_binary, or hash_binary instead.");
+        expect(result.data?.recommendedTools).toContain("read_binary_chunk");
+    });
+    it("reads and analyzes binary chunks", async () => {
+        const workspace = await makeWorkspace();
+        tempDirs.push(workspace);
+        const binaryPath = path.join(workspace, "fixtures", "sample.bin");
+        await fs.mkdir(path.dirname(binaryPath), { recursive: true });
+        await fs.writeFile(binaryPath, Buffer.from("Hello\x00Binary\xff", "latin1"));
+        const executor = new CliToolExecutor(workspace);
+        const chunkResult = await executor.execute(toolCall("read_binary_chunk", { path: "fixtures/sample.bin", offset: 0, length: 6 }));
+        const analysisResult = await executor.execute(toolCall("analyze_binary", { path: "fixtures/sample.bin" }));
+        expect(chunkResult.ok).toBe(true);
+        expect(chunkResult.data).toMatchObject({
+            path: "fixtures/sample.bin",
+            offset: 0,
+            length: 6,
+        });
+        expect(String(chunkResult.data?.asciiPreview)).toContain("Hello.");
+        expect(analysisResult.ok).toBe(true);
+        expect(analysisResult.data).toMatchObject({
+            path: "fixtures/sample.bin",
+            riskClass: "low",
+        });
+    });
+    it("finds binary patterns across offsets", async () => {
+        const workspace = await makeWorkspace();
+        tempDirs.push(workspace);
+        const binaryPath = path.join(workspace, "fixtures", "search.bin");
+        await fs.mkdir(path.dirname(binaryPath), { recursive: true });
+        await fs.writeFile(binaryPath, Buffer.from([0x10, 0x20, 0xde, 0xad, 0xbe, 0xef, 0x30, 0xde, 0xad, 0xbe, 0xef]));
+        const executor = new CliToolExecutor(workspace);
+        const result = await executor.execute(toolCall("search_binary", {
+            path: "fixtures/search.bin",
+            pattern: "deadbeef",
+            encoding: "hex",
+            limit: 4,
+        }));
+        expect(result.ok).toBe(true);
+        expect(result.data?.matches).toEqual([
+            expect.objectContaining({ offset: 2, length: 4 }),
+            expect.objectContaining({ offset: 7, length: 4 }),
+        ]);
+    });
+    it("writes low-risk binary files and records receipts", async () => {
+        const workspace = await makeWorkspace();
+        tempDirs.push(workspace);
+        const executor = new CliToolExecutor(workspace);
+        const writeResult = await executor.execute(toolCall("write_binary_file", {
+            path: "artifacts/cache.bin",
+            bytesHex: "00ff10aa",
+        }));
+        const patchResult = await executor.execute(toolCall("patch_binary", {
+            path: "artifacts/cache.bin",
+            operations: [{ offset: 1, deleteLength: 2, bytesHex: "1122" }],
+        }));
+        const written = await fs.readFile(path.join(workspace, "artifacts", "cache.bin"));
+        expect(writeResult.ok).toBe(true);
+        expect(writeResult.data?.receipt).toMatchObject({
+            path: "artifacts/cache.bin",
+            riskClass: "low",
+        });
+        expect(patchResult.ok).toBe(true);
+        expect(patchResult.data?.receipt).toMatchObject({
+            path: "artifacts/cache.bin",
+            changedByteRanges: [expect.objectContaining({ offset: 1 })],
+        });
+        expect(written.toString("hex")).toBe("001122aa");
+    });
+    it("blocks high-risk binary writes without approval", async () => {
+        const workspace = await makeWorkspace();
+        tempDirs.push(workspace);
+        const executor = new CliToolExecutor(workspace);
+        const result = await executor.execute(toolCall("write_binary_file", {
+            path: "dangerous/tool.exe",
+            bytesHex: "4d5a0000",
+        }));
+        expect(result.ok).toBe(false);
+        expect(result.blocked).toBe(true);
+        expect(result.summary).toContain("High-risk binary mutations require explicit approval");
+        expect(result.data?.approvalRequired).toBe(true);
+    });
 });

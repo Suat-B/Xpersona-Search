@@ -39,6 +39,7 @@ export type ExecutionPolicyDecision = {
     focusLeaseActive: boolean;
     focusSuppressed: boolean;
     managedSessionPreferred: boolean;
+    browserSessionPreference?: "managed_only" | "reuse_first" | null;
     visibleFallbackReason?: string;
     summary: string;
 };

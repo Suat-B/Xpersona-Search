@@ -1,0 +1,119 @@
+{
+  "version": "binary_autonomy_benchmark_v1",
+  "createdAt": "2026-04-05T07:42:23.135Z",
+  "host": {
+    "url": "http://127.0.0.1:7777",
+    "version": "0.2.0"
+  },
+  "categories": [
+    {
+      "category": "single_file_edit",
+      "gateLane": "single_file_edit",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-single_file_edit-Nm6nuT",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 147,
+      "artifactCorrect": false,
+      "validationPassed": false,
+      "totalToolCalls": 1,
+      "successfulToolCalls": 1,
+      "failedToolCalls": 0,
+      "toolCounts": {
+        "read_file": 1
+      },
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "missingContent": [
+        "single-file-edit/index.js: Unknown, trim"
+      ],
+      "missingRequirements": [],
+      "turns": 1,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": true,
+      "elapsedMs": 139574,
+      "traceId": "1f840c1b-82d6-4ae4-8965-c54c0cdc2dd7",
+      "runId": "76b9390a-2fdf-4600-b900-4e752bc96f73",
+      "hostedRunId": "b57bc0e8787d8c378292e037af52395e",
+      "files": [
+        {
+          "path": "single-file-edit",
+          "type": "dir"
+        },
+        {
+          "path": "single-file-edit/index.js",
+          "type": "file",
+          "size": 66,
+          "preview": "export function formatName(name) {\n  return String(name ?? \"\");\n}\n"
+        }
+      ],
+      "timedOut": false
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "takeoverRequired": 1,
+    "validationPassed": 0,
+    "scorecard": {
+      "thresholds": {
+        "codingCompletionRate": 0.8,
+        "validationSuccessRate": 0.8,
+        "gitCloseoutSuccessRate": 1,
+        "maxAvoidableTakeoverRate": 0.2
+      },
+      "metrics": {
+        "codingCompletionRate": 0,
+        "validationSuccessRate": 0,
+        "repairSuccessRate": 0,
+        "gitCloseoutSuccessRate": 0,
+        "endToEndCompletionRate": 0,
+        "closureCompletionRate": 0,
+        "meanStepsToClosure": 0,
+        "meanRepairsToClosure": 0,
+        "avoidableTakeoverRate": 0
+      },
+      "codingLaneCoverage": {
+        "repo_scaffold": {
+          "total": 0,
+          "completed": 0
+        },
+        "single_file_edit": {
+          "total": 1,
+          "completed": 0
+        },
+        "multi_file_feature_delivery": {
+          "total": 0,
+          "completed": 0
+        },
+        "validation_repair": {
+          "total": 0,
+          "completed": 0
+        },
+        "git_closeout": {
+          "total": 0,
+          "completed": 0
+        }
+      },
+      "passing": false,
+      "failingReasons": [
+        "coding completion 0.00 < 0.80",
+        "validation success 0.00 < 0.80",
+        "git closeout 0.00 < 1.00"
+      ]
+    }
+  }
+}

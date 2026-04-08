@@ -56,9 +56,9 @@ export async function requestJson(input) {
 }
 export async function requestSse(input) {
     const response = await fetch(`${input.baseUrl}${input.path}`, {
-        method: "POST",
+        method: input.method ?? "POST",
         headers: authHeaders(input.auth),
-        body: JSON.stringify(input.body),
+        body: input.body !== undefined ? JSON.stringify(input.body) : undefined,
     });
     if (!response.ok) {
         const text = await response.text();

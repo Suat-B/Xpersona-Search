@@ -1,4 +1,4 @@
-import { checkRateLimits, getUserPlan } from "@/lib/hf-router/rate-limit";
+﻿import { checkRateLimits, getUserPlan } from "@/lib/hf-router/rate-limit";
 import { hasUnlimitedPlaygroundAccess } from "@/lib/playground/auth";
 import type {
   LoopStateContract,
@@ -14,6 +14,7 @@ import {
   PLAYGROUND_CONTRACT_VERSION,
   resolvePlaygroundModelToken,
   resolvePlaygroundModelSelection,
+  type PlaygroundUserConnectedModelCandidate,
   type PlaygroundModelProvider,
 } from "@/lib/playground/model-registry";
 import {
@@ -86,7 +87,7 @@ export type AssistContext = {
     }>;
   };
   browser?: {
-    mode?: "unavailable" | "attached" | "managed";
+    mode?: "unavailable" | "attached" | "managed" | "profile";
     browserName?: string;
     activePage?: {
       id: string;
@@ -160,11 +161,62 @@ export type AssistContext = {
       blocked?: string[];
       highConfidence?: string[];
     };
+    routeRecommendations?: Array<{
+      id: string;
+      kind: string;
+      score: number;
+      reason: string;
+      informedBy?: string[];
+      preferred?: boolean;
+    }>;
     environmentFreshness?: {
       lastUpdatedAt?: string;
       stale?: boolean;
     };
     machineRoutineIds?: string[];
+  };
+  repoModel?: {
+    contextVersion?: number;
+    workspaceRoot?: string;
+    summary?: string;
+    stack?: "node_js_ts" | "python" | "generic";
+    primaryValidationCommand?: string;
+    projectRoots?: string[];
+    hotspots?: string[];
+    likelyEntrypoints?: string[];
+    likelyTests?: string[];
+    symbolIndex?: Array<{
+      name: string;
+      kind: string;
+      path: string;
+      line?: number;
+      exported?: boolean;
+    }>;
+    routeHints?: {
+      preferredRoute?: string;
+      reason?: string;
+      informedBy?: string[];
+    };
+    memory?: {
+      preferredValidationCommand?: string;
+      preferredBranchPrefix?: string;
+      knownRepairPatterns?: string[];
+      proofTemplates?: string[];
+    };
+  };
+  verificationPlan?: {
+    status?: "pending" | "running" | "passed" | "failed";
+    primaryCommand?: string;
+    checks?: Array<{
+      id: string;
+      label: string;
+      command?: string;
+      kind?: "test" | "lint" | "typecheck" | "build" | "verify";
+      status?: "pending" | "running" | "passed" | "failed";
+      reason?: string;
+    }>;
+    receipts?: string[];
+    reason?: string;
   };
 };
 
@@ -185,6 +237,19 @@ export type AssistRequest = {
   mode: AssistMode;
   task: string;
   stream?: boolean;
+  speedProfile?: "fast" | "balanced" | "thorough";
+  startupPhase?: "fast_start" | "context_enrichment" | "full_run";
+  routePolicy?: {
+    turnBudgetMs?: number;
+    maxIterations?: number;
+    stallTimeoutMs?: number;
+    missionFirstBrowser?: boolean;
+    toolConcurrencyLimit?: number;
+    requireConfirmation?: boolean;
+    enableContextCondenser?: boolean;
+    condenserMaxSize?: number;
+    condenserKeepFirst?: number;
+  };
   interactionKind?: PlaygroundInteractionKind;
   chatModelSource?: PlaygroundChatModelSource;
   orchestratorModelSource?: "platform_owned" | "user_connected";
@@ -199,6 +264,10 @@ export type AssistRequest = {
   tom?: {
     enabled?: boolean;
   };
+  mcp?: {
+    mcpServers: Record<string, Record<string, unknown>>;
+  };
+  userConnectedModels?: PlaygroundUserConnectedModelCandidate[];
   historySessionId?: string;
   context?: AssistContext;
   retrievalHints?: AssistRetrievalHints;
@@ -255,6 +324,14 @@ export type AssistCompletionChecklistItem = {
   status: "pending" | "completed" | "blocked";
   detail?: string;
 };
+export type AssistClosurePhase =
+  | "grounding"
+  | "implementation"
+  | "verification"
+  | "closeout"
+  | "final_summary"
+  | "complete"
+  | "blocked";
 
 export type AssistValidationPlan = {
   scope: "none" | "targeted";
@@ -355,10 +432,20 @@ export type AssistResult = {
   orchestrator?: "in_house" | "openhands";
   orchestratorVersion?: string | null;
   runId?: string;
+  modelCandidate?: Record<string, unknown> | null;
+  fallbackAttempt?: number;
+  failureReason?: string | null;
+  persistenceDir?: string | null;
+  conversationId?: string | null;
+  fallbackTrail?: Array<Record<string, unknown>>;
   loopState?: LoopStateContract | null;
   pendingToolCall?: PendingToolCallContract | null;
   toolTrace?: ToolTraceEntryContract[];
   adapter?: "native_tools" | "text_actions" | "deterministic_batch";
+  closureSummary?: string;
+  unfinishedChecklistItems?: string[];
+  lastMeaningfulProof?: string;
+  whyBinaryIsBlocked?: string;
 };
 
 type ProviderChatResponse = {
@@ -482,7 +569,7 @@ export function buildDecision(mode: AssistMode, task: string): AssistResult["dec
 function looksLikeInformationalQuestion(task: string): boolean {
   const t = compactWhitespace(task);
   if (!t) return false;
-  // Any explicit change / implementation ask → not read-only Q&A.
+  // Any explicit change / implementation ask â†’ not read-only Q&A.
   if (
     /\b(edit|update|modify|patch|refactor|fix|implement|create|write|add|build|delete|remove|rename|migrate|replace)\b/i.test(
       t
@@ -648,6 +735,7 @@ function inferStackSpecializer(input: {
   return "generic";
 }
 
+
 function inferAutonomyLane(input: {
   request: AssistRuntimeInput;
   intent: AssistIntent;
@@ -719,6 +807,7 @@ function buildCompletionChecklist(input: {
   const observed = new Set(input.observedProof);
   const validationRequired = taskRequestsValidation(input.request.task);
   const gitRequired = taskRequestsGitWorkflow(input.request.task);
+  const nonSummaryMissing = input.missingRequirements.filter((item) => item !== "required_summary_missing");
   const items: AssistCompletionChecklistItem[] = [];
 
   items.push({
@@ -750,6 +839,16 @@ function buildCompletionChecklist(input: {
     });
   }
 
+  if (input.goalType === "command_run") {
+    items.push({
+      id: "command-proof",
+      label: "Capture terminal proof for the requested command",
+      category: "validation",
+      status: missing.has("required_command_proof_missing") ? "pending" : "completed",
+      detail: "Binary must prove the terminal objective with a successful command result.",
+    });
+  }
+
   if (gitRequired) {
     const closeoutMissing = input.missingRequirements.filter((item) => item.startsWith("required_git_"));
     items.push({
@@ -761,28 +860,141 @@ function buildCompletionChecklist(input: {
     });
   }
 
+  if (input.lane === "browser_task") {
+    items.push({
+      id: "browser-closeout",
+      label: "Prove the browser workflow outcome",
+      category: "closeout",
+      status: missing.has("required_browser_outcome_missing") ? "pending" : "completed",
+      detail: "Capture browser-native proof of the final page or workflow state.",
+    });
+  }
+
+  if (input.lane === "machine_control") {
+    items.push({
+      id: "desktop-closeout",
+      label: "Prove the desktop outcome",
+      category: "closeout",
+      status: missing.has("required_desktop_outcome_missing") ? "pending" : "completed",
+      detail: "Capture a desktop proof artifact or active-window confirmation after the requested action.",
+    });
+  }
+
   items.push({
     id: "summary",
     label: "Produce a final completion summary",
     category: "summary",
-    status: input.final.trim() ? "completed" : "pending",
-    detail: input.final.trim() ? input.final.slice(0, 180) : "No final completion summary yet.",
+    status: input.final.trim() && nonSummaryMissing.length === 0 ? "completed" : "pending",
+    detail:
+      input.final.trim() && nonSummaryMissing.length === 0
+        ? input.final.slice(0, 180)
+        : nonSummaryMissing.length > 0
+          ? "Wait for verification and closeout proof before writing the final summary."
+          : "No final completion summary yet.",
   });
 
   return items;
 }
 
-function requiredProofForGoal(goalType: AssistObjectiveState["goalType"]): string[] {
-  if (goalType === "code_edit") {
-    return ["target_resolved", "target_grounded", "workspace_change_prepared"];
+function requiredProofForGoal(input: {
+  goalType: AssistObjectiveState["goalType"];
+  lane: AssistAutonomyLane;
+  task: string;
+}): string[] {
+  const proof: string[] = [];
+  if (input.goalType === "code_edit") {
+    proof.push("target_resolved", "target_grounded", "workspace_change_prepared");
   }
-  if (goalType === "command_run") {
-    return ["command_prepared"];
+  if (input.goalType === "command_run") {
+    proof.push("command_prepared", "command_result_proven");
   }
-  if (goalType === "plan") {
-    return ["plan_ready"];
+  if (input.goalType === "plan") {
+    proof.push("plan_ready");
   }
-  return [];
+  if (taskRequestsValidation(input.task)) {
+    proof.push("validation_proven");
+  }
+  if (taskRequestsGitWorkflow(input.task)) {
+    proof.push("git_closeout_proven");
+  }
+  if (input.lane === "browser_task") {
+    proof.push("browser_outcome_proven");
+  }
+  if (input.lane === "machine_control") {
+    proof.push("desktop_outcome_proven");
+  }
+  return Array.from(new Set(proof));
+}
+
+function deriveChosenRoute(input: { request: AssistRuntimeInput; lane: AssistAutonomyLane; stackSpecializer: AssistStackSpecializer }) {
+  const preferredWorldRoute = input.request.context?.worldModel?.routeRecommendations?.find((route) => route.preferred);
+  if (preferredWorldRoute?.kind) {
+    return {
+      chosenRoute: preferredWorldRoute.kind,
+      routeReason: preferredWorldRoute.reason,
+      verificationStatus: input.request.context?.verificationPlan?.status || "pending",
+    };
+  }
+  const preferredRepoRoute = input.request.context?.repoModel?.routeHints?.preferredRoute;
+  if (preferredRepoRoute) {
+    return {
+      chosenRoute: preferredRepoRoute,
+      routeReason:
+        input.request.context?.repoModel?.routeHints?.reason ||
+        "Repo cognition preferred this execution route.",
+      verificationStatus: input.request.context?.verificationPlan?.status || "pending",
+    };
+  }
+  if (input.lane === "browser_task") {
+    return {
+      chosenRoute: "browser_native_route",
+      routeReason: "Browser tasks should prefer structured browser-native execution before visible fallbacks.",
+      verificationStatus: input.request.context?.verificationPlan?.status || "pending",
+    };
+  }
+  if (input.stackSpecializer === "node_js_ts" || input.stackSpecializer === "python") {
+    return {
+      chosenRoute: "shell_route",
+      routeReason: "Coding tasks prefer terminal-first execution and verifier loops.",
+      verificationStatus: input.request.context?.verificationPlan?.status || "pending",
+    };
+  }
+  return {
+    chosenRoute: "desktop_background_route",
+    routeReason: "Binary is defaulting to the least intrusive background-capable route.",
+    verificationStatus: input.request.context?.verificationPlan?.status || "pending",
+  };
+}
+
+function deriveWorkerAssignments(input: {
+  lane: AssistAutonomyLane;
+  targetPath?: string;
+  request: AssistRuntimeInput;
+}): Array<{ role: string; target?: string; objective?: string; status?: string }> {
+  if (
+    input.lane !== "repo_scaffold" &&
+    input.lane !== "single_file_edit" &&
+    input.lane !== "multi_file_feature_delivery" &&
+    input.lane !== "validation_repair" &&
+    input.lane !== "git_completion"
+  ) {
+    return [];
+  }
+  const target = input.targetPath || input.request.context?.repoModel?.hotspots?.[0] || "workspace";
+  const verificationCommand =
+    input.request.context?.verificationPlan?.primaryCommand ||
+    input.request.context?.repoModel?.primaryValidationCommand;
+  return [
+    { role: "Scout", target, objective: "Map likely files, symbols, and blast radius.", status: "ready" },
+    { role: "Builder", target, objective: "Implement the intended code change in the chosen route.", status: "ready" },
+    {
+      role: "Verifier",
+      target,
+      objective: verificationCommand ? `Run and interpret ${verificationCommand}.` : "Check validation and proof state.",
+      status: "queued",
+    },
+    { role: "Closer", target, objective: "Produce proof-backed completion and closeout.", status: "queued" },
+  ];
 }
 
 export function buildObjectiveState(input: {
@@ -812,13 +1024,27 @@ export function buildObjectiveState(input: {
     contextSelection: input.contextSelection,
     actions: input.actions,
   });
+  const routeDecision = deriveChosenRoute({
+    request: input.request,
+    lane,
+    stackSpecializer,
+  });
+  const workerAssignments = deriveWorkerAssignments({
+    lane,
+    targetPath: input.targetInference.path,
+    request: input.request,
+  });
   const requiredArtifacts = buildRequiredArtifacts({
     goalType,
     lane,
     targetInference: input.targetInference,
     plan: input.plan,
   });
-  const requiredProof = requiredProofForGoal(goalType);
+  const requiredProof = requiredProofForGoal({
+    goalType,
+    lane,
+    task: input.request.task,
+  });
   const hasPreparedMutation = input.actions.some((action) => {
     if (action.type !== "edit" && action.type !== "write_file" && action.type !== "mkdir") return false;
     if (!input.targetInference.path || !("path" in action)) return true;
@@ -867,6 +1093,12 @@ export function buildObjectiveState(input: {
     observedProof,
     missingProof,
     completionChecklist,
+    chosenRoute: routeDecision.chosenRoute,
+    routeReason: routeDecision.routeReason,
+    verificationStatus: routeDecision.verificationStatus,
+    verificationReceipts: input.request.context?.verificationPlan?.receipts || [],
+    repoContextVersion: input.request.context?.repoModel?.contextVersion,
+    workerAssignments,
   };
 }
 
@@ -882,6 +1114,12 @@ export function buildProgressState(input: {
   pendingToolCallSignature?: string;
   failed?: boolean;
   repairing?: boolean;
+  chosenRoute?: string;
+  routeReason?: string;
+  verificationStatus?: string;
+  verificationReceipts?: string[];
+  repoContextVersion?: number;
+  workerAssignments?: Array<{ role: string; target?: string; objective?: string; status?: string }>;
 }): AssistProgressState {
   const lastMeaningfulProgressAtStep =
     typeof input.lastMeaningfulProgressAtStep === "number"
@@ -897,6 +1135,15 @@ export function buildProgressState(input: {
           : (input.stallCount || 0) > 0
             ? "stalled"
             : "running";
+  const chosenRoute = input.chosenRoute || input.objectiveState.chosenRoute;
+  const routeReason = input.routeReason || input.objectiveState.routeReason;
+  const verificationStatus = input.verificationStatus || input.objectiveState.verificationStatus;
+  const verificationReceipts = input.verificationReceipts || input.objectiveState.verificationReceipts;
+  const repoContextVersion =
+    typeof input.repoContextVersion === "number"
+      ? input.repoContextVersion
+      : input.objectiveState.repoContextVersion;
+  const workerAssignments = input.workerAssignments || input.objectiveState.workerAssignments;
   const lastMeaningfulProgressSummary =
     compactWhitespace(
       input.lastMeaningfulProgressSummary ||
@@ -917,6 +1164,12 @@ export function buildProgressState(input: {
     ...(input.stallReason ? { stallReason: input.stallReason } : {}),
     ...(input.nextDeterministicAction ? { nextDeterministicAction: input.nextDeterministicAction } : {}),
     ...(input.pendingToolCallSignature ? { pendingToolCallSignature: input.pendingToolCallSignature } : {}),
+    ...(chosenRoute ? { chosenRoute } : {}),
+    ...(routeReason ? { routeReason } : {}),
+    ...(verificationStatus ? { verificationStatus } : {}),
+    ...(verificationReceipts?.length ? { verificationReceipts } : {}),
+    ...(typeof repoContextVersion === "number" ? { repoContextVersion } : {}),
+    ...(workerAssignments?.length ? { workerAssignments } : {}),
   };
 }
 
@@ -1216,6 +1469,18 @@ export function buildContextPrompt(context?: AssistContext): string {
         worldSections.push(`Blocked routes:\n${affordances.blocked.slice(0, 8).map((item) => `- ${item}`).join("\n")}`);
       }
     }
+    if (context.worldModel.routeRecommendations?.length) {
+      worldSections.push(
+        `Recommended routes:\n${context.worldModel.routeRecommendations
+          .slice(0, 4)
+          .map((route) => {
+            const informedBy = route.informedBy?.length ? ` [signals: ${route.informedBy.join(", ")}]` : "";
+            const preferred = route.preferred ? " preferred" : "";
+            return `- ${route.kind} score=${route.score.toFixed(2)}${preferred}: ${route.reason}${informedBy}`;
+          })
+          .join("\n")}`
+      );
+    }
     if (context.worldModel.recentChanges?.length) {
       worldSections.push(
         `Recent environment changes:\n${context.worldModel.recentChanges
@@ -1234,6 +1499,93 @@ export function buildContextPrompt(context?: AssistContext): string {
     }
     if (worldSections.length) {
       sections.push(`Machine world model:\n${worldSections.join("\n")}`);
+    }
+  }
+  if (context.repoModel) {
+    const repoSections: string[] = [];
+    if (typeof context.repoModel.contextVersion === "number") {
+      repoSections.push(`Context version: ${context.repoModel.contextVersion}`);
+    }
+    if (context.repoModel.summary) {
+      repoSections.push(`Summary: ${String(context.repoModel.summary).slice(0, 2000)}`);
+    }
+    if (context.repoModel.workspaceRoot) {
+      repoSections.push(`Workspace root: ${context.repoModel.workspaceRoot}`);
+    }
+    if (context.repoModel.stack) {
+      repoSections.push(`Stack: ${context.repoModel.stack}`);
+    }
+    if (context.repoModel.primaryValidationCommand) {
+      repoSections.push(`Primary validation: ${context.repoModel.primaryValidationCommand}`);
+    }
+    if (context.repoModel.hotspots?.length) {
+      repoSections.push(`Hotspots:\n${context.repoModel.hotspots.slice(0, 8).map((item) => `- ${item}`).join("\n")}`);
+    }
+    if (context.repoModel.likelyTests?.length) {
+      repoSections.push(`Likely tests:\n${context.repoModel.likelyTests.slice(0, 8).map((item) => `- ${item}`).join("\n")}`);
+    }
+    if (context.repoModel.routeHints?.preferredRoute) {
+      const informedBy = context.repoModel.routeHints.informedBy?.length
+        ? ` [signals: ${context.repoModel.routeHints.informedBy.join(", ")}]`
+        : "";
+      repoSections.push(
+        `Preferred coding route: ${context.repoModel.routeHints.preferredRoute} - ${context.repoModel.routeHints.reason || "repo cognition"}${informedBy}`
+      );
+    }
+    if (context.repoModel.symbolIndex?.length) {
+      repoSections.push(
+        `Repo symbols:\n${context.repoModel.symbolIndex
+          .slice(0, 10)
+          .map((symbol) => `- ${symbol.kind} ${symbol.name} @ ${symbol.path}${symbol.line ? `:${symbol.line}` : ""}`)
+          .join("\n")}`
+      );
+    }
+    if (context.repoModel.memory) {
+      const memoryLines = [
+        context.repoModel.memory.preferredValidationCommand
+          ? `Preferred validation: ${context.repoModel.memory.preferredValidationCommand}`
+          : "",
+        context.repoModel.memory.preferredBranchPrefix
+          ? `Preferred branch prefix: ${context.repoModel.memory.preferredBranchPrefix}`
+          : "",
+        context.repoModel.memory.knownRepairPatterns?.length
+          ? `Repair playbooks: ${context.repoModel.memory.knownRepairPatterns.slice(0, 6).join(" | ")}`
+          : "",
+      ].filter(Boolean);
+      if (memoryLines.length) {
+        repoSections.push(memoryLines.join("\n"));
+      }
+    }
+    if (repoSections.length) {
+      sections.push(`Repo model:\n${repoSections.join("\n")}`);
+    }
+  }
+  if (context.verificationPlan) {
+    const verificationSections: string[] = [];
+    if (context.verificationPlan.status) {
+      verificationSections.push(`Status: ${context.verificationPlan.status}`);
+    }
+    if (context.verificationPlan.primaryCommand) {
+      verificationSections.push(`Primary command: ${context.verificationPlan.primaryCommand}`);
+    }
+    if (context.verificationPlan.reason) {
+      verificationSections.push(`Reason: ${context.verificationPlan.reason}`);
+    }
+    if (context.verificationPlan.checks?.length) {
+      verificationSections.push(
+        `Checks:\n${context.verificationPlan.checks
+          .slice(0, 8)
+          .map((check) => `- ${check.label}${check.command ? ` (${check.command})` : ""}${check.status ? ` status=${check.status}` : ""}`)
+          .join("\n")}`
+      );
+    }
+    if (context.verificationPlan.receipts?.length) {
+      verificationSections.push(
+        `Receipts:\n${context.verificationPlan.receipts.slice(0, 8).map((item) => `- ${item}`).join("\n")}`
+      );
+    }
+    if (verificationSections.length) {
+      sections.push(`Verification plan:\n${verificationSections.join("\n")}`);
     }
   }
   return sections.length ? sections.join("\n\n") : "IDE context: none.";
@@ -2137,3 +2489,10 @@ export function getDefaultModelMetadata(): {
     contractVersion: PLAYGROUND_CONTRACT_VERSION,
   };
 }
+
+
+
+
+
+
+

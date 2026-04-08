@@ -1,0 +1,4 @@
+
+> @binary-ide/host@0.1.0 dev
+> node ../../node_modules/tsx/dist/cli.mjs src/server.ts
+

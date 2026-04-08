@@ -29,7 +29,7 @@ type CdpTargetInfo = {
 type BrowserSession = {
   browserId: string;
   browserName: string;
-  mode: "attached" | "managed";
+  mode: "attached" | "managed" | "profile";
   endpoint: string;
   browserWsUrl: string;
   port?: number;
@@ -50,6 +50,24 @@ type BrowserPageState = {
     knownElementRefs: string[];
     recentNavigations: string[];
   };
+};
+
+type BrowserMissionLeaseState = "active" | "completed" | "conflicted" | "released";
+
+export type BrowserMissionLease = {
+  leaseId: string;
+  missionKind: string;
+  pageId: string;
+  sessionMode: "attached" | "managed" | "profile";
+  startedAt: string;
+  updatedAt: string;
+  state: BrowserMissionLeaseState;
+  expectedUrl?: string;
+  expectedOrigin?: string;
+  lastObservedUrl?: string;
+  lastObservedTitle?: string;
+  conflictDetected: boolean;
+  conflictReason?: string;
 };
 
 type ElementRefRecord = {
@@ -77,8 +95,8 @@ type PendingCommand = {
   reject: (reason?: unknown) => void;
 };
 
-const CDP_TIMEOUT_MS = 15_000;
-const BROWSER_READY_TIMEOUT_MS = 15_000;
+const CDP_TIMEOUT_MS = 8_000;
+const BROWSER_READY_TIMEOUT_MS = 6_000;
 const MAX_CONSOLE_EVENTS = 60;
 const MAX_NETWORK_EVENTS = 120;
 const MAX_SNAPSHOTS = 80;
@@ -118,6 +136,119 @@ function safeDomain(url: string): string {
   } catch {
     return "";
   }
+}
+
+function compactTerms(value: string): string[] {
+  return compactWhitespace(value)
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+export function buildBrowserSiteSearchUrl(baseUrl: string, query: string): string | null {
+  const compactQuery = compactWhitespace(query);
+  if (!compactQuery) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (host.includes("youtube.com")) {
+    return `https://www.youtube.com/results?search_query=${encodeURIComponent(compactQuery)}`;
+  }
+  if (host === "www.google.com" || host === "google.com") {
+    return `https://www.google.com/search?q=${encodeURIComponent(compactQuery)}`;
+  }
+  if (host.includes("amazon.")) {
+    return `${parsed.protocol}//${parsed.host}/s?k=${encodeURIComponent(compactQuery)}`;
+  }
+  if (host === "github.com" || host.endsWith(".github.com")) {
+    return `https://github.com/search?q=${encodeURIComponent(compactQuery)}`;
+  }
+  if (host.endsWith("wikipedia.org")) {
+    return `${parsed.protocol}//${parsed.host}/w/index.php?search=${encodeURIComponent(compactQuery)}`;
+  }
+  return null;
+}
+
+export function inferBrowserMissionUrlFromQuery(query: string): string | null {
+  const normalized = compactWhitespace(query).toLowerCase();
+  if (!normalized) return null;
+  if (/\byoutube\b/.test(normalized)) return "https://www.youtube.com/";
+  if (/\bgoogle\b/.test(normalized)) return "https://www.google.com/";
+  if (/\bamazon\b/.test(normalized)) return "https://www.amazon.com/";
+  if (/\bgithub\b/.test(normalized)) return "https://github.com/";
+  if (/\bwikipedia\b/.test(normalized)) return "https://www.wikipedia.org/";
+  return null;
+}
+
+export function stripBrowserSiteHintFromQuery(query: string, baseUrl?: string): string {
+  const compactQuery = compactWhitespace(query);
+  if (!compactQuery) return "";
+  const domain = safeDomain(baseUrl || "");
+  let normalized = compactQuery;
+  if (domain.includes("youtube.com")) normalized = normalized.replace(/\b(?:on\s+)?youtube\b/gi, "");
+  if (domain === "www.google.com" || domain === "google.com") normalized = normalized.replace(/\b(?:on\s+)?google\b/gi, "");
+  if (domain.includes("amazon.")) normalized = normalized.replace(/\b(?:on\s+)?amazon\b/gi, "");
+  if (domain === "github.com" || domain.endsWith(".github.com")) normalized = normalized.replace(/\b(?:on\s+)?github\b/gi, "");
+  if (domain.endsWith("wikipedia.org")) normalized = normalized.replace(/\b(?:on\s+)?wikipedia\b/gi, "");
+  return compactWhitespace(normalized) || compactQuery;
+}
+
+type BrowserFormControlState = {
+  selector: string;
+  label: string;
+  name: string;
+  type: string;
+  value: string;
+  checked: boolean;
+  disabled: boolean;
+};
+
+function truthyBrowserValue(value: string): boolean {
+  return /^(true|1|yes|on|checked)$/i.test(compactWhitespace(value));
+}
+
+function scoreBrowserFormControl(control: BrowserFormControlState, field: BrowserMissionField): number {
+  if (!control.selector || control.disabled) return -1000;
+  const haystack = compactWhitespace([control.label, control.name, control.type, control.selector].join(" ")).toLowerCase();
+  let score = 0;
+
+  const label = compactWhitespace(field.label || "").toLowerCase();
+  const name = compactWhitespace(field.name || "").toLowerCase();
+  const query = compactWhitespace(field.query || "").toLowerCase();
+  const kind = compactWhitespace(field.kind || "").toLowerCase();
+  const controlType = compactWhitespace(control.type || "").toLowerCase();
+
+  if (label) {
+    if (haystack === label) score += 180;
+    if (haystack.includes(label)) score += 110;
+    score += compactTerms(label).reduce((total, term) => total + (haystack.includes(term) ? 16 : 0), 0);
+  }
+  if (name) {
+    if (compactWhitespace(control.name).toLowerCase() === name) score += 170;
+    if (haystack.includes(name)) score += 95;
+  }
+  if (query) {
+    if (haystack.includes(query)) score += 90;
+    score += compactTerms(query).reduce((total, term) => total + (haystack.includes(term) ? 14 : 0), 0);
+  }
+  if (kind) {
+    if (controlType === kind) score += 60;
+    if (kind === "text" && ["text", "email", "search", "url", "tel"].includes(controlType)) score += 35;
+  }
+
+  if ((label.includes("password") || name.includes("password") || query.includes("password")) && controlType === "password") score += 220;
+  if ((label.includes("email") || name.includes("email") || query.includes("email")) && controlType === "email") score += 200;
+  if ((label.includes("user") || label.includes("login") || name.includes("user") || query.includes("username")) && ["text", "email", "search"].includes(controlType)) score += 90;
+  if ((label.includes("remember") || query.includes("remember")) && controlType === "checkbox") score += 120;
+
+  if (controlType === "hidden") score -= 120;
+  if (controlType === "submit") score -= 60;
+  return score;
 }
 
 function normalizeBrowserList(policy: MachineAutonomyPolicy): BrowserFamily[] {
@@ -321,6 +452,55 @@ async function launchManagedBrowser(policy: MachineAutonomyPolicy): Promise<Brow
   };
 }
 
+async function launchProfileBackedBrowser(policy: MachineAutonomyPolicy): Promise<BrowserSession | null> {
+  const resolved = await resolveExecutable(policy);
+  if (!resolved) {
+    return null;
+  }
+  const port = await allocatePort();
+  const args = [
+    `--remote-debugging-port=${port}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--new-window",
+    "about:blank",
+  ];
+  const child = spawn(resolved.executablePath, args, {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  child.unref();
+
+  const endpoint = `http://127.0.0.1:${port}`;
+  try {
+    const version = await waitForVersion(endpoint, 1_500);
+    const browserWsUrl = String(version.webSocketDebuggerUrl || "").trim();
+    if (!browserWsUrl) {
+      return null;
+    }
+    return {
+      browserId: `profile:${port}`,
+      browserName: String(version.Browser || BROWSER_FAMILY_LABELS[resolved.family]).trim(),
+      mode: "profile",
+      endpoint,
+      browserWsUrl,
+      port,
+      executablePath: resolved.executablePath,
+      process: child,
+    };
+  } catch {
+    try {
+      process.kill(-child.pid!);
+    } catch {
+      try {
+        child.kill();
+      } catch {}
+    }
+    return null;
+  }
+}
+
 export type BrowserPageSummary = {
   id: string;
   title: string;
@@ -342,6 +522,7 @@ export type BrowserElementSummary = {
   href?: string;
   disabled?: boolean;
   visible?: boolean;
+  score?: number;
 };
 
 export type BrowserDomSnapshot = {
@@ -351,6 +532,74 @@ export type BrowserDomSnapshot = {
   title: string;
   interactiveElements: BrowserElementSummary[];
   workflowCheckpoint: string;
+};
+
+export type BrowserMissionResult = {
+  searchPage: BrowserPageSummary;
+  finalPage: BrowserPageSummary | null;
+  clickedResult: BrowserElementSummary | null;
+  candidates: BrowserElementSummary[];
+  directSearchUrl?: string;
+  missionLease?: BrowserMissionLease;
+};
+
+export type BrowserMissionField = {
+  label?: string;
+  name?: string;
+  query?: string;
+  value?: string;
+  checked?: boolean;
+  required?: boolean;
+  kind?: string;
+};
+
+export type BrowserMatchedField = {
+  fieldLabel: string;
+  selector: string;
+  type?: string;
+  name?: string;
+  label?: string;
+};
+
+export type BrowserLoginMissionResult = {
+  startPage: BrowserPageSummary;
+  finalPage: BrowserPageSummary | null;
+  authenticated: boolean;
+  submitted: boolean;
+  actions: string[];
+  matchedFields: BrowserMatchedField[];
+  missingFields: string[];
+  missionLease?: BrowserMissionLease;
+};
+
+export type BrowserFormMissionResult = {
+  page: BrowserPageSummary;
+  finalPage: BrowserPageSummary | null;
+  submitted: boolean;
+  actions: string[];
+  matchedFields: BrowserMatchedField[];
+  missingFields: string[];
+  missionLease?: BrowserMissionLease;
+};
+
+export type BrowserExtractDecisionResult = {
+  page: BrowserPageSummary;
+  finalPage: BrowserPageSummary | null;
+  bestCandidate: BrowserElementSummary | null;
+  candidates: BrowserElementSummary[];
+  clicked: boolean;
+  selectedOption?: string;
+  missionLease?: BrowserMissionLease;
+};
+
+export type BrowserRecoverWorkflowResult = {
+  page: BrowserPageSummary;
+  finalPage: BrowserPageSummary | null;
+  recovered: boolean;
+  actionTaken?: string;
+  matchedElement?: BrowserElementSummary | null;
+  candidates: BrowserElementSummary[];
+  missionLease?: BrowserMissionLease;
 };
 
 export type BrowserConsoleEntry = {
@@ -370,7 +619,7 @@ export type BrowserNetworkEntry = {
 };
 
 export type BrowserContextState = {
-  mode: "unavailable" | "attached" | "managed";
+  mode: "unavailable" | "attached" | "managed" | "profile";
   browserName?: string;
   activePage?: {
     id: string;
@@ -406,7 +655,112 @@ export type BrowserContextState = {
     attachedToExistingSession: boolean;
     authenticatedLikely: boolean;
   };
+  activeMissionLease?: {
+    leaseId: string;
+    missionKind: string;
+    pageId: string;
+    state: BrowserMissionLeaseState;
+    conflictDetected: boolean;
+    conflictReason?: string;
+    sessionMode: "attached" | "managed" | "profile";
+    startedAt: string;
+    updatedAt: string;
+  };
 };
+
+export function rankBrowserResultCandidates(
+  matches: BrowserElementSummary[],
+  query: string,
+  pageUrl?: string
+): BrowserElementSummary[] {
+  const queryTerms = compactTerms(query);
+  const domain = safeDomain(pageUrl || "");
+  return [...matches]
+    .map((item) => {
+      const label = compactWhitespace(`${item.label || ""} ${item.text || ""}`).toLowerCase();
+      const selector = String(item.selector || "").toLowerCase();
+      const href = String(item.href || "").toLowerCase();
+      let score = Number(item.score || 0) || 0;
+
+      if (queryTerms.length && queryTerms.every((term) => label.includes(term) || href.includes(term))) score += 120;
+      else {
+        score += queryTerms.reduce((total, term) => {
+          if (label.includes(term)) return total + 20;
+          if (href.includes(term)) return total + 10;
+          return total;
+        }, 0);
+      }
+
+      if (item.visible !== false) score += 25;
+      if (String(item.tagName || "").toLowerCase() === "a") score += 30;
+      if (String(item.role || "").toLowerCase() === "link") score += 20;
+      if (href) score += 10;
+      if (selector.includes("searchbox") || selector.includes("search_query") || selector.includes("input")) score -= 80;
+      if (label === "search" || label.startsWith("search ")) score -= 80;
+      if (selector.includes("suggest") || label.includes("search with your voice")) score -= 40;
+
+        if (domain.includes("youtube.com")) {
+          if (href.includes("/watch")) score += 120;
+          if (selector.includes("video-title")) score += 80;
+          if (href.includes("/shorts/") && !queryTerms.includes("shorts")) score -= 35;
+          if (href.includes("/@")) score += 15;
+          if (label.includes("channel")) score -= 10;
+          if (selector.includes("channel-thumbnail")) score -= 12;
+        }
+        if (domain.includes("google.com")) {
+          if (href.startsWith("http")) score += 25;
+          if (selector.includes("search")) score -= 20;
+        }
+
+      return {
+        item,
+        score,
+      };
+    })
+    .sort((left, right) => right.score - left.score)
+      .map((entry) => ({
+        ...entry.item,
+        score: entry.score,
+      }));
+}
+
+function buildBrowserMissionQueryAttempts(query: string, pageUrl?: string): Array<string | undefined> {
+  const compactQuery = compactWhitespace(query);
+  const domain = safeDomain(pageUrl || "");
+  const attempts: Array<string | undefined> = [];
+  const pushAttempt = (value?: string) => {
+    if (typeof value === "undefined") {
+      if (!attempts.includes(undefined)) attempts.push(undefined);
+      return;
+    }
+    const normalized = compactWhitespace(value);
+    if (!normalized) return;
+    if (!attempts.includes(normalized)) attempts.push(normalized);
+  };
+
+  pushAttempt(compactQuery);
+  if (domain.includes("youtube.com") && compactQuery && !compactQuery.toLowerCase().includes("video")) {
+    pushAttempt(`${compactQuery} video`);
+  }
+  pushAttempt(undefined);
+  return attempts;
+}
+
+function selectViableBrowserMissionCandidates(
+  rankedCandidates: BrowserElementSummary[],
+  pageUrl?: string
+): BrowserElementSummary[] {
+  const domain = safeDomain(pageUrl || "");
+  const viable = rankedCandidates.filter((item) => (Number(item.score || 0) || 0) > 25);
+  if (!viable.length) return [];
+  if (domain.includes("youtube.com")) {
+    const watchLinks = viable.filter((item) => String(item.href || "").toLowerCase().includes("/watch"));
+    if (watchLinks.length) return watchLinks;
+    const nonShorts = viable.filter((item) => !String(item.href || "").toLowerCase().includes("/shorts/"));
+    if (nonShorts.length) return nonShorts;
+  }
+  return viable;
+}
 
 class CdpConnection {
   private socket: WebSocketLike | null = null;
@@ -510,6 +864,7 @@ class CdpConnection {
 function buildElementLookupScript(input: { query?: string; limit: number }): string {
   return `(() => {
     const query = ${JSON.stringify(String(input.query || "").trim().toLowerCase())};
+    const queryTerms = query ? query.split(/\\s+/).filter(Boolean) : [];
     const limit = ${Math.max(1, Math.min(input.limit, 40))};
     const tags = "a,button,input,textarea,select,label,summary,[role=button],[role=link],[tabindex]";
     const elements = Array.from(document.querySelectorAll(tags));
@@ -554,26 +909,53 @@ function buildElementLookupScript(input: { query?: string; limit: number }): str
     function roleOf(el) {
       return el.getAttribute("role") || el.tagName.toLowerCase();
     }
+    function scoreOf(el, label, selector, role) {
+      const haystack = (label + " " + selector + " " + role + " " + (el.getAttribute("href") || "")).toLowerCase();
+      let score = 0;
+      if (!query) {
+        score += 1;
+      } else {
+        if (label.toLowerCase() === query) score += 120;
+        if (haystack.includes(query)) score += 60;
+        for (const term of queryTerms) {
+          if (label.toLowerCase().includes(term)) score += 18;
+          else if (haystack.includes(term)) score += 8;
+        }
+      }
+      const href = String(el.getAttribute("href") || "").toLowerCase();
+      if (href && queryTerms.some((term) => href.includes(term))) score += 12;
+      if (el.tagName.toLowerCase() === "input" || el.tagName.toLowerCase() === "textarea") score += 10;
+      if (el.tagName.toLowerCase() === "a") score += 8;
+      if (role === "button" || role === "link") score += 6;
+      const rect = typeof el.getBoundingClientRect === "function" ? el.getBoundingClientRect() : { width: 0, height: 0 };
+      if (rect.width > 0 && rect.height > 0) score += 5;
+      if (el.disabled || el.getAttribute("aria-disabled") === "true") score -= 30;
+      return { score, rect };
+    }
     const matches = [];
     for (const el of elements) {
       const label = textOf(el);
-      const haystack = (label + " " + cssPath(el) + " " + roleOf(el)).toLowerCase();
-      if (query && !haystack.includes(query)) continue;
-      const rect = typeof el.getBoundingClientRect === "function" ? el.getBoundingClientRect() : { width: 0, height: 0 };
+      const selector = cssPath(el);
+      const role = roleOf(el);
+      const haystack = (label + " " + selector + " " + role + " " + (el.getAttribute("href") || "")).toLowerCase();
+      const matchedTerms = queryTerms.filter((term) => haystack.includes(term));
+      if (query && !haystack.includes(query) && matchedTerms.length === 0) continue;
+      const { score, rect } = scoreOf(el, label, selector, role);
       matches.push({
-        selector: cssPath(el),
+        selector,
         label: label || el.tagName.toLowerCase(),
         text: label || "",
-        role: roleOf(el),
+        role,
         tagName: el.tagName.toLowerCase(),
         type: el.getAttribute("type") || "",
         href: el.getAttribute("href") || "",
         disabled: Boolean(el.disabled || el.getAttribute("aria-disabled") === "true"),
         visible: rect.width > 0 && rect.height > 0,
+        score,
       });
-      if (matches.length >= limit) break;
     }
-    return { url: location.href, title: document.title || "", matches };
+    matches.sort((left, right) => Number(right.score || 0) - Number(left.score || 0));
+    return { url: location.href, title: document.title || "", matches: matches.slice(0, limit) };
   })()`;
 }
 
@@ -651,13 +1033,82 @@ function buildTypeScript(selector: string, text: string): string {
   })()`;
 }
 
+function buildSetControlValueScript(selector: string, value: string, checked?: boolean): string {
+  return `(() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!element) return { ok: false, reason: "Element not found", url: location.href, title: document.title || "" };
+    element.scrollIntoView({ block: "center", inline: "center" });
+    if (typeof element.focus === "function") element.focus();
+    const desiredValue = ${JSON.stringify(value)};
+    const desiredChecked = ${typeof checked === "boolean" ? JSON.stringify(checked) : "undefined"};
+    if (element instanceof HTMLInputElement) {
+      const type = String(element.type || "text").toLowerCase();
+      if (type === "checkbox" || type === "radio") {
+        const nextChecked = typeof desiredChecked === "boolean" ? desiredChecked : /^(true|1|yes|on|checked)$/i.test(String(desiredValue || ""));
+        if (element.checked !== nextChecked) {
+          if (typeof element.click === "function") element.click();
+          element.checked = nextChecked;
+        }
+        element.dispatchEvent(new Event("input", { bubbles: true }));
+        element.dispatchEvent(new Event("change", { bubbles: true }));
+        return { ok: true, kind: type, checked: Boolean(element.checked), url: location.href, title: document.title || "" };
+      }
+      element.value = String(desiredValue ?? "");
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      return { ok: true, kind: type, value: String(element.value ?? ""), url: location.href, title: document.title || "" };
+    }
+    if (element instanceof HTMLTextAreaElement) {
+      element.value = String(desiredValue ?? "");
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      return { ok: true, kind: "textarea", value: String(element.value ?? ""), url: location.href, title: document.title || "" };
+    }
+    if (element instanceof HTMLSelectElement) {
+      const normalized = String(desiredValue ?? "").trim().toLowerCase();
+      const option = Array.from(element.options).find((item) => {
+        const valueText = String(item.value || "").trim().toLowerCase();
+        const labelText = String(item.label || item.textContent || "").trim().toLowerCase();
+        return valueText === normalized || labelText === normalized;
+      });
+      element.value = option ? option.value : String(desiredValue ?? "");
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      const selected = element.selectedOptions && element.selectedOptions[0]
+        ? String(element.selectedOptions[0].label || element.selectedOptions[0].textContent || "").trim()
+        : "";
+      return { ok: true, kind: "select", value: String(element.value ?? ""), selectedText: selected, url: location.href, title: document.title || "" };
+    }
+    if (element instanceof HTMLElement && element.isContentEditable) {
+      element.innerText = String(desiredValue ?? "");
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      return { ok: true, kind: "contenteditable", value: String(element.innerText || ""), url: location.href, title: document.title || "" };
+    }
+    return { ok: false, reason: "Target element is not a supported form control", url: location.href, title: document.title || "" };
+  })()`;
+}
+
 function buildKeypressScript(keys: string[]): string {
   return `(() => {
     const target = document.activeElement || document.body;
     for (const key of ${JSON.stringify(keys)}) {
       target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+      target.dispatchEvent(new KeyboardEvent("keypress", { key, bubbles: true }));
       target.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }));
-      if (key === "Enter" && target instanceof HTMLElement && typeof target.click === "function") target.click();
+      if (key === "Enter") {
+        const form = typeof target.closest === "function" ? target.closest("form") : null;
+        if (form && typeof form.requestSubmit === "function") {
+          form.requestSubmit();
+        } else if (form && typeof form.submit === "function") {
+          form.submit();
+        } else if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+          target.dispatchEvent(new Event("change", { bubbles: true }));
+          target.dispatchEvent(new Event("search", { bubbles: true }));
+        } else if (target instanceof HTMLElement && typeof target.click === "function") {
+          target.click();
+        }
+      }
     }
     return { ok: true, keys: ${JSON.stringify(keys)}, url: location.href, title: document.title || "" };
   })()`;
@@ -695,7 +1146,9 @@ export class BrowserRuntimeController {
   private readonly pageSessionIds = new Map<string, string>();
   private readonly elementRefs = new Map<string, ElementRefRecord>();
   private readonly snapshots = new Map<string, SnapshotRecord>();
+  private readonly pageLeases = new Map<string, BrowserMissionLease>();
   private lastActivePageId: string | null = null;
+  private sessionModeOverride: "managed_only" | "reuse_first" | null = null;
 
   async getStatus(policy: MachineAutonomyPolicy): Promise<JsonRecord> {
     const pages = policy.allowBrowserNative ? await this.listPages(policy).catch(() => []) : [];
@@ -710,6 +1163,33 @@ export class BrowserRuntimeController {
       pageCount: pages.length,
       activePageId: this.lastActivePageId,
     };
+  }
+
+  currentSessionKind(): "managed" | "existing" | "none" {
+    if (!this.session) return "none";
+    return this.session.mode === "managed" ? "managed" : "existing";
+  }
+
+  async runWithSessionPreference<T>(mode: "managed_only" | "reuse_first" | null, action: () => Promise<T>): Promise<T> {
+    const previous = this.sessionModeOverride;
+    this.sessionModeOverride = mode;
+    if (mode === "managed_only" && this.session && this.session.mode !== "managed") {
+      this.resetPageTracking();
+      this.browserConnection?.close();
+      this.browserConnection = null;
+      this.session = null;
+    }
+    if (mode === "reuse_first" && this.session && this.session.mode === "managed") {
+      this.resetPageTracking();
+      this.browserConnection?.close();
+      this.browserConnection = null;
+      this.session = null;
+    }
+    try {
+      return await action();
+    } finally {
+      this.sessionModeOverride = previous;
+    }
   }
 
   async collectContext(
@@ -768,9 +1248,26 @@ export class BrowserRuntimeController {
       recentNetworkActivity: limitArray(pageState?.recentNetwork || [], 10),
       recentConsoleMessages: limitArray(pageState?.recentConsole || [], 8),
       sessionHint: {
-        attachedToExistingSession: this.session?.mode === "attached",
+        attachedToExistingSession: this.session?.mode === "attached" || this.session?.mode === "profile",
         authenticatedLikely: Boolean(activePage?.url && !/about:blank|chrome:\/\//i.test(activePage.url)),
       },
+      ...(this.getActiveMissionLease()
+        ? {
+            activeMissionLease: {
+              leaseId: this.getActiveMissionLease()!.leaseId,
+              missionKind: this.getActiveMissionLease()!.missionKind,
+              pageId: this.getActiveMissionLease()!.pageId,
+              state: this.getActiveMissionLease()!.state,
+              conflictDetected: this.getActiveMissionLease()!.conflictDetected,
+              ...(this.getActiveMissionLease()!.conflictReason
+                ? { conflictReason: this.getActiveMissionLease()!.conflictReason }
+                : {}),
+              sessionMode: this.getActiveMissionLease()!.sessionMode,
+              startedAt: this.getActiveMissionLease()!.startedAt,
+              updatedAt: this.getActiveMissionLease()!.updatedAt,
+            },
+          }
+        : {}),
     };
   }
 
@@ -792,6 +1289,15 @@ export class BrowserRuntimeController {
     if (!this.lastActivePageId && pages.length) {
       this.lastActivePageId = pages[0].id;
     }
+    const pageIds = new Set(pages.map((page) => page.id));
+    for (const [leasePageId, lease] of this.pageLeases.entries()) {
+      if ((lease.state === "active" || lease.state === "conflicted") && !pageIds.has(leasePageId)) {
+        this.markMissionLeaseConflict(
+          leasePageId,
+          "The leased browser page is no longer present. Another tab change, navigation, or window close likely interrupted the workflow."
+        );
+      }
+    }
     for (const page of pages) {
       this.ensurePageState(page.id);
     }
@@ -801,6 +1307,133 @@ export class BrowserRuntimeController {
   async getActivePage(policy: MachineAutonomyPolicy): Promise<BrowserPageSummary | null> {
     const pages = await this.listPages(policy);
     return pages.find((page) => page.id === this.lastActivePageId) || pages[0] || null;
+  }
+
+  private async getPageById(policy: MachineAutonomyPolicy, pageId: string): Promise<BrowserPageSummary | null> {
+    const pages = await this.listPages(policy);
+    return pages.find((page) => page.id === pageId) || null;
+  }
+
+  private async resolveMissionResultPage(
+    policy: MachineAutonomyPolicy,
+    pageId: string,
+    fallback: BrowserPageSummary | null
+  ): Promise<BrowserPageSummary | null> {
+    const resolved = (await this.getPageById(policy, pageId)) || fallback;
+    this.touchMissionLease(pageId, resolved || undefined);
+    if (!resolved) {
+      this.markMissionLeaseConflict(pageId, "The mission page disappeared before the browser workflow could finish.");
+      return fallback;
+    }
+    const lease = this.pageLeases.get(pageId);
+    if (
+      lease &&
+      lease.expectedOrigin &&
+      resolved.origin &&
+      lease.expectedOrigin !== resolved.origin &&
+      lease.sessionMode !== "managed"
+    ) {
+      this.markMissionLeaseConflict(
+        pageId,
+        `The mission page drifted from ${lease.expectedOrigin} to ${resolved.origin} while automation was running.`,
+        resolved
+      );
+    }
+    return resolved;
+  }
+
+  private getActiveMissionLease(): BrowserMissionLease | null {
+    const active = [...this.pageLeases.values()].filter((lease) => lease.state === "active" || lease.state === "conflicted");
+    if (!active.length) return null;
+    return active.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] || null;
+  }
+
+  private createMissionLease(page: BrowserPageSummary, missionKind: string): BrowserMissionLease {
+    const timestamp = nowIso();
+    const lease: BrowserMissionLease = {
+      leaseId: `browser_lease_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      missionKind,
+      pageId: page.id,
+      sessionMode: this.session?.mode || "attached",
+      startedAt: timestamp,
+      updatedAt: timestamp,
+      state: "active",
+      expectedUrl: page.url,
+      expectedOrigin: page.origin,
+      lastObservedUrl: page.url,
+      lastObservedTitle: page.title,
+      conflictDetected: false,
+    };
+    this.pageLeases.set(page.id, lease);
+    return lease;
+  }
+
+  private touchMissionLease(pageId: string, page?: BrowserPageSummary): BrowserMissionLease | undefined {
+    const lease = this.pageLeases.get(pageId);
+    if (!lease) return undefined;
+    lease.updatedAt = nowIso();
+    if (page) {
+      lease.lastObservedUrl = page.url;
+      lease.lastObservedTitle = page.title;
+    }
+    return lease;
+  }
+
+  private markMissionLeaseConflict(pageId: string, reason: string, page?: BrowserPageSummary): BrowserMissionLease | undefined {
+    const lease = this.pageLeases.get(pageId);
+    if (!lease) return undefined;
+    lease.updatedAt = nowIso();
+    lease.conflictDetected = true;
+    lease.conflictReason = compactWhitespace(reason);
+    lease.state = "conflicted";
+    if (page) {
+      lease.lastObservedUrl = page.url;
+      lease.lastObservedTitle = page.title;
+    }
+    return lease;
+  }
+
+  private finalizeMissionLease(
+    pageId: string,
+    state: "completed" | "released" | "conflicted",
+    page?: BrowserPageSummary
+  ): BrowserMissionLease | undefined {
+    const lease = this.pageLeases.get(pageId);
+    if (!lease) return undefined;
+    lease.updatedAt = nowIso();
+    lease.state = lease.conflictDetected && state !== "released" ? "conflicted" : state;
+    if (page) {
+      lease.lastObservedUrl = page.url;
+      lease.lastObservedTitle = page.title;
+    }
+    return { ...lease };
+  }
+
+  private async runMissionWithLease<T extends Record<string, unknown>>(
+    missionKind: string,
+    page: BrowserPageSummary,
+    action: () => Promise<T>
+  ): Promise<T & { missionLease?: BrowserMissionLease }> {
+    this.createMissionLease(page, missionKind);
+    try {
+      const result = await action();
+      const resultWithFinalPage = result as T & { finalPage?: BrowserPageSummary | null };
+      const lease = this.finalizeMissionLease(page.id, "completed", resultWithFinalPage.finalPage || page);
+      return {
+        ...result,
+        ...(lease ? { missionLease: lease } : {}),
+      };
+    } catch (error) {
+      this.markMissionLeaseConflict(
+        page.id,
+        error instanceof Error && error.message ? error.message : "The browser mission failed unexpectedly.",
+        page
+      );
+      const lease = this.finalizeMissionLease(page.id, "conflicted", page);
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+        browserMissionLease: lease,
+      });
+    }
   }
 
   async openPage(policy: MachineAutonomyPolicy, url: string): Promise<BrowserPageSummary> {
@@ -902,9 +1535,13 @@ export class BrowserRuntimeController {
     policy: MachineAutonomyPolicy,
     input: { pageId: string; elementId?: string; selector?: string }
   ): Promise<JsonRecord> {
-    const selector = this.resolveSelector(input.pageId, input.elementId, input.selector);
     const session = await this.ensurePageSession(policy, input.pageId);
-    return await this.evaluate<JsonRecord>(session.sessionId, buildReadTextScript(selector));
+    return await this.evaluateWithSelectorFallback(session.sessionId, input.pageId, {
+      elementId: input.elementId,
+      selector: input.selector,
+      purpose: "read",
+      expression: (selector) => buildReadTextScript(selector),
+    });
   }
 
   async readFormState(policy: MachineAutonomyPolicy, input: { pageId: string }): Promise<JsonRecord> {
@@ -916,18 +1553,26 @@ export class BrowserRuntimeController {
     policy: MachineAutonomyPolicy,
     input: { pageId: string; elementId?: string; selector?: string }
   ): Promise<JsonRecord> {
-    const selector = this.resolveSelector(input.pageId, input.elementId, input.selector);
     const session = await this.ensurePageSession(policy, input.pageId);
-    return await this.evaluate<JsonRecord>(session.sessionId, buildClickScript(selector));
+    return await this.evaluateWithSelectorFallback(session.sessionId, input.pageId, {
+      elementId: input.elementId,
+      selector: input.selector,
+      purpose: "click",
+      expression: (selector) => buildClickScript(selector),
+    });
   }
 
   async type(
     policy: MachineAutonomyPolicy,
     input: { pageId: string; text: string; elementId?: string; selector?: string }
   ): Promise<JsonRecord> {
-    const selector = this.resolveSelector(input.pageId, input.elementId, input.selector);
     const session = await this.ensurePageSession(policy, input.pageId);
-    return await this.evaluate<JsonRecord>(session.sessionId, buildTypeScript(selector, input.text));
+    return await this.evaluateWithSelectorFallback(session.sessionId, input.pageId, {
+      elementId: input.elementId,
+      selector: input.selector,
+      purpose: "type",
+      expression: (selector) => buildTypeScript(selector, input.text),
+    });
   }
 
   async pressKeys(policy: MachineAutonomyPolicy, input: { pageId: string; keys: string[] }): Promise<JsonRecord> {
@@ -935,12 +1580,666 @@ export class BrowserRuntimeController {
     return await this.evaluate<JsonRecord>(session.sessionId, buildKeypressScript(input.keys));
   }
 
+  private async resolveMissionPage(
+    policy: MachineAutonomyPolicy,
+    input: { url?: string; pageId?: string }
+  ): Promise<BrowserPageSummary> {
+    const url = String(input.url || "").trim();
+    const pageId = String(input.pageId || "").trim();
+    if (pageId) {
+      const pages = await this.listPages(policy);
+      const existing = pages.find((page) => page.id === pageId);
+      if (!existing) {
+        throw new Error(`Browser page ${pageId} was not found.`);
+      }
+      if (url && existing.url !== url) {
+        return await this.navigate(policy, { pageId: existing.id, url });
+      }
+      return existing;
+    }
+    if (url) {
+      return await this.openPage(policy, url);
+    }
+    const active = await this.getActivePage(policy);
+    if (!active) {
+      throw new Error("Binary could not resolve a browser page for this mission.");
+    }
+    return active;
+  }
+
+  private normalizeFormControls(raw: JsonRecord): BrowserFormControlState[] {
+    return (Array.isArray(raw.controls) ? raw.controls : [])
+      .map((item) => ({
+        selector: String((item as JsonRecord).selector || "").trim(),
+        label: compactWhitespace(String((item as JsonRecord).label || "")),
+        name: compactWhitespace(String((item as JsonRecord).name || "")),
+        type: compactWhitespace(String((item as JsonRecord).type || "")),
+        value: String((item as JsonRecord).value || ""),
+        checked: (item as JsonRecord).checked === true,
+        disabled: (item as JsonRecord).disabled === true,
+      }))
+      .filter((item) => Boolean(item.selector));
+  }
+
+  private matchMissionFields(
+    controls: BrowserFormControlState[],
+    fields: BrowserMissionField[]
+  ): { matched: Array<{ field: BrowserMissionField; control: BrowserFormControlState }>; missing: string[] } {
+    const usedSelectors = new Set<string>();
+    const matched: Array<{ field: BrowserMissionField; control: BrowserFormControlState }> = [];
+    const missing: string[] = [];
+
+    for (const field of fields) {
+      const ranked = controls
+        .map((control) => ({ control, score: scoreBrowserFormControl(control, field) }))
+        .filter((entry) => entry.score > 40 && !usedSelectors.has(entry.control.selector))
+        .sort((left, right) => right.score - left.score);
+      const best = ranked[0];
+      if (!best) {
+        missing.push(compactWhitespace(field.label || field.name || field.query || field.kind || "field"));
+        continue;
+      }
+      usedSelectors.add(best.control.selector);
+      matched.push({ field, control: best.control });
+    }
+
+    return { matched, missing };
+  }
+
+  private async setMissionControlValue(
+    policy: MachineAutonomyPolicy,
+    pageId: string,
+    control: BrowserFormControlState,
+    field: BrowserMissionField
+  ): Promise<JsonRecord> {
+    const session = await this.ensurePageSession(policy, pageId);
+    return await this.evaluate<JsonRecord>(
+      session.sessionId,
+      buildSetControlValueScript(control.selector, String(field.value ?? ""), typeof field.checked === "boolean" ? field.checked : undefined)
+    );
+  }
+
+  private async clickBestQueryElement(
+    policy: MachineAutonomyPolicy,
+    page: BrowserPageSummary,
+    query: string,
+    limit = 18
+  ): Promise<BrowserElementSummary | null> {
+    const snapshot = await this.queryElements(policy, {
+      pageId: page.id,
+      query: compactWhitespace(query) || undefined,
+      limit,
+    });
+    const ranked = rankBrowserResultCandidates(snapshot.matches, query, page.url);
+    const viable = selectViableBrowserMissionCandidates(ranked, page.url);
+    const best = viable[0] || ranked[0] || null;
+    if (!best) return null;
+    await this.click(policy, {
+      pageId: page.id,
+      elementId: best.id,
+      selector: best.selector,
+    });
+    return best;
+  }
+
+  private async waitForMissionOutcome(
+    policy: MachineAutonomyPolicy,
+    pageId: string,
+    input: { waitForText?: string; waitForUrlIncludes?: string; waitForTitleIncludes?: string; durationMs?: number }
+  ): Promise<boolean> {
+    const text = compactWhitespace(input.waitForText || "");
+    const urlIncludes = String(input.waitForUrlIncludes || "").trim();
+    const titleIncludes = compactWhitespace(input.waitForTitleIncludes || "");
+    if (!text && !urlIncludes && !titleIncludes) {
+      return false;
+    }
+    const result = await this.waitFor(policy, {
+      pageId,
+      durationMs: Math.max(800, Math.min(Number(input.durationMs || 3_500), 10_000)),
+      ...(text ? { text } : {}),
+      ...(urlIncludes ? { urlIncludes } : {}),
+      ...(titleIncludes ? { titleIncludes } : {}),
+    }).catch(() => ({ ok: false }));
+    return result.ok === true;
+  }
+
+  private async waitForMissionResults(
+    policy: MachineAutonomyPolicy,
+    pageId: string,
+    query: string,
+    pageUrl?: string
+  ): Promise<void> {
+    const domain = safeDomain(pageUrl || "");
+    const queryTerms = compactTerms(query);
+    const primaryHint = compactWhitespace(queryTerms.slice(0, 2).join(" ")) || compactWhitespace(query);
+    if (domain.includes("youtube.com")) {
+      await this.waitFor(policy, {
+        pageId,
+        durationMs: 2_500,
+        urlIncludes: "/results",
+      }).catch(() => null);
+      await this.waitFor(policy, {
+        pageId,
+        durationMs: 2_500,
+        text: primaryHint || "video",
+      }).catch(() => null);
+      return;
+    }
+
+    if (primaryHint) {
+      await this.waitFor(policy, {
+        pageId,
+        durationMs: 1_800,
+        titleIncludes: primaryHint,
+      }).catch(() => null);
+    }
+  }
+
+  private async collectMissionCandidates(
+    policy: MachineAutonomyPolicy,
+    page: BrowserPageSummary,
+    query: string,
+    limit: number
+  ): Promise<BrowserElementSummary[]> {
+    const attempts = buildBrowserMissionQueryAttempts(query, page.url);
+    const cappedLimit = Math.max(12, Math.min(limit, 40));
+    let bestObserved: BrowserElementSummary[] = [];
+
+    for (const delayMs of [0, 500, 1_000, 1_500]) {
+      if (delayMs) {
+        await sleep(delayMs);
+      }
+      for (const attempt of attempts) {
+        const resultSnapshot = await this.queryElements(policy, {
+          pageId: page.id,
+          ...(typeof attempt === "string" ? { query: attempt } : {}),
+          limit: cappedLimit,
+        });
+        const ranked = rankBrowserResultCandidates(resultSnapshot.matches, query, page.url);
+        if (ranked.length > bestObserved.length) {
+          bestObserved = ranked;
+        }
+        const viable = selectViableBrowserMissionCandidates(ranked, page.url);
+        if (viable.length) {
+          return viable.slice(0, 10);
+        }
+      }
+    }
+
+    if (safeDomain(page.url).includes("youtube.com")) {
+      await this.scroll(policy, { pageId: page.id, deltaY: 720 }).catch(() => null);
+      await sleep(500);
+      const resultSnapshot = await this.queryElements(policy, {
+        pageId: page.id,
+        limit: cappedLimit,
+      });
+      const ranked = rankBrowserResultCandidates(resultSnapshot.matches, query, page.url);
+      if (ranked.length > bestObserved.length) {
+        bestObserved = ranked;
+      }
+      const viable = selectViableBrowserMissionCandidates(ranked, page.url);
+      if (viable.length) {
+        return viable.slice(0, 10);
+      }
+    }
+
+    return bestObserved.slice(0, 10);
+  }
+
+  async searchAndOpenBestResult(
+    policy: MachineAutonomyPolicy,
+    input: { url?: string; pageId?: string; query: string; resultQuery?: string; limit?: number }
+  ): Promise<BrowserMissionResult> {
+    const query = compactWhitespace(input.query);
+    if (!query) {
+      throw new Error("browser_search_and_open_best_result requires a query.");
+    }
+
+    let searchPage: BrowserPageSummary | null = null;
+    const directSearchUrl =
+      typeof input.url === "string" && input.url.trim() ? buildBrowserSiteSearchUrl(input.url, query) : null;
+
+      if (directSearchUrl) {
+        searchPage = await this.openPage(policy, directSearchUrl);
+        await this.waitForMissionResults(policy, searchPage.id, query, directSearchUrl);
+      } else if (typeof input.url === "string" && input.url.trim()) {
+        searchPage = await this.openPage(policy, input.url.trim());
+        const inputSnapshot = await this.queryElements(policy, {
+          pageId: searchPage.id,
+          query: "search",
+        limit: Math.max(8, Math.min(Number(input.limit || 12), 24)),
+      });
+      const rankedInputs = rankBrowserResultCandidates(inputSnapshot.matches, "search", searchPage.url);
+      const searchInput = rankedInputs.find((item) =>
+        ["input", "textarea"].includes(String(item.tagName || "").toLowerCase()) ||
+        ["combobox", "searchbox", "textbox"].includes(String(item.role || "").toLowerCase())
+      );
+      if (!searchInput) {
+        throw new Error(`Binary could not find a searchable input on ${searchPage.title || searchPage.url}.`);
+        }
+        await this.type(policy, { pageId: searchPage.id, elementId: searchInput.id, text: query });
+        await this.pressKeys(policy, { pageId: searchPage.id, keys: ["Enter"] });
+        await this.waitForMissionResults(policy, searchPage.id, query, searchPage.url);
+      } else if (typeof input.pageId === "string" && input.pageId.trim()) {
+        searchPage = (await this.listPages(policy)).find((page) => page.id === input.pageId) || null;
+        if (!searchPage) {
+          throw new Error(`Browser page ${input.pageId} was not found.`);
+        }
+        const pageSearchUrl = buildBrowserSiteSearchUrl(searchPage.url, query);
+        if (pageSearchUrl) {
+          searchPage = await this.navigate(policy, { pageId: searchPage.id, url: pageSearchUrl });
+          await this.waitForMissionResults(policy, searchPage.id, query, pageSearchUrl);
+        } else {
+          const inputSnapshot = await this.queryElements(policy, {
+            pageId: searchPage.id,
+            query: "search",
+            limit: Math.max(8, Math.min(Number(input.limit || 12), 24)),
+        });
+        const rankedInputs = rankBrowserResultCandidates(inputSnapshot.matches, "search", searchPage.url);
+        const searchInput = rankedInputs.find((item) =>
+          ["input", "textarea"].includes(String(item.tagName || "").toLowerCase()) ||
+          ["combobox", "searchbox", "textbox"].includes(String(item.role || "").toLowerCase())
+        );
+        if (!searchInput) {
+          throw new Error(`Binary could not find a searchable input on ${searchPage.title || searchPage.url}.`);
+          }
+          await this.type(policy, { pageId: searchPage.id, elementId: searchInput.id, text: query });
+          await this.pressKeys(policy, { pageId: searchPage.id, keys: ["Enter"] });
+          await this.waitForMissionResults(policy, searchPage.id, query, searchPage.url);
+        }
+      } else {
+        throw new Error("browser_search_and_open_best_result requires either url or pageId.");
+      }
+
+    const currentPage = searchPage ? (await this.resolveMissionResultPage(policy, searchPage.id, searchPage)) : null;
+    if (!currentPage) {
+      throw new Error("Binary could not resolve the browser page after searching.");
+    }
+    return await this.runMissionWithLease("browser_search_and_open_best_result", currentPage, async () => {
+      const desiredResultQuery = compactWhitespace(input.resultQuery || query);
+      const rankedCandidates = await this.collectMissionCandidates(
+        policy,
+        currentPage,
+        desiredResultQuery,
+        Math.max(12, Math.min(Number(input.limit || 12) * 3, 40))
+      );
+
+      const bestResult = rankedCandidates[0] || null;
+      if (!bestResult) {
+        return {
+          searchPage: currentPage,
+          finalPage: currentPage,
+          clickedResult: null,
+          candidates: rankedCandidates,
+          ...(directSearchUrl ? { directSearchUrl } : {}),
+        };
+      }
+
+      await this.click(policy, {
+        pageId: currentPage.id,
+        elementId: bestResult.id,
+        selector: bestResult.selector,
+      });
+      await sleep(1_100);
+
+      const finalPage = await this.resolveMissionResultPage(policy, currentPage.id, currentPage);
+      return {
+        searchPage: currentPage,
+        finalPage,
+        clickedResult: bestResult,
+        candidates: rankedCandidates.slice(0, 10),
+        ...(directSearchUrl ? { directSearchUrl } : {}),
+      };
+    });
+  }
+
+  async loginAndContinue(
+    policy: MachineAutonomyPolicy,
+    input: {
+      url?: string;
+      pageId?: string;
+      username?: string;
+      password?: string;
+      submitQuery?: string;
+      continueQuery?: string;
+      waitForText?: string;
+      waitForUrlIncludes?: string;
+    }
+  ): Promise<BrowserLoginMissionResult> {
+    const page = await this.resolveMissionPage(policy, input);
+    return await this.runMissionWithLease("browser_login_and_continue", page, async () => {
+      const actions: string[] = [];
+      const matchedFields: BrowserMatchedField[] = [];
+      const missingFields: string[] = [];
+
+      const alreadyAuthenticated = await this.waitForMissionOutcome(policy, page.id, {
+        waitForText: input.waitForText || input.continueQuery,
+        waitForUrlIncludes: input.waitForUrlIncludes,
+        durationMs: 250,
+      });
+      if (alreadyAuthenticated) {
+        return {
+          startPage: page,
+          finalPage: (await this.resolveMissionResultPage(policy, page.id, page)) || page,
+          authenticated: true,
+          submitted: false,
+          actions: ["already_authenticated"],
+          matchedFields,
+          missingFields,
+        };
+      }
+
+      const fields: BrowserMissionField[] = [];
+      if (typeof input.username === "string" && input.username.length) {
+        fields.push({
+          label: "Email or username",
+          name: "email",
+          query: "email username login user",
+          value: input.username,
+          kind: "text",
+        });
+      }
+      if (typeof input.password === "string" && input.password.length) {
+        fields.push({
+          label: "Password",
+          name: "password",
+          query: "password",
+          value: input.password,
+          kind: "password",
+        });
+      }
+
+      if (fields.length) {
+        const formState = await this.readFormState(policy, { pageId: page.id });
+        const controls = this.normalizeFormControls(formState);
+        const assignment = this.matchMissionFields(controls, fields);
+        missingFields.push(...assignment.missing);
+        for (const entry of assignment.matched) {
+          await this.setMissionControlValue(policy, page.id, entry.control, entry.field);
+          actions.push(`filled:${entry.field.label || entry.field.name || entry.field.query || "field"}`);
+          matchedFields.push({
+            fieldLabel: compactWhitespace(entry.field.label || entry.field.name || entry.field.query || "field"),
+            selector: entry.control.selector,
+            type: entry.control.type,
+            name: entry.control.name,
+            label: entry.control.label,
+          });
+        }
+      }
+
+      let submitted = false;
+      const submitQuery = compactWhitespace(input.submitQuery || "sign in login continue submit");
+      const submitTarget = await this.clickBestQueryElement(policy, page, submitQuery).catch(() => null);
+      if (submitTarget) {
+        actions.push(`clicked:${submitQuery}`);
+        submitted = true;
+      } else if (fields.length) {
+        await this.pressKeys(policy, { pageId: page.id, keys: ["Enter"] }).catch(() => null);
+        actions.push("pressed_enter");
+        submitted = true;
+      }
+
+      if (submitted && input.continueQuery) {
+        const currentPage = (await this.resolveMissionResultPage(policy, page.id, page)) || page;
+        const continueTarget = await this.clickBestQueryElement(policy, currentPage, input.continueQuery).catch(() => null);
+        if (continueTarget) {
+          actions.push(`clicked:${input.continueQuery}`);
+        }
+      }
+
+      const authenticated = await this.waitForMissionOutcome(policy, page.id, {
+        waitForText: input.waitForText || input.continueQuery,
+        waitForUrlIncludes: input.waitForUrlIncludes,
+        durationMs: 5_000,
+      });
+
+      return {
+        startPage: page,
+        finalPage: (await this.resolveMissionResultPage(policy, page.id, page)) || page,
+        authenticated,
+        submitted,
+        actions,
+        matchedFields,
+        missingFields,
+      };
+    });
+  }
+
+  async completeForm(
+    policy: MachineAutonomyPolicy,
+    input: {
+      url?: string;
+      pageId?: string;
+      fields: BrowserMissionField[];
+      submit?: boolean;
+      submitQuery?: string;
+      waitForText?: string;
+      waitForUrlIncludes?: string;
+    }
+  ): Promise<BrowserFormMissionResult> {
+    const page = await this.resolveMissionPage(policy, input);
+    return await this.runMissionWithLease("browser_complete_form", page, async () => {
+      const formState = await this.readFormState(policy, { pageId: page.id });
+      const controls = this.normalizeFormControls(formState);
+      const assignment = this.matchMissionFields(controls, Array.isArray(input.fields) ? input.fields : []);
+      const actions: string[] = [];
+      const matchedFields: BrowserMatchedField[] = [];
+
+      for (const entry of assignment.matched) {
+        await this.setMissionControlValue(policy, page.id, entry.control, entry.field);
+        actions.push(`filled:${entry.field.label || entry.field.name || entry.field.query || "field"}`);
+        matchedFields.push({
+          fieldLabel: compactWhitespace(entry.field.label || entry.field.name || entry.field.query || "field"),
+          selector: entry.control.selector,
+          type: entry.control.type,
+          name: entry.control.name,
+          label: entry.control.label,
+        });
+      }
+
+      let submitted = false;
+      if (input.submit) {
+        const submitTarget = await this.clickBestQueryElement(policy, page, compactWhitespace(input.submitQuery || "submit continue next save")).catch(() => null);
+        if (submitTarget) {
+          actions.push(`clicked:${compactWhitespace(input.submitQuery || "submit")}`);
+          submitted = true;
+        } else {
+          await this.pressKeys(policy, { pageId: page.id, keys: ["Enter"] }).catch(() => null);
+          actions.push("pressed_enter");
+          submitted = true;
+        }
+        await this.waitForMissionOutcome(policy, page.id, {
+          waitForText: input.waitForText,
+          waitForUrlIncludes: input.waitForUrlIncludes,
+          durationMs: 4_500,
+        }).catch(() => false);
+      }
+
+      return {
+        page,
+        finalPage: (await this.resolveMissionResultPage(policy, page.id, page)) || page,
+        submitted,
+        actions,
+        matchedFields,
+        missingFields: assignment.missing,
+      };
+    });
+  }
+
+  async extractAndDecide(
+    policy: MachineAutonomyPolicy,
+    input: {
+      url?: string;
+      pageId?: string;
+      query: string;
+      options?: string[];
+      action?: "none" | "click_best";
+      limit?: number;
+    }
+  ): Promise<BrowserExtractDecisionResult> {
+    const page = await this.resolveMissionPage(policy, input);
+    return await this.runMissionWithLease("browser_extract_and_decide", page, async () => {
+      await this.waitForMissionOutcome(policy, page.id, {
+        waitForText: input.query,
+        durationMs: 1_000,
+      }).catch(() => false);
+      const candidates = await this.collectMissionCandidates(
+        policy,
+        page,
+        compactWhitespace(input.query),
+        Math.max(12, Math.min(Number(input.limit || 12) * 2, 36))
+      );
+      const options = Array.isArray(input.options) ? input.options.map((item) => compactWhitespace(String(item || ""))).filter(Boolean) : [];
+      let selectedOption: string | undefined;
+      let bestCandidate = candidates[0] || null;
+
+      if (bestCandidate && options.length) {
+        const ranked = candidates
+          .map((candidate) => {
+            const haystack = compactWhitespace(`${candidate.label || ""} ${candidate.text || ""} ${candidate.href || ""}`).toLowerCase();
+            let bestOption = "";
+            let bonus = 0;
+            for (const option of options) {
+              const normalized = option.toLowerCase();
+              let score = 0;
+              if (haystack.includes(normalized)) score += 140;
+              score += compactTerms(normalized).reduce((total, term) => total + (haystack.includes(term) ? 14 : 0), 0);
+              if (score > bonus) {
+                bonus = score;
+                bestOption = option;
+              }
+            }
+            return { candidate, score: Number(candidate.score || 0) + bonus, option: bestOption || undefined };
+          })
+          .sort((left, right) => right.score - left.score);
+        bestCandidate = ranked[0]?.candidate || bestCandidate;
+        selectedOption = ranked[0]?.option;
+      }
+
+      let clicked = false;
+      if (bestCandidate && (input.action || "none") === "click_best") {
+        await this.click(policy, {
+          pageId: page.id,
+          elementId: bestCandidate.id,
+          selector: bestCandidate.selector,
+        });
+        clicked = true;
+        await sleep(900);
+      }
+
+      return {
+        page,
+        finalPage: (await this.resolveMissionResultPage(policy, page.id, page)) || page,
+        bestCandidate,
+        candidates,
+        clicked,
+        ...(selectedOption ? { selectedOption } : {}),
+      };
+    });
+  }
+
+  async recoverWorkflow(
+    policy: MachineAutonomyPolicy,
+    input: {
+      url?: string;
+      pageId?: string;
+      goal?: string;
+      preferredActionQuery?: string;
+      waitForText?: string;
+      waitForUrlIncludes?: string;
+      limit?: number;
+    }
+  ): Promise<BrowserRecoverWorkflowResult> {
+    const page = await this.resolveMissionPage(policy, input);
+    return await this.runMissionWithLease("browser_recover_workflow", page, async () => {
+      const alreadyHealthy = await this.waitForMissionOutcome(policy, page.id, {
+        waitForText: input.waitForText || input.goal,
+        waitForUrlIncludes: input.waitForUrlIncludes,
+        durationMs: 300,
+      });
+      if (alreadyHealthy) {
+        return {
+          page,
+          finalPage: (await this.resolveMissionResultPage(policy, page.id, page)) || page,
+          recovered: true,
+          actionTaken: "already_healthy",
+          matchedElement: null,
+          candidates: [],
+        };
+      }
+
+      const queries = [
+        compactWhitespace(input.preferredActionQuery || ""),
+        "continue",
+        "next",
+        "accept",
+        "allow",
+        "ok",
+        "close",
+        "dismiss",
+        "not now",
+        "skip",
+        compactWhitespace(input.goal || ""),
+      ].filter((value, index, values) => value && values.indexOf(value) === index);
+
+      let matchedElement: BrowserElementSummary | null = null;
+      let actionTaken: string | undefined;
+      let candidates: BrowserElementSummary[] = [];
+
+      for (const query of queries) {
+        const snapshot = await this.queryElements(policy, {
+          pageId: page.id,
+          query,
+          limit: Math.max(12, Math.min(Number(input.limit || 12) * 2, 24)),
+        }).catch(() => ({ page, matches: [] as BrowserElementSummary[] }));
+        const ranked = rankBrowserResultCandidates(snapshot.matches, query, page.url);
+        if (ranked.length > candidates.length) {
+          candidates = ranked.slice(0, 10);
+        }
+        const best = ranked[0] || null;
+        if (!best) continue;
+        await this.click(policy, {
+          pageId: page.id,
+          elementId: best.id,
+          selector: best.selector,
+        }).catch(() => null);
+        actionTaken = `clicked:${query}`;
+        matchedElement = best;
+        await sleep(900);
+        const recovered = await this.waitForMissionOutcome(policy, page.id, {
+          waitForText: input.waitForText || input.goal,
+          waitForUrlIncludes: input.waitForUrlIncludes,
+          durationMs: 3_000,
+        });
+        if (recovered) {
+          return {
+            page,
+            finalPage: (await this.resolveMissionResultPage(policy, page.id, page)) || page,
+            recovered: true,
+            actionTaken,
+            matchedElement,
+            candidates,
+          };
+        }
+      }
+
+      return {
+        page,
+        finalPage: (await this.resolveMissionResultPage(policy, page.id, page)) || page,
+        recovered: false,
+        actionTaken,
+        matchedElement,
+        candidates,
+      };
+    });
+  }
+
   async scroll(
     policy: MachineAutonomyPolicy,
     input: { pageId: string; deltaY?: number; elementId?: string; selector?: string }
   ): Promise<JsonRecord> {
     const selector =
-      input.elementId || input.selector ? this.resolveSelector(input.pageId, input.elementId, input.selector) : undefined;
+      input.elementId || input.selector ? this.resolveSelector(input.pageId, input.elementId, input.selector, "scroll") : undefined;
     const session = await this.ensurePageSession(policy, input.pageId);
     return await this.evaluate<JsonRecord>(session.sessionId, buildScrollScript(input.deltaY || 640, selector));
   }
@@ -1004,8 +2303,21 @@ export class BrowserRuntimeController {
   private async ensureSession(policy: MachineAutonomyPolicy, allowManagedLaunch: boolean): Promise<BrowserSession | null> {
     if (!policy.enabled || !policy.allowBrowserNative) return null;
     if (this.session) {
+      if (this.sessionModeOverride === "managed_only" && this.session.mode !== "managed") {
+        this.resetPageTracking();
+        this.browserConnection?.close();
+        this.browserConnection = null;
+        this.session = null;
+      } else if (this.sessionModeOverride === "reuse_first" && this.session.mode === "managed") {
+        this.resetPageTracking();
+        this.browserConnection?.close();
+        this.browserConnection = null;
+        this.session = null;
+      }
+    }
+    if (this.session) {
       try {
-        await waitForVersion(this.session.endpoint, 1_500);
+        await waitForVersion(this.session.endpoint, 1_000);
         return this.session;
       } catch {
         this.browserConnection?.close();
@@ -1014,11 +2326,18 @@ export class BrowserRuntimeController {
       }
     }
 
-    if (policy.browserAttachMode !== "managed_only") {
+    if (this.sessionModeOverride !== "managed_only" && policy.browserAttachMode !== "managed_only") {
       const attached = await discoverExistingSession(policy);
       if (attached) {
         this.session = attached;
         return attached;
+      }
+      if (allowManagedLaunch) {
+        const profileSession = await launchProfileBackedBrowser(policy);
+        if (profileSession) {
+          this.session = profileSession;
+          return profileSession;
+        }
       }
     }
 
@@ -1038,6 +2357,7 @@ export class BrowserRuntimeController {
         const pageId = Array.from(this.pageSessionIds.entries()).find((entry) => entry[1] === sessionId)?.[0];
         if (!pageId) return;
         const pageState = this.ensurePageState(pageId);
+        const lease = this.pageLeases.get(pageId);
         if (method === "Runtime.consoleAPICalled") {
           const args = Array.isArray(params.args) ? params.args : [];
           const text = args
@@ -1110,6 +2430,21 @@ export class BrowserRuntimeController {
             MAX_NETWORK_EVENTS
           );
         }
+        if (method === "Page.frameNavigated") {
+          const frame = params.frame as JsonRecord | undefined;
+          const nextUrl = compactWhitespace(String(frame?.url || ""));
+          const nextOrigin = originFromUrl(nextUrl);
+          if (lease) {
+            lease.updatedAt = nowIso();
+            if (nextUrl) lease.lastObservedUrl = nextUrl;
+            if (lease.sessionMode !== "managed" && lease.expectedOrigin && nextOrigin && lease.expectedOrigin !== nextOrigin) {
+              this.markMissionLeaseConflict(
+                pageId,
+                `The leased page navigated away from ${lease.expectedOrigin} to ${nextOrigin} during automation.`
+              );
+            }
+          }
+        }
       });
       (this as unknown as { browserEventsAttached?: boolean }).browserEventsAttached = true;
     }
@@ -1138,6 +2473,15 @@ export class BrowserRuntimeController {
     this.lastActivePageId = pageId;
     this.ensurePageState(pageId).lastActivatedAt = nowIso();
     return { sessionId: this.pageSessionIds.get(pageId) as string, page };
+  }
+
+  private resetPageTracking(): void {
+    this.pageStates.clear();
+    this.pageSessionIds.clear();
+    this.elementRefs.clear();
+    this.snapshots.clear();
+    this.pageLeases.clear();
+    this.lastActivePageId = null;
   }
 
   private ensurePageState(pageId: string): BrowserPageState {
@@ -1203,16 +2547,92 @@ export class BrowserRuntimeController {
           href: String(item.href || "") || undefined,
           disabled: item.disabled === true,
           visible: item.visible !== false,
+          score: Number(item.score || 0) || undefined,
         };
       });
   }
 
-  private resolveSelector(pageId: string, elementId?: string, selector?: string): string {
-    const directSelector = String(selector || "").trim();
-    if (directSelector) return directSelector;
-    const record = elementId ? this.elementRefs.get(elementId) : null;
-    if (record && record.pageId === pageId) return record.selector;
+  private resolveSelector(
+    pageId: string,
+    elementId?: string,
+    selector?: string,
+    purpose: "click" | "type" | "read" | "scroll" = "click"
+  ): string {
+    const selectors = this.resolveSelectorCandidates(pageId, elementId, selector, purpose);
+    if (selectors.length) return selectors[0];
     throw new Error("Browser action requires an elementId or selector.");
+  }
+
+  private resolveSelectorCandidates(
+    pageId: string,
+    elementId?: string,
+    selector?: string,
+    purpose: "click" | "type" | "read" | "scroll" = "click"
+  ): string[] {
+    const candidates: string[] = [];
+    const directSelector = String(selector || "").trim();
+    if (directSelector) candidates.push(directSelector);
+    const record = elementId ? this.elementRefs.get(elementId) : null;
+    if (record && record.pageId === pageId && String(record.selector || "").trim()) {
+      candidates.push(record.selector);
+    }
+    const inferredSelector = this.inferSelectorFromRecentSnapshot(pageId, purpose);
+    if (inferredSelector) candidates.push(inferredSelector);
+    return Array.from(new Set(candidates.filter((item) => String(item || "").trim())));
+  }
+
+  private async evaluateWithSelectorFallback(
+    sessionId: string,
+    pageId: string,
+    input: {
+      elementId?: string;
+      selector?: string;
+      purpose: "click" | "type" | "read";
+      expression: (selector: string) => string;
+    }
+  ): Promise<JsonRecord> {
+    const selectors = this.resolveSelectorCandidates(pageId, input.elementId, input.selector, input.purpose);
+    if (!selectors.length) {
+      throw new Error("Browser action requires an elementId or selector.");
+    }
+    let lastResult: JsonRecord | null = null;
+    for (const selector of selectors) {
+      const result = await this.evaluate<JsonRecord>(sessionId, input.expression(selector));
+      lastResult = result;
+      if (result.ok !== false || String(result.reason || "").toLowerCase() !== "element not found") {
+        return result;
+      }
+    }
+    return lastResult || { ok: false, reason: "Element not found" };
+  }
+
+  private inferSelectorFromRecentSnapshot(
+    pageId: string,
+    purpose: "click" | "type" | "read" | "scroll"
+  ): string | null {
+    const pageState = this.pageStates.get(pageId);
+    const snapshotId = pageState?.lastSnapshotId;
+    if (!snapshotId) return null;
+    const snapshot = this.snapshots.get(snapshotId);
+    if (!snapshot) return null;
+
+    const visible = snapshot.interactiveElements.filter((item) => item.visible !== false && item.disabled !== true);
+    const scored = (visible.length ? visible : snapshot.interactiveElements).filter((item) => String(item.selector || "").trim());
+
+    const candidates =
+      purpose === "type"
+        ? scored.filter((item) =>
+            ["input", "textarea", "select"].includes(String(item.tagName || "").toLowerCase()) ||
+            ["textbox", "combobox", "searchbox"].includes(String(item.role || "").toLowerCase())
+          )
+        : purpose === "click"
+          ? scored.filter((item) =>
+              ["a", "button", "summary"].includes(String(item.tagName || "").toLowerCase()) ||
+              ["link", "button"].includes(String(item.role || "").toLowerCase())
+            )
+          : scored;
+
+    return candidates[0]?.selector || scored[0]?.selector || null;
   }
 
   private assertUrlAllowed(policy: MachineAutonomyPolicy, url: string): void {

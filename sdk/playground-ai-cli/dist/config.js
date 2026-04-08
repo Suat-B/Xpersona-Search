@@ -11,11 +11,15 @@ const DEFAULT_CONFIG = {
     model: "Binary IDE",
     reasoning: "medium",
     includeIdeContext: true,
-    transport: process.env.BINARY_IDE_TRANSPORT ?? "auto",
+    transport: process.env.BINARY_IDE_TRANSPORT ?? "host",
     tomEnabled: true,
 };
 function normalizeTransport(value) {
-    return value === "host" || value === "direct" || value === "auto" ? value : DEFAULT_CONFIG.transport;
+    if (value === "direct")
+        return "direct";
+    if (value === "host" || value === "auto")
+        return "host";
+    return DEFAULT_CONFIG.transport;
 }
 function normalizeTomEnabled(value) {
     return value === false ? false : true;
@@ -78,6 +82,9 @@ export async function saveConfig(config) {
     await fs.mkdir(dir, { recursive: true });
     const next = normalizeConfig(config);
     await fs.writeFile(getConfigPath(), JSON.stringify(next, null, 2), "utf8");
+    if (process.platform !== "win32") {
+        await fs.chmod(getConfigPath(), 0o600).catch(() => undefined);
+    }
 }
 export function getApiKey(config) {
     return (process.env.BINARY_IDE_API_KEY ||

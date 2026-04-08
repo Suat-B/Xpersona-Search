@@ -1,7 +1,13 @@
 import { requestJson, requestSse } from "./http.js";
 import {
+  BinaryAgentJob,
+  BinaryAgentJobEventsResponse,
+  BinaryAgentProbeEventsResponse,
+  BinaryAgentProbeSession,
   BinaryAutomationDefinition,
   BinaryAutomationEventsResponse,
+  BinaryOrchestrationPolicy,
+  BinaryRemoteRuntimeHealth,
   BinaryWebhookSubscription,
   BinaryHostAssistRequest,
   BinaryHostAuthStatus,
@@ -59,6 +65,23 @@ export class BinaryLocalHostClient {
     return requestJson<BinaryHostPreferences>({
       url: `${this.baseUrl}/v1/preferences`,
       method: "GET",
+    });
+  }
+
+  async orchestrationPolicy(): Promise<BinaryOrchestrationPolicy> {
+    return requestJson<BinaryOrchestrationPolicy>({
+      url: `${this.baseUrl}/v1/orchestration/policy`,
+      method: "GET",
+    });
+  }
+
+  async updateOrchestrationPolicy(
+    patch: Partial<BinaryOrchestrationPolicy>
+  ): Promise<BinaryOrchestrationPolicy> {
+    return requestJson<BinaryOrchestrationPolicy>({
+      url: `${this.baseUrl}/v1/orchestration/policy`,
+      method: "PATCH",
+      body: patch,
     });
   }
 
@@ -155,6 +178,103 @@ export class BinaryLocalHostClient {
     });
   }
 
+  async createAgentProbeSession(input: {
+    title?: string;
+    model?: string;
+    workspaceRoot?: string;
+    message?: string;
+  }): Promise<BinaryAgentProbeSession> {
+    return requestJson<BinaryAgentProbeSession>({
+      url: `${this.baseUrl}/v1/debug/agent-sessions`,
+      method: "POST",
+      body: input,
+    });
+  }
+
+  async getAgentProbeSession(sessionId: string): Promise<BinaryAgentProbeSession> {
+    return requestJson<BinaryAgentProbeSession>({
+      url: `${this.baseUrl}/v1/debug/agent-sessions/${encodeURIComponent(sessionId)}`,
+      method: "GET",
+    });
+  }
+
+  async submitAgentProbeMessage(
+    sessionId: string,
+    input: { message: string }
+  ): Promise<BinaryAgentProbeSession> {
+    return requestJson<BinaryAgentProbeSession>({
+      url: `${this.baseUrl}/v1/debug/agent-sessions/${encodeURIComponent(sessionId)}/messages`,
+      method: "POST",
+      body: input,
+    });
+  }
+
+  async getAgentProbeEvents(sessionId: string, after = 0): Promise<BinaryAgentProbeEventsResponse> {
+    return requestJson<BinaryAgentProbeEventsResponse>({
+      url: `${this.baseUrl}/v1/debug/agent-sessions/${encodeURIComponent(sessionId)}/events?after=${encodeURIComponent(String(after))}`,
+      method: "GET",
+    });
+  }
+
+  async controlAgentProbeSession(
+    sessionId: string,
+    action: "pause" | "resume" | "close"
+  ): Promise<BinaryAgentProbeSession> {
+    return requestJson<BinaryAgentProbeSession>({
+      url: `${this.baseUrl}/v1/debug/agent-sessions/${encodeURIComponent(sessionId)}/control`,
+      method: "POST",
+      body: { action },
+    });
+  }
+
+  async createAgentJob(input: BinaryHostAssistRequest): Promise<BinaryAgentJob> {
+    return requestJson<BinaryAgentJob>({
+      url: `${this.baseUrl}/v1/agents/jobs`,
+      method: "POST",
+      body: input,
+    });
+  }
+
+  async listAgentJobs(limit = 20): Promise<{ jobs: BinaryAgentJob[] }> {
+    return requestJson<{ jobs: BinaryAgentJob[] }>({
+      url: `${this.baseUrl}/v1/agents/jobs?limit=${encodeURIComponent(String(limit))}`,
+      method: "GET",
+    });
+  }
+
+  async getAgentJob(jobId: string): Promise<BinaryAgentJob> {
+    return requestJson<BinaryAgentJob>({
+      url: `${this.baseUrl}/v1/agents/jobs/${encodeURIComponent(jobId)}`,
+      method: "GET",
+    });
+  }
+
+  async getAgentJobEvents(jobId: string, after = 0): Promise<BinaryAgentJobEventsResponse> {
+    return requestJson<BinaryAgentJobEventsResponse>({
+      url: `${this.baseUrl}/v1/agents/jobs/${encodeURIComponent(jobId)}/events?after=${encodeURIComponent(String(after))}`,
+      method: "GET",
+    });
+  }
+
+  async controlAgentJob(
+    jobId: string,
+    action: "pause" | "resume" | "cancel",
+    note?: string
+  ): Promise<BinaryAgentJob> {
+    return requestJson<BinaryAgentJob>({
+      url: `${this.baseUrl}/v1/agents/jobs/${encodeURIComponent(jobId)}/control`,
+      method: "POST",
+      body: note ? { action, note } : { action },
+    });
+  }
+
+  async remoteAgentHealth(): Promise<BinaryRemoteRuntimeHealth> {
+    return requestJson<BinaryRemoteRuntimeHealth>({
+      url: `${this.baseUrl}/v1/agents/remote/health`,
+      method: "GET",
+    });
+  }
+
   async listAutomations(): Promise<{ automations: BinaryAutomationDefinition[] }> {
     return requestJson<{ automations: BinaryAutomationDefinition[] }>({
       url: `${this.baseUrl}/v1/automations`,
@@ -213,6 +333,18 @@ export class BinaryLocalHostClient {
     return requestJson<BinaryAutomationEventsResponse>({
       url: `${this.baseUrl}/v1/automations/${encodeURIComponent(automationId)}/events?after=${encodeURIComponent(String(after))}`,
       method: "GET",
+    });
+  }
+
+  async streamAutomationEvents(
+    automationId: string,
+    onEvent: (event: SseEvent) => void | Promise<void>,
+    after = 0
+  ): Promise<void> {
+    await requestSse({
+      url: `${this.baseUrl}/v1/automations/${encodeURIComponent(automationId)}/stream?after=${encodeURIComponent(String(after))}`,
+      method: "GET",
+      onEvent,
     });
   }
 

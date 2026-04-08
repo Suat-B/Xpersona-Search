@@ -134,6 +134,36 @@ describe("playground orchestration", () => {
     expect(prompt).toContain("#compose");
   });
 
+  it("renders repo cognition and verification context into the prompt", () => {
+    const prompt = buildContextPrompt({
+      repoModel: {
+        contextVersion: 7,
+        workspaceRoot: "c:/repo",
+        summary: "Workspace stack: node js ts | Primary validation: npm test",
+        stack: "node_js_ts",
+        primaryValidationCommand: "npm test",
+        hotspots: ["src/index.ts"],
+        routeHints: {
+          preferredRoute: "shell_route",
+          reason: "Recent successful verification used npm test.",
+          informedBy: ["repo_memory", "terminal_first_policy"],
+        },
+        symbolIndex: [{ name: "greet", kind: "function", path: "src/index.ts", line: 1 }],
+      },
+      verificationPlan: {
+        status: "pending",
+        primaryCommand: "npm test",
+        checks: [{ id: "node:test", label: "Run project tests", command: "npm test", kind: "test" }],
+        receipts: ["passed: npm test passed cleanly"],
+      },
+    });
+
+    expect(prompt).toContain("Repo model:");
+    expect(prompt).toContain("Preferred coding route");
+    expect(prompt).toContain("Verification plan:");
+    expect(prompt).toContain("npm test");
+  });
+
   it("builds a targeted validation plan from file actions", () => {
     const plan = buildValidationPlan({
       actions: [
@@ -236,6 +266,65 @@ describe("playground orchestration", () => {
     expect(objective.requiredArtifacts).toContain("repo-proof/package.json");
     expect(objective.completionChecklist?.some((item) => item.id === "validation" && item.status === "pending")).toBe(true);
     expect(objective.completionChecklist?.some((item) => item.id === "git-closeout" && item.status === "pending")).toBe(true);
+  });
+
+  it("promotes repo route and verification context into objective metadata", () => {
+    const task = "Fix greet in src/index.ts and run tests.";
+    const target = buildTargetInference({ task });
+    const selection = buildContextSelection({
+      task,
+      targetInference: target,
+      context: {
+        repoModel: {
+          contextVersion: 99,
+          routeHints: {
+            preferredRoute: "shell_route",
+            reason: "Repo cognition prefers the terminal verifier path.",
+          },
+          hotspots: ["src/index.ts"],
+        },
+        verificationPlan: {
+          status: "pending",
+          primaryCommand: "npm test",
+          receipts: ["passed: npm test passed cleanly"],
+        },
+      },
+    });
+    const objective = buildObjectiveState({
+      request: {
+        mode: "auto",
+        task,
+        context: {
+          repoModel: {
+            contextVersion: 99,
+            routeHints: {
+              preferredRoute: "shell_route",
+              reason: "Repo cognition prefers the terminal verifier path.",
+            },
+            hotspots: ["src/index.ts"],
+          },
+          verificationPlan: {
+            status: "pending",
+            primaryCommand: "npm test",
+            receipts: ["passed: npm test passed cleanly"],
+          },
+        },
+      },
+      intent: inferIntent({ mode: "auto", task, targetInference: target }),
+      targetInference: target,
+      contextSelection: selection,
+      actions: [],
+      missingRequirements: ["required_mutation_missing:src/index.ts"],
+      plan: null,
+      final: "",
+      observedProof: ["target_resolved"],
+    });
+
+    expect(objective.chosenRoute).toBe("shell_route");
+    expect(objective.routeReason).toContain("terminal");
+    expect(objective.verificationStatus).toBe("pending");
+    expect(objective.repoContextVersion).toBe(99);
+    expect(objective.workerAssignments?.some((item) => item.role === "Scout")).toBe(true);
   });
 
   it("parses normalized JSON model output into actions", () => {

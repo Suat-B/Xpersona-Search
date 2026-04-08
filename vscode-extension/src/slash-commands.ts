@@ -35,6 +35,7 @@ export function parseSlashCommand(text: string): SlashCommand | null {
   if (lower === "/status") return { kind: "status" };
   if (lower === "/runtime hosted") return { kind: "runtime", runtime: "playgroundApi" };
   if (lower === "/runtime cloud") return { kind: "runtime", runtime: "playgroundApi" };
+  if (lower === "/runtime qwen") return { kind: "runtime", runtime: "qwenCode" };
   return { kind: "unknown", raw: normalized };
 }
 
@@ -47,6 +48,7 @@ export function buildSlashCommandHelpMessage(prefix?: string): string {
     "- /auto",
     "- /runtime hosted",
     "- /runtime cloud (alias for hosted)",
+    "- /runtime qwen",
     "- /key",
     "- /signin",
     "- /signout",

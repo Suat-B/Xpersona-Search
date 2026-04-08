@@ -57,7 +57,7 @@ describe("tool loop adapters", () => {
     expect(parsed?.toolCall?.arguments.refresh).toBe(true);
   });
 
-  it("accepts browser-native tool calls", () => {
+  it("rejects browser-native tool calls because browser work is internal to OpenHands", () => {
     const parsed = parseToolLoopJson(
       JSON.stringify({
         toolCall: {
@@ -68,11 +68,10 @@ describe("tool loop adapters", () => {
           summary: "Inspect the current Gmail DOM before acting",
         },
       }),
-      ["browser_snapshot_dom"]
+      ["read_file"]
     );
 
-    expect(parsed?.toolCall?.name).toBe("browser_snapshot_dom");
-    expect(parsed?.toolCall?.arguments.pageId).toBe("page_1");
+    expect(parsed).toBeNull();
   });
 
   it("rejects text-actions responses that try to return batch actions", () => {
@@ -169,6 +168,14 @@ describe("tool loop adapters", () => {
         sessionId: "sess-1",
         traceId: "trace-1",
       },
+      mcp: {
+        mcpServers: {
+          Docs: {
+            url: "https://example.com/mcp",
+            transport: "http",
+          },
+        },
+      },
       targetInference: {
         path: "src/app.ts",
         confidence: 0.9,
@@ -200,13 +207,20 @@ describe("tool loop adapters", () => {
     expect(result.toolCall?.name).toBe("read_file");
     expect(result.logs).toContain("adapter=openhands_gateway");
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    const body = JSON.parse(String(init.body)) as { tom?: { userKey?: string; enabled?: boolean } };
+    const body = JSON.parse(String(init.body)) as {
+      tom?: { userKey?: string; enabled?: boolean };
+      mcp?: { mcpServers?: Record<string, Record<string, unknown>> };
+    };
     expect(body.tom).toEqual(
       expect.objectContaining({
         enabled: true,
         userKey: "hashed-user-key",
       })
     );
+    expect(body.mcp?.mcpServers?.Docs).toEqual({
+      url: "https://example.com/mcp",
+      transport: "http",
+    });
   });
 
   it("recovers a gateway tool call that leaked into final text", async () => {

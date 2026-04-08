@@ -16,6 +16,9 @@ type AssistInput = {
   tom?: {
     enabled?: boolean;
   };
+  mcp?: {
+    mcpServers: Record<string, Record<string, unknown>>;
+  };
 };
 
 type ExecuteAction =
@@ -96,6 +99,7 @@ export class PlaygroundClient {
         stream: input.stream ?? true,
         historySessionId: input.historySessionId,
         ...(input.tom ? { tom: input.tom } : {}),
+        ...(input.mcp ? { mcp: input.mcp } : {}),
         contextBudget: {
           strategy: "hybrid",
           maxTokens: 16384,
@@ -118,6 +122,7 @@ export class PlaygroundClient {
         stream: false,
         historySessionId: input.historySessionId,
         ...(input.tom ? { tom: input.tom } : {}),
+        ...(input.mcp ? { mcp: input.mcp } : {}),
       },
     });
   }

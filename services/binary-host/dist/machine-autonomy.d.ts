@@ -33,7 +33,7 @@ export type DiscoveredApp = {
     name: string;
     aliases: string[];
     platform: NodeJS.Platform;
-    source: "windows_start_apps" | "windows_shortcut" | "windows_steam" | "mac_applications";
+    source: "windows_start_apps" | "windows_shortcut" | "windows_steam" | "windows_quick_alias" | "mac_applications";
     installLocation?: string;
     appId?: string;
     launch: {
@@ -54,7 +54,9 @@ export type AppLaunchResult = {
     createdAt: string;
 };
 export declare function defaultMachineAutonomyPolicy(): MachineAutonomyPolicy;
-export declare function findBestAppMatch(apps: DiscoveredApp[], query: string): DiscoveredApp | null;
+export declare function findBestAppMatch(apps: DiscoveredApp[], query: string, options?: {
+    minScore?: number;
+}): DiscoveredApp | null;
 export declare function parseMachineAutonomyTask(task: string): ParsedMachineAutonomyTask;
 export declare function parseSteamAppManifest(raw: string): {
     appId: string;

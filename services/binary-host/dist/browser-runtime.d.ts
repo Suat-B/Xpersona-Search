@@ -1,5 +1,24 @@
 import type { MachineAutonomyPolicy } from "./machine-autonomy.js";
 type JsonRecord = Record<string, any>;
+type BrowserMissionLeaseState = "active" | "completed" | "conflicted" | "released";
+export type BrowserMissionLease = {
+    leaseId: string;
+    missionKind: string;
+    pageId: string;
+    sessionMode: "attached" | "managed" | "profile";
+    startedAt: string;
+    updatedAt: string;
+    state: BrowserMissionLeaseState;
+    expectedUrl?: string;
+    expectedOrigin?: string;
+    lastObservedUrl?: string;
+    lastObservedTitle?: string;
+    conflictDetected: boolean;
+    conflictReason?: string;
+};
+export declare function buildBrowserSiteSearchUrl(baseUrl: string, query: string): string | null;
+export declare function inferBrowserMissionUrlFromQuery(query: string): string | null;
+export declare function stripBrowserSiteHintFromQuery(query: string, baseUrl?: string): string;
 export type BrowserPageSummary = {
     id: string;
     title: string;
@@ -20,6 +39,7 @@ export type BrowserElementSummary = {
     href?: string;
     disabled?: boolean;
     visible?: boolean;
+    score?: number;
 };
 export type BrowserDomSnapshot = {
     snapshotId: string;
@@ -28,6 +48,67 @@ export type BrowserDomSnapshot = {
     title: string;
     interactiveElements: BrowserElementSummary[];
     workflowCheckpoint: string;
+};
+export type BrowserMissionResult = {
+    searchPage: BrowserPageSummary;
+    finalPage: BrowserPageSummary | null;
+    clickedResult: BrowserElementSummary | null;
+    candidates: BrowserElementSummary[];
+    directSearchUrl?: string;
+    missionLease?: BrowserMissionLease;
+};
+export type BrowserMissionField = {
+    label?: string;
+    name?: string;
+    query?: string;
+    value?: string;
+    checked?: boolean;
+    required?: boolean;
+    kind?: string;
+};
+export type BrowserMatchedField = {
+    fieldLabel: string;
+    selector: string;
+    type?: string;
+    name?: string;
+    label?: string;
+};
+export type BrowserLoginMissionResult = {
+    startPage: BrowserPageSummary;
+    finalPage: BrowserPageSummary | null;
+    authenticated: boolean;
+    submitted: boolean;
+    actions: string[];
+    matchedFields: BrowserMatchedField[];
+    missingFields: string[];
+    missionLease?: BrowserMissionLease;
+};
+export type BrowserFormMissionResult = {
+    page: BrowserPageSummary;
+    finalPage: BrowserPageSummary | null;
+    submitted: boolean;
+    actions: string[];
+    matchedFields: BrowserMatchedField[];
+    missingFields: string[];
+    missionLease?: BrowserMissionLease;
+};
+export type BrowserExtractDecisionResult = {
+    page: BrowserPageSummary;
+    finalPage: BrowserPageSummary | null;
+    bestCandidate: BrowserElementSummary | null;
+    candidates: BrowserElementSummary[];
+    clicked: boolean;
+    selectedOption?: string;
+    missionLease?: BrowserMissionLease;
+};
+export type BrowserRecoverWorkflowResult = {
+    page: BrowserPageSummary;
+    finalPage: BrowserPageSummary | null;
+    recovered: boolean;
+    actionTaken?: string;
+    matchedElement?: BrowserElementSummary | null;
+    candidates: BrowserElementSummary[];
+    missionLease?: BrowserMissionLease;
 };
 export type BrowserConsoleEntry = {
     at: string;
@@ -44,7 +125,7 @@ export type BrowserNetworkEntry = {
     errorText?: string;
 };
 export type BrowserContextState = {
-    mode: "unavailable" | "attached" | "managed";
+    mode: "unavailable" | "attached" | "managed" | "profile";
     browserName?: string;
     activePage?: {
         id: string;
@@ -80,7 +161,19 @@ export type BrowserContextState = {
         attachedToExistingSession: boolean;
         authenticatedLikely: boolean;
     };
+    activeMissionLease?: {
+        leaseId: string;
+        missionKind: string;
+        pageId: string;
+        state: BrowserMissionLeaseState;
+        conflictDetected: boolean;
+        conflictReason?: string;
+        sessionMode: "attached" | "managed" | "profile";
+        startedAt: string;
+        updatedAt: string;
+    };
 };
+export declare function rankBrowserResultCandidates(matches: BrowserElementSummary[], query: string, pageUrl?: string): BrowserElementSummary[];
 export declare class BrowserRuntimeController {
     private session;
     private browserConnection;
@@ -88,14 +181,26 @@ export declare class BrowserRuntimeController {
     private readonly pageSessionIds;
     private readonly elementRefs;
     private readonly snapshots;
+    private readonly pageLeases;
     private lastActivePageId;
+    private sessionModeOverride;
     getStatus(policy: MachineAutonomyPolicy): Promise<JsonRecord>;
+    currentSessionKind(): "managed" | "existing" | "none";
+    runWithSessionPreference<T>(mode: "managed_only" | "reuse_first" | null, action: () => Promise<T>): Promise<T>;
     collectContext(policy: MachineAutonomyPolicy, input?: {
         pageLimit?: number;
         elementLimit?: number;
     }): Promise<BrowserContextState>;
     listPages(policy: MachineAutonomyPolicy): Promise<BrowserPageSummary[]>;
     getActivePage(policy: MachineAutonomyPolicy): Promise<BrowserPageSummary | null>;
+    private getPageById;
+    private resolveMissionResultPage;
+    private getActiveMissionLease;
+    private createMissionLease;
+    private touchMissionLease;
+    private markMissionLeaseConflict;
+    private finalizeMissionLease;
+    private runMissionWithLease;
     openPage(policy: MachineAutonomyPolicy, url: string): Promise<BrowserPageSummary>;
     focusPage(policy: MachineAutonomyPolicy, pageId: string): Promise<BrowserPageSummary>;
     navigate(policy: MachineAutonomyPolicy, input: {
@@ -138,6 +243,57 @@ export declare class BrowserRuntimeController {
         pageId: string;
         keys: string[];
     }): Promise<JsonRecord>;
+    private resolveMissionPage;
+    private normalizeFormControls;
+    private matchMissionFields;
+    private setMissionControlValue;
+    private clickBestQueryElement;
+    private waitForMissionOutcome;
+    private waitForMissionResults;
+    private collectMissionCandidates;
+    searchAndOpenBestResult(policy: MachineAutonomyPolicy, input: {
+        url?: string;
+        pageId?: string;
+        query: string;
+        resultQuery?: string;
+        limit?: number;
+    }): Promise<BrowserMissionResult>;
+    loginAndContinue(policy: MachineAutonomyPolicy, input: {
+        url?: string;
+        pageId?: string;
+        username?: string;
+        password?: string;
+        submitQuery?: string;
+        continueQuery?: string;
+        waitForText?: string;
+        waitForUrlIncludes?: string;
+    }): Promise<BrowserLoginMissionResult>;
+    completeForm(policy: MachineAutonomyPolicy, input: {
+        url?: string;
+        pageId?: string;
+        fields: BrowserMissionField[];
+        submit?: boolean;
+        submitQuery?: string;
+        waitForText?: string;
+        waitForUrlIncludes?: string;
+    }): Promise<BrowserFormMissionResult>;
+    extractAndDecide(policy: MachineAutonomyPolicy, input: {
+        url?: string;
+        pageId?: string;
+        query: string;
+        options?: string[];
+        action?: "none" | "click_best";
+        limit?: number;
+    }): Promise<BrowserExtractDecisionResult>;
+    recoverWorkflow(policy: MachineAutonomyPolicy, input: {
+        url?: string;
+        pageId?: string;
+        goal?: string;
+        preferredActionQuery?: string;
+        waitForText?: string;
+        waitForUrlIncludes?: string;
+        limit?: number;
+    }): Promise<BrowserRecoverWorkflowResult>;
     scroll(policy: MachineAutonomyPolicy, input: {
         pageId: string;
         deltaY?: number;
@@ -166,11 +322,15 @@ export declare class BrowserRuntimeController {
     private ensureSession;
     private ensureBrowserConnection;
     private ensurePageSession;
+    private resetPageTracking;
     private ensurePageState;
     private sendPageCommand;
     private evaluate;
     private storeElementRefs;
     private resolveSelector;
+    private resolveSelectorCandidates;
+    private evaluateWithSelectorFallback;
+    private inferSelectorFromRecentSnapshot;
     private assertUrlAllowed;
     private pruneSnapshots;
 }

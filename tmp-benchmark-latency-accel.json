@@ -1,0 +1,478 @@
+{
+  "version": "binary_autonomy_benchmark_v1",
+  "createdAt": "2026-04-07T07:50:18.392Z",
+  "host": {
+    "url": "http://127.0.0.1:7777",
+    "version": "0.2.0"
+  },
+  "categories": [
+    {
+      "category": "chat_only_probe",
+      "gateLane": "chat_probe",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-chat_only_probe-NRPnCC",
+      "status": "completed",
+      "finishStatus": "completed",
+      "eventCount": 14,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 0,
+      "successfulToolCalls": 0,
+      "failedToolCalls": 0,
+      "toolCounts": {},
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [],
+      "turns": 0,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": false,
+      "elapsedMs": 6146,
+      "queueDelayMs": 8,
+      "ttfrMs": 12,
+      "firstToolMs": null,
+      "plannerLatencyMs": 4010,
+      "providerLatencyMs": 4010,
+      "totalRunMs": 4940,
+      "fallbackCount": 0,
+      "traceId": "ed649ef5-94d1-4b4b-a40e-9c6ad3454703",
+      "runId": "309d8125-9ece-43b0-a3f8-cd7acf947285",
+      "hostedRunId": "6415763a0bfe86de4a1cb0d2e810ae51",
+      "files": [],
+      "timedOut": false
+    },
+    {
+      "category": "desktop_latency_probe",
+      "gateLane": "desktop_latency_probe",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-desktop_latency_probe-uBusUQ",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 29,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 3,
+      "successfulToolCalls": 3,
+      "failedToolCalls": 0,
+      "toolCounts": {
+        "desktop_open_app": 1,
+        "desktop_send_shortcut": 1,
+        "desktop_read_control": 1
+      },
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [
+        "Turn budget exceeded after 35000ms while waiting for local gateway."
+      ],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [
+        "Turn budget exceeded after 35000ms while waiting for local gateway."
+      ],
+      "turns": 3,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": true,
+      "elapsedMs": 45998,
+      "queueDelayMs": 9,
+      "ttfrMs": 12,
+      "firstToolMs": 189,
+      "plannerLatencyMs": 24,
+      "providerLatencyMs": 24,
+      "totalRunMs": 45427,
+      "fallbackCount": 0,
+      "traceId": "a05edd41-6a45-4eaf-96ac-6fda837363fe",
+      "runId": "e8fe6f9d-672c-46a0-b3f3-0f973829e157",
+      "hostedRunId": "ab2d0e80e8d50ce77a8fd6a3d6029b04",
+      "files": [],
+      "timedOut": false
+    },
+    {
+      "category": "git_commit_workflow",
+      "gateLane": "git_closeout",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-git_commit_workflow-NfLbmB",
+      "status": "completed",
+      "finishStatus": "completed",
+      "eventCount": 88,
+      "artifactCorrect": true,
+      "validationPassed": true,
+      "totalToolCalls": 12,
+      "successfulToolCalls": 12,
+      "failedToolCalls": 0,
+      "toolCounts": {
+        "mkdir": 4,
+        "write_file": 4,
+        "run_command": 4
+      },
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [
+        "git init",
+        "git checkout -b feat/autonomy-proof",
+        "git commit"
+      ],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [],
+      "turns": 12,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": false,
+      "elapsedMs": 22016,
+      "queueDelayMs": 3,
+      "ttfrMs": 6,
+      "firstToolMs": 5517,
+      "plannerLatencyMs": 11419,
+      "providerLatencyMs": 11419,
+      "totalRunMs": 21350,
+      "fallbackCount": 0,
+      "traceId": "e3096b39-bd2e-4870-a6c8-d37dd3d2f8eb",
+      "runId": "d0fe3b84-05b3-4b07-9843-e929dcebd489",
+      "hostedRunId": "c0eca40d98c1fa922866a51f9c981ff0",
+      "files": [
+        {
+          "path": "repo-proof",
+          "type": "dir"
+        },
+        {
+          "path": "repo-proof/package.json",
+          "type": "file",
+          "size": 115,
+          "preview": "{\n  \"name\": \"repo-proof\",\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n"
+        },
+        {
+          "path": "repo-proof/README.md",
+          "type": "file",
+          "size": 54,
+          "preview": "# Readme\n\nGenerated by Binary deterministic fallback.\n"
+        },
+        {
+          "path": "repo-proof/src",
+          "type": "dir"
+        },
+        {
+          "path": "repo-proof/src/index.js",
+          "type": "file",
+          "size": 42,
+          "preview": "export function main() {\n  return \"ok\";\n}\n"
+        },
+        {
+          "path": "repo-proof/test",
+          "type": "dir"
+        },
+        {
+          "path": "repo-proof/test/index.test.js",
+          "type": "file",
+          "size": 121,
+          "preview": "import test from \"node:test\";\nimport assert from \"node:assert/strict\";\n\ntest(\"sanity\", () => {\n  assert.equal(1, 1);\n});\n"
+        }
+      ],
+      "timedOut": false
+    },
+    {
+      "category": "complex_autonomy_delivery",
+      "gateLane": "multi_file_feature_delivery",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-complex_autonomy_delivery-qQuPMc",
+      "status": "completed",
+      "finishStatus": "completed",
+      "eventCount": 172,
+      "artifactCorrect": true,
+      "validationPassed": true,
+      "totalToolCalls": 26,
+      "successfulToolCalls": 26,
+      "failedToolCalls": 0,
+      "toolCounts": {
+        "mkdir": 11,
+        "write_file": 11,
+        "run_command": 4
+      },
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [
+        "npm test",
+        "git init",
+        "git checkout -b feat/ship-launchpad-studio",
+        "git commit"
+      ],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [],
+      "turns": 26,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": false,
+      "elapsedMs": 23905,
+      "queueDelayMs": 18,
+      "ttfrMs": 21,
+      "firstToolMs": 5310,
+      "plannerLatencyMs": 9019,
+      "providerLatencyMs": 9019,
+      "totalRunMs": 22705,
+      "fallbackCount": 0,
+      "traceId": "d5620304-dde7-4974-8975-a2e8bc4d1953",
+      "runId": "14ce8ed2-edad-4c73-a415-31a2f06f3e3c",
+      "hostedRunId": "d5ea33549c6cd8c5cc4ba833a67e9302",
+      "files": [
+        {
+          "path": "launchpad-studio",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/.gitignore",
+          "type": "file",
+          "size": 24,
+          "preview": "node_modules/\ncoverage/\n"
+        },
+        {
+          "path": "launchpad-studio/docs",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/docs/architecture.md",
+          "type": "file",
+          "size": 60,
+          "preview": "# Architecture\n\nGenerated by Binary deterministic fallback.\n"
+        },
+        {
+          "path": "launchpad-studio/docs/usage.md",
+          "type": "file",
+          "size": 53,
+          "preview": "# Usage\n\nGenerated by Binary deterministic fallback.\n"
+        },
+        {
+          "path": "launchpad-studio/package.json",
+          "type": "file",
+          "size": 121,
+          "preview": "{\n  \"name\": \"launchpad-studio\",\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n"
+        },
+        {
+          "path": "launchpad-studio/README.md",
+          "type": "file",
+          "size": 54,
+          "preview": "# Readme\n\nGenerated by Binary deterministic fallback.\n"
+        },
+        {
+          "path": "launchpad-studio/src",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/src/format.js",
+          "type": "file",
+          "size": 33,
+          "preview": "export const placeholder = true;\n"
+        },
+        {
+          "path": "launchpad-studio/src/index.js",
+          "type": "file",
+          "size": 42,
+          "preview": "export function main() {\n  return \"ok\";\n}\n"
+        },
+        {
+          "path": "launchpad-studio/src/planner.js",
+          "type": "file",
+          "size": 33,
+          "preview": "export const placeholder = true;\n"
+        },
+        {
+          "path": "launchpad-studio/src/validate.js",
+          "type": "file",
+          "size": 33,
+          "preview": "export const placeholder = true;\n"
+        },
+        {
+          "path": "launchpad-studio/test",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/test/index.test.js",
+          "type": "file",
+          "size": 121,
+          "preview": "import test from \"node:test\";\nimport assert from \"node:assert/strict\";\n\ntest(\"sanity\", () => {\n  assert.equal(1, 1);\n});\n"
+        },
+        {
+          "path": "launchpad-studio/test/planner.test.js",
+          "type": "file",
+          "size": 121,
+          "preview": "import test from \"node:test\";\nimport assert from \"node:assert/strict\";\n\ntest(\"sanity\", () => {\n  assert.equal(1, 1);\n});\n"
+        }
+      ],
+      "timedOut": false
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "passed": 3,
+    "takeoverRequired": 1,
+    "validationPassed": 2,
+    "latency": {
+      "laneMedians": {
+        "chat": {
+          "count": 1,
+          "ttfrMs": 12,
+          "firstToolMs": null,
+          "totalRunMs": 4940,
+          "elapsedMs": 6146
+        },
+        "desktop": {
+          "count": 1,
+          "ttfrMs": 12,
+          "firstToolMs": 189,
+          "totalRunMs": 45427,
+          "elapsedMs": 45998
+        },
+        "coding": {
+          "count": 2,
+          "ttfrMs": 13.5,
+          "firstToolMs": 5413.5,
+          "totalRunMs": 22027.5,
+          "elapsedMs": 22960.5
+        }
+      },
+      "chatProbeCount": 1,
+      "desktopProbeCount": 1,
+      "codingTargetCount": 2,
+      "medianChatTtfrMs": 12,
+      "medianChatFirstToolMs": null,
+      "medianCodingElapsedMs": 22960.5,
+      "medianCodingTotalRunMs": 22027.5,
+      "medianDesktopElapsedMs": 45998,
+      "medianFallbackCount": 0
+    },
+    "scorecard": {
+      "thresholds": {
+        "codingCompletionRate": 0.8,
+        "validationSuccessRate": 0.8,
+        "gitCloseoutSuccessRate": 1,
+        "maxAvoidableTakeoverRate": 0.2
+      },
+      "metrics": {
+        "codingCompletionRate": 1,
+        "validationSuccessRate": 1,
+        "repairSuccessRate": 0,
+        "gitCloseoutSuccessRate": 1,
+        "endToEndCompletionRate": 0.75,
+        "closureCompletionRate": 0,
+        "meanStepsToClosure": 19,
+        "meanRepairsToClosure": 0,
+        "avoidableTakeoverRate": 0
+      },
+      "latency": {
+        "thresholds": {
+          "chatFirstToolImprovement": 0.3,
+          "codingTotalRunImprovement": 0.15,
+          "desktopElapsedImprovement": 0.2
+        },
+        "baselineAvailable": false,
+        "baseline": null,
+        "current": {
+          "laneMedians": {
+            "chat": {
+              "count": 1,
+              "ttfrMs": 12,
+              "firstToolMs": null,
+              "totalRunMs": 4940,
+              "elapsedMs": 6146
+            },
+            "desktop": {
+              "count": 1,
+              "ttfrMs": 12,
+              "firstToolMs": 189,
+              "totalRunMs": 45427,
+              "elapsedMs": 45998
+            },
+            "coding": {
+              "count": 2,
+              "ttfrMs": 13.5,
+              "firstToolMs": 5413.5,
+              "totalRunMs": 22027.5,
+              "elapsedMs": 22960.5
+            }
+          },
+          "chatProbeCount": 1,
+          "desktopProbeCount": 1,
+          "codingTargetCount": 2,
+          "medianChatTtfrMs": 12,
+          "medianChatFirstToolMs": null,
+          "medianCodingElapsedMs": 22960.5,
+          "medianCodingTotalRunMs": 22027.5,
+          "medianDesktopElapsedMs": 45998,
+          "medianFallbackCount": 0
+        },
+        "chatFirstToolImprovement": null,
+        "codingTotalRunImprovement": null,
+        "desktopElapsedImprovement": null,
+        "passing": true,
+        "failingReasons": []
+      },
+      "codingLaneCoverage": {
+        "repo_scaffold": {
+          "total": 0,
+          "completed": 0
+        },
+        "single_file_edit": {
+          "total": 0,
+          "completed": 0
+        },
+        "multi_file_feature_delivery": {
+          "total": 1,
+          "completed": 1
+        },
+        "validation_repair": {
+          "total": 0,
+          "completed": 0
+        },
+        "git_closeout": {
+          "total": 1,
+          "completed": 1
+        }
+      },
+      "passing": true,
+      "failingReasons": []
+    }
+  }
+}

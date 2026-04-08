@@ -50,7 +50,7 @@ export type JsonRequestInput = {
   baseUrl: string;
   auth: AuthHeadersInput;
   path: string;
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
 };
 
@@ -88,15 +88,16 @@ export type StreamRequestInput = {
   baseUrl: string;
   auth: AuthHeadersInput;
   path: string;
-  body: unknown;
+  method?: "GET" | "POST";
+  body?: unknown;
   onEvent: (event: SseEvent) => void | Promise<void>;
 };
 
 export async function requestSse(input: StreamRequestInput): Promise<void> {
   const response = await fetch(`${input.baseUrl}${input.path}`, {
-    method: "POST",
+    method: input.method ?? "POST",
     headers: authHeaders(input.auth),
-    body: JSON.stringify(input.body),
+    body: input.body !== undefined ? JSON.stringify(input.body) : undefined,
   });
 
   if (!response.ok) {

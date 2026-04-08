@@ -3,6 +3,17 @@ import { exec } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
+import {
+  analyzeBinary,
+  binaryTextToolFailure,
+  hashBinary,
+  isLikelyBinaryFile,
+  looksLikeBinaryPath,
+  patchBinary,
+  readBinaryChunk,
+  searchBinary,
+  writeBinaryFile,
+} from "./binary-access.js";
 import { applyUnifiedDiff } from "./patch-utils.js";
 import { PendingToolCall, ToolResult } from "./types.js";
 
@@ -359,6 +370,19 @@ export class CliToolExecutor {
         if (!resolved) {
           return this.fail(toolCall.id, toolCall.name, "Invalid workspace-relative path for read_file.");
         }
+        if (await isLikelyBinaryFile(this.workspaceRoot, resolved.relativePath)) {
+          const failure = binaryTextToolFailure(resolved.relativePath);
+          return {
+            toolCallId: toolCall.id,
+            name: toolCall.name,
+            ok: false,
+            blocked: true,
+            summary: failure.summary,
+            data: failure.data,
+            error: failure.summary,
+            createdAt: nowIso(),
+          };
+        }
         let raw: string;
         try {
           raw = await fs.readFile(resolved.absolutePath, "utf8");
@@ -506,6 +530,22 @@ export class CliToolExecutor {
         if (!resolved) {
           return this.fail(toolCall.id, toolCall.name, "Invalid workspace-relative path for write_file.");
         }
+        if (
+          looksLikeBinaryPath(resolved.relativePath) ||
+          (await isLikelyBinaryFile(this.workspaceRoot, resolved.relativePath).catch(() => false))
+        ) {
+          const failure = binaryTextToolFailure(resolved.relativePath);
+          return {
+            toolCallId: toolCall.id,
+            name: toolCall.name,
+            ok: false,
+            blocked: true,
+            summary: failure.summary,
+            data: failure.data,
+            error: failure.summary,
+            createdAt: nowIso(),
+          };
+        }
         const overwrite = typeof args.overwrite === "boolean" ? args.overwrite : true;
         const exists = await fs
           .stat(resolved.absolutePath)
@@ -540,6 +580,19 @@ export class CliToolExecutor {
         const resolved = await this.resolveWithObservedRoot(String(args.path || ""), { preferExisting: true });
         if (!resolved) {
           return this.fail(toolCall.id, toolCall.name, "Invalid workspace-relative path for edit.");
+        }
+        if (await isLikelyBinaryFile(this.workspaceRoot, resolved.relativePath)) {
+          const failure = binaryTextToolFailure(resolved.relativePath);
+          return {
+            toolCallId: toolCall.id,
+            name: toolCall.name,
+            ok: false,
+            blocked: true,
+            summary: failure.summary,
+            data: failure.data,
+            error: failure.summary,
+            createdAt: nowIso(),
+          };
         }
         const before = await fs.readFile(resolved.absolutePath, "utf8").catch(() => null);
         if (before == null) {
@@ -615,6 +668,163 @@ export class CliToolExecutor {
               ? "No persisted workspace memory is available in the CLI."
               : "Diagnostics are not available in the standalone CLI.",
           data: toolCall.name === "get_workspace_memory" ? { memory: null } : { diagnostics: [] },
+          createdAt: nowIso(),
+        };
+      }
+
+      if (toolCall.name === "stat_binary" || toolCall.name === "hash_binary") {
+        const descriptor = await hashBinary(this.workspaceRoot, String(args.path || ""));
+        if (!descriptor) {
+          return this.fail(toolCall.id, toolCall.name, `Invalid binary path for ${toolCall.name}.`);
+        }
+        return {
+          toolCallId: toolCall.id,
+          name: toolCall.name,
+          ok: true,
+          summary:
+            toolCall.name === "hash_binary"
+              ? `Computed binary hash metadata for ${descriptor.path}.`
+              : `Collected binary metadata for ${descriptor.path}.`,
+          data: descriptor,
+          createdAt: nowIso(),
+        };
+      }
+
+      if (toolCall.name === "read_binary_chunk") {
+        const chunk = await readBinaryChunk(
+          this.workspaceRoot,
+          String(args.path || ""),
+          Number(args.offset || 0),
+          Number(args.length || 4096)
+        );
+        if (!chunk) {
+          return this.fail(toolCall.id, toolCall.name, "read_binary_chunk requires an existing regular file.");
+        }
+        return {
+          toolCallId: toolCall.id,
+          name: toolCall.name,
+          ok: true,
+          summary: `Read ${chunk.length} byte(s) from ${chunk.path} at offset ${chunk.offset}.`,
+          data: chunk,
+          createdAt: nowIso(),
+        };
+      }
+
+      if (toolCall.name === "search_binary") {
+        const query = String(args.pattern || args.query || "").trim();
+        if (!query) {
+          return this.fail(toolCall.id, toolCall.name, "search_binary requires a non-empty pattern.");
+        }
+        const searchResult = await searchBinary(this.workspaceRoot, String(args.path || ""), query, {
+          encoding: args.encoding,
+          limit: typeof args.limit === "number" ? args.limit : Number(args.limit),
+        });
+        if (!searchResult) {
+          return this.fail(toolCall.id, toolCall.name, "search_binary requires an existing regular file.");
+        }
+        return {
+          toolCallId: toolCall.id,
+          name: toolCall.name,
+          ok: true,
+          summary: searchResult.matches.length
+            ? `Found ${searchResult.matches.length} binary match(es) in ${searchResult.descriptor.path}.`
+            : `No binary matches found in ${searchResult.descriptor.path}.`,
+          data: {
+            path: searchResult.descriptor.path,
+            absolutePath: searchResult.descriptor.absolutePath,
+            encoding: searchResult.encoding,
+            normalizedPattern: searchResult.normalizedPattern,
+            truncated: searchResult.truncated,
+            riskClass: searchResult.descriptor.riskClass,
+            artifactKind: searchResult.descriptor.artifactKind,
+            matches: searchResult.matches,
+          },
+          createdAt: nowIso(),
+        };
+      }
+
+      if (toolCall.name === "analyze_binary") {
+        const analysis = await analyzeBinary(this.workspaceRoot, String(args.path || ""));
+        if (!analysis) {
+          return this.fail(toolCall.id, toolCall.name, "analyze_binary requires an existing regular file.");
+        }
+        return {
+          toolCallId: toolCall.id,
+          name: toolCall.name,
+          ok: true,
+          summary: `Analyzed binary target ${analysis.path}.`,
+          data: analysis,
+          createdAt: nowIso(),
+        };
+      }
+
+      if (toolCall.name === "write_binary_file") {
+        const writeResult = await writeBinaryFile(this.workspaceRoot, String(args.path || ""), args);
+        if (writeResult.policy.blocked) {
+          return {
+            toolCallId: toolCall.id,
+            name: toolCall.name,
+            ok: false,
+            blocked: true,
+            summary: writeResult.policy.message || `Binary write blocked for ${writeResult.descriptor.path}.`,
+            data: {
+              descriptor: writeResult.descriptor,
+              approvalRequired: writeResult.policy.approvalRequired,
+            },
+            error: writeResult.policy.message || "Binary write blocked.",
+            createdAt: nowIso(),
+          };
+        }
+        return {
+          toolCallId: toolCall.id,
+          name: toolCall.name,
+          ok: true,
+          summary: `Wrote binary file ${writeResult.descriptor.path}.`,
+          data: {
+            descriptor: writeResult.descriptor,
+            receipt: writeResult.receipt,
+            proof: writeResult.receipt,
+          },
+          createdAt: nowIso(),
+        };
+      }
+
+      if (toolCall.name === "patch_binary") {
+        const patchResult = await patchBinary(this.workspaceRoot, String(args.path || ""), {
+          operations: args.operations,
+          approved: args.approved,
+          dryRun: args.dryRun,
+        });
+        if (patchResult.policy.blocked) {
+          return {
+            toolCallId: toolCall.id,
+            name: toolCall.name,
+            ok: false,
+            blocked: true,
+            summary: patchResult.policy.message || `Binary patch blocked for ${patchResult.descriptor.path}.`,
+            data: {
+              descriptor: patchResult.descriptor,
+              patchPlan: patchResult.plan,
+              approvalRequired: patchResult.policy.approvalRequired,
+              proof: patchResult.plan,
+            },
+            error: patchResult.policy.message || "Binary patch blocked.",
+            createdAt: nowIso(),
+          };
+        }
+        return {
+          toolCallId: toolCall.id,
+          name: toolCall.name,
+          ok: true,
+          summary:
+            args.dryRun === true
+              ? `Prepared a dry-run binary patch plan for ${patchResult.descriptor.path}.`
+              : `Patched binary file ${patchResult.descriptor.path}.`,
+          data: {
+            descriptor: patchResult.descriptor,
+            patchPlan: patchResult.plan,
+            ...(patchResult.receipt ? { receipt: patchResult.receipt, proof: patchResult.receipt } : { proof: patchResult.plan }),
+          },
           createdAt: nowIso(),
         };
       }

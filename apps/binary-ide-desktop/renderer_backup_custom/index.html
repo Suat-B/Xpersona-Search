@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Binary IDE</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      .sheet {
+        top: 0.85rem;
+        right: 0.85rem;
+        bottom: 0.85rem;
+        left: 0.85rem;
+        width: auto;
+        padding: 1.8rem 1.8rem 2rem;
+        border-radius: 1.25rem;
+      }
+    </style>
+  </head>
+  <body data-view="landing">
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="app-header__left">
+          <button id="openSettingsButton" class="app-logo-button app-logo-button--hidden" type="button" aria-label="Open settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 8.5a3.5 3.5 0 1 1 0 7a3.5 3.5 0 0 1 0-7Zm7.5 3.5l-1.84-.68a6.75 6.75 0 0 0-.58-1.4l.83-1.77l-1.77-1.77l-1.77.83a6.75 6.75 0 0 0-1.4-.58L12 4.5l-1.84.68a6.75 6.75 0 0 0-1.4.58l-1.77-.83L5.22 6.7l.83 1.77a6.75 6.75 0 0 0-.58 1.4L3.5 12l1.97.84a6.75 6.75 0 0 0 .58 1.4l-.83 1.77l1.77 1.77l1.77-.83c.44.24.91.43 1.4.58L12 19.5l1.84-.68c.49-.15.96-.34 1.4-.58l1.77.83l1.77-1.77l-.83-1.77c.24-.44.43-.91.58-1.4L19.5 12Z" />
+            </svg>
+          </button>
+          <nav class="app-menubar" aria-label="Menu">
+            <button class="app-menu-button" data-menu-action="file" type="button">File</button>
+            <button class="app-menu-button" data-menu-action="edit" type="button">Edit</button>
+            <button class="app-menu-button" data-menu-action="view" type="button">View</button>
+            <button class="app-menu-button" data-menu-action="window" type="button">Window</button>
+            <button class="app-menu-button" data-menu-action="help" type="button">Help</button>
+          </nav>
+        </div>
+        <div class="app-header__right"></div>
+        <div id="menuDropdown" class="app-menu-dropdown" aria-hidden="true"></div>
+      </header>
+
+      <aside class="app-sidebar">
+        <div class="sidebar-top">
+          <button id="newChatButton" class="sidebar-primary-action" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14" /></svg>
+            <span>New thread</span>
+          </button>
+          <button class="sidebar-link" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v3m0 6v3m6-6h-3M9 12H6m9.24-4.24l-2.12 2.12m0 4.24l2.12 2.12m-6.48 0l2.12-2.12m0-4.24L8.76 7.76" /></svg>
+            <span>Plugins</span>
+          </button>
+          <button class="sidebar-link" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v6l4 2M4 12a8 8 0 1 0 8-8" /></svg>
+            <span>Automations</span>
+          </button>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-section__header">
+            <span>Threads</span>
+            <div class="sidebar-section__actions">
+              <button class="toolbar-icon toolbar-icon--small" type="button" aria-label="Expand threads">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 21h5v-5M21 8V3h-5M3 16v5h5" /></svg>
+              </button>
+              <button class="toolbar-icon toolbar-icon--small" type="button" aria-label="Filter threads">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+              </button>
+            </div>
+          </div>
+          <div class="sidebar-group">
+            <div class="sidebar-group__title" id="sidebarWorkspaceName">Xpersona</div>
+            <div id="threadList" class="thread-list empty">No threads yet.</div>
+          </div>
+        </div>
+
+        <div class="sidebar-footer">
+          <button id="sidebarSettingsButton" class="sidebar-link sidebar-link--footer" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 1 0 7a3.5 3.5 0 0 1 0-7Zm7.5 3.5l-1.84-.68a6.75 6.75 0 0 0-.58-1.4l.83-1.77l-1.77-1.77l-1.77.83a6.75 6.75 0 0 0-1.4-.58L12 4.5l-1.84.68a6.75 6.75 0 0 0-1.4.58l-1.77-.83L5.22 6.7l.83 1.77a6.75 6.75 0 0 0-.58 1.4L3.5 12l1.97.84a6.75 6.75 0 0 0 .58 1.4l-.83 1.77l1.77 1.77l1.77-.83c.44.24.91.43 1.4.58L12 19.5l1.84-.68c.49-.15.96-.34 1.4-.58l1.77.83l1.77-1.77l-.83-1.77c.24-.44.43-.91.58-1.4L19.5 12Z" /></svg>
+            <span>Settings</span>
+          </button>
+        </div>
+      </aside>
+
+      <section class="workspace-shell">
+        <div class="workspace-toolbar">
+          <div class="workspace-toolbar__title" id="workspaceTitle">New thread</div>
+          <div class="workspace-toolbar__actions">
+            <button id="openWorkspaceSheet" class="toolbar-icon toolbar-icon--toolbar" type="button" aria-label="Open workspace and settings">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v13H4zM9 5.5v13M9 9.5h11" /></svg>
+            </button>
+            <button id="openHistorySheet" class="toolbar-icon toolbar-icon--toolbar" type="button" aria-label="Open history">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6.5v5l3 2M12 21a9 9 0 1 0 0-18a9 9 0 0 0 0 18Z" /></svg>
+            </button>
+          </div>
+        </div>
+
+        <main class="workspace-main">
+          <section id="landingView" class="landing-view">
+            <div class="hero-state">
+              <div class="hero-state__copy">
+                <h1>Let’s build</h1>
+                <button id="landingWorkspaceButton" class="hero-state__project" type="button">Xpersona</button>
+              </div>
+            </div>
+            <form id="landingForm" class="landing-composer">
+              <input
+                id="landingTaskInput"
+                class="landing-input"
+                type="text"
+                placeholder="Ask Binary anything, @ to add files, / for commands, $ for skills"
+                autocomplete="off"
+              />
+              <button class="landing-submit" type="submit" aria-label="Send prompt">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M7 10l5-5l5 5" /></svg>
+              </button>
+            </form>
+          </section>
+
+          <section id="chatView" class="chat-view">
+            <div id="conversationScroller" class="conversation-scroller">
+              <div id="conversation" class="conversation-container">
+                <article class="message message--user">
+                  <div class="message__meta">User</div>
+                  <h1 class="message__title">Hi\</h1>
+                </article>
+                <article class="message message--assistant">
+                  <div class="assistant-shell">
+                    <div class="assistant-avatar" aria-hidden="true">
+                      <span class="assistant-avatar__eye"></span>
+                      <span class="assistant-avatar__eye"></span>
+                    </div>
+                    <div class="assistant-body">
+                      <p class="assistant-copy">Hi there! 👋 How can I help you today?</p>
+                      <div class="assistant-quick-actions">
+                        <button class="assistant-quick-action" type="button" aria-label="Copy response">
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h9v9H9zM6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" /></svg>
+                        </button>
+                        <button class="assistant-quick-action" type="button" aria-label="Regenerate response">
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2 5.3M20 11V5M20 11h-6" /></svg>
+                        </button>
+                        <button class="assistant-quick-action" type="button" aria-label="Share response">
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 12.5l4-4l4 4M11 8.5v8" /></svg>
+                        </button>
+                        <button class="assistant-quick-action" type="button" aria-label="Thumbs up">
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11v9M11 20h6a2 2 0 0 0 2-1.6l1-5a2 2 0 0 0-2-2.4h-4V6.5A1.5 1.5 0 0 0 12.5 5L9 11v9" /></svg>
+                        </button>
+                        <button class="assistant-quick-action" type="button" aria-label="Thumbs down">
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 13V4M13 4H7a2 2 0 0 0-2 1.6l-1 5A2 2 0 0 0 6 13h4v4.5A1.5 1.5 0 0 0 11.5 19L15 13V4" /></svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </section>
+        </main>
+
+        <footer class="chat-footer">
+          <div class="chat-footer__inner">
+            <form id="composerForm" class="composer-form">
+              <button class="composer-leading-action" type="button" aria-label="Add attachment">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+              </button>
+              <div class="composer-stack">
+                <input id="taskInput" class="composer-input" type="text" placeholder="Ask away. Pics work too." autocomplete="off" />
+                <div class="composer-toolbar">
+                  <div class="composer-prefs">
+                    <button class="composer-inline-select" type="button">K2.5 Instant</button>
+                    <button class="composer-inline-select composer-inline-select--hidden" type="button">High</button>
+                  </div>
+                  <div class="composer-side-actions">
+                    <button class="toolbar-icon toolbar-icon--small composer-voice-action" type="button" aria-label="Voice input">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a3 3 0 0 1 3 3v4a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3Zm5 7a5 5 0 0 1-10 0M12 16v4M8 20h8" /></svg>
+                    </button>
+                    <button id="runTask" class="composer-submit" type="submit" aria-label="Send prompt">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M7 10l5-5l5 5" /></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </form>
+            <div class="footer-meta">
+              <div class="footer-meta__left">
+                <div class="footer-meta__item">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" /></svg>
+          <span id="contextStatus">Machine home active</span>
+                </div>
+                <div class="footer-meta__item footer-meta__item--accent">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v6c0 5-3.5 8-7 9c-3.5-1-7-4-7-9V6l7-3Z" /></svg>
+                  <span id="syncStatus">Offline</span>
+                </div>
+              </div>
+              <div class="footer-meta__right">
+                <div class="footer-meta__item">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h4v4H7zM13 13h4v4h-4zM13 7h4v4h-4zM7 13h4v4H7z" /></svg>
+                  <span id="branchStatus">main</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </footer>
+      </section>
+    </div>
+
+    <section id="settingsSheet" class="sheet-shell" aria-hidden="true">
+      <div class="sheet-backdrop" data-close-sheet="settings"></div>
+      <aside class="sheet">
+        <div class="sheet__header">
+          <div>
+            <p class="sheet__eyebrow">Binary</p>
+          <h2>Machine Home and Runtime</h2>
+          </div>
+          <button class="sheet__close" data-close-sheet="settings" type="button" aria-label="Close settings">×</button>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Host</p>
+          <div id="hostStatus" class="sheet-card">Checking Binary Host...</div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">What Binary Sees</p>
+          <div id="worldModelStatus" class="sheet-card">
+            <strong>Status unavailable</strong>
+            <span>Binary will show what it notices, what it plans next, and anything that may need your attention here.</span>
+          </div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Machine Home</p>
+          <label class="field-stack">
+            <span>Machine home root</span>
+            <input id="machineRootInput" type="text" placeholder="C:\Users\you" />
+          </label>
+          <div class="button-row">
+            <button id="chooseMachineHome" type="button">Choose machine home</button>
+          </div>
+          <label class="field-stack">
+            <span>Focus folder or repo</span>
+            <input id="workspaceInput" type="text" placeholder="Optional focus folder for coding and validation" />
+          </label>
+          <div class="button-row">
+            <button id="chooseWorkspace" type="button">Choose focus</button>
+            <button id="trustWorkspace" class="button-secondary" type="button">Save machine context</button>
+          </div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Authentication</p>
+          <label class="field-stack">
+            <span>Binary IDE API key</span>
+            <input id="apiKeyInput" type="password" placeholder="xp_..." />
+          </label>
+          <div class="button-row">
+            <button id="saveApiKey" type="button">Save key</button>
+            <button id="clearApiKey" class="button-secondary" type="button">Clear</button>
+          </div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Bring Your Own Model</p>
+          <div class="sheet-card">
+            <strong>Connect your own provider account</strong>
+            <span>Binary Host keeps linked provider credentials local, uses real browser auth where supported, and routes model requests through connected accounts before platform fallbacks.</span>
+          </div>
+          <div class="form-grid">
+            <label class="field-stack">
+              <span>Provider</span>
+              <select id="providerSelect"></select>
+            </label>
+            <label class="field-stack">
+              <span>Default model</span>
+              <input id="providerModelInput" type="text" placeholder="gpt-5.4" />
+            </label>
+          </div>
+          <label class="field-stack">
+            <span>Connection status</span>
+            <div id="providerAuthStatus" class="sheet-card">Select a provider to see whether real browser auth is supported.</div>
+          </label>
+          <label class="field-stack">
+            <span>Base URL</span>
+            <input id="providerBaseUrlInput" type="text" placeholder="Use the provider default unless you need a custom endpoint" />
+          </label>
+          <div class="button-row">
+            <button id="openProviderPage" type="button">Open docs</button>
+            <button id="saveProvider" type="button">Connect account</button>
+            <button id="importProvider" class="button-secondary" type="button">Import existing login</button>
+            <button id="testProvider" class="button-secondary" type="button">Test</button>
+            <button id="refreshProvider" class="button-secondary" type="button">Refresh auth</button>
+            <button id="setDefaultProvider" class="button-secondary" type="button">Set default</button>
+            <button id="disconnectProvider" class="button-danger" type="button">Disconnect</button>
+          </div>
+          <div id="providerList" class="history-list empty">No model providers connected yet.</div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Connections</p>
+          <div class="sheet-card">
+            <strong>Connect websites and online services</strong>
+            <span>Connections let Binary reach approved MCP services without making you learn the protocol first.</span>
+          </div>
+          <div class="button-row">
+            <button id="addWebConnection" type="button">Browse websites</button>
+            <button id="clearConnectionEditor" class="button-secondary" type="button">Clear</button>
+          </div>
+          <label class="field-stack">
+            <span>Friendly name</span>
+            <input id="connectionNameInput" type="text" placeholder="Docs search" />
+          </label>
+          <div class="form-grid">
+            <label class="field-stack">
+              <span>Transport</span>
+              <select id="connectionTransportSelect">
+                <option value="http">HTTP</option>
+                <option value="sse">SSE</option>
+              </select>
+            </label>
+            <label class="field-stack">
+              <span>Auth</span>
+              <select id="connectionAuthSelect">
+                <option value="none">None</option>
+                <option value="bearer">Bearer token</option>
+                <option value="api-key">API key</option>
+                <option value="oauth">OAuth</option>
+              </select>
+            </label>
+          </div>
+          <label class="field-stack">
+            <span>Server URL</span>
+            <input id="connectionUrlInput" type="text" placeholder="https://example.com/mcp" />
+          </label>
+          <label class="field-stack">
+            <span>Secret</span>
+            <input id="connectionSecretInput" type="password" placeholder="Bearer token or API key when needed" />
+          </label>
+          <label class="field-stack">
+            <span>API key header</span>
+            <input id="connectionHeaderNameInput" type="text" placeholder="X-API-Key" />
+          </label>
+          <label class="field-stack">
+            <span>Import advanced config (.mcp.json)</span>
+            <input id="connectionImportPathInput" type="text" placeholder="C:\\path\\to\\.mcp.json" />
+          </label>
+          <div class="button-row">
+            <button id="saveConnection" type="button">Connect service</button>
+            <button id="testConnection" class="button-secondary" type="button">Test selected</button>
+            <button id="importConnectionConfig" class="button-secondary" type="button">Import advanced config</button>
+          </div>
+          <div id="connectionList" class="history-list empty">No connections yet.</div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Appearance</p>
+          <label class="field-stack">
+            <span>Theme</span>
+            <select id="themeSelect">
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Machine Autonomy</p>
+          <div id="autonomyStatus" class="sheet-card">Checking machine autonomy...</div>
+          <div class="button-row">
+            <button id="enableAutonomy" type="button">Enable autonomy</button>
+            <button id="refreshState" class="button-secondary" type="button">Refresh</button>
+          </div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Binary Inspector</p>
+          <div class="sheet-card">
+            <strong>Byte-level inspection with guarded mutation policy</strong>
+            <span>Preview regular files safely, inspect risk, and keep high-risk binary writes approval-gated.</span>
+          </div>
+          <label class="field-stack">
+            <span>Target path</span>
+            <input id="binaryPathInput" type="text" placeholder="C:\path\to\artifact.bin or ./dist/app.exe" />
+          </label>
+          <div class="form-grid">
+            <label class="field-stack">
+              <span>Offset</span>
+              <input id="binaryOffsetInput" type="number" min="0" step="1" value="0" />
+            </label>
+            <label class="field-stack">
+              <span>Length</span>
+              <input id="binaryLengthInput" type="number" min="1" max="65536" step="1" value="256" />
+            </label>
+          </div>
+          <div class="button-row">
+            <button id="chooseBinaryFile" type="button">Choose file</button>
+            <button id="inspectBinary" type="button">Inspect</button>
+            <button id="hashBinary" class="button-secondary" type="button">Hash</button>
+            <button id="binaryPrevChunk" class="button-secondary" type="button">Prev</button>
+            <button id="binaryNextChunk" class="button-secondary" type="button">Next</button>
+          </div>
+          <div id="binaryInspectorCard" class="sheet-card">
+            <strong>No binary target selected</strong>
+            <span>Choose a file or enter an absolute path to inspect byte ranges safely.</span>
+          </div>
+          <pre id="binaryPreview" class="binary-preview">Hex and ASCII previews will appear here.</pre>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Live Controls</p>
+          <div id="liveControlsCard" class="sheet-card">
+            <strong>No active run</strong>
+            <span>Run controls will appear here when Binary is working.</span>
+          </div>
+          <div class="button-row">
+            <button id="pauseRun" class="button-secondary" type="button">Pause</button>
+            <button id="resumeRun" class="button-secondary" type="button">Resume</button>
+            <button id="takeoverRun" type="button">Take over</button>
+            <button id="cancelRun" class="button-danger" type="button">Cancel</button>
+          </div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Automations</p>
+          <label class="field-stack">
+            <span>Name</span>
+            <input id="automationNameInput" type="text" placeholder="Daily repo triage" />
+          </label>
+          <label class="field-stack">
+            <span>Prompt</span>
+            <textarea id="automationPromptInput" rows="4" placeholder="Review new issues, summarize risk, and queue safe fixes."></textarea>
+          </label>
+          <div class="form-grid">
+            <label class="field-stack">
+              <span>Trigger</span>
+              <select id="automationTriggerSelect">
+                <option value="manual">Manual</option>
+                <option value="schedule_nl">Schedule</option>
+                <option value="file_event">File event</option>
+                <option value="process_event">Process event</option>
+                <option value="notification">Notification</option>
+              </select>
+            </label>
+            <label class="field-stack">
+              <span>Policy</span>
+              <select id="automationPolicySelect">
+                <option value="autonomous">Autonomous</option>
+                <option value="observe_only">Observe only</option>
+                <option value="approval_before_mutation">Approval before mutation</option>
+              </select>
+            </label>
+          </div>
+          <label class="field-stack">
+              <span>Focus root override</span>
+              <input id="automationWorkspaceInput" type="text" placeholder="Defaults to the focused folder or repo" />
+          </label>
+          <label class="field-stack">
+            <span>Schedule / query / topic</span>
+            <input id="automationDetailInput" type="text" placeholder="Every weekday at 9am, chrome, or sentry" />
+          </label>
+          <div class="button-row">
+            <button id="saveAutomation" type="button">Save automation</button>
+            <button id="clearAutomationEditor" class="button-secondary" type="button">Clear</button>
+          </div>
+          <div id="automationList" class="history-list empty">No automations yet.</div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Webhooks</p>
+          <label class="field-stack">
+            <span>Webhook URL</span>
+            <input id="webhookUrlInput" type="text" placeholder="https://example.com/binary/webhook" />
+          </label>
+          <label class="field-stack">
+            <span>Events (comma separated)</span>
+            <input id="webhookEventsInput" type="text" placeholder="automation.run_completed,automation.webhook_failed" />
+          </label>
+          <div class="button-row">
+            <button id="saveWebhook" type="button">Save webhook</button>
+          </div>
+          <div id="webhookList" class="history-list empty">No webhook subscriptions yet.</div>
+        </div>
+      </aside>
+    </section>
+
+    <section id="historySheet" class="sheet-shell" aria-hidden="true">
+      <div class="sheet-backdrop" data-close-sheet="history"></div>
+      <aside class="sheet">
+        <div class="sheet__header">
+          <div>
+            <p class="sheet__eyebrow">Binary</p>
+            <h2>Run History</h2>
+          </div>
+          <button class="sheet__close" data-close-sheet="history" type="button" aria-label="Close history">×</button>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Recent runs</p>
+          <div id="runList" class="history-list empty">No runs yet.</div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Recent sessions</p>
+          <div id="recentSessions" class="history-list empty">No sessions yet.</div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Artifacts</p>
+          <div id="artifactHistory" class="history-list empty">No artifacts yet.</div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Automation Timeline</p>
+          <div id="automationTimeline" class="history-list empty">Select an automation to inspect its event timeline.</div>
+        </div>
+      </aside>
+    </section>
+
+    <section id="commandPalette" class="palette-shell" aria-hidden="true">
+      <div class="palette-backdrop" data-close-sheet="palette"></div>
+      <div class="palette">
+        <div class="palette__header">
+          <input id="paletteSearch" class="palette__input" type="text" placeholder="Jump to settings, history, or run controls..." autocomplete="off" />
+        </div>
+        <div id="paletteActions" class="palette__actions"></div>
+      </div>
+    </section>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>

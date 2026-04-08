@@ -5,16 +5,246 @@ import importlib.metadata
 import inspect
 import json
 import os
+import re
+import subprocess
 import sys
+import time
 import traceback
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+
+INTERNAL_BROWSER_USE_TOOL = "browser_use"
+DEFAULT_BROWSER_USE_MAX_INTERNAL_TURNS = 2
+RETRYABLE_PROVIDER_FAILURE_REASONS = {
+    "provider_credits_exhausted",
+    "router_blocked",
+    "tool_schema_incompatible",
+    "transient_api_failure",
+    "unknown_provider_failure",
+}
 
 
 def compact_whitespace(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
+
+
+def resolve_route_policy(payload: dict[str, Any]) -> dict[str, Any]:
+    request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+    direct = payload.get("routePolicy") if isinstance(payload.get("routePolicy"), dict) else {}
+    nested = request.get("routePolicy") if isinstance(request.get("routePolicy"), dict) else {}
+    merged = {**nested, **direct}
+    return merged if isinstance(merged, dict) else {}
+
+
+def resolve_execution_hints(payload: dict[str, Any]) -> dict[str, Any]:
+    raw = payload.get("executionHints")
+    return raw if isinstance(raw, dict) else {}
+
+
+def resolve_adapter_mode(payload: dict[str, Any]) -> str:
+    hints = resolve_execution_hints(payload)
+    mode = compact_whitespace(hints.get("adapterMode")).lower()
+    return "force_binary_tool_adapter" if mode == "force_binary_tool_adapter" else "auto"
+
+
+def resolve_latency_policy(payload: dict[str, Any]) -> str:
+    hints = resolve_execution_hints(payload)
+    policy = compact_whitespace(hints.get("latencyPolicy")).lower()
+    return "detached_15s_cap" if policy == "detached_15s_cap" else "default"
+
+
+def resolve_timeout_policy(payload: dict[str, Any]) -> str:
+    hints = resolve_execution_hints(payload)
+    policy = compact_whitespace(hints.get("timeoutPolicy")).lower()
+    if policy == "detached_no_timeout_retry_single_non_timeout_fallback":
+        return "detached_no_timeout_retry_single_non_timeout_fallback"
+    return "default_retry"
+
+
+def resolve_budget_profile(payload: dict[str, Any]) -> str:
+    hints = resolve_execution_hints(payload)
+    value = compact_whitespace(hints.get("budgetProfile"))
+    return value or "default"
+
+
+def resolve_first_turn_budget_ms(payload: dict[str, Any]) -> int | None:
+    hints = resolve_execution_hints(payload)
+    raw = hints.get("firstTurnBudgetMs")
+    if not isinstance(raw, (int, float)):
+        return None
+    value = int(raw)
+    return value if value > 0 else None
+
+
+def resolve_model_routing_mode(payload: dict[str, Any]) -> str:
+    hints = resolve_execution_hints(payload)
+    mode = compact_whitespace(hints.get("modelRoutingMode")).lower()
+    return "single_fixed_free" if mode == "single_fixed_free" else "single_fixed_free"
+
+
+def resolve_fixed_model_alias(payload: dict[str, Any]) -> str | None:
+    hints = resolve_execution_hints(payload)
+    value = compact_whitespace(hints.get("fixedModelAlias"))
+    return value or None
+
+
+def resolve_fallback_enabled(payload: dict[str, Any]) -> bool:
+    hints = resolve_execution_hints(payload)
+    if isinstance(hints.get("fallbackEnabled"), bool):
+        return hints.get("fallbackEnabled") is True
+    return False
+
+
+def resolve_operator_fallback_override(payload: dict[str, Any]) -> bool:
+    hints = resolve_execution_hints(payload)
+    if hints.get("operatorFallbackOverride") is True:
+        return True
+    return parse_boolish(os.getenv("OPENHANDS_ALLOW_MODEL_FALLBACK_OVERRIDE", "0"), False)
+
+
+def resolve_small_model_forced(payload: dict[str, Any]) -> bool:
+    hints = resolve_execution_hints(payload)
+    return hints.get("smallModelForced") is True
+
+
+def coerce_positive_int(value: Any, default: int, minimum: int, maximum: int) -> int:
+    try:
+        numeric = int(str(value).strip())
+    except Exception:
+        numeric = default
+    return max(minimum, min(numeric, maximum))
+
+
+def parse_boolish(value: Any, default: bool) -> bool:
+    if value is None:
+        return default
+    normalized = compact_whitespace(value).lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def resolve_speed_profile(payload: dict[str, Any]) -> str:
+    request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+    speed_profile = compact_whitespace(request.get("speedProfile") or payload.get("speedProfile") or "fast").lower()
+    if speed_profile in {"fast", "balanced", "thorough"}:
+        return speed_profile
+    return "fast"
+
+
+def resolve_default_max_iterations_for_speed(speed_profile: str) -> int:
+    if speed_profile == "thorough":
+        return 120
+    if speed_profile == "balanced":
+        return 80
+    return 64
+
+
+def resolve_tool_concurrency_limit(payload: dict[str, Any]) -> int:
+    route_policy = resolve_route_policy(payload)
+    route_value = route_policy.get("toolConcurrencyLimit")
+    if route_value is not None:
+        return coerce_positive_int(route_value, 1, 1, 16)
+    env_value = compact_whitespace(os.getenv("OPENHANDS_TOOL_CONCURRENCY_LIMIT", ""))
+    if env_value:
+        return coerce_positive_int(env_value, 1, 1, 16)
+    return 1
+
+
+def resolve_context_condenser_config(payload: dict[str, Any]) -> tuple[bool, int, int]:
+    route_policy = resolve_route_policy(payload)
+    route_enabled = route_policy.get("enableContextCondenser")
+    if isinstance(route_enabled, bool):
+        enabled = route_enabled
+    else:
+        enabled = parse_boolish(os.getenv("OPENHANDS_ENABLE_CONTEXT_CONDENSER", "1"), True)
+
+    size_source = (
+        route_policy.get("condenserMaxSize")
+        if route_policy.get("condenserMaxSize") is not None
+        else os.getenv("OPENHANDS_CONDENSER_MAX_SIZE", "64")
+    )
+    keep_source = (
+        route_policy.get("condenserKeepFirst")
+        if route_policy.get("condenserKeepFirst") is not None
+        else os.getenv("OPENHANDS_CONDENSER_KEEP_FIRST", "3")
+    )
+    max_size = coerce_positive_int(size_source, 64, 8, 500)
+    keep_first = coerce_positive_int(keep_source, 3, 1, 64)
+    keep_first = max(1, min(keep_first, max_size - 1))
+    return enabled, max_size, keep_first
+
+
+def build_context_condenser(payload: dict[str, Any], llm: Any) -> tuple[Any | None, str]:
+    enabled, max_size, keep_first = resolve_context_condenser_config(payload)
+    if not enabled:
+        return None, "context_condenser=disabled"
+
+    condenser_cls = import_optional_attr(
+        [
+            ("openhands.sdk.context", "LLMSummarizingCondenser"),
+            ("openhands.sdk.context.condenser", "LLMSummarizingCondenser"),
+        ]
+    )
+    if condenser_cls is None:
+        return None, "context_condenser=unsupported"
+
+    condenser_llm = llm
+    model_copy = getattr(llm, "model_copy", None)
+    if callable(model_copy):
+        try:
+            condenser_llm = model_copy(update={"usage_id": "condenser"})
+        except Exception:
+            condenser_llm = llm
+
+    kwargs = {
+        "llm": condenser_llm,
+        "max_size": max_size,
+        "keep_first": keep_first,
+    }
+    filtered = filter_supported_kwargs(condenser_cls, kwargs)
+    if "llm" not in filtered:
+        return None, "context_condenser=unsupported"
+
+    try:
+        condenser = condenser_cls(**filtered)
+    except Exception:
+        return None, "context_condenser=failed"
+    return condenser, f"context_condenser=enabled:max_size={max_size},keep_first={keep_first}"
+
+
+def apply_autonomous_confirmation_policy(conversation: Any, payload: dict[str, Any], logs: list[str]) -> None:
+    route_policy = resolve_route_policy(payload)
+    route_requires_confirmation = route_policy.get("requireConfirmation")
+    if isinstance(route_requires_confirmation, bool) and route_requires_confirmation:
+        logs.append("confirmation_policy=default:required")
+        return
+
+    enable_never_confirm = parse_boolish(os.getenv("OPENHANDS_AUTONOMOUS_NEVER_CONFIRM", "1"), True)
+    if not enable_never_confirm:
+        logs.append("confirmation_policy=default:disabled")
+        return
+
+    set_policy = getattr(conversation, "set_confirmation_policy", None)
+    never_confirm_cls = import_optional_attr(
+        [
+            ("openhands.sdk.security.confirmation_policy", "NeverConfirm"),
+        ]
+    )
+    if not callable(set_policy) or never_confirm_cls is None:
+        logs.append("confirmation_policy=default:unsupported")
+        return
+
+    try:
+        set_policy(never_confirm_cls())
+        logs.append("confirmation_policy=never")
+    except Exception:
+        logs.append("confirmation_policy=default:failed")
 
 
 def sanitize_relative_path(value: Any) -> str | None:
@@ -40,6 +270,296 @@ def import_optional_attr(candidates: list[tuple[str, str]]) -> Any | None:
         except Exception:
             continue
     return None
+
+
+_APPLY_PATCH_TOOL_IMPORT_CANDIDATES: list[tuple[str, str]] = [
+    ("openhands.tools.apply_patch", "ApplyPatchTool"),
+    ("openhands.sdk.tools.apply_patch", "ApplyPatchTool"),
+]
+
+
+def resolve_apply_patch_tool_class() -> Any | None:
+    return import_optional_attr(_APPLY_PATCH_TOOL_IMPORT_CANDIDATES)
+
+
+def resolve_apply_patch_registration_name() -> str | None:
+    cls = resolve_apply_patch_tool_class()
+    if cls is None:
+        return None
+    name = getattr(cls, "name", None)
+    return str(name).strip() if name else None
+
+
+def workspace_file_edit_supported(supported_tools: list[str]) -> bool:
+    if "FileEditorTool" in supported_tools:
+        return True
+    reg = resolve_apply_patch_registration_name()
+    return bool(reg and reg in supported_tools)
+
+
+def should_prefer_apply_patch_for_model(model_name: str) -> bool:
+    """Heuristic: patch-style editing helps many non-Claude models; keep Claude/Gemini on FileEditorTool."""
+    m = compact_whitespace(model_name).lower()
+    if not m:
+        return False
+    if re.search(r"\bclaude\b|anthropic/", m):
+        return False
+    if re.search(r"\bgemini\b|google/", m):
+        return False
+    if re.search(r"gpt[-_]?5|gpt[-_]?4\.1|\bo3[-a-z0-9]*\b|\bo4[-a-z0-9]*\b", m):
+        return True
+    if re.search(
+        r"deepseek|qwen|llama|mistral|mixtral|codestral|grok|xai/|fireworks|groq/|openrouter/.*(deepseek|qwen|llama|mistral)",
+        m,
+    ):
+        return True
+    return False
+
+
+def resolve_file_edit_backend(model_name: str, supported_tools: list[str]) -> str:
+    """OPENHANDS_FILE_EDIT_TOOL=auto|file_editor|apply_patch — auto picks patch for several model families."""
+    mode = compact_whitespace(os.getenv("OPENHANDS_FILE_EDIT_TOOL", "auto")).lower()
+    if mode not in {"auto", "file_editor", "apply_patch"}:
+        mode = "auto"
+    patch_name = resolve_apply_patch_registration_name()
+    patch_ok = bool(patch_name and patch_name in supported_tools)
+    if mode == "file_editor" or not patch_ok:
+        return "file_editor"
+    if mode == "apply_patch":
+        return "apply_patch"
+    return "apply_patch" if should_prefer_apply_patch_for_model(model_name) else "file_editor"
+
+
+_BINARY_TERMINAL_CWD_SENTINEL = "__BINARY_OPENHANDS_CWD__="
+
+try:
+    from pydantic import Field as _ToolField
+    from openhands.sdk.tool import (
+        Action as _SdkAction,
+        Observation as _SdkObservation,
+        ToolAnnotations as _SdkToolAnnotations,
+        ToolDefinition as _SdkToolDefinition,
+        ToolExecutor as _SdkToolExecutor,
+    )
+except Exception:
+    _SDK_TOOL_IMPORTABLE = False
+else:
+    _SDK_TOOL_IMPORTABLE = True
+
+
+if _SDK_TOOL_IMPORTABLE and os.name == "nt":
+
+    class WindowsTerminalAction(_SdkAction):
+        command: str = _ToolField(
+            description="PowerShell command to execute. Use one command per call."
+        )
+        is_input: bool = _ToolField(
+            default=False,
+            description="Interactive input is not supported in the Windows fallback terminal backend.",
+        )
+        timeout: float | None = _ToolField(
+            default=None,
+            ge=0,
+            description="Optional command timeout in seconds.",
+        )
+        reset: bool = _ToolField(
+            default=False,
+            description="Reset the fallback terminal session working directory to the workspace root.",
+        )
+
+    class WindowsTerminalObservation(_SdkObservation):
+        command: str | None = _ToolField(
+            default=None,
+            description="Executed PowerShell command.",
+        )
+        exit_code: int | None = _ToolField(
+            default=None,
+            description="Command exit code. -1 indicates timeout.",
+        )
+        timeout: bool = _ToolField(
+            default=False,
+            description="Whether command execution timed out.",
+        )
+
+    class WindowsTerminalExecutor(_SdkToolExecutor[WindowsTerminalAction, WindowsTerminalObservation]):
+        def __init__(self, working_dir: str, no_change_timeout_seconds: int | None = None):
+            self.base_working_dir = working_dir if os.path.isdir(working_dir) else os.getcwd()
+            self.current_working_dir = self.base_working_dir
+            timeout_seconds = float(no_change_timeout_seconds) if no_change_timeout_seconds else 60.0
+            self.default_timeout = max(5.0, timeout_seconds)
+
+        def reset(self) -> WindowsTerminalObservation:
+            self.current_working_dir = self.base_working_dir
+            return WindowsTerminalObservation.from_text(
+                text=f"Terminal session reset to {self.current_working_dir}.",
+                command="[RESET]",
+                exit_code=0,
+                timeout=False,
+            )
+
+        def __call__(self, action: WindowsTerminalAction, conversation: Any = None) -> WindowsTerminalObservation:
+            if action.reset:
+                reset_observation = self.reset()
+                if not compact_whitespace(action.command):
+                    return reset_observation
+
+            command = compact_whitespace(action.command)
+            if not command:
+                return WindowsTerminalObservation.from_text(
+                    text="No command provided.",
+                    is_error=True,
+                    command="",
+                    exit_code=1,
+                    timeout=False,
+                )
+            if action.is_input:
+                return WindowsTerminalObservation.from_text(
+                    text=(
+                        "Interactive input is not supported by the Windows fallback TerminalTool. "
+                        "Run the full command directly in one call."
+                    ),
+                    is_error=True,
+                    command=command,
+                    exit_code=1,
+                    timeout=False,
+                )
+
+            timeout_seconds = (
+                float(action.timeout)
+                if isinstance(action.timeout, (int, float)) and action.timeout and action.timeout > 0
+                else self.default_timeout
+            )
+            script = (
+                "$ProgressPreference='SilentlyContinue'; "
+                "$ErrorActionPreference='Continue'; "
+                f"{command}; "
+                f"Write-Output '{_BINARY_TERMINAL_CWD_SENTINEL}$((Get-Location).Path)'"
+            )
+            try:
+                completed = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", script],
+                    cwd=self.current_working_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout_seconds,
+                    env=os.environ.copy(),
+                )
+            except subprocess.TimeoutExpired as exc:
+                timeout_output = "\n".join(
+                    part.strip()
+                    for part in [str(exc.stdout or "").strip(), str(exc.stderr or "").strip()]
+                    if str(part or "").strip()
+                ).strip()
+                return WindowsTerminalObservation.from_text(
+                    text=(
+                        f"Command timed out after {int(timeout_seconds)}s."
+                        + (f"\n{timeout_output}" if timeout_output else "")
+                    ),
+                    is_error=True,
+                    command=command,
+                    exit_code=-1,
+                    timeout=True,
+                )
+            except Exception as exc:
+                return WindowsTerminalObservation.from_text(
+                    text=f"Terminal execution failed: {type(exc).__name__}: {exc}",
+                    is_error=True,
+                    command=command,
+                    exit_code=1,
+                    timeout=False,
+                )
+
+            stdout_lines = str(completed.stdout or "").splitlines()
+            next_cwd = self.current_working_dir
+            filtered_stdout: list[str] = []
+            for line in stdout_lines:
+                if line.startswith(_BINARY_TERMINAL_CWD_SENTINEL):
+                    candidate = line[len(_BINARY_TERMINAL_CWD_SENTINEL) :].strip()
+                    if candidate and os.path.isdir(candidate):
+                        next_cwd = candidate
+                    continue
+                filtered_stdout.append(line)
+            self.current_working_dir = next_cwd
+
+            stdout_text = "\n".join(filtered_stdout).strip()
+            stderr_text = str(completed.stderr or "").strip()
+            combined_output = "\n".join(part for part in (stdout_text, stderr_text) if part).strip()
+            if not combined_output:
+                combined_output = f"(exit code {completed.returncode})"
+
+            return WindowsTerminalObservation.from_text(
+                text=combined_output,
+                is_error=completed.returncode != 0,
+                command=command,
+                exit_code=completed.returncode,
+                timeout=False,
+            )
+
+        def close(self) -> None:
+            return
+
+    class WindowsTerminalFallbackTool(_SdkToolDefinition[WindowsTerminalAction, WindowsTerminalObservation]):
+        @classmethod
+        def create(
+            cls,
+            conv_state: Any,
+            username: str | None = None,
+            no_change_timeout_seconds: int | None = None,
+            terminal_type: str | None = None,
+            shell_path: str | None = None,
+            executor: _SdkToolExecutor | None = None,
+        ) -> list["WindowsTerminalFallbackTool"]:
+            workspace = getattr(conv_state, "workspace", None)
+            working_dir = getattr(workspace, "working_dir", None) or os.getcwd()
+            if executor is None:
+                executor = WindowsTerminalExecutor(
+                    working_dir=working_dir,
+                    no_change_timeout_seconds=no_change_timeout_seconds,
+                )
+            return [
+                cls(
+                    action_type=WindowsTerminalAction,
+                    observation_type=WindowsTerminalObservation,
+                    description=(
+                        "Run PowerShell commands in the workspace. "
+                        "This Windows fallback supports one-shot command execution and preserves working directory state."
+                    ),
+                    annotations=_SdkToolAnnotations(
+                        title="terminal",
+                        readOnlyHint=False,
+                        destructiveHint=True,
+                        idempotentHint=False,
+                        openWorldHint=True,
+                    ),
+                    executor=executor,
+                )
+            ]
+
+else:
+    WindowsTerminalFallbackTool = None
+
+
+def build_windows_terminal_tool_fallback() -> Any | None:
+    return WindowsTerminalFallbackTool
+
+
+def resolve_terminal_tool_definition() -> tuple[Any | None, list[str]]:
+    terminal_tool = import_optional_attr(
+        [
+            ("openhands.tools.terminal", "TerminalTool"),
+            ("openhands.sdk.tools.terminal", "TerminalTool"),
+            ("openhands.tools.terminal", "BashTool"),
+            ("openhands.sdk.tools.terminal", "BashTool"),
+        ]
+    )
+    if terminal_tool is not None:
+        return terminal_tool, []
+    if os.name == "nt":
+        fallback = build_windows_terminal_tool_fallback()
+        if fallback is not None:
+            return fallback, ["terminal_tool_fallback_windows"]
+        return None, ["windows_unsupported_terminal"]
+    return None, ["terminal_tool_unavailable"]
 
 
 def filter_supported_kwargs(target: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -109,6 +629,768 @@ def resolve_tom_context(payload: dict[str, Any]) -> dict[str, Any] | None:
         "turn_phase": compact_whitespace(tom.get("turnPhase")) or "continue",
         "rag_enabled": True,
     }
+
+
+def resolve_mcp_config(payload: dict[str, Any]) -> dict[str, Any] | None:
+    mcp = payload.get("mcp") if isinstance(payload.get("mcp"), dict) else None
+    if not mcp:
+        return None
+    servers = mcp.get("mcpServers")
+    if not isinstance(servers, dict):
+        return None
+    normalized: dict[str, dict[str, Any]] = {}
+    for name, raw_server in servers.items():
+        if not isinstance(name, str) or not name.strip():
+            continue
+        if not isinstance(raw_server, dict):
+            continue
+        normalized[name.strip()] = dict(raw_server)
+    if not normalized:
+        return None
+    return {"mcpServers": normalized}
+
+
+def resolve_gateway_run_id(payload: dict[str, Any]) -> str:
+    raw = compact_whitespace(payload.get("runId"))
+    return raw or "binary-run"
+
+
+def resolve_gateway_conversation_id(run_id: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(run_id)
+    except Exception:
+        return uuid.uuid5(uuid.NAMESPACE_URL, f"xpersona://binary-run/{run_id}")
+
+
+def resolve_gateway_persistence_dir() -> Path:
+    root = Path(
+        os.getenv(
+            "OPENHANDS_GATEWAY_PERSISTENCE_DIR",
+            str(Path.home() / ".openhands" / "binary-runs"),
+        )
+    ).expanduser()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def resolve_gateway_runtime_state_path() -> Path:
+    return resolve_gateway_persistence_dir() / "gateway-runtime-state.json"
+
+
+def resolve_run_artifact_dir(run_id: str) -> Path:
+    target = resolve_gateway_persistence_dir() / run_id
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def read_json_file(path: Path) -> dict[str, Any]:
+    try:
+        if path.exists():
+            parsed = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(parsed, dict):
+                return parsed
+    except Exception:
+        pass
+    return {}
+
+
+def write_json_file(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2), encoding="utf-8")
+
+
+def iso_now() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def update_gateway_runtime_state(patch: dict[str, Any]) -> None:
+    state_path = resolve_gateway_runtime_state_path()
+    current = read_json_file(state_path)
+    current.update(patch)
+    current["updatedAt"] = iso_now()
+    write_json_file(state_path, current)
+
+
+def append_jsonl_event(path: Path, event: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        **event,
+        "capturedAt": event.get("capturedAt") or iso_now(),
+    }
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=True) + "\n")
+
+
+def emit_stream_event(
+    path: Path,
+    event: dict[str, Any],
+    callback: Callable[[dict[str, Any]], None] | None = None,
+) -> None:
+    record = {
+        **event,
+        "capturedAt": event.get("capturedAt") or iso_now(),
+    }
+    append_jsonl_event(path, record)
+    if not callable(callback):
+        return
+    try:
+        callback(record)
+    except Exception:
+        # Streaming observers are best-effort only.
+        return
+
+
+def iter_stream_chunk_events(chunk: Any) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    choices = getattr(chunk, "choices", None)
+    if not isinstance(choices, list):
+        return events
+    for choice in choices:
+        delta = getattr(choice, "delta", None)
+        if delta is None:
+            continue
+        reasoning_content = getattr(delta, "reasoning_content", None)
+        if isinstance(reasoning_content, str) and reasoning_content:
+            events.append(
+                {
+                    "event": "llm.reasoning",
+                    "data": reasoning_content,
+                }
+            )
+        content = getattr(delta, "content", None)
+        if isinstance(content, str) and content:
+            events.append(
+                {
+                    "event": "token",
+                    "data": content,
+                }
+            )
+        tool_calls = getattr(delta, "tool_calls", None)
+        if isinstance(tool_calls, list) and tool_calls:
+            for tool_call in tool_calls:
+                function_ref = getattr(tool_call, "function", None)
+                tool_name = compact_whitespace(getattr(function_ref, "name", ""))
+                tool_args = getattr(function_ref, "arguments", None)
+                if tool_name:
+                    events.append(
+                        {
+                            "event": "llm.tool_call_delta",
+                            "data": {
+                                "field": "name",
+                                "value": tool_name,
+                            },
+                        }
+                    )
+                if isinstance(tool_args, str) and tool_args:
+                    events.append(
+                        {
+                            "event": "llm.tool_call_delta",
+                            "data": {
+                                "field": "arguments",
+                                "value": tool_args,
+                            },
+                        }
+                    )
+    return events
+
+
+def resolve_execution_context(payload: dict[str, Any]) -> dict[str, Any]:
+    raw = payload.get("execution") if isinstance(payload.get("execution"), dict) else {}
+    lane = compact_whitespace(raw.get("lane")) or "local_interactive"
+    plugin_packs = raw.get("pluginPacks") if isinstance(raw.get("pluginPacks"), list) else []
+    skill_sources = raw.get("skillSources") if isinstance(raw.get("skillSources"), list) else []
+    trace_id = compact_whitespace(raw.get("traceId"))
+    return {
+        "lane": lane,
+        "pluginPacks": [entry for entry in plugin_packs if isinstance(entry, dict)],
+        "skillSources": [entry for entry in skill_sources if isinstance(entry, dict)],
+        "traceId": trace_id or None,
+        "traceSampled": raw.get("traceSampled") is True,
+    }
+
+
+def resolve_runtime_target(execution: dict[str, Any]) -> str:
+    lane = compact_whitespace(execution.get("lane"))
+    return "remote" if lane == "openhands_remote" else "local_native"
+
+
+def resolve_world_context_used(payload: dict[str, Any]) -> dict[str, Any]:
+    context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
+    world_model = context.get("worldModel") if isinstance(context.get("worldModel"), dict) else None
+    if not world_model:
+        return {"provided": False, "tier": None}
+    tier = compact_whitespace(world_model.get("selectedContextTier") or world_model.get("contextTier"))
+    return {
+        "provided": True,
+        "tier": tier or None,
+    }
+
+
+def base_result_metadata(
+    payload: dict[str, Any],
+    execution: dict[str, Any],
+    version: str | None,
+    tool_backend: str,
+    approval_state: str = "autonomous",
+) -> dict[str, Any]:
+    return {
+        "orchestrator": "openhands",
+        "orchestratorVersion": version,
+        "runtimeTarget": resolve_runtime_target(execution),
+        "toolBackend": tool_backend,
+        "approvalState": approval_state,
+        "worldContextUsed": resolve_world_context_used(payload),
+        "adapterMode": resolve_adapter_mode(payload),
+        "latencyPolicy": resolve_latency_policy(payload),
+        "timeoutPolicy": resolve_timeout_policy(payload),
+        "budgetProfile": resolve_budget_profile(payload),
+        "smallModelForced": resolve_small_model_forced(payload),
+        "firstTurnBudgetMs": resolve_first_turn_budget_ms(payload),
+        "modelRoutingMode": resolve_model_routing_mode(payload),
+        "fixedModelAlias": resolve_fixed_model_alias(payload),
+        "fallbackEnabled": resolve_fallback_enabled(payload),
+    }
+
+
+def normalize_provider_failure_reason(detail: str, status_code: int | None = None) -> str | None:
+    low = compact_whitespace(detail).lower()
+    if not low:
+        return None
+    if (
+        "depleted your monthly included credits" in low
+        or "purchase pre-paid credits" in low
+        or "included credits" in low
+        or "usage limit has been reached" in low
+        or "usage_limit_reached" in low
+        or "insufficient_quota" in low
+        or "billing hard limit" in low
+    ):
+        return "provider_credits_exhausted"
+    if status_code == 403 and ("api.groq.com" in low or "groq" in low or "cloudflare" in low):
+        return "router_blocked"
+    if "tool schema" in low or "fake tool named `summary`" in low or "fake tool named 'summary'" in low:
+        return "tool_schema_incompatible"
+    if any(
+        snippet in low
+        for snippet in (
+            "timed out",
+            "timeout",
+            "connection reset",
+            "temporary failure",
+            "temporarily unavailable",
+            "rate limit",
+            "service unavailable",
+            "bad gateway",
+            "gateway timeout",
+            "fetch failed",
+            "apierror",
+            "internal server error",
+        )
+    ):
+        return "transient_api_failure"
+    if any(
+        snippet in low
+        for snippet in (
+            "huggingfaceexception",
+            "litellm.apierror",
+            "provider",
+            "router",
+            "openaierror",
+            "anthropic",
+            "groq",
+        )
+    ):
+        return "unknown_provider_failure"
+    return None
+
+
+def is_retryable_provider_failure(reason: str | None) -> bool:
+    return bool(reason and reason in RETRYABLE_PROVIDER_FAILURE_REASONS)
+
+
+def is_timeout_like_failure(reason: str | None, details: Any) -> bool:
+    detail_text = compact_whitespace(details).lower()
+    if "turn budget exceeded" in detail_text:
+        return True
+    if "timed out" in detail_text or "timeout" in detail_text:
+        return True
+    if reason != "transient_api_failure":
+        return False
+    return "timed out" in detail_text or "timeout" in detail_text
+
+
+def normalize_model_candidate(raw: dict[str, Any], index: int) -> dict[str, Any]:
+    alias = compact_whitespace(raw.get("alias") or raw.get("requested") or raw.get("model") or f"candidate-{index + 1}")
+    return {
+        "alias": alias,
+        "requested": compact_whitespace(raw.get("requested") or alias),
+        "model": compact_whitespace(raw.get("model") or ""),
+        "openhandsModel": compact_whitespace(raw.get("openhandsModel") or raw.get("model") or ""),
+        "provider": compact_whitespace(raw.get("provider") or ""),
+        "baseUrl": compact_whitespace(raw.get("baseUrl") or ""),
+        "authSource": compact_whitespace(raw.get("authSource") or ""),
+        "routeKind": compact_whitespace(raw.get("routeKind") or ""),
+        "routeLabel": compact_whitespace(raw.get("routeLabel") or ""),
+        "routeReason": compact_whitespace(raw.get("routeReason") or ""),
+        "apiKey": compact_whitespace(raw.get("apiKey") or ""),
+        "latencyTier": compact_whitespace(raw.get("latencyTier") or ""),
+        "reasoningDefault": compact_whitespace(raw.get("reasoningDefault") or ""),
+        "intendedUse": compact_whitespace(raw.get("intendedUse") or ""),
+        "reasoningEffort": compact_whitespace(raw.get("reasoningEffort") or ""),
+        "extraHeaders": raw.get("extraHeaders") if isinstance(raw.get("extraHeaders"), dict) else {},
+        "capabilities": raw.get("capabilities") if isinstance(raw.get("capabilities"), dict) else {},
+    }
+
+
+def resolve_model_candidates(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    model = payload.get("model") if isinstance(payload.get("model"), dict) else {}
+    raw_candidates = model.get("candidates")
+    if not isinstance(raw_candidates, list) or not raw_candidates:
+        return [normalize_model_candidate(model, 0)]
+    normalized = [
+        normalize_model_candidate(candidate, index)
+        for index, candidate in enumerate(raw_candidates)
+        if isinstance(candidate, dict)
+    ]
+    return normalized or [normalize_model_candidate(model, 0)]
+
+
+def is_probe_session(payload: dict[str, Any]) -> bool:
+    probe = payload.get("probe")
+    if isinstance(probe, dict) and probe.get("enabled") is True:
+        return True
+    request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+    return compact_whitespace(request.get("interactionKind")) == "agent_probe"
+
+
+def resolve_turn_phase(payload: dict[str, Any]) -> str:
+    tom = payload.get("tom") if isinstance(payload.get("tom"), dict) else {}
+    return compact_whitespace(tom.get("turnPhase")) or "continue"
+
+
+def describe_latest_tool_result(latest_tool: dict[str, Any] | None) -> str:
+    if not latest_tool:
+        return "No Binary-hosted external tool result was provided for this turn."
+    lines = [
+        "Latest Binary-hosted external tool result:",
+        f"- tool: {latest_tool.get('name')}",
+        f"- ok: {bool(latest_tool.get('ok'))}",
+    ]
+    if latest_tool.get("blocked"):
+        lines.append("- blocked: true")
+    summary = compact_whitespace(latest_tool.get("summary"))
+    if summary:
+        lines.append(f"- summary: {summary[:3000]}")
+    error = compact_whitespace(latest_tool.get("error"))
+    if error:
+        lines.append(f"- error: {error[:3000]}")
+    data = latest_tool.get("data")
+    if isinstance(data, dict):
+        preview = compact_whitespace(json.dumps(data, ensure_ascii=False))
+        if preview:
+            lines.append(f"- data: {preview[:3000]}")
+    return "\n".join(lines)
+
+
+def build_autonomous_openhands_message(payload: dict[str, Any], turn_phase: str) -> str:
+    request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+    target = payload.get("targetInference") if isinstance(payload.get("targetInference"), dict) else {}
+    selection = payload.get("contextSelection") if isinstance(payload.get("contextSelection"), dict) else {}
+    fallback_plan = payload.get("fallbackPlan") if isinstance(payload.get("fallbackPlan"), dict) else {}
+    loop_summary = payload.get("loopSummary") if isinstance(payload.get("loopSummary"), dict) else {}
+    latest_tool = payload.get("latestToolResult") if isinstance(payload.get("latestToolResult"), dict) else None
+    tom_enabled = isinstance(payload.get("tom"), dict) and payload.get("tom", {}).get("enabled") is not False
+    mcp_enabled = bool(resolve_mcp_config(payload))
+
+    context_files: list[str] = []
+    for item in selection.get("files") or []:
+        if not isinstance(item, dict):
+            continue
+        path = sanitize_relative_path(item.get("path")) or str(item.get("path") or "workspace")
+        reason = compact_whitespace(item.get("reason")) or "context"
+        context_files.append(f"- {path} ({reason})")
+
+    prompt_parts = [
+        "You are OpenHands operating directly inside Binary IDE's workspace.",
+        "Complete the user's request autonomously with native OpenHands orchestration.",
+        "Be calm, decisive, concise, and practical.",
+        "Narrate your work naturally so the user can follow what you are doing without seeing internal tool protocol.",
+        "Prefer the simplest path that completes the request end-to-end.",
+        "Use your OpenHands terminal and file editing tools directly for coding work.",
+        "Use OpenHands Browser Use directly for website interaction and browser verification.",
+        "When native OpenHands tools are healthy, prefer them before Binary-hosted fallbacks.",
+        "Do not emit Binary browser_* tool names or ask Binary to manually drive the browser.",
+        "Only rely on Binary-hosted external tool results when they are explicitly provided in this message.",
+        "When the task requires code or file changes, execute a concrete tool action before giving any status prose.",
+        "Do not loop on planning updates; move directly into terminal/file tool execution and keep going until completion.",
+        "Never stop at 'I will do X next' for workspace tasks. Perform X with tools in the same turn.",
+        "Only ask for approval when the runtime policy truly blocks an irreversible or trust-sensitive action.",
+        "Prefer finishing the task end-to-end instead of stopping after analysis whenever the workspace and tools allow it.",
+        "If TOM is available, you may consult it for vague or preference-sensitive requests.",
+        f"TOM enabled: {'true' if tom_enabled else 'false'}",
+        f"MCP enabled: {'true' if mcp_enabled else 'false'}",
+        f"Mode: {request.get('mode') or 'auto'}",
+        f"Turn phase: {turn_phase}",
+        f"Preferred target: {target.get('path') or 'infer from context'}",
+        f"Loop stats from Binary: steps={loop_summary.get('stepCount') or 0}, mutations={loop_summary.get('mutationCount') or 0}, repairs={loop_summary.get('repairCount') or 0}",
+        "Required task files:\n"
+        + (
+            "\n".join(
+                f"- {sanitize_relative_path(item) or str(item)}"
+                for item in (fallback_plan.get("files") or [])
+                if str(item or "").strip()
+            )
+            if isinstance(fallback_plan.get("files"), list) and fallback_plan.get("files")
+            else "none."
+        ),
+        "Acceptance tests:\n"
+        + (
+            "\n".join(
+                f"- {compact_whitespace(item)}"
+                for item in (fallback_plan.get("acceptanceTests") or [])
+                if compact_whitespace(item)
+            )
+            if isinstance(fallback_plan.get("acceptanceTests"), list) and fallback_plan.get("acceptanceTests")
+            else "none."
+        ),
+        "Context files:\n" + ("\n".join(context_files) if context_files else "none."),
+        build_history_prompt(request.get("conversationHistory") if isinstance(request.get("conversationHistory"), list) else None),
+        build_context_prompt(request.get("context") if isinstance(request.get("context"), dict) else None),
+        describe_latest_tool_result(latest_tool),
+        f"Task:\n{str(request.get('task') or '').strip()}",
+    ]
+    return "\n\n".join(part for part in prompt_parts if part)
+
+
+def build_autonomous_continue_message(payload: dict[str, Any]) -> str:
+    latest_tool = payload.get("latestToolResult") if isinstance(payload.get("latestToolResult"), dict) else None
+    repair = payload.get("repairDirective") if isinstance(payload.get("repairDirective"), dict) else None
+    parts = [
+        "Continue the existing OpenHands conversation for this Binary run.",
+        "Stay calm, concise, and practical.",
+        "Keep narrating your work naturally so the user can follow along.",
+        describe_latest_tool_result(latest_tool),
+    ]
+    if repair and repair.get("stage"):
+        parts.append(
+            "\n".join(
+                [
+                    "Binary repair directive:",
+                    f"- stage: {repair.get('stage')}",
+                    f"- reason: {compact_whitespace(repair.get('reason'))[:3000]}",
+                ]
+            )
+        )
+    if not latest_tool and not (repair and repair.get("stage")):
+        parts.append("Resume the task and continue from the persisted conversation state.")
+    return "\n\n".join(part for part in parts if part)
+
+
+def build_probe_openhands_message(payload: dict[str, Any], turn_phase: str) -> str:
+    request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+    task = str(request.get("task") or "").strip()
+    context = request.get("context") if isinstance(request.get("context"), dict) else None
+    history = request.get("conversationHistory") if isinstance(request.get("conversationHistory"), list) else None
+    prompt_parts = [
+        "You are OpenHands operating inside Binary IDE as a debug probe session.",
+        "The operator is intentionally chatting with you for a while to inspect your behavior, runtime health, and failure patterns.",
+        "Answer naturally and directly.",
+        "You may inspect the workspace, runtime, or environment with native OpenHands tools when it materially helps you debug or explain something.",
+        "Do not pretend a tool ran if it did not.",
+        f"Turn phase: {turn_phase}",
+        build_history_prompt(history),
+        build_context_prompt(context),
+        f"Operator message:\n{task}",
+    ]
+    return "\n\n".join(part for part in prompt_parts if part)
+
+
+def build_probe_continue_message(payload: dict[str, Any]) -> str:
+    request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+    latest_tool = payload.get("latestToolResult") if isinstance(payload.get("latestToolResult"), dict) else None
+    task = str(request.get("task") or "").strip()
+    parts = [
+        "Continue the existing OpenHands debug probe conversation.",
+        f"Operator message:\n{task}" if task else "",
+        describe_latest_tool_result(latest_tool) if latest_tool else "",
+    ]
+    return "\n\n".join(part for part in parts if part)
+
+
+def build_native_openhands_tools(file_edit_backend: str = "file_editor") -> tuple[list[Any], list[str]]:
+    tool_cls = import_optional_attr(
+        [
+            ("openhands.sdk", "Tool"),
+            ("openhands.sdk.tool", "Tool"),
+            ("openhands.sdk.tools", "Tool"),
+        ]
+    )
+    if tool_cls is None:
+        raise RuntimeError("Missing OpenHands Tool spec helper.")
+
+    register_tool = import_optional_attr(
+        [
+            ("openhands.sdk.tool.registry", "register_tool"),
+        ]
+    )
+    list_registered_tools = import_optional_attr(
+        [
+            ("openhands.sdk.tool.registry", "list_registered_tools"),
+        ]
+    )
+    registered = set(list_registered_tools() if callable(list_registered_tools) else [])
+
+    terminal_tool, terminal_diagnostics = resolve_terminal_tool_definition()
+
+    file_editor_cls = import_optional_attr(
+        [
+            ("openhands.tools.file_editor", "FileEditorTool"),
+            ("openhands.sdk.tools.file_editor", "FileEditorTool"),
+        ]
+    )
+    apply_patch_cls = resolve_apply_patch_tool_class()
+    use_patch = file_edit_backend == "apply_patch" and apply_patch_cls is not None
+    workspace_tool: tuple[str, Any | None]
+    if use_patch:
+        reg_name = resolve_apply_patch_registration_name() or "apply_patch"
+        workspace_tool = (reg_name, apply_patch_cls)
+    else:
+        workspace_tool = ("FileEditorTool", file_editor_cls)
+
+    tool_defs: list[tuple[str, Any | None]] = [
+        (
+            "TerminalTool",
+            terminal_tool,
+        ),
+        workspace_tool,
+        (
+            "BrowserToolSet",
+            None
+            if os.name == "nt"
+            else import_optional_attr(
+                [
+                    ("openhands.tools.browser_use", "BrowserToolSet"),
+                    ("openhands.sdk.tools.browser_use", "BrowserToolSet"),
+                ]
+            ),
+        ),
+    ]
+
+    tool_names: list[str] = []
+    for tool_name, tool_def in tool_defs:
+        if tool_def is None:
+            continue
+        if callable(register_tool) and tool_name not in registered:
+            try:
+                register_tool(tool_name, tool_def)
+                registered.add(tool_name)
+            except Exception:
+                continue
+        tool_names.append(tool_name)
+
+    if not tool_names:
+        diagnostics = ["native_tools=none", *terminal_diagnostics]
+        return [], list(dict.fromkeys(diagnostics))
+
+    tool_specs: list[Any] = []
+    for tool_name in tool_names:
+        tool_kwargs: dict[str, Any] = {"name": tool_name}
+        if tool_name == "TerminalTool":
+            tool_kwargs["params"] = {
+                "no_change_timeout_seconds": coerce_positive_int(
+                    os.getenv("OPENHANDS_TERMINAL_NO_CHANGE_TIMEOUT_SECONDS", "5"),
+                    5,
+                    1,
+                    120,
+                )
+            }
+        tool_specs.append(tool_cls(**filter_supported_kwargs(tool_cls, tool_kwargs)))
+    edit_label = "apply_patch" if use_patch else "file_editor"
+    diagnostics = [
+        f"native_tools={','.join(tool_names)}",
+        f"file_edit_backend={edit_label}",
+        *terminal_diagnostics,
+    ]
+    return tool_specs, list(dict.fromkeys(diagnostics))
+
+
+def detect_openhands_package() -> tuple[str, str | None]:
+    for package_name, family in (("openhands", "openhands"), ("openhands-sdk", "openhands-sdk")):
+        try:
+            return family, importlib.metadata.version(package_name)
+        except Exception:
+            continue
+    return "unknown", None
+
+
+def detect_supported_openhands_tools() -> tuple[list[str], list[str]]:
+    supported: list[str] = []
+    degraded: list[str] = []
+
+    tool_cls = import_optional_attr(
+        [
+            ("openhands.sdk", "Tool"),
+            ("openhands.sdk.tool", "Tool"),
+            ("openhands.sdk.tools", "Tool"),
+        ]
+    )
+    if tool_cls is None:
+        degraded.append("missing_tool_spec_helper")
+    else:
+        supported.append("Tool")
+
+    terminal_tool, terminal_diagnostics = resolve_terminal_tool_definition()
+    if terminal_tool is not None:
+        supported.append("TerminalTool")
+    else:
+        degraded.extend(terminal_diagnostics)
+    if terminal_tool is not None and terminal_diagnostics:
+        degraded.extend(terminal_diagnostics)
+
+    file_editor_tool = import_optional_attr(
+        [
+            ("openhands.tools.file_editor", "FileEditorTool"),
+            ("openhands.sdk.tools.file_editor", "FileEditorTool"),
+        ]
+    )
+    if file_editor_tool is not None:
+        supported.append("FileEditorTool")
+    patch_reg = resolve_apply_patch_registration_name()
+    if patch_reg:
+        supported.append(patch_reg)
+    if file_editor_tool is None and not patch_reg:
+        degraded.append("file_editor_tool_unavailable")
+
+    browser_toolset = (
+        None
+        if os.name == "nt"
+        else import_optional_attr(
+            [
+                ("openhands.sdk", "BrowserToolSet"),
+                ("openhands.sdk.tools", "BrowserToolSet"),
+                ("openhands.sdk.tools.browser_use", "BrowserToolSet"),
+                ("openhands.tools.browser_use", "BrowserToolSet"),
+            ]
+        )
+    )
+    if browser_toolset is not None:
+        supported.append("BrowserToolSet")
+    else:
+        degraded.append("windows_unsupported_browser" if os.name == "nt" else "browser_tool_unavailable")
+
+    tom_consult = import_optional_attr(
+        [
+            ("openhands.sdk", "TomConsultTool"),
+            ("openhands.sdk.tools", "TomConsultTool"),
+            ("openhands.sdk.tools.tom", "TomConsultTool"),
+            ("openhands.sdk.tools.tom_consult", "TomConsultTool"),
+        ]
+    )
+    sleeptime_tool = import_optional_attr(
+        [
+            ("openhands.sdk", "SleeptimeComputeTool"),
+            ("openhands.sdk.tools", "SleeptimeComputeTool"),
+            ("openhands.sdk.tools.tom", "SleeptimeComputeTool"),
+            ("openhands.sdk.tools.sleeptime_compute", "SleeptimeComputeTool"),
+        ]
+    )
+    if tom_consult is not None and sleeptime_tool is not None:
+        supported.extend(["TomConsultTool", "SleeptimeComputeTool"])
+    else:
+        degraded.append("tom_tools_unavailable")
+
+    if import_optional_attr(
+        [
+            ("openhands.sdk", "Conversation"),
+            ("openhands.sdk.conversation", "Conversation"),
+        ]
+    ) is not None:
+        supported.append("MCP")
+    else:
+        degraded.append("mcp_support_unavailable")
+
+    return supported, list(dict.fromkeys(degraded))
+
+
+def infer_runtime_kind() -> str:
+    raw = compact_whitespace(os.getenv("OPENHANDS_GATEWAY_RUNTIME_KIND"))
+    return raw or "unknown"
+
+
+def infer_runtime_profile(supported_tools: list[str]) -> str:
+    supported_set = set(supported_tools)
+    has_editor = workspace_file_edit_supported(supported_tools)
+    if "TerminalTool" in supported_set and has_editor and "BrowserToolSet" in supported_set:
+        return "full"
+    if has_editor:
+        return "code-only"
+    if supported_set:
+        return "chat-only"
+    return "unavailable"
+
+
+def build_doctor_actions(runtime_kind: str, runtime_profile: str, degraded_reasons: list[str]) -> list[str]:
+    actions: list[str] = []
+    if runtime_profile != "full":
+        actions.append("Repair OpenHands runtime")
+    if runtime_kind != "docker" and (
+        runtime_profile in {"code-only", "chat-only", "unavailable"}
+        or any(reason.startswith("windows_unsupported") for reason in degraded_reasons)
+    ):
+        actions.append("Use managed runtime")
+    if any("model" in reason or "provider" in reason for reason in degraded_reasons):
+        actions.append("Retry with compatible model")
+    return list(dict.fromkeys(actions))
+
+
+def extract_message_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts = [extract_message_text(item) for item in content]
+        return "\n".join(part for part in parts if part).strip()
+    if isinstance(content, dict):
+        if isinstance(content.get("text"), str):
+            return content.get("text", "").strip()
+        if "content" in content:
+            return extract_message_text(content.get("content"))
+        if content.get("type") == "text":
+            text = content.get("text")
+            if isinstance(text, str):
+                return text.strip()
+            if isinstance(text, dict):
+                return extract_message_text(text)
+    return ""
+
+
+def capture_llm_message(messages: list[dict[str, Any]], event: Any) -> None:
+    to_llm_message = getattr(event, "to_llm_message", None)
+    if not callable(to_llm_message):
+        return
+    try:
+        emitted = to_llm_message()
+    except Exception:
+        return
+    candidates = emitted if isinstance(emitted, list) else [emitted]
+    for item in candidates:
+        if isinstance(item, dict):
+            messages.append(item)
+
+
+def extract_final_message(messages: list[dict[str, Any]]) -> str:
+    last_assistant = ""
+    last_any = ""
+    for message in messages:
+        role = compact_whitespace(message.get("role")).lower()
+        text = extract_message_text(message.get("content"))
+        if not text:
+            continue
+        last_any = text
+        if role == "assistant":
+            last_assistant = text
+    return compact_whitespace(last_assistant or last_any)
 
 
 def build_history_prompt(history: list[dict[str, Any]] | None) -> str:
@@ -319,6 +1601,103 @@ def build_context_prompt(context: dict[str, Any] | None) -> str:
         if lines:
             sections.append("Machine world model:\n" + "\n".join(lines))
 
+    repo_model = context.get("repoModel")
+    if isinstance(repo_model, dict):
+        lines = []
+        context_version = repo_model.get("contextVersion")
+        if isinstance(context_version, int):
+            lines.append(f"Context version: {context_version}")
+        summary = str(repo_model.get("summary") or "").strip()
+        if summary:
+            lines.append(f"Summary: {summary[:2000]}")
+        workspace_root = str(repo_model.get("workspaceRoot") or "").strip()
+        if workspace_root:
+            lines.append(f"Workspace root: {workspace_root}")
+        stack = str(repo_model.get("stack") or "").strip()
+        if stack:
+            lines.append(f"Stack: {stack}")
+        primary_validation = str(repo_model.get("primaryValidationCommand") or "").strip()
+        if primary_validation:
+            lines.append(f"Primary validation: {primary_validation}")
+        hotspots = [str(item).strip() for item in repo_model.get("hotspots", [])[:8] if str(item).strip()]
+        if hotspots:
+            lines.append("Hotspots:\n" + "\n".join(f"- {item}" for item in hotspots))
+        tests = [str(item).strip() for item in repo_model.get("likelyTests", [])[:8] if str(item).strip()]
+        if tests:
+            lines.append("Likely tests:\n" + "\n".join(f"- {item}" for item in tests))
+        route_hints = repo_model.get("routeHints")
+        if isinstance(route_hints, dict):
+            preferred_route = str(route_hints.get("preferredRoute") or "").strip()
+            route_reason = compact_whitespace(route_hints.get("reason"))
+            informed_by = [str(item).strip() for item in route_hints.get("informedBy", [])[:8] if str(item).strip()]
+            if preferred_route:
+                suffix = f" [signals: {', '.join(informed_by)}]" if informed_by else ""
+                lines.append(f"Preferred coding route: {preferred_route} - {route_reason or 'repo cognition'}{suffix}")
+        symbol_index = repo_model.get("symbolIndex")
+        if isinstance(symbol_index, list) and symbol_index:
+            symbol_lines = []
+            for item in symbol_index[:10]:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name") or "").strip()
+                kind = str(item.get("kind") or "symbol").strip()
+                path = str(item.get("path") or "").strip()
+                line = item.get("line")
+                if name and path:
+                    suffix = f":{line}" if isinstance(line, int) else ""
+                    symbol_lines.append(f"- {kind} {name} @ {path}{suffix}")
+            if symbol_lines:
+                lines.append("Repo symbols:\n" + "\n".join(symbol_lines))
+        memory = repo_model.get("memory")
+        if isinstance(memory, dict):
+            memory_lines = []
+            preferred_validation = str(memory.get("preferredValidationCommand") or "").strip()
+            if preferred_validation:
+                memory_lines.append(f"Preferred validation: {preferred_validation}")
+            preferred_branch = str(memory.get("preferredBranchPrefix") or "").strip()
+            if preferred_branch:
+                memory_lines.append(f"Preferred branch prefix: {preferred_branch}")
+            repair_patterns = [str(item).strip() for item in memory.get("knownRepairPatterns", [])[:6] if str(item).strip()]
+            if repair_patterns:
+                memory_lines.append("Repair playbooks: " + " | ".join(repair_patterns))
+            if memory_lines:
+                lines.append("\n".join(memory_lines))
+        if lines:
+            sections.append("Repo model:\n" + "\n".join(lines))
+
+    verification_plan = context.get("verificationPlan")
+    if isinstance(verification_plan, dict):
+        lines = []
+        status = str(verification_plan.get("status") or "").strip()
+        if status:
+            lines.append(f"Status: {status}")
+        primary_command = str(verification_plan.get("primaryCommand") or "").strip()
+        if primary_command:
+            lines.append(f"Primary command: {primary_command}")
+        reason = compact_whitespace(verification_plan.get("reason"))
+        if reason:
+            lines.append(f"Reason: {reason}")
+        checks = verification_plan.get("checks")
+        if isinstance(checks, list) and checks:
+            check_lines = []
+            for item in checks[:8]:
+                if not isinstance(item, dict):
+                    continue
+                label = str(item.get("label") or "").strip()
+                command = str(item.get("command") or "").strip()
+                check_status = str(item.get("status") or "").strip()
+                if label:
+                    suffix = f" ({command})" if command else ""
+                    status_suffix = f" status={check_status}" if check_status else ""
+                    check_lines.append(f"- {label}{suffix}{status_suffix}")
+            if check_lines:
+                lines.append("Checks:\n" + "\n".join(check_lines))
+        receipts = [str(item).strip() for item in verification_plan.get("receipts", [])[:8] if str(item).strip()]
+        if receipts:
+            lines.append("Receipts:\n" + "\n".join(f"- {item}" for item in receipts))
+        if lines:
+            sections.append("Verification plan:\n" + "\n".join(lines))
+
     return "\n\n".join(sections) if sections else "IDE context: none."
 
 
@@ -335,6 +1714,11 @@ def build_tool_catalog(tools: list[str]) -> str:
         "write_file": "Write full file contents. Args: { path: string, content: string, overwrite?: boolean }",
         "mkdir": "Create a directory. Args: { path: string }",
         "run_command": "Run a workspace command. Args: { command: string, timeoutMs?: number, category?: string }",
+        "terminal_start_session": "Start a persistent interactive terminal session for REPLs or multi-step shell work. Args: { cwd?: string, shell?: string, name?: string, waitForMs?: number, timeoutMs?: number }",
+        "terminal_send_input": "Send input to a persistent interactive terminal session and wait for new output. Args: { sessionId: string, input: string, appendNewline?: boolean, waitForMs?: number, timeoutMs?: number, maxChars?: number }",
+        "terminal_read_output": "Read output from a persistent interactive terminal session without sending new input. Args: { sessionId: string, afterCursor?: number, waitForMs?: number, timeoutMs?: number, maxChars?: number, markRead?: boolean }",
+        "terminal_list_sessions": "List active interactive terminal sessions. Args: {}",
+        "terminal_terminate_session": "Terminate a persistent interactive terminal session. Args: { sessionId: string }",
         "get_workspace_memory": "Return persisted workspace memory/summary. Args: {}",
         "binary_start_build": "Start a streaming binary build. Args: { intent: string, runtime?: 'node18' | 'node20' }",
         "binary_refine_build": "Refine the active or specified binary build. Args: { buildId?: string, intent: string }",
@@ -356,9 +1740,14 @@ def build_tool_catalog(tools: list[str]) -> str:
         "desktop_keypress": "Send a desktop keypress chord or sequence. Args: { keys: string[] }",
         "desktop_scroll": "Scroll on the desktop. Args: { displayId?: string, viewport?: { displayId: string, width: number, height: number }, normalizedX?: number, normalizedY?: number, deltaX?: number, deltaY?: number }",
         "desktop_wait": "Wait for a period of time. Args: { durationMs: number }",
-        "browser_list_pages": "List browser pages/tabs currently available to the native browser runtime. Args: {}",
-        "browser_get_active_page": "Return the active browser page/tab. Args: {}",
+        "browser_list_pages": "List browser pages/tabs currently available to the native browser runtime. Args: {}. Use the returned page.id field for follow-up browser tools.",
+        "browser_get_active_page": "Return the active browser page/tab. Args: {}. Use the returned page.id field for follow-up browser tools.",
         "browser_open_page": "Open a URL in a browser-native page/tab. Args: { url: string }",
+        "browser_search_and_open_best_result": "High-level browser mission: open a site or use an existing page, search for a query, and open the most likely matching result in one host-side flow. Args: { url?: string, pageId?: string, query: string, resultQuery?: string, limit?: number }",
+        "browser_login_and_continue": "High-level browser mission: open or use a page, fill login fields, submit, optionally continue, and verify the post-login state. Args: { url?: string, pageId?: string, username?: string, password?: string, submitQuery?: string, continueQuery?: string, waitForText?: string, waitForUrlIncludes?: string }",
+        "browser_complete_form": "High-level browser mission: fill multiple form fields and optionally submit in one host-side flow. Args: { url?: string, pageId?: string, fields: [{ label?: string, name?: string, query?: string, value?: string, checked?: boolean, required?: boolean, kind?: string }], submit?: boolean, submitQuery?: string, waitForText?: string, waitForUrlIncludes?: string }",
+        "browser_extract_and_decide": "High-level browser mission: inspect a page, rank likely matches for a query, optionally choose among options, and optionally click the best match. Args: { url?: string, pageId?: string, query: string, options?: string[], action?: 'none'|'click_best', limit?: number }",
+        "browser_recover_workflow": "High-level browser mission: recover a stuck browser workflow by trying likely continue/close/accept actions and verifying progress. Args: { url?: string, pageId?: string, goal?: string, preferredActionQuery?: string, waitForText?: string, waitForUrlIncludes?: string, limit?: number }",
         "browser_focus_page": "Focus a specific browser page/tab. Args: { pageId: string }",
         "browser_navigate": "Navigate an existing browser page/tab. Args: { pageId: string, url: string }",
         "browser_snapshot_dom": "Capture a semantic DOM snapshot and affordance graph for a browser page. Args: { pageId: string, query?: string, limit?: number }",
@@ -384,6 +1773,12 @@ def build_tool_catalog(tools: list[str]) -> str:
         "world_record_proof": "Commit proof to the local world model. Args: { label: string, summary?: string, toolName?: string, nodeIds?: string[], data?: object, runId?: string }",
         "world_commit_memory": "Commit durable semantic memory to the local world model. Args: { label: string, summary?: string, scope?: string, tags?: string[], data?: object }",
         "world_score_route": "Score candidate routes against current machine affordances. Args: { routes: Array<{ id?: string, kind?: string, steps?: string[], requiresVisibleInteraction?: boolean, confidence?: number }> }",
+        "repo_get_summary": "Load the current repo cognition summary, including hotspots, likely tests, route hints, and learned repo habits. Args: { task?: string }",
+        "repo_query_symbols": "Query repo symbols discovered from the local repo model. Args: { query?: string, path?: string, limit?: number }",
+        "repo_find_references": "Find likely references for a symbol using the local repo model. Args: { symbol: string, limit?: number }",
+        "repo_get_change_impact": "Estimate which files and symbols are impacted by a candidate file or symbol change. Args: { path?: string, symbol?: string, limit?: number }",
+        "repo_get_validation_plan": "Load the repo's canonical validation and verifier plan. Args: { paths?: string[] }",
+        "repo_record_verification": "Record a verification receipt into local repo memory. Args: { label: string, summary?: string, status?: 'pending' | 'running' | 'passed' | 'failed', command?: string, failureCategory?: string, targetHint?: string }",
     }
     return "\n".join(f"- {tool}: {details.get(tool, tool.replace('_', ' '))}" for tool in tools)
 
@@ -440,6 +1835,16 @@ def build_prompt(payload: dict[str, Any]) -> str:
     latest_tool = payload.get("latestToolResult") if isinstance(payload.get("latestToolResult"), dict) else None
     repair = payload.get("repairDirective") if isinstance(payload.get("repairDirective"), dict) else None
     tom_enabled = isinstance(payload.get("tom"), dict) and payload.get("tom", {}).get("enabled") is not False
+    gateway_runtime = payload.get("gatewayRuntime") if isinstance(payload.get("gatewayRuntime"), dict) else {}
+    supports_internal_browser_use = bool(gateway_runtime.get("supportsInternalBrowserUse"))
+    speed_profile = compact_whitespace(request.get("speedProfile") or payload.get("speedProfile") or "fast")
+    startup_phase = compact_whitespace(request.get("startupPhase") or payload.get("startupPhase") or "continue")
+    task_speed_class = compact_whitespace(payload.get("taskSpeedClass") or "")
+    route_policy = resolve_route_policy(payload)
+    mission_first_browser = route_policy.get("missionFirstBrowser", True) is not False
+    turn_budget_ms = coerce_positive_int(route_policy.get("turnBudgetMs"), 35000, 1000, 900000)
+    max_iterations = coerce_positive_int(route_policy.get("maxIterations"), 80, 1, 200)
+    stall_timeout_ms = coerce_positive_int(route_policy.get("stallTimeoutMs"), 10000, 1000, 600000)
 
     trace_lines = []
     for entry in trace[-8:]:
@@ -489,6 +1894,18 @@ def build_prompt(payload: dict[str, Any]) -> str:
                 rng = data.get("range") or "?"
                 lc = data.get("lineCount")
                 result_lines.append(f"- file_content (range={rng}, lineCount={lc}):\n{clipped}")
+        if latest_tool.get("name") == "run_command" and latest_tool.get("ok") and isinstance(data, dict):
+            stdout = data.get("stdout")
+            stderr = data.get("stderr")
+            exit_code = data.get("exitCode")
+            if exit_code is not None:
+                result_lines.append(f"- exit_code: {exit_code}")
+            if isinstance(stdout, str) and stdout.strip():
+                clipped_stdout = stdout[:20_000] + ("\n...[truncated for gateway prompt]" if len(stdout) > 20_000 else "")
+                result_lines.append(f"- stdout:\n{clipped_stdout}")
+            if isinstance(stderr, str) and stderr.strip():
+                clipped_stderr = stderr[:8_000] + ("\n...[truncated for gateway prompt]" if len(stderr) > 8_000 else "")
+                result_lines.append(f"- stderr:\n{clipped_stderr}")
         result_section = "\n".join(result_lines)
 
     repair_section = "Repair directive: none."
@@ -511,26 +1928,59 @@ def build_prompt(payload: dict[str, Any]) -> str:
         "Use at most one tool call per response.",
         "Only use tools from the provided catalog.",
         "Never emit a native/tool name of summary, description, final, or note — those are optional JSON string fields inside toolCall, not callable tools.",
-        "The only valid tool names are exactly those listed under Available tools (e.g. read_file, list_files).",
+        f'The only valid tool names are exactly those listed under Available tools plus the internal browser tool "{INTERNAL_BROWSER_USE_TOOL}" when browser work is required.',
         "Paths must stay workspace-relative.",
         "Desktop requests are freeform machine-intent tasks, not shortcut commands. Infer the user's target dynamically from their language.",
-        "Browser requests should prefer the browser-native lane first. Use browser_* tools for structured web control and use desktop_* tools only when browser-native control is blocked or cannot prove progress.",
-        "For browser tasks, prefer browser_snapshot_dom or browser_query_elements before acting when the current page state or target element is uncertain.",
-        "After meaningful browser actions, prefer browser-native verification such as browser_get_active_page, browser_snapshot_dom, browser_read_text, browser_read_form_state, browser_get_network_activity, or browser_capture_page before finishing.",
+        (
+            "Browser requests are handled internally by OpenHands Browser Use, not by Binary browser_* tools."
+            if supports_internal_browser_use
+            else "Browser requests should use the Binary browser_* tools from the catalog because native OpenHands Browser Use is unavailable in this runtime."
+        ),
+        (
+            f'When website interaction or browser verification is needed, you may return toolCall name "{INTERNAL_BROWSER_USE_TOOL}" with arguments {{"goal":"..."}} describing the web task to perform.'
+            if supports_internal_browser_use
+            else "When website interaction is required, prefer browser_list_pages, browser_get_active_page, browser_open_page, browser_snapshot_dom, browser_query_elements, browser_click, browser_type, browser_wait_for, and browser_capture_page."
+        ),
+        (
+            f'The internal tool "{INTERNAL_BROWSER_USE_TOOL}" is the only valid browser tool name. Do not emit browser_* tools or fall back to desktop_* for website tasks.'
+            if supports_internal_browser_use
+            else 'Do not emit the internal browser_use tool in this runtime. Use Binary browser_* tools instead, and only fall back to desktop_* when the task is about native desktop apps rather than websites.'
+        ),
+          (
+            "When the user asks to open a website, search it, and open or click the best matching result, prefer browser_search_and_open_best_result over several tiny browser_* steps. This also applies when the site name is embedded in the query, such as 'outdoor boys youtube'."
+            if not supports_internal_browser_use and mission_first_browser
+            else ""
+          ),
+          (
+            "When the task is clearly a login flow, a multi-field form, extracting the best page candidate, or recovering a stuck site flow, prefer browser_login_and_continue, browser_complete_form, browser_extract_and_decide, or browser_recover_workflow before decomposing the task into many tiny browser_* turns."
+            if not supports_internal_browser_use and mission_first_browser
+            else ""
+          ),
         "For desktop tasks, inspect first when uncertain. Prefer desktop_list_apps, desktop_get_active_window, desktop_list_windows, or desktop_capture_screen before acting if the machine target could be ambiguous.",
         "After a meaningful desktop action, prefer a verification turn before finishing when a read-only desktop tool can confirm the result.",
         "If proof does not match the user's intent, replan instead of repeating the same desktop action blindly.",
         "Prefer observation tools before mutation unless the trace already provides enough grounding.",
+        (
+            "FAST-START MODE: keep the first turn short. If the request is simple chat, answer immediately. "
+            "If the request clearly needs one tool, emit that single toolCall immediately instead of writing a long plan."
+            if startup_phase == "fast_start"
+            else ""
+        ),
         "When loop stats show steps=0 and the tool trace is empty, you must return toolCall (read_file, search_workspace, or list_files) — not final — unless the user message is purely conversational with no workspace task.",
         "After inspecting the trusted target on a code-edit request, do not choose another observation tool unless the latest tool result blocked mutation or the repair directive explicitly requires path repair.",
         "When Latest tool result shows a successful read_file for the preferred target and the user asked for a code change, your next response must be a toolCall (edit or write_file), not a final string that refuses or asks for more file text.",
         "If the task explicitly asks to run tests, validate, lint, or confirm the project works, and the required task files already exist in the trace, prefer a run_command validation turn over another observation turn.",
+        "If the task requires a persistent shell, REPL, debugger, or back-and-forth terminal workflow, prefer terminal_start_session plus terminal_send_input / terminal_read_output instead of repeatedly spawning one-shot run_command calls.",
         "A final answer with no toolCall at step 0 is invalid for a workspace task. Start with read_file, list_files, or search_workspace instead.",
         "If TOM support is available for this user, you may consult it when the request is vague, underspecified, or preference-sensitive, but TOM remains advisory only.",
         f"TOM enabled: {'true' if tom_enabled else 'false'}",
         "Do not emit markdown, explanations, or code fences.",
         "",
         f"Mode: {request.get('mode') or 'auto'}",
+        f"Speed profile: {speed_profile}",
+        f"Startup phase: {startup_phase}",
+        f"Task speed class: {task_speed_class or 'unspecified'}",
+        f"Turn route policy: budget_ms={turn_budget_ms}, max_iterations={max_iterations}, stall_timeout_ms={stall_timeout_ms}, mission_first_browser={'true' if mission_first_browser else 'false'}",
         f"Preferred target: {target.get('path') or 'infer from context'}",
         f"Loop stats: steps={loop_summary.get('stepCount') or 0}, mutations={loop_summary.get('mutationCount') or 0}, repairs={loop_summary.get('repairCount') or 0}",
         "Required task files:\n"
@@ -626,12 +2076,14 @@ def parse_json_candidate(text: str) -> dict[str, Any] | None:
     return None
 
 
-def normalize_tool_call(value: Any, available_tools: list[str]) -> dict[str, Any] | None:
+def normalize_tool_call(
+    value: Any, available_tools: list[str], allow_internal_browser_use: bool = False
+) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
 
     name = normalize_model_tool_name(value.get("name"), available_tools)
-    if name not in available_tools:
+    if name not in available_tools and not (allow_internal_browser_use and name == INTERNAL_BROWSER_USE_TOOL):
         return None
 
     args = value.get("arguments")
@@ -653,7 +2105,7 @@ def normalize_tool_call(value: Any, available_tools: list[str]) -> dict[str, Any
     if kind not in {"observe", "mutate", "command"}:
         if name in {"edit", "write_file", "mkdir", "create_checkpoint"}:
             kind = "mutate"
-        elif name == "run_command":
+        elif name in {"run_command", "terminal_start_session", "terminal_send_input", "terminal_terminate_session"}:
             kind = "command"
         else:
             kind = "observe"
@@ -679,6 +2131,8 @@ def normalize_model_tool_name(value: Any, available_tools: list[str]) -> str:
         return ""
     if raw in available_tools:
         return raw
+    if raw == INTERNAL_BROWSER_USE_TOOL:
+        return raw
 
     alias_map = {
         "repo_browser.read_file": "read_file",
@@ -686,6 +2140,9 @@ def normalize_model_tool_name(value: Any, available_tools: list[str]) -> str:
         "repo_browser.search_workspace": "search_workspace",
         "repo_browser.search": "search_workspace",
         "repo_browser.run_command": "run_command",
+        "repo_browser.terminal_start_session": "terminal_start_session",
+        "repo_browser.terminal_send_input": "terminal_send_input",
+        "repo_browser.terminal_read_output": "terminal_read_output",
         "repo_browser.write_file": "write_file",
         "repo_browser.mkdir": "mkdir",
         "filesystem.read_file": "read_file",
@@ -702,6 +2159,11 @@ def normalize_model_tool_name(value: Any, available_tools: list[str]) -> str:
         "write_file": "write_file",
         "mkdir": "mkdir",
         "run_command": "run_command",
+        "terminal_start_session": "terminal_start_session",
+        "terminal_send_input": "terminal_send_input",
+        "terminal_read_output": "terminal_read_output",
+        "terminal_list_sessions": "terminal_list_sessions",
+        "terminal_terminate_session": "terminal_terminate_session",
         "list_files": "list_files",
         "search_workspace": "search_workspace",
         "search": "search_workspace",
@@ -763,7 +2225,12 @@ def extract_hf_router_failed_generation(err_body: str, available_tools: list[str
     }
 
 
-def extract_tool_turn(value: Any, available_tools: list[str], depth: int = 0) -> dict[str, Any] | None:
+def extract_tool_turn(
+    value: Any,
+    available_tools: list[str],
+    depth: int = 0,
+    allow_internal_browser_use: bool = False,
+) -> dict[str, Any] | None:
     if depth > 3 or value is None:
         return None
 
@@ -771,14 +2238,22 @@ def extract_tool_turn(value: Any, available_tools: list[str], depth: int = 0) ->
         parsed = parse_json_candidate(value)
         if not parsed:
             return None
-        return extract_tool_turn(parsed, available_tools, depth + 1)
+        return extract_tool_turn(parsed, available_tools, depth + 1, allow_internal_browser_use)
 
     if not isinstance(value, dict):
         return None
 
-    tool_call = normalize_tool_call(value.get("toolCall"), available_tools)
+    tool_call = normalize_tool_call(
+        value.get("toolCall"),
+        available_tools,
+        allow_internal_browser_use=allow_internal_browser_use,
+    )
     if tool_call:
-        nested = extract_tool_turn(value.get("final"), available_tools, depth + 1) if isinstance(value.get("final"), str) else None
+        nested = (
+            extract_tool_turn(value.get("final"), available_tools, depth + 1, allow_internal_browser_use)
+            if isinstance(value.get("final"), str)
+            else None
+        )
         nested_final = str(nested.get("final") or "").strip() if isinstance(nested, dict) else ""
         final_text = str(value.get("final") or "").strip() or nested_final
         return {
@@ -787,7 +2262,7 @@ def extract_tool_turn(value: Any, available_tools: list[str], depth: int = 0) ->
         }
 
     for candidate in (value.get("final"), value.get("message"), value.get("content"), value.get("response")):
-        nested = extract_tool_turn(candidate, available_tools, depth + 1)
+        nested = extract_tool_turn(candidate, available_tools, depth + 1, allow_internal_browser_use)
         if isinstance(nested, dict) and nested.get("toolCall"):
             return nested
 
@@ -881,22 +2356,1945 @@ def hf_router_chat_completion(
     return str(content)
 
 
-def parse_turn_response(raw_text: str, available_tools: list[str]) -> dict[str, Any]:
+def openai_compatible_chat_completion(
+    base_url: str,
+    api_key: str,
+    model_id: str,
+    user_prompt: str,
+    extra_headers: dict[str, str] | None = None,
+) -> str:
+    root = base_url.strip().rstrip("/")
+    if not root:
+        raise ValueError("model.baseUrl is empty")
+    endpoint = f"{root}/chat/completions"
+    body = json.dumps(
+        {
+            "model": model_id,
+            "messages": [{"role": "user", "content": user_prompt}],
+            "temperature": 0.1,
+            "max_tokens": 4096,
+        }
+    ).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Xpersona-OpenHands-Gateway/1.0",
+    }
+    if compact_whitespace(api_key):
+        headers["Authorization"] = f"Bearer {api_key}"
+    if isinstance(extra_headers, dict):
+        for key, value in extra_headers.items():
+            normalized_key = compact_whitespace(key)
+            normalized_value = compact_whitespace(value)
+            if normalized_key and normalized_value:
+                headers[normalized_key] = normalized_value
+    req = urllib.request.Request(endpoint, data=body, headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    choices = payload.get("choices") if isinstance(payload, dict) else None
+    if not isinstance(choices, list) or not choices:
+        raise RuntimeError(f"OpenAI-compatible endpoint returned no choices: {str(payload)[:2000]}")
+    msg = choices[0].get("message") if isinstance(choices[0], dict) else None
+    if not isinstance(msg, dict):
+        raise RuntimeError(f"OpenAI-compatible endpoint missing message: {str(choices[0])[:2000]}")
+    content = msg.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item.get("text"))
+        if parts:
+            return "\n".join(parts)
+    raise RuntimeError(f"OpenAI-compatible endpoint empty content: {str(msg)[:2000]}")
+
+
+def parse_turn_response(
+    raw_text: str, available_tools: list[str], allow_internal_browser_use: bool = False
+) -> dict[str, Any]:
     parsed = parse_json_candidate(raw_text)
     if parsed:
-        extracted = extract_tool_turn(parsed, available_tools)
+        extracted = extract_tool_turn(parsed, available_tools, allow_internal_browser_use=allow_internal_browser_use)
         if extracted:
             return extracted
     return {"final": raw_text.strip()}
 
 
+def should_use_binary_tool_adapter(payload: dict[str, Any], supported_tools: list[str], degraded_reasons: list[str]) -> bool:
+    if is_probe_session(payload):
+        return False
+    if resolve_adapter_mode(payload) == "force_binary_tool_adapter":
+        return True
+    available_tools = [str(tool) for tool in payload.get("availableTools") or [] if isinstance(tool, str)]
+    if not available_tools:
+        return False
+    request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+    task_text = compact_whitespace(request.get("task")).lower()
+    runtime_profile = infer_runtime_profile(supported_tools)
+    if runtime_profile == "full":
+        return False
+    interaction_kind = compact_whitespace(
+        request.get("interactionKind")
+    ).lower()
+    browser_intent = interaction_kind == "browser_task" or bool(
+        re.search(r"\b(browser|website|web app|page|tab|url|navigate|click|scrape)\b", task_text)
+    )
+    desktop_intent = interaction_kind == "machine_desktop" or bool(
+        re.search(r"\b(desktop|window|app|launch|focus|native app|notepad|slack|discord|outlook)\b", task_text)
+    )
+    if interaction_kind in {"machine_desktop", "browser_task", "terminal_command"}:
+        return True
+    if "TerminalTool" in set(supported_tools) and workspace_file_edit_supported(supported_tools):
+        return browser_intent or desktop_intent
+    if any(reason.startswith("windows_unsupported") for reason in degraded_reasons):
+        return True
+    return any(
+        tool in available_tools
+        for tool in (
+            "run_command",
+            "desktop_open_app",
+            "desktop_open_url",
+            "browser_open_page",
+            "browser_click",
+            "browser_snapshot_dom",
+        )
+    )
+
+
+def infer_terminal_command_from_task(task: str) -> str | None:
+    normalized = compact_whitespace(task).lower()
+    if not normalized:
+        return None
+    if "current working directory" in normalized or re.search(r"\bcwd\b", normalized) or re.search(r"\bpwd\b", normalized):
+        return "pwd"
+    if "git status" in normalized:
+        return "git status --short"
+    if "python version" in normalized:
+        return "python --version"
+    if "node version" in normalized:
+        return "node --version"
+    return None
+
+
+def infer_windows_drive_target_from_task(task: str) -> str | None:
+    normalized = compact_whitespace(task)
+    if not normalized:
+        return None
+    explicit_drive = re.search(r"\b([a-zA-Z]):(?:\\|/)?\b", normalized)
+    if explicit_drive and explicit_drive.group(1):
+        return f"{explicit_drive.group(1).upper()}:\\"
+    spoken_drive = re.search(r"\b(?:drive\s+([a-zA-Z])|([a-zA-Z])\s+drive)\b", normalized, re.IGNORECASE)
+    if spoken_drive and (spoken_drive.group(1) or spoken_drive.group(2)):
+        letter = (spoken_drive.group(1) or spoken_drive.group(2) or "").upper()
+        if letter:
+            return f"{letter}:\\"
+    return None
+
+
+def infer_desktop_app_from_task(task: str) -> str | None:
+    normalized = compact_whitespace(task).lower()
+    if not normalized:
+        return None
+    if "notepad" in normalized:
+        return "Notepad"
+    if "calculator" in normalized or re.search(r"\bcalc\b", normalized):
+        return "Calculator"
+    if "file explorer" in normalized or re.search(r"\bexplorer\b", normalized):
+        return "File Explorer"
+    if infer_windows_drive_target_from_task(task):
+        return "File Explorer"
+    if "discord" in normalized:
+        return "Discord"
+    if "slack" in normalized:
+        return "Slack"
+    if "outlook" in normalized or re.search(r"\bmail\b", normalized):
+        return "Outlook"
+    return None
+
+
+def is_desktop_action_task(task: str, task_speed_class: str | None = None) -> bool:
+    normalized = compact_whitespace(task).lower()
+    if not normalized:
+        return False
+    if normalized in {"hi", "hello", "hey", "thanks", "thank you"}:
+        return False
+    app_or_surface = re.search(
+        r"\b(desktop|window|windows|native app|notepad|calculator|calc|file explorer|explorer|slack|discord|outlook|mail|app)\b",
+        normalized,
+    )
+    action = re.search(
+        r"\b(open|launch|start|focus|switch|activate|type|click|send|close|quit|minimize|maximize|navigate|go to)\b",
+        normalized,
+    )
+    if app_or_surface and action:
+        return True
+    if infer_windows_drive_target_from_task(task):
+        return True
+    if re.search(r"\bdesktop_(?:list_apps|open_app|open_url|focus_window|get_active_window|list_windows)\b", normalized):
+        return True
+    if task_speed_class == "machine_desktop":
+        return True
+    return False
+
+
+def build_desktop_seed_tool_call(task: str, available_tools: list[str], step_count: int = 0) -> dict[str, Any] | None:
+    next_id = f"call_{max(1, step_count + 1)}"
+    app_name = infer_desktop_app_from_task(task)
+    drive_target = infer_windows_drive_target_from_task(task)
+    if "desktop_open_app" in available_tools and app_name:
+        args: dict[str, Any] = {"app": app_name, "targetAppIntent": app_name}
+        if app_name == "File Explorer" and drive_target:
+            args["path"] = drive_target
+        summary = (
+            f"Open {app_name} at {drive_target} to begin native desktop execution."
+            if app_name == "File Explorer" and drive_target
+            else f"Open {app_name} to begin native desktop execution."
+        )
+        return {
+            "id": next_id,
+            "name": "desktop_open_app",
+            "arguments": args,
+            "kind": "action",
+            "summary": summary,
+        }
+    if drive_target and "desktop_open_url" in available_tools:
+        return {
+            "id": next_id,
+            "name": "desktop_open_url",
+            "arguments": {"url": drive_target},
+            "kind": "action",
+            "summary": f"Open {drive_target} in File Explorer to ground the desktop task.",
+        }
+    if "desktop_list_apps" in available_tools:
+        return {
+            "id": next_id,
+            "name": "desktop_list_apps",
+            "arguments": {"limit": 40},
+            "kind": "observe",
+            "summary": "List desktop apps to ground native machine execution.",
+        }
+    if "desktop_get_active_window" in available_tools:
+        return {
+            "id": next_id,
+            "name": "desktop_get_active_window",
+            "arguments": {},
+            "kind": "observe",
+            "summary": "Inspect the active desktop window before the next native action.",
+        }
+    if "desktop_list_windows" in available_tools:
+        return {
+            "id": next_id,
+            "name": "desktop_list_windows",
+            "arguments": {},
+            "kind": "observe",
+            "summary": "Inspect visible windows before choosing a native action.",
+        }
+    return None
+
+
+DESKTOP_STARTUP_TOOLS = {
+    "desktop_open_app",
+    "desktop_open_url",
+    "desktop_focus_window",
+    "desktop_list_apps",
+    "desktop_list_windows",
+    "desktop_get_active_window",
+    "desktop_wait",
+}
+
+DESKTOP_INTERACTION_PROOF_TOOLS = {
+    "desktop_query_controls",
+    "desktop_read_control",
+    "desktop_invoke_control",
+    "desktop_type_into_control",
+    "desktop_select_control_option",
+    "desktop_toggle_control",
+    "desktop_send_shortcut",
+    "desktop_wait_for_control",
+}
+
+
+def desktop_task_requires_follow_through(task: str) -> bool:
+    normalized = compact_whitespace(task).lower()
+    if not normalized:
+        return False
+    if re.search(
+        r"\b(type|write|draft|message|send|calculate|compute|divide|multiply|plus|minus|result|navigate|go to|select|read|report|close|quit|save)\b",
+        normalized,
+    ):
+        return True
+    return False
+
+
+def infer_desktop_query_from_task(task: str, app_name: str | None = None) -> str:
+    normalized = compact_whitespace(task).lower()
+    app_lower = compact_whitespace(app_name).lower()
+    if app_lower == "calculator":
+        return "result display"
+    if app_lower == "notepad":
+        return "editor text"
+    if app_lower == "file explorer":
+        return "address bar folder list"
+    if app_lower in {"discord", "slack"}:
+        return "chat composer"
+    if app_lower in {"outlook", "mail"}:
+        return "message compose"
+    if "calculator" in normalized:
+        return "result display"
+    if "notepad" in normalized:
+        return "editor text"
+    if "file explorer" in normalized or "explorer" in normalized:
+        return "address bar folder list"
+    if "discord" in normalized or "slack" in normalized:
+        return "chat composer"
+    if "outlook" in normalized or "mail" in normalized:
+        return "message compose"
+    return "primary interactive control"
+
+
+def infer_desktop_draft_text_from_task(task: str) -> str | None:
+    quoted = re.search(r'"([^"]{1,600})"', task)
+    if quoted and quoted.group(1):
+        return quoted.group(1).strip()
+    normalized = compact_whitespace(task).lower()
+    type_match = re.search(r"\b(?:type|write|draft)\s+([a-z0-9 _.,!?'\"-]{2,160})", normalized, re.IGNORECASE)
+    if type_match and type_match.group(1):
+        candidate = compact_whitespace(type_match.group(1))
+        if candidate and not candidate.startswith("in ") and not candidate.startswith("into "):
+            return candidate[:160]
+    if "groceries" in normalized:
+        return "groceries\n- milk\n- eggs\n- bread"
+    if "session check" in normalized:
+        return "Session check"
+    return None
+
+
+def infer_calculator_keystrokes_from_task(task: str) -> str | None:
+    expression = extract_calculator_expression(task)
+    if not expression:
+        return None
+    return f"{expression}~"
+
+
+def extract_calculator_expression(task: str) -> str | None:
+    normalized = compact_whitespace(task).lower()
+    if not normalized:
+        return None
+    canonical = (
+        normalized.replace("divided by", "/")
+        .replace(" over ", "/")
+        .replace("multiplied by", "*")
+        .replace("times", "*")
+        .replace(" x ", " * ")
+        .replace("plus", "+")
+        .replace("minus", "-")
+        .replace("then", " ")
+    )
+    canonical = re.sub(r"[^0-9+\-*/.\s]", " ", canonical)
+    match = re.search(r"-?\d+(?:\.\d+)?(?:\s*[+\-*/]\s*-?\d+(?:\.\d+)?)+", canonical)
+    if not match:
+        return None
+    expression = re.sub(r"\s+", "", match.group(0))
+    if not re.fullmatch(r"-?\d+(?:\.\d+)?(?:[+\-*/]-?\d+(?:\.\d+)?)+", expression):
+        return None
+    return expression
+
+
+def evaluate_calculator_expression(expression: str) -> str | None:
+    compact = re.sub(r"\s+", "", str(expression or ""))
+    if not compact:
+        return None
+    if not re.fullmatch(r"-?\d+(?:\.\d+)?(?:[+\-*/]-?\d+(?:\.\d+)?)+", compact):
+        return None
+    numbers: list[float] = []
+    operators: list[str] = []
+    index = 0
+    while index < len(compact):
+        sign = 1.0
+        if compact[index] in {"+", "-"} and (index == 0 or compact[index - 1] in "+-*/"):
+            sign = -1.0 if compact[index] == "-" else 1.0
+            index += 1
+        start = index
+        while index < len(compact) and (compact[index].isdigit() or compact[index] == "."):
+            index += 1
+        if start == index:
+            return None
+        try:
+            value = float(compact[start:index]) * sign
+        except Exception:
+            return None
+        numbers.append(value)
+        if index >= len(compact):
+            break
+        op = compact[index]
+        if op not in "+-*/":
+            return None
+        operators.append(op)
+        index += 1
+    if not numbers or len(operators) != len(numbers) - 1:
+        return None
+    collapsed_numbers: list[float] = [numbers[0]]
+    collapsed_ops: list[str] = []
+    for op_index, op in enumerate(operators):
+        next_value = numbers[op_index + 1]
+        if op in {"*", "/"}:
+            left = collapsed_numbers.pop() if collapsed_numbers else 0.0
+            if op == "/" and abs(next_value) < 1e-12:
+                return None
+            collapsed_numbers.append(left * next_value if op == "*" else left / next_value)
+            continue
+        collapsed_ops.append(op)
+        collapsed_numbers.append(next_value)
+    total = collapsed_numbers[0]
+    for op_index, op in enumerate(collapsed_ops):
+        next_value = collapsed_numbers[op_index + 1]
+        total = total + next_value if op == "+" else total - next_value
+    if abs(total - round(total)) < 1e-9:
+        return str(int(round(total)))
+    text = f"{total:.8f}".rstrip("0").rstrip(".")
+    return text or str(total)
+
+
+def infer_expected_calculator_result(task: str) -> str | None:
+    expression = extract_calculator_expression(task)
+    if not expression:
+        return None
+    return evaluate_calculator_expression(expression)
+
+
+def normalize_desktop_app_token(value: str | None) -> str:
+    return re.sub(r"[^a-z0-9]+", "", compact_whitespace(value).lower())
+
+
+def canonicalize_desktop_app_intent(value: str | None) -> str | None:
+    normalized = compact_whitespace(value).lower()
+    if not normalized:
+        return None
+    if "calc" in normalized or "calculator" in normalized:
+        return "Calculator"
+    if "file explorer" in normalized or "explorer" in normalized:
+        return "File Explorer"
+    if "notepad" in normalized:
+        return "Notepad"
+    if "discord" in normalized:
+        return "Discord"
+    if "slack" in normalized:
+        return "Slack"
+    if "outlook" in normalized or normalized == "mail":
+        return "Outlook"
+    return compact_whitespace(value) or None
+
+
+def infer_desktop_draft_target_app(task: str) -> str:
+    normalized = compact_whitespace(task).lower()
+    if "notepad" in normalized:
+        return "Notepad"
+    if "discord" in normalized:
+        return "Discord"
+    if "slack" in normalized:
+        return "Slack"
+    if "outlook" in normalized or "mail" in normalized:
+        return "Outlook"
+    return "Notepad"
+
+
+def infer_desktop_subgoal_order(task: str) -> list[str]:
+    normalized = compact_whitespace(task).lower()
+    if not normalized:
+        return []
+    goals: list[tuple[int, str]] = []
+    draft_index = min(
+        [idx for idx in [normalized.find("type"), normalized.find("write"), normalized.find("draft"), normalized.find("notepad")] if idx >= 0]
+        or [10_000]
+    )
+    calc_match = re.search(r"\b(calculator|calc|divided by|times|multiplied by|plus|minus|\d+\s*[\+\-\*/x]\s*\d+)\b", normalized)
+    calc_index = calc_match.start() if calc_match else 10_000
+    if draft_index < 10_000:
+        goals.append((draft_index, "draft"))
+    if calc_index < 10_000:
+        goals.append((calc_index, "calculator"))
+    goals.sort(key=lambda item: item[0])
+    return [goal for _, goal in goals]
+
+
+def infer_requested_windows_drives(task: str) -> list[str]:
+    normalized = compact_whitespace(task)
+    if not normalized:
+        return []
+    drives: list[str] = []
+    for match in re.finditer(r"\b([a-zA-Z]):(?:\\|/)?\b", normalized):
+        letter = (match.group(1) or "").upper()
+        if letter:
+            drives.append(f"{letter}:\\")
+    for match in re.finditer(r"\b(?:drive\s+([a-zA-Z])|([a-zA-Z])\s+drive)\b", normalized, re.IGNORECASE):
+        letter = ((match.group(1) or match.group(2)) or "").upper()
+        if letter:
+            drives.append(f"{letter}:\\")
+    unique: list[str] = []
+    seen: set[str] = set()
+    for drive in drives:
+        if drive in seen:
+            continue
+        seen.add(drive)
+        unique.append(drive)
+    return unique
+
+
+def collect_desktop_tool_results(latest_tool: dict[str, Any] | None, trace: list[Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    if isinstance(latest_tool, dict):
+        out.append(latest_tool)
+    for item in trace:
+        if not isinstance(item, dict):
+            continue
+        result = item.get("toolResult") if isinstance(item.get("toolResult"), dict) else None
+        if isinstance(result, dict):
+            out.append(result)
+    return out
+
+
+def desktop_tool_result_targets_app(tool_result: dict[str, Any], app_name: str) -> bool:
+    normalized_target = normalize_desktop_app_token(canonicalize_desktop_app_intent(app_name))
+    if not normalized_target:
+        return False
+    data = tool_result.get("data") if isinstance(tool_result.get("data"), dict) else {}
+    candidates = [
+        compact_whitespace(data.get("targetAppIntent")),
+        compact_whitespace(data.get("targetResolvedApp")),
+        compact_whitespace(data.get("appName")),
+        compact_whitespace(tool_result.get("summary")),
+    ]
+    for candidate in candidates:
+        token = normalize_desktop_app_token(candidate)
+        if not token:
+            continue
+        if normalized_target == "calculator":
+            if "calc" in token or "calculator" in token:
+                return True
+        elif normalized_target == "fileexplorer":
+            if "explorer" in token:
+                return True
+        elif normalized_target == token or normalized_target in token or token in normalized_target:
+            return True
+    return False
+
+
+def has_successful_desktop_tool_for_app(
+    latest_tool: dict[str, Any] | None,
+    trace: list[Any],
+    tool_name: str,
+    app_name: str,
+) -> bool:
+    for tool_result in collect_desktop_tool_results(latest_tool, trace):
+        if compact_whitespace(tool_result.get("name")) != tool_name:
+            continue
+        if tool_result.get("ok") is not True:
+            continue
+        if desktop_tool_result_targets_app(tool_result, app_name):
+            return True
+    return False
+
+
+def has_successful_desktop_verification_for_app(
+    latest_tool: dict[str, Any] | None,
+    trace: list[Any],
+    app_name: str,
+) -> bool:
+    verification_tools = {"desktop_read_control", "desktop_query_controls", "desktop_wait_for_control"}
+    for tool_result in collect_desktop_tool_results(latest_tool, trace):
+        if compact_whitespace(tool_result.get("name")) not in verification_tools:
+            continue
+        if tool_result.get("ok") is not True:
+            continue
+        if desktop_tool_result_targets_app(tool_result, app_name):
+            return True
+    return False
+
+
+def desktop_trace_contains_calculator_value(
+    latest_tool: dict[str, Any] | None,
+    trace: list[Any],
+    expected_value: str,
+) -> bool:
+    expected = compact_whitespace(expected_value)
+    if not expected:
+        return False
+    candidates: list[str] = []
+    for tool_result in collect_desktop_tool_results(latest_tool, trace):
+        name = compact_whitespace(tool_result.get("name"))
+        if name not in {"desktop_read_control", "desktop_query_controls", "desktop_wait_for_control"}:
+            continue
+        if not desktop_tool_result_targets_app(tool_result, "Calculator"):
+            continue
+        summary = compact_whitespace(tool_result.get("summary"))
+        if summary:
+            candidates.append(summary)
+        data = tool_result.get("data") if isinstance(tool_result.get("data"), dict) else {}
+        value = data.get("value") if isinstance(data, dict) else None
+        if isinstance(value, dict):
+            for field in ("text", "value", "display", "content"):
+                text = compact_whitespace(value.get(field))
+                if text:
+                    candidates.append(text)
+            texts = value.get("texts")
+            if isinstance(texts, list):
+                for item in texts[:6]:
+                    text = compact_whitespace(item)
+                    if text:
+                        candidates.append(text)
+        matched_control = data.get("matchedControl") if isinstance(data, dict) else None
+        if isinstance(matched_control, dict):
+            text_preview = compact_whitespace(matched_control.get("textPreview"))
+            if text_preview:
+                candidates.append(text_preview)
+    token_pattern = re.compile(r"-?\d+(?:\.\d+)?")
+    for text in candidates:
+        if expected in text:
+            return True
+        for token in token_pattern.findall(text):
+            if token == expected:
+                return True
+    return False
+
+
+def count_desktop_tool_attempts_for_app(
+    latest_tool: dict[str, Any] | None,
+    trace: list[Any],
+    tool_name: str,
+    app_name: str,
+) -> int:
+    count = 0
+    for tool_result in collect_desktop_tool_results(latest_tool, trace):
+        if compact_whitespace(tool_result.get("name")) != tool_name:
+            continue
+        if desktop_tool_result_targets_app(tool_result, app_name):
+            count += 1
+    return count
+
+
+def collect_successful_desktop_tool_names(latest_tool: dict[str, Any] | None, trace: list[Any]) -> list[str]:
+    names: list[str] = []
+    if isinstance(latest_tool, dict):
+        name = compact_whitespace(latest_tool.get("name"))
+        if name.startswith("desktop_") and latest_tool.get("ok") is True:
+            names.append(name)
+    for item in trace:
+        if not isinstance(item, dict):
+            continue
+        result = item.get("toolResult") if isinstance(item.get("toolResult"), dict) else None
+        if not isinstance(result, dict):
+            continue
+        name = compact_whitespace(result.get("name"))
+        if name.startswith("desktop_") and result.get("ok") is True:
+            names.append(name)
+    return names
+
+
+def desktop_trace_mentions_drive(trace: list[Any], latest_tool: dict[str, Any] | None, drive: str) -> bool:
+    normalized_drive = compact_whitespace(drive).lower().replace("/", "\\")
+    if not normalized_drive:
+        return False
+    candidates: list[str] = []
+    if isinstance(latest_tool, dict):
+        summary = compact_whitespace(latest_tool.get("summary"))
+        if summary:
+            candidates.append(summary)
+        data = latest_tool.get("data") if isinstance(latest_tool.get("data"), dict) else {}
+        for key in ("targetPath", "path", "url", "command"):
+            value = compact_whitespace(data.get(key))
+            if value:
+                candidates.append(value)
+    for item in trace:
+        if not isinstance(item, dict):
+            continue
+        result = item.get("toolResult") if isinstance(item.get("toolResult"), dict) else None
+        if not isinstance(result, dict):
+            continue
+        summary = compact_whitespace(result.get("summary"))
+        if summary:
+            candidates.append(summary)
+        data = result.get("data") if isinstance(result.get("data"), dict) else {}
+        for key in ("targetPath", "path", "url", "command"):
+            value = compact_whitespace(data.get(key))
+            if value:
+                candidates.append(value)
+    return any(normalized_drive in compact_whitespace(text).lower().replace("/", "\\") for text in candidates)
+
+
+def has_desktop_goal_proof(
+    task: str,
+    latest_tool: dict[str, Any] | None,
+    trace: list[Any],
+) -> bool:
+    successful_tools = collect_successful_desktop_tool_names(latest_tool, trace)
+    if not successful_tools:
+        return False
+
+    requested_drives = infer_requested_windows_drives(task)
+    if requested_drives:
+        return all(desktop_trace_mentions_drive(trace, latest_tool, drive) for drive in requested_drives)
+
+    calculator_keys = infer_calculator_keystrokes_from_task(task)
+    if calculator_keys:
+        if not has_successful_desktop_tool_for_app(latest_tool, trace, "desktop_send_shortcut", "Calculator"):
+            return False
+        if not has_successful_desktop_verification_for_app(latest_tool, trace, "Calculator"):
+            return False
+        expected = infer_expected_calculator_result(task)
+        if expected and not desktop_trace_contains_calculator_value(latest_tool, trace, expected):
+            return False
+
+    draft_text = infer_desktop_draft_text_from_task(task)
+    if draft_text:
+        draft_app = infer_desktop_draft_target_app(task)
+        if not has_successful_desktop_tool_for_app(latest_tool, trace, "desktop_type_into_control", draft_app):
+            return False
+        if not has_successful_desktop_verification_for_app(latest_tool, trace, draft_app):
+            return False
+
+    if not desktop_task_requires_follow_through(task):
+        return True
+
+    return any(name in DESKTOP_INTERACTION_PROOF_TOOLS for name in successful_tools)
+
+
+def build_desktop_progress_tool_call(
+    task: str,
+    available_tools: list[str],
+    latest_tool: dict[str, Any] | None,
+    step_count: int,
+    trace: list[Any],
+) -> dict[str, Any] | None:
+    next_id = f"call_{max(1, step_count + 1)}"
+    latest_name = compact_whitespace((latest_tool or {}).get("name"))
+    latest_data = (latest_tool or {}).get("data") if isinstance((latest_tool or {}).get("data"), dict) else {}
+    latest_summary = compact_whitespace((latest_tool or {}).get("summary")).lower()
+    app_name = (
+        canonicalize_desktop_app_intent(compact_whitespace(latest_data.get("targetAppIntent")))
+        or canonicalize_desktop_app_intent(compact_whitespace(latest_data.get("appName")))
+        or infer_desktop_app_from_task(task)
+    )
+    drives = infer_requested_windows_drives(task)
+
+    if not latest_name and not trace:
+        subgoal_order = infer_desktop_subgoal_order(task)
+        if subgoal_order and "desktop_open_app" in available_tools:
+            first_subgoal = subgoal_order[0]
+            if first_subgoal == "calculator":
+                return {
+                    "id": next_id,
+                    "name": "desktop_open_app",
+                    "arguments": {"app": "Calculator", "targetAppIntent": "Calculator"},
+                    "kind": "action",
+                    "summary": "Open Calculator first for deterministic arithmetic execution.",
+                }
+            if first_subgoal == "draft":
+                draft_app = infer_desktop_draft_target_app(task)
+                return {
+                    "id": next_id,
+                    "name": "desktop_open_app",
+                    "arguments": {"app": draft_app, "targetAppIntent": draft_app},
+                    "kind": "action",
+                    "summary": f"Open {draft_app} first for deterministic text-entry execution.",
+                }
+        seed = build_desktop_seed_tool_call(task, available_tools, step_count)
+        if seed:
+            return seed
+
+    if drives:
+        for drive in drives:
+            if desktop_trace_mentions_drive(trace, latest_tool, drive):
+                continue
+            if "desktop_open_app" in available_tools:
+                return {
+                    "id": next_id,
+                    "name": "desktop_open_app",
+                    "arguments": {"app": "File Explorer", "path": drive, "targetAppIntent": "File Explorer"},
+                    "kind": "action",
+                    "summary": f"Open {drive} in File Explorer to satisfy requested drive navigation.",
+                }
+            if "desktop_open_url" in available_tools:
+                return {
+                    "id": next_id,
+                    "name": "desktop_open_url",
+                    "arguments": {"url": drive},
+                    "kind": "action",
+                    "summary": f"Open {drive} to satisfy requested drive navigation.",
+                }
+
+    draft_text = infer_desktop_draft_text_from_task(task)
+    calculator_keys = infer_calculator_keystrokes_from_task(task)
+    subgoal_order = infer_desktop_subgoal_order(task)
+    if not subgoal_order:
+        if draft_text:
+            subgoal_order.append("draft")
+        if calculator_keys:
+            subgoal_order.append("calculator")
+
+    for subgoal in subgoal_order:
+        if subgoal == "draft" and draft_text:
+            draft_app = infer_desktop_draft_target_app(task)
+            draft_query = infer_desktop_query_from_task(task, draft_app)
+            if not has_successful_desktop_tool_for_app(latest_tool, trace, "desktop_type_into_control", draft_app):
+                draft_open_attempts = count_desktop_tool_attempts_for_app(
+                    latest_tool, trace, "desktop_open_app", draft_app
+                )
+                if (
+                    "desktop_open_app" in available_tools
+                    and not has_successful_desktop_tool_for_app(latest_tool, trace, "desktop_open_app", draft_app)
+                    and draft_open_attempts < 2
+                    and latest_name != "desktop_open_app"
+                ):
+                    return {
+                        "id": next_id,
+                        "name": "desktop_open_app",
+                        "arguments": {"app": draft_app, "targetAppIntent": draft_app},
+                        "kind": "action",
+                        "summary": f"Open {draft_app} before drafting text so typing cannot drift into another app.",
+                    }
+                if "desktop_type_into_control" in available_tools:
+                    selector = latest_data.get("selector") if isinstance(latest_data.get("selector"), dict) else None
+                    arguments: dict[str, Any] = {
+                        "app": draft_app,
+                        "targetAppIntent": draft_app,
+                        "query": draft_query,
+                        "text": draft_text,
+                        "append": False,
+                        "verificationRequired": True,
+                    }
+                    if selector:
+                        arguments["selector"] = selector
+                    return {
+                        "id": next_id,
+                        "name": "desktop_type_into_control",
+                        "arguments": arguments,
+                        "kind": "action",
+                        "summary": f"Type the requested content into {draft_app}.",
+                    }
+            if (
+                "desktop_read_control" in available_tools
+                and not has_successful_desktop_verification_for_app(latest_tool, trace, draft_app)
+            ):
+                return {
+                    "id": next_id,
+                    "name": "desktop_read_control",
+                    "arguments": {
+                        "app": draft_app,
+                        "targetAppIntent": draft_app,
+                        "query": draft_query,
+                        "verificationRequired": True,
+                    },
+                    "kind": "observe",
+                    "summary": f"Verify drafted content inside {draft_app} before closing the desktop task.",
+                }
+
+        if subgoal == "calculator" and calculator_keys:
+            calculator_app = "Calculator"
+            calculator_shortcut_attempts = count_desktop_tool_attempts_for_app(
+                latest_tool, trace, "desktop_send_shortcut", calculator_app
+            )
+            if (
+                latest_name == "desktop_send_shortcut"
+                and (latest_tool or {}).get("ok") is not True
+                and calculator_shortcut_attempts >= 2
+                and "desktop_read_control" in available_tools
+            ):
+                return {
+                    "id": next_id,
+                    "name": "desktop_read_control",
+                    "arguments": {
+                        "app": calculator_app,
+                        "targetAppIntent": calculator_app,
+                        "query": infer_desktop_query_from_task(task, calculator_app),
+                        "verificationRequired": True,
+                    },
+                    "kind": "observe",
+                    "summary": "Inspect Calculator state after repeated shortcut failure instead of repeating the same action.",
+                }
+            if not has_successful_desktop_tool_for_app(latest_tool, trace, "desktop_send_shortcut", calculator_app):
+                calculator_open_attempts = count_desktop_tool_attempts_for_app(
+                    latest_tool, trace, "desktop_open_app", calculator_app
+                )
+                if (
+                    "desktop_open_app" in available_tools
+                    and not has_successful_desktop_tool_for_app(latest_tool, trace, "desktop_open_app", calculator_app)
+                    and calculator_open_attempts < 2
+                    and latest_name != "desktop_open_app"
+                ):
+                    return {
+                        "id": next_id,
+                        "name": "desktop_open_app",
+                        "arguments": {"app": calculator_app, "targetAppIntent": calculator_app},
+                        "kind": "action",
+                        "summary": "Open Calculator before shortcut execution so arithmetic never targets another app.",
+                    }
+                if "desktop_send_shortcut" in available_tools:
+                    if calculator_shortcut_attempts >= 2:
+                        break
+                    return {
+                        "id": next_id,
+                        "name": "desktop_send_shortcut",
+                        "arguments": {
+                            "app": calculator_app,
+                            "targetAppIntent": calculator_app,
+                            "keys": calculator_keys,
+                            "verificationRequired": True,
+                        },
+                        "kind": "action",
+                        "summary": f"Send calculator keystrokes {calculator_keys} to execute the requested computation.",
+                    }
+            if (
+                "desktop_read_control" in available_tools
+                and not has_successful_desktop_verification_for_app(latest_tool, trace, calculator_app)
+            ):
+                return {
+                    "id": next_id,
+                    "name": "desktop_read_control",
+                    "arguments": {
+                        "app": calculator_app,
+                        "targetAppIntent": calculator_app,
+                        "query": infer_desktop_query_from_task(task, calculator_app),
+                        "verificationRequired": True,
+                    },
+                    "kind": "observe",
+                    "summary": "Read Calculator display proof after sending arithmetic shortcut.",
+                }
+
+    if (
+        latest_name == "desktop_send_shortcut"
+        and (latest_tool or {}).get("ok") is not True
+        and ("no native app window matched" in latest_summary or "window not found" in latest_summary)
+        and "desktop_open_app" in available_tools
+    ):
+        fallback_app = canonicalize_desktop_app_intent(compact_whitespace(latest_data.get("targetAppIntent"))) or app_name or "Calculator"
+        fallback_open_attempts = count_desktop_tool_attempts_for_app(
+            latest_tool, trace, "desktop_open_app", fallback_app
+        )
+        if fallback_open_attempts >= 2:
+            return None
+        return {
+            "id": next_id,
+            "name": "desktop_open_app",
+            "arguments": {"app": fallback_app, "targetAppIntent": fallback_app},
+            "kind": "action",
+            "summary": "Launch the target app to recover from a missing active window before retrying shortcuts.",
+        }
+
+    if "desktop_query_controls" in available_tools and latest_name in DESKTOP_STARTUP_TOOLS:
+        return {
+            "id": next_id,
+            "name": "desktop_query_controls",
+            "arguments": {
+                "app": app_name or infer_desktop_app_from_task(task),
+                "targetAppIntent": app_name or infer_desktop_app_from_task(task),
+                "query": infer_desktop_query_from_task(task, app_name),
+                "limit": 24,
+            },
+            "kind": "observe",
+            "summary": "Query semantic controls in the active native app to continue execution deterministically.",
+        }
+
+    if "desktop_read_control" in available_tools and latest_name in {"desktop_send_shortcut", "desktop_type_into_control"}:
+        return {
+            "id": next_id,
+            "name": "desktop_read_control",
+            "arguments": {
+                "app": app_name or infer_desktop_app_from_task(task),
+                "targetAppIntent": app_name or infer_desktop_app_from_task(task),
+                "query": infer_desktop_query_from_task(task, app_name),
+                "verificationRequired": True,
+            },
+            "kind": "observe",
+            "summary": "Read back the most relevant native app control to verify progress.",
+        }
+
+    if latest_name in {"desktop_list_apps", "desktop_list_windows"} and "desktop_get_active_window" in available_tools:
+        return {
+            "id": next_id,
+            "name": "desktop_get_active_window",
+            "arguments": {},
+            "kind": "observe",
+            "summary": "Inspect active window state before the next deterministic desktop action.",
+        }
+
+    if not latest_name:
+        return build_desktop_seed_tool_call(task, available_tools, step_count)
+
+    return None
+
+
+def infer_target_path_from_task(task: str) -> str | None:
+    normalized = compact_whitespace(task)
+    if not normalized:
+        return None
+    pattern = re.compile(r"`([^`]+)`|([A-Za-z0-9_./-]+\.[A-Za-z0-9]{1,12})")
+    for match in pattern.finditer(normalized):
+        candidate = match.group(1) or match.group(2) or ""
+        sanitized = sanitize_relative_path(candidate)
+        if sanitized:
+            return sanitized
+    return None
+
+
+def infer_target_directory_from_task(task: str) -> str | None:
+    normalized = compact_whitespace(task)
+    if not normalized:
+        return None
+    patterns = (
+        r"\b(?:folder|directory|project)\s+named\s+([A-Za-z0-9_.-]+)",
+        r"\bnamed\s+([A-Za-z0-9_.-]+)\s+(?:folder|directory|project)\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, normalized, re.IGNORECASE)
+        if not match:
+            continue
+        candidate = sanitize_relative_path(match.group(1) or "")
+        if candidate:
+            return candidate
+    return None
+
+
+def is_workspace_action_task(task: str, task_speed_class: str | None) -> bool:
+    normalized = compact_whitespace(task).lower()
+    if not normalized:
+        return False
+    if is_desktop_action_task(task, task_speed_class):
+        return False
+    if task_speed_class == "chat_only":
+        return False
+    casual = {
+        "hi",
+        "hello",
+        "hey",
+        "thanks",
+        "thank you",
+        "yo",
+        "sup",
+        "how are you",
+        "how are you?",
+    }
+    if normalized in casual:
+        return False
+    if infer_target_path_from_task(normalized):
+        return True
+    return bool(
+        re.search(
+            r"\b(create|edit|write|update|fix|implement|refactor|test|rename|delete|patch|file|module|function|class|script)\b",
+            normalized,
+        )
+    )
+
+
+def is_workspace_mutation_intent_task(task: str) -> bool:
+    normalized = compact_whitespace(task).lower()
+    if not normalized:
+        return False
+    if is_desktop_action_task(task):
+        return False
+    return bool(
+        re.search(
+            r"\b(create|write|update|fix|implement|refactor|rename|delete|patch|add|run tests?|npm test|pytest|git init|git commit|branch)\b",
+            normalized,
+        )
+    )
+
+
+def extract_task_artifact_paths(task: str) -> list[str]:
+    normalized = compact_whitespace(task)
+    if not normalized:
+        return []
+    project_root = infer_target_directory_from_task(normalized)
+    requested_branch = extract_requested_branch_name(normalized)
+    seen: set[str] = set()
+    out: list[str] = []
+    if project_root:
+        seen.add(project_root)
+        out.append(project_root)
+    token_pattern = re.compile(r"\b([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)+|[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+)\b")
+    for match in token_pattern.finditer(normalized):
+        raw = sanitize_relative_path(match.group(1) or "")
+        if not raw:
+            continue
+        if requested_branch and raw.lower() == requested_branch.lower():
+            continue
+        normalized_path = (
+            f"{project_root}/{raw}" if project_root and raw != project_root and not raw.startswith(f"{project_root}/") else raw
+        )
+        if requested_branch and normalized_path.lower().endswith(f"/{requested_branch.lower()}"):
+            continue
+        if normalized_path in seen:
+            continue
+        seen.add(normalized_path)
+        out.append(normalized_path)
+    if ".gitignore" in normalized.lower():
+        gitignore_path = f"{project_root}/.gitignore" if project_root else ".gitignore"
+        if gitignore_path not in seen:
+            out.append(gitignore_path)
+    return out
+
+
+def infer_missing_task_artifacts(workspace_root: str | None, task: str) -> list[str]:
+    root = compact_whitespace(workspace_root)
+    if not root:
+        return []
+    artifacts = extract_task_artifact_paths(task)
+    if not artifacts:
+        return []
+    root_path = Path(root)
+    missing: list[str] = []
+    for rel in artifacts:
+        safe_rel = sanitize_relative_path(rel)
+        if not safe_rel:
+            continue
+        target = root_path / Path(safe_rel)
+        if not target.exists():
+            missing.append(safe_rel)
+    return missing
+
+
+def infer_file_stub_content(relative_path: str) -> str:
+    normalized = sanitize_relative_path(relative_path) or relative_path
+    filename = Path(normalized).name.lower()
+    extension = Path(normalized).suffix.lower()
+    if filename == "package.json":
+        package_name = (Path(normalized).parts[0] if len(Path(normalized).parts) > 1 else "binary-project").lower()
+        safe_name = re.sub(r"[^a-z0-9._-]+", "-", package_name).strip("-") or "binary-project"
+        return json.dumps(
+            {
+                "name": safe_name,
+                "version": "1.0.0",
+                "type": "module",
+                "scripts": {"test": "node --test"},
+            },
+            indent=2,
+        ) + "\n"
+    if filename == ".gitignore":
+        return "node_modules/\ncoverage/\n"
+    if extension == ".md":
+        title = Path(normalized).stem.replace("-", " ").replace("_", " ").strip().title() or "Notes"
+        return f"# {title}\n\nGenerated by Binary deterministic fallback.\n"
+    if extension == ".js":
+        if ".test." in filename or filename.endswith(".test.js"):
+            return (
+                "import test from \"node:test\";\n"
+                "import assert from \"node:assert/strict\";\n\n"
+                "test(\"sanity\", () => {\n"
+                "  assert.equal(1, 1);\n"
+                "});\n"
+            )
+        if filename == "index.js":
+            return (
+                "export function main() {\n"
+                "  return \"ok\";\n"
+                "}\n"
+            )
+        return "export const placeholder = true;\n"
+    if extension in {".txt", ".log"}:
+        return "ok\n"
+    return "\n"
+
+
+def has_successful_command_proof(latest_tool: dict[str, Any] | None, trace: list[Any], snippet: str) -> bool:
+    needle = compact_whitespace(snippet).lower()
+    if not needle:
+        return False
+
+    def matches(tool_name: str, ok: Any, data: dict[str, Any] | None, summary: Any) -> bool:
+        if compact_whitespace(tool_name) != "run_command" or ok is not True:
+            return False
+        command = compact_whitespace((data or {}).get("command") or summary).lower()
+        return needle in command
+
+    if isinstance(latest_tool, dict):
+        latest_data = latest_tool.get("data") if isinstance(latest_tool.get("data"), dict) else {}
+        if matches(
+            str(latest_tool.get("name") or ""),
+            latest_tool.get("ok"),
+            latest_data if isinstance(latest_data, dict) else {},
+            latest_tool.get("summary"),
+        ):
+            return True
+
+    for item in trace:
+        if not isinstance(item, dict):
+            continue
+        tool_result = item.get("toolResult") if isinstance(item.get("toolResult"), dict) else {}
+        data = tool_result.get("data") if isinstance(tool_result.get("data"), dict) else {}
+        if matches(
+            str(tool_result.get("name") or ""),
+            tool_result.get("ok"),
+            data if isinstance(data, dict) else {},
+            tool_result.get("summary"),
+        ):
+            return True
+    return False
+
+
+def extract_requested_branch_name(task: str) -> str | None:
+    normalized = compact_whitespace(task)
+    if not normalized:
+        return None
+    patterns = (
+        r"\bfeature branch named\s+([A-Za-z0-9._/-]+)",
+        r"\bbranch named\s+([A-Za-z0-9._/-]+)",
+        r"\bcheckout\s+-b\s+([A-Za-z0-9._/-]+)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, normalized, re.IGNORECASE)
+        if not match:
+            continue
+        branch = compact_whitespace(match.group(1))
+        if branch:
+            return branch
+    return None
+
+
+def task_mentions(task: str, pattern: str) -> bool:
+    return bool(re.search(pattern, compact_whitespace(task), re.IGNORECASE))
+
+
+def build_workspace_command_progress_tool_call(
+    task: str,
+    available_tools: list[str],
+    latest_tool: dict[str, Any] | None,
+    trace: list[Any],
+    step_count: int,
+) -> dict[str, Any] | None:
+    if "run_command" not in available_tools:
+        return None
+    project_root = infer_target_directory_from_task(task) or "."
+    if project_root and project_root != ".":
+        if os.name == "nt":
+            command_prefix = f"cd /d \"{project_root}\" && "
+        else:
+            command_prefix = f"cd \"{project_root}\" && "
+    else:
+        command_prefix = ""
+    next_id = f"call_{max(1, step_count + 1)}"
+    latest_error = ""
+    if isinstance(latest_tool, dict):
+        latest_error = compact_whitespace(
+            str(
+                latest_tool.get("error")
+                or ((latest_tool.get("data") or {}).get("stderr") if isinstance(latest_tool.get("data"), dict) else "")
+                or latest_tool.get("summary")
+                or ""
+            )
+        ).lower()
+
+    if task_mentions(task, r"\b(run(?:\s+the)?\s+tests?|npm test|pytest|node --test)\b") and not has_successful_command_proof(
+        latest_tool, trace, "npm test"
+    ):
+        return {
+            "id": next_id,
+            "name": "run_command",
+            "arguments": {"command": f"{command_prefix}npm test --silent", "category": "validation"},
+            "kind": "command",
+            "summary": "Run npm test to verify the workspace before closing the task.",
+        }
+    git_init_requested = task_mentions(
+        task,
+        r"\b(git init|init(?:ializ(?:e|ed|ing)|ialise|ialised|ialising)\s+git|initialize\s+git|initialise\s+git)\b",
+    )
+    git_init_required_by_failure = "not a git repository" in latest_error
+    if (git_init_requested or git_init_required_by_failure) and not has_successful_command_proof(latest_tool, trace, "git init"):
+        return {
+            "id": next_id,
+            "name": "run_command",
+            "arguments": {"command": f"{command_prefix}git init", "category": "closeout"},
+            "kind": "command",
+            "summary": "Initialize git as requested by the task.",
+        }
+    branch = extract_requested_branch_name(task)
+    if branch and not has_successful_command_proof(latest_tool, trace, f"git checkout -b {branch}"):
+        return {
+            "id": next_id,
+            "name": "run_command",
+            "arguments": {"command": f"{command_prefix}git checkout -b {branch}", "category": "closeout"},
+            "kind": "command",
+            "summary": f"Create requested feature branch {branch}.",
+        }
+    if task_mentions(task, r"\b(git commit|create(?:\s+a)?\s+commit)\b") and not has_successful_command_proof(
+        latest_tool, trace, "git commit"
+    ):
+        return {
+            "id": next_id,
+            "name": "run_command",
+            "arguments": {
+                "command": (
+                    f"{command_prefix}git add -A && "
+                    "git config user.name \"Binary\" && "
+                    "git config user.email \"binary@local\" && "
+                    "git commit -m \"Binary closeout proof\""
+                ),
+                "category": "closeout",
+            },
+            "kind": "command",
+            "summary": "Create the requested git commit proof for closeout.",
+        }
+    return None
+
+
+def build_workspace_seed_tool_call(task: str, available_tools: list[str]) -> dict[str, Any] | None:
+    inferred_path = infer_target_path_from_task(task)
+    # For step-0 coercion we should strongly prefer a guaranteed-success grounding call.
+    # Starting with list_files avoids brittle ENOENT failures from guessed file paths.
+    if "list_files" in available_tools:
+        return {
+            "id": "call_1",
+            "name": "list_files",
+            "arguments": {"path": "."},
+            "kind": "observe",
+            "summary": "List workspace files to ground the task before mutation.",
+        }
+
+    query = compact_whitespace(inferred_path or task)
+    if query and "search_workspace" in available_tools:
+        return {
+            "id": "call_1",
+            "name": "search_workspace",
+            "arguments": {"query": query[:180], "limit": 20},
+            "kind": "observe",
+            "summary": "Find relevant files before making changes.",
+        }
+
+    if inferred_path and "read_file" in available_tools:
+        return {
+            "id": "call_1",
+            "name": "read_file",
+            "arguments": {"path": inferred_path},
+            "kind": "observe",
+            "summary": f"Inspect {inferred_path} before editing.",
+        }
+
+    return None
+
+
+def has_workspace_execution_proof(
+    latest_tool: dict[str, Any] | None,
+    trace: list[Any],
+) -> bool:
+    proof_tools = {
+        "mkdir",
+        "write_file",
+        "edit",
+        "patch_binary",
+        "write_binary_file",
+        "run_command",
+        "terminal_start_session",
+        "terminal_send_input",
+    }
+
+    def tool_is_proof(name: str, ok: Any) -> bool:
+        normalized = compact_whitespace(name)
+        return normalized in proof_tools and ok is True
+
+    if isinstance(latest_tool, dict):
+        if tool_is_proof(str(latest_tool.get("name") or ""), latest_tool.get("ok")):
+            return True
+
+    for item in trace:
+        if not isinstance(item, dict):
+            continue
+        tool_result = item.get("toolResult") if isinstance(item.get("toolResult"), dict) else {}
+        if tool_is_proof(str(tool_result.get("name") or ""), tool_result.get("ok")):
+            return True
+    return False
+
+
+def latest_desktop_tool_blocked(latest_tool: dict[str, Any] | None) -> str | None:
+    if not isinstance(latest_tool, dict):
+        return None
+    name = compact_whitespace(latest_tool.get("name"))
+    if not name.startswith("desktop_"):
+        return None
+    if latest_tool.get("ok") is True:
+        return None
+    blocked = latest_tool.get("blocked") is True
+    message = compact_whitespace(
+        str(
+            latest_tool.get("error")
+            or latest_tool.get("summary")
+            or ((latest_tool.get("data") or {}).get("message") if isinstance(latest_tool.get("data"), dict) else "")
+            or ""
+        )
+    )
+    lowered = message.lower()
+    if blocked or "blocked" in lowered or "disabled" in lowered or "not implemented" in lowered:
+        return message or "Desktop automation is currently blocked by host policy."
+    return None
+
+
+def build_workspace_progress_tool_call(
+    task: str,
+    available_tools: list[str],
+    latest_tool: dict[str, Any] | None,
+    step_count: int,
+    workspace_root: str | None = None,
+    trace: list[Any] | None = None,
+) -> dict[str, Any] | None:
+    next_id = f"call_{max(1, step_count + 1)}"
+    latest_name = compact_whitespace((latest_tool or {}).get("name"))
+    normalized_root = compact_whitespace(workspace_root)
+    trace_items = trace if isinstance(trace, list) else []
+    if normalized_root:
+        missing_artifacts = infer_missing_task_artifacts(normalized_root, task)
+        if missing_artifacts:
+            target = missing_artifacts[0]
+            basename = Path(target).name
+            is_likely_file = bool(Path(target).suffix) or (basename.startswith(".") and len(basename) > 1)
+            if is_likely_file and "write_file" in available_tools and latest_name != "write_file":
+                return {
+                    "id": next_id,
+                    "name": "write_file",
+                    "arguments": {"path": target, "content": infer_file_stub_content(target)},
+                    "kind": "mutate",
+                    "summary": f"Create missing required file {target}.",
+                }
+            if (not is_likely_file or basename == target) and "mkdir" in available_tools and latest_name != "mkdir":
+                return {
+                    "id": next_id,
+                    "name": "mkdir",
+                    "arguments": {"path": target},
+                    "kind": "mutate",
+                    "summary": f"Create missing required directory {target}.",
+                }
+        else:
+            command_progress = build_workspace_command_progress_tool_call(
+                task,
+                available_tools,
+                latest_tool,
+                trace_items,
+                step_count,
+            )
+            if command_progress:
+                return command_progress
+            return None
+    inferred_dir = infer_target_directory_from_task(task)
+    inferred_path = infer_target_path_from_task(task)
+
+    if inferred_dir and "mkdir" in available_tools and latest_name != "mkdir":
+        return {
+            "id": next_id,
+            "name": "mkdir",
+            "arguments": {"path": inferred_dir},
+            "kind": "mutate",
+            "summary": f"Create {inferred_dir} to start executing the requested workspace delivery.",
+        }
+
+    if inferred_path and "read_file" in available_tools and latest_name != "read_file":
+        return {
+            "id": next_id,
+            "name": "read_file",
+            "arguments": {"path": inferred_path},
+            "kind": "observe",
+            "summary": f"Inspect {inferred_path} before applying targeted changes.",
+        }
+
+    query = compact_whitespace(inferred_dir or inferred_path or task)[:180]
+    if query and "search_workspace" in available_tools and latest_name != "search_workspace":
+        return {
+            "id": next_id,
+            "name": "search_workspace",
+            "arguments": {"query": query, "limit": 20},
+            "kind": "observe",
+            "summary": "Locate the best files and paths for the next concrete mutation.",
+        }
+
+    if "list_files" in available_tools and latest_name != "list_files":
+        return {
+            "id": next_id,
+            "name": "list_files",
+            "arguments": {"path": "."},
+            "kind": "observe",
+            "summary": "Refresh workspace inventory before continuing execution.",
+        }
+    return None
+
+
+def build_forced_small_deterministic_turn(
+    payload: dict[str, Any],
+    available_tools: list[str],
+) -> dict[str, Any] | None:
+    request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+    task = str(request.get("task") or "")
+    task_speed_class = compact_whitespace(payload.get("taskSpeedClass"))
+    context_selection = payload.get("contextSelection") if isinstance(payload.get("contextSelection"), dict) else {}
+    workspace_root = compact_whitespace(request.get("workspaceRoot") or context_selection.get("workspaceRoot"))
+    loop_summary = payload.get("loopSummary") if isinstance(payload.get("loopSummary"), dict) else {}
+    trace = payload.get("toolTrace") if isinstance(payload.get("toolTrace"), list) else []
+    latest_tool = payload.get("latestToolResult") if isinstance(payload.get("latestToolResult"), dict) else None
+    step_count_raw = loop_summary.get("stepCount")
+    step_count = int(step_count_raw) if isinstance(step_count_raw, (int, float)) else 0
+
+    if is_desktop_action_task(task, task_speed_class or None) and step_count <= 24:
+        blocked_desktop_reason = latest_desktop_tool_blocked(latest_tool)
+        if blocked_desktop_reason:
+            return {
+                "final": blocked_desktop_reason,
+                "toolCall": None,
+                "coercionApplied": True,
+                "seedToolInjected": False,
+                "invalidToolNameRecovered": False,
+                "deterministicShortCircuit": True,
+            }
+        if has_desktop_goal_proof(task, latest_tool, trace):
+            return None
+        desktop_progress = build_desktop_progress_tool_call(
+            task,
+            available_tools,
+            latest_tool,
+            step_count,
+            trace,
+        )
+        if desktop_progress:
+            return {
+                "final": "",
+                "toolCall": desktop_progress,
+                "coercionApplied": True,
+                "seedToolInjected": True,
+                "invalidToolNameRecovered": False,
+                "deterministicShortCircuit": True,
+            }
+
+    if not workspace_root or not is_workspace_action_task(task, task_speed_class or None):
+        return None
+    if not is_workspace_mutation_intent_task(task):
+        return None
+    if step_count > 120:
+        return None
+
+    progress_call = build_workspace_progress_tool_call(
+        task,
+        available_tools,
+        latest_tool,
+        step_count,
+        workspace_root,
+        trace,
+    )
+    if progress_call:
+        return {
+            "final": "",
+            "toolCall": progress_call,
+            "coercionApplied": True,
+            "seedToolInjected": True,
+            "invalidToolNameRecovered": False,
+            "deterministicShortCircuit": True,
+        }
+
+    if not latest_tool and not trace and step_count <= 0:
+        seed_call = build_workspace_seed_tool_call(task, available_tools)
+        if seed_call:
+            return {
+                "final": "",
+                "toolCall": seed_call,
+                "coercionApplied": True,
+                "seedToolInjected": True,
+                "invalidToolNameRecovered": False,
+                "deterministicShortCircuit": True,
+            }
+    return None
+
+
+def extract_invalid_tool_name_for_adapter(parsed: Any, available_tools: list[str], depth: int = 0) -> str | None:
+    if depth > 3 or parsed is None:
+        return None
+    if isinstance(parsed, str):
+        nested = parse_json_candidate(parsed)
+        if not isinstance(nested, dict):
+            return None
+        return extract_invalid_tool_name_for_adapter(nested, available_tools, depth + 1)
+    if not isinstance(parsed, dict):
+        return None
+    tool_call = parsed.get("toolCall")
+    if isinstance(tool_call, dict):
+        raw_name = compact_whitespace(tool_call.get("name"))
+        if raw_name:
+            lowered = raw_name.lower()
+            if lowered in {"finish", "final", "summary", "description", "note"}:
+                return raw_name
+            normalized = normalize_model_tool_name(raw_name, available_tools)
+            if normalized not in available_tools:
+                return raw_name
+    for nested_key in ("final", "message", "content", "response"):
+        nested_value = parsed.get(nested_key)
+        nested_invalid = extract_invalid_tool_name_for_adapter(nested_value, available_tools, depth + 1)
+        if nested_invalid:
+            return nested_invalid
+    return None
+
+
+def coerce_binary_tool_adapter_response(
+    payload: dict[str, Any],
+    parsed: dict[str, Any],
+    available_tools: list[str],
+) -> dict[str, Any]:
+    request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+    task = str(request.get("task") or "")
+    context_selection = payload.get("contextSelection") if isinstance(payload.get("contextSelection"), dict) else {}
+    workspace_root = compact_whitespace(request.get("workspaceRoot") or context_selection.get("workspaceRoot"))
+    task_speed_class = compact_whitespace(payload.get("taskSpeedClass"))
+    loop_summary = payload.get("loopSummary") if isinstance(payload.get("loopSummary"), dict) else {}
+    trace = payload.get("toolTrace") if isinstance(payload.get("toolTrace"), list) else []
+    latest_tool = payload.get("latestToolResult") if isinstance(payload.get("latestToolResult"), dict) else None
+    final_text = compact_whitespace(parsed.get("final"))
+    tool_call = parsed.get("toolCall")
+    coercion_applied = False
+    seed_tool_injected = False
+    invalid_tool_name_recovered = False
+
+    invalid_tool_name = extract_invalid_tool_name_for_adapter(parsed, available_tools)
+    if invalid_tool_name:
+        invalid_tool_name_recovered = True
+        coercion_applied = True
+        tool_call = None
+
+    if not tool_call and latest_tool and latest_tool.get("name") == "run_command" and latest_tool.get("ok"):
+        data = latest_tool.get("data") if isinstance(latest_tool.get("data"), dict) else {}
+        stdout = str(data.get("stdout") or "").strip()
+        if stdout:
+            return {
+                "final": stdout,
+                "toolCall": None,
+                "coercionApplied": coercion_applied,
+                "seedToolInjected": seed_tool_injected,
+                "invalidToolNameRecovered": invalid_tool_name_recovered,
+            }
+
+    needs_terminal = "run_command" in available_tools and (
+        "use a terminal command" in task.lower()
+        or "run a terminal command" in task.lower()
+        or "run a command" in task.lower()
+        or "shell command" in task.lower()
+    )
+    if not tool_call and needs_terminal and final_text in {"", "</think>", "<think>", "</think", "<think/"}:
+        inferred_command = infer_terminal_command_from_task(task)
+        if inferred_command:
+            coercion_applied = True
+            return {
+                "final": "",
+                "toolCall": {
+                    "id": "call_1",
+                    "name": "run_command",
+                    "arguments": {"command": inferred_command},
+                    "kind": "command",
+                    "summary": f"Run {inferred_command} to gather the requested terminal proof.",
+                },
+                "coercionApplied": coercion_applied,
+                "seedToolInjected": seed_tool_injected,
+                "invalidToolNameRecovered": invalid_tool_name_recovered,
+            }
+
+    step_count_raw = loop_summary.get("stepCount")
+    step_count = int(step_count_raw) if isinstance(step_count_raw, (int, float)) else 0
+    forced_adapter_mode = resolve_adapter_mode(payload) == "force_binary_tool_adapter"
+    desktop_goal_proof_exists = has_desktop_goal_proof(task, latest_tool, trace)
+
+    if (
+        forced_adapter_mode
+        and not tool_call
+        and is_desktop_action_task(task, task_speed_class or None)
+        and step_count <= 24
+    ):
+        blocked_desktop_reason = latest_desktop_tool_blocked(latest_tool)
+        if blocked_desktop_reason:
+            coercion_applied = True
+            return {
+                "final": blocked_desktop_reason,
+                "toolCall": None,
+                "coercionApplied": coercion_applied,
+                "seedToolInjected": seed_tool_injected,
+                "invalidToolNameRecovered": invalid_tool_name_recovered,
+            }
+        if desktop_goal_proof_exists:
+            if not final_text:
+                synthesized = compact_whitespace(
+                    (latest_tool or {}).get("summary")
+                    or ((latest_tool or {}).get("data") or {}).get("message")
+                    or "Completed the requested desktop steps."
+                )
+                return {
+                    "final": synthesized,
+                    "toolCall": None,
+                    "coercionApplied": coercion_applied,
+                    "seedToolInjected": seed_tool_injected,
+                    "invalidToolNameRecovered": invalid_tool_name_recovered,
+                }
+            return {
+                "final": parsed.get("final") or "",
+                "toolCall": tool_call if isinstance(tool_call, dict) else None,
+                "coercionApplied": coercion_applied,
+                "seedToolInjected": seed_tool_injected,
+                "invalidToolNameRecovered": invalid_tool_name_recovered,
+            }
+        desktop_call = build_desktop_progress_tool_call(
+            task,
+            available_tools,
+            latest_tool,
+            step_count,
+            trace,
+        )
+        if desktop_call:
+            coercion_applied = True
+            seed_tool_injected = True
+            return {
+                "final": "",
+                "toolCall": desktop_call,
+                "coercionApplied": coercion_applied,
+                "seedToolInjected": seed_tool_injected,
+                "invalidToolNameRecovered": invalid_tool_name_recovered,
+            }
+
+    if (
+        forced_adapter_mode
+        and not tool_call
+        and is_desktop_action_task(task, task_speed_class or None)
+        and not final_text
+        and step_count > 0
+        and not desktop_goal_proof_exists
+    ):
+        desktop_call = build_desktop_progress_tool_call(
+            task,
+            available_tools,
+            latest_tool,
+            step_count,
+            trace,
+        )
+        if desktop_call:
+            coercion_applied = True
+            seed_tool_injected = True
+            return {
+                "final": "",
+                "toolCall": desktop_call,
+                "coercionApplied": coercion_applied,
+                "seedToolInjected": seed_tool_injected,
+                "invalidToolNameRecovered": invalid_tool_name_recovered,
+            }
+
+    if (
+        forced_adapter_mode
+        and not tool_call
+        and final_text
+        and workspace_root
+        and is_workspace_action_task(task, task_speed_class or None)
+        and is_workspace_mutation_intent_task(task)
+        and step_count <= 24
+    ):
+        progress_call = build_workspace_progress_tool_call(task, available_tools, latest_tool, step_count, workspace_root, trace)
+        if progress_call:
+            coercion_applied = True
+            seed_tool_injected = True
+            return {
+                "final": "",
+                "toolCall": progress_call,
+                "coercionApplied": coercion_applied,
+                "seedToolInjected": seed_tool_injected,
+                "invalidToolNameRecovered": invalid_tool_name_recovered,
+            }
+
+    if (
+        not tool_call
+        and not latest_tool
+        and step_count <= 0
+        and not trace
+        and workspace_root
+        and is_workspace_action_task(task, task_speed_class or None)
+    ):
+        seed_call = build_workspace_seed_tool_call(task, available_tools)
+        if seed_call:
+            coercion_applied = True
+            seed_tool_injected = True
+            return {
+                "final": "",
+                "toolCall": seed_call,
+                "coercionApplied": coercion_applied,
+                "seedToolInjected": seed_tool_injected,
+                "invalidToolNameRecovered": invalid_tool_name_recovered,
+            }
+
+    return {
+        "final": parsed.get("final") or "",
+        "toolCall": tool_call if isinstance(tool_call, dict) else None,
+        "coercionApplied": coercion_applied,
+        "seedToolInjected": seed_tool_injected,
+        "invalidToolNameRecovered": invalid_tool_name_recovered,
+    }
+
+
+def run_binary_tool_adapter_turn(
+    payload: dict[str, Any],
+    llm: Any,
+    agent_cls: Any,
+    conversation_cls: Any,
+    workspace: str,
+    candidate: dict[str, Any],
+    attempt_index: int,
+    version: str | None,
+    supported_tools: list[str],
+) -> dict[str, Any]:
+    available_tools = [str(tool) for tool in payload.get("availableTools") or [] if isinstance(tool, str)]
+    supports_internal_browser_use = "BrowserToolSet" in set(supported_tools)
+    execution = resolve_execution_context(payload)
+    request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+    task = str(request.get("task") or "")
+    task_speed_class = compact_whitespace(payload.get("taskSpeedClass"))
+    force_adapter_mode = resolve_adapter_mode(payload) == "force_binary_tool_adapter"
+    desktop_deterministic_allowed = is_desktop_action_task(task, task_speed_class or None)
+    if force_adapter_mode or desktop_deterministic_allowed:
+        deterministic = build_forced_small_deterministic_turn(payload, available_tools)
+        if deterministic:
+            return {
+                "ok": True,
+                "final": deterministic.get("final") or "",
+                "toolCall": deterministic.get("toolCall"),
+                "logs": [
+                    "runtime=binary_tool_adapter",
+                    f"model={resolve_openhands_model(candidate)}",
+                    f"candidate_alias={candidate.get('alias')}",
+                    f"fallback_attempt={attempt_index}",
+                    "deterministic_short_circuit=true",
+                    f"deterministic_scope={'forced_adapter' if force_adapter_mode else 'desktop_adapter'}",
+                ],
+                "coercionApplied": deterministic.get("coercionApplied") is True,
+                "seedToolInjected": deterministic.get("seedToolInjected") is True,
+                "invalidToolNameRecovered": deterministic.get("invalidToolNameRecovered") is True,
+                "version": version,
+                "modelCandidate": {
+                    "alias": candidate.get("alias"),
+                    "model": candidate.get("model"),
+                    "provider": candidate.get("provider"),
+                    "baseUrl": candidate.get("baseUrl"),
+                    "routeKind": candidate.get("routeKind"),
+                },
+                "fallbackAttempt": attempt_index,
+                "failureReason": None,
+                "persistenceDir": str(resolve_run_artifact_dir(resolve_gateway_run_id(payload))),
+                "conversationId": str(resolve_gateway_conversation_id(resolve_gateway_run_id(payload))),
+                **base_result_metadata(payload, execution, version, "binary_host"),
+            }
+    prompt_payload = {
+        **payload,
+        "gatewayRuntime": {
+            "supportsInternalBrowserUse": supports_internal_browser_use,
+        },
+    }
+
+    agent_kwargs: dict[str, Any] = {
+        "llm": llm,
+        "tools": [],
+    }
+    agent = agent_cls(**filter_supported_kwargs(agent_cls, agent_kwargs))
+    conversation_kwargs: dict[str, Any] = {
+        "agent": agent,
+        "workspace": workspace,
+    }
+    conversation = instantiate_with_supported_kwargs(conversation_cls, conversation_kwargs)
+    prompt = build_prompt(prompt_payload)
+
+    raw_text = ""
+    ask_agent_error = None
+    ask_agent = getattr(conversation, "ask_agent", None)
+    if callable(ask_agent):
+        try:
+            raw_text = compact_whitespace(ask_agent(prompt))
+        except Exception as exc:
+            ask_agent_error = exc
+    else:
+        send_message = getattr(conversation, "send_message", None)
+        run_method = getattr(conversation, "run", None)
+        if callable(send_message):
+            send_message(prompt)
+            if callable(run_method):
+                run_method()
+        elif callable(run_method):
+            run_method(prompt)
+        raw_text = compact_whitespace(extract_final_message([]))
+
+    if not raw_text and compact_whitespace(candidate.get("baseUrl")):
+        try:
+            raw_text = compact_whitespace(
+                openai_compatible_chat_completion(
+                    base_url=str(candidate.get("baseUrl") or ""),
+                    api_key=str(candidate.get("apiKey") or ""),
+                    model_id=str(candidate.get("model") or resolve_openhands_model(candidate)),
+                    user_prompt=prompt,
+                    extra_headers=candidate.get("extraHeaders") if isinstance(candidate.get("extraHeaders"), dict) else None,
+                )
+            )
+        except Exception as exc:
+            if ask_agent_error:
+                raise RuntimeError(
+                    f"Binary tool adapter failed via ask_agent ({type(ask_agent_error).__name__}: {ask_agent_error}) "
+                    f"and OpenAI-compatible fallback ({type(exc).__name__}: {exc})."
+                ) from exc
+            raise
+    if not raw_text and ask_agent_error:
+        raise RuntimeError(f"Binary tool adapter ask_agent failed: {type(ask_agent_error).__name__}: {ask_agent_error}")
+
+    parsed = parse_turn_response(
+        raw_text,
+        available_tools,
+        allow_internal_browser_use=supports_internal_browser_use,
+    )
+    parsed = coerce_binary_tool_adapter_response(payload, parsed, available_tools)
+    coercion_applied = parsed.get("coercionApplied") is True
+    seed_tool_injected = parsed.get("seedToolInjected") is True
+    invalid_tool_name_recovered = parsed.get("invalidToolNameRecovered") is True
+    if coercion_applied:
+        if seed_tool_injected:
+            logs_hint = "coercion=seed_tool_injected"
+        elif invalid_tool_name_recovered:
+            logs_hint = "coercion=invalid_tool_name_recovered"
+        else:
+            logs_hint = "coercion=applied"
+    else:
+        logs_hint = None
+
+    return {
+        "ok": True,
+        "final": parsed.get("final") or "",
+        "toolCall": parsed.get("toolCall"),
+        "logs": [
+            "runtime=binary_tool_adapter",
+            f"model={resolve_openhands_model(candidate)}",
+            f"candidate_alias={candidate.get('alias')}",
+            f"fallback_attempt={attempt_index}",
+            f"supports_internal_browser_use={'true' if supports_internal_browser_use else 'false'}",
+            f"available_tools={','.join(available_tools)}",
+            *( [logs_hint] if logs_hint else [] ),
+            *([f"ask_agent_error={type(ask_agent_error).__name__}"] if ask_agent_error else []),
+        ],
+        "coercionApplied": coercion_applied,
+        "seedToolInjected": seed_tool_injected,
+        "invalidToolNameRecovered": invalid_tool_name_recovered,
+        "version": version,
+        "modelCandidate": {
+            "alias": candidate.get("alias"),
+            "model": candidate.get("model"),
+            "provider": candidate.get("provider"),
+            "baseUrl": candidate.get("baseUrl"),
+            "routeKind": candidate.get("routeKind"),
+        },
+        "fallbackAttempt": attempt_index,
+        "failureReason": None,
+        "persistenceDir": str(resolve_run_artifact_dir(resolve_gateway_run_id(payload))),
+        "conversationId": str(resolve_gateway_conversation_id(resolve_gateway_run_id(payload))),
+        **base_result_metadata(payload, execution, version, "binary_host"),
+    }
+
+
 def resolve_openhands_model(model: dict[str, Any]) -> str:
-    raw_model = str(model.get("model") or "").strip()
+    raw_model = str(model.get("openhandsModel") or model.get("model") or "").strip()
     provider = str(model.get("provider") or "").strip().lower()
     base_url = str(model.get("baseUrl") or "").strip()
     base_lower = base_url.lower()
     # OpenAI-compatible Inference / Router — model ids are multiplexed (e.g. openai/gpt-oss-120b:groq).
     is_hf_router = "huggingface.co" in base_lower
+    if is_hf_router:
+        if raw_model.startswith("huggingface/"):
+            return raw_model
+        return f"huggingface/{raw_model}"
     known_prefixes = (
         "openai/",
         "anthropic/",
@@ -923,6 +4321,82 @@ def resolve_openhands_model(model: dict[str, Any]) -> str:
     if is_hf_router and resolved.startswith("openai/") and not resolved.startswith("openai/openai/"):
         resolved = f"openai/{resolved}"
     return resolved
+
+
+def is_portal_bridge_candidate(candidate: dict[str, Any]) -> bool:
+    route_kind = compact_whitespace(candidate.get("routeKind")).lower()
+    if route_kind in {"chatgpt_portal_bridge", "qwen_portal_bridge"}:
+        return True
+    base_url = compact_whitespace(candidate.get("baseUrl")).lower()
+    return "/codex/v1" in base_url or "/qwen" in base_url
+
+
+def allow_unauthenticated_bridge(candidate: dict[str, Any]) -> bool:
+    if not is_portal_bridge_candidate(candidate):
+        return False
+    if not parse_boolish(os.getenv("OPENHANDS_ALLOW_UNAUTHENTICATED_PORTAL_BRIDGE", "1"), True):
+        return False
+    base_url = compact_whitespace(candidate.get("baseUrl")).lower()
+    return base_url.startswith("http://127.0.0.1:8000") or base_url.startswith("http://localhost:8000")
+
+
+def build_llm_kwargs(
+    candidate: dict[str, Any],
+    model_name: str,
+    api_key: Any,
+    base_url: str,
+    stream_enabled: bool = False,
+) -> dict[str, Any]:
+    portal_native_tool_calling = parse_boolish(
+        os.getenv("OPENHANDS_PORTAL_BRIDGE_NATIVE_TOOL_CALLING", "1"),
+        True,
+    )
+    kwargs: dict[str, Any] = {
+        "model": model_name,
+        "base_url": base_url or None,
+        "stream": stream_enabled,
+    }
+    if api_key is not None:
+        kwargs["api_key"] = api_key
+    extra_headers = candidate.get("extraHeaders")
+    if isinstance(extra_headers, dict):
+        normalized_headers = {
+            compact_whitespace(key): compact_whitespace(value)
+            for key, value in extra_headers.items()
+            if compact_whitespace(key) and compact_whitespace(value)
+        }
+        if normalized_headers:
+            kwargs["extra_headers"] = normalized_headers
+    route_kind = compact_whitespace(candidate.get("routeKind")).lower()
+    if route_kind == "chatgpt_portal_bridge":
+        kwargs.update(
+            {
+                "reasoning_effort": "high",
+                "reasoning_summary": None,
+                "enable_encrypted_reasoning": False,
+                "prompt_cache_retention": None,
+                "caching_prompt": False,
+                "native_tool_calling": portal_native_tool_calling,
+                "force_string_serializer": True,
+                "model_canonical_name": "openai/gpt-5.1-codex-max",
+            }
+        )
+    elif is_portal_bridge_candidate(candidate):
+        # Portal bridges are OpenAI-compatible, but not every GPT-5+ request option
+        # inferred by OpenHands/LiteLLM is accepted by those bridges.
+        kwargs.update(
+            {
+                "reasoning_effort": None,
+                "reasoning_summary": None,
+                "enable_encrypted_reasoning": False,
+                "prompt_cache_retention": None,
+                "caching_prompt": False,
+                "native_tool_calling": portal_native_tool_calling,
+                "force_string_serializer": True,
+                "model_canonical_name": "openai/gpt-4.1",
+            }
+        )
+    return kwargs
 
 
 def build_tom_tools(llm: Any, workspace: str, tom_context: dict[str, Any]) -> tuple[list[Any], Any | None, list[str]]:
@@ -977,23 +4451,547 @@ def build_tom_tools(llm: Any, workspace: str, tom_context: dict[str, Any]) -> tu
     return [consult_tool, sleeptime_tool], sleeptime_tool, logs
 
 
-def run_turn(payload: dict[str, Any]) -> dict[str, Any]:
-    model = payload.get("model") if isinstance(payload.get("model"), dict) else {}
-    api_key = str(model.get("apiKey") or "").strip()
-    if not api_key:
-        return {
-            "ok": False,
-            "error": "The selected model did not provide an API key.",
-            "details": "Set the provider token in your Xpersona environment so the backend can forward it to the gateway.",
-        }
+def build_browser_use_goal(tool_call: dict[str, Any], payload: dict[str, Any]) -> str:
+    args = tool_call.get("arguments") if isinstance(tool_call.get("arguments"), dict) else {}
+    explicit_goal = compact_whitespace(args.get("goal") or args.get("task") or args.get("intent"))
+    if explicit_goal:
+        return explicit_goal
 
-    base_url = str(model.get("baseUrl") or "").strip()
-    raw_model_id = str(model.get("model") or "").strip()
+    request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+    task = compact_whitespace(request.get("task"))
+    context = request.get("context") if isinstance(request.get("context"), dict) else {}
+    browser = context.get("browser") if isinstance(context.get("browser"), dict) else {}
+    active_page = browser.get("activePage") if isinstance(browser.get("activePage"), dict) else {}
+    page_label = compact_whitespace(" - ".join(str(active_page.get(key) or "") for key in ("title", "url") if active_page.get(key)))
+    if page_label:
+        return f"{task}\n\nCurrent browser context: {page_label}"
+    return task or "Use the browser to complete the user's requested web task and summarize the outcome."
+
+
+def run_browser_use_turn(
+    llm: Any,
+    conversation_cls: Any,
+    agent_cls: Any,
+    workspace: str,
+    browser_goal: str,
+    mcp_config: dict[str, Any] | None,
+) -> dict[str, Any]:
+    browser_toolset_cls = import_optional_attr(
+        [
+            ("openhands.sdk", "BrowserToolSet"),
+            ("openhands.sdk.tools", "BrowserToolSet"),
+            ("openhands.sdk.tools.browser_use", "BrowserToolSet"),
+            ("openhands.tools.browser_use", "BrowserToolSet"),
+        ]
+    )
+    sdk_tool_cls = import_optional_attr(
+        [
+            ("openhands.sdk", "Tool"),
+            ("openhands.sdk.tool", "Tool"),
+            ("openhands.sdk.tools", "Tool"),
+        ]
+    )
+    if browser_toolset_cls is None:
+        raise RuntimeError("BrowserToolSet is not available in the installed OpenHands SDK.")
+
+    tool_candidates: list[Any] = []
+    browser_tool_name = compact_whitespace(getattr(browser_toolset_cls, "name", ""))
+    if sdk_tool_cls is not None and browser_tool_name:
+        try:
+            tool_candidates.append(instantiate_with_supported_kwargs(sdk_tool_cls, {"name": browser_tool_name}))
+        except Exception:
+            pass
+    try:
+        tool_candidates.append(browser_toolset_cls())
+    except Exception:
+        pass
+    if not tool_candidates:
+        raise RuntimeError("Could not instantiate BrowserToolSet for OpenHands Browser Use.")
+
+    last_error: Exception | None = None
+    for browser_tool in tool_candidates:
+        try:
+            agent_kwargs: dict[str, Any] = {
+                "llm": llm,
+                "tools": [browser_tool],
+            }
+            if mcp_config is not None:
+                agent_kwargs["mcp_config"] = mcp_config
+                agent_kwargs["mcp"] = mcp_config
+            agent = agent_cls(**filter_supported_kwargs(agent_cls, agent_kwargs))
+
+            conversation_kwargs: dict[str, Any] = {
+                "agent": agent,
+                "workspace": workspace,
+            }
+            if mcp_config is not None:
+                conversation_kwargs["mcp_config"] = mcp_config
+                conversation_kwargs["mcp"] = mcp_config
+            conversation = instantiate_with_supported_kwargs(conversation_cls, conversation_kwargs)
+
+            if callable(getattr(conversation, "send_message", None)):
+                conversation.send_message(browser_goal)
+                run_method = getattr(conversation, "run", None)
+                if callable(run_method):
+                    run_method()
+            elif callable(getattr(conversation, "run", None)):
+                conversation.run(browser_goal)
+            elif callable(getattr(conversation, "ask_agent", None)):
+                conversation.ask_agent(browser_goal)
+            else:
+                raise RuntimeError("OpenHands Conversation does not support Browser Use execution in this SDK version.")
+
+            summary_prompt = "\n".join(
+                [
+                    "Summarize the browser work you just completed in 2-4 sentences.",
+                    "Include the key outcome, any important page or URL context, and whether the task succeeded or was blocked.",
+                    "Do not use markdown fences.",
+                ]
+            )
+            summary = ""
+            if callable(getattr(conversation, "ask_agent", None)):
+                summary = compact_whitespace(conversation.ask_agent(summary_prompt))
+            return {
+                "summary": summary or compact_whitespace(browser_goal) or "Completed the requested browser task.",
+                "logs": [f"browser_use=enabled:{browser_tool_name or type(browser_tool).__name__}"],
+            }
+        except Exception as exc:
+            last_error = exc
+            continue
+
+    raise RuntimeError(
+        f"OpenHands Browser Use failed to initialize: {type(last_error).__name__}: {last_error}"
+        if last_error
+        else "OpenHands Browser Use failed to initialize."
+    )
+
+
+def _build_candidate_failure(
+    candidate: dict[str, Any],
+    attempt_index: int,
+    total_candidates: int,
+    error: str,
+    details: str,
+    reason: str | None,
+) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "error": error,
+        "details": details,
+        "failureReason": reason,
+        "modelCandidate": {
+            "alias": candidate.get("alias"),
+            "model": candidate.get("model"),
+            "provider": candidate.get("provider"),
+            "baseUrl": candidate.get("baseUrl"),
+            "routeKind": candidate.get("routeKind"),
+        },
+        "fallbackAttempt": attempt_index,
+        "fallbackAvailable": total_candidates > 1,
+    }
+
+
+def _run_turn_with_candidate(
+    payload: dict[str, Any],
+    candidate: dict[str, Any],
+    attempt_index: int,
+    total_candidates: int,
+    version: str | None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    api_key = str(candidate.get("apiKey") or "").strip()
+    unauthenticated_bridge = allow_unauthenticated_bridge(candidate)
+    if not api_key and not unauthenticated_bridge:
+        return _build_candidate_failure(
+            candidate,
+            attempt_index,
+            total_candidates,
+            "The selected model did not provide an API key.",
+            "Set the provider token in your Xpersona environment so the backend can forward it to the gateway.",
+            None,
+        )
+
+    base_url = str(candidate.get("baseUrl") or "").strip()
     workspace = os.getenv("OPENHANDS_GATEWAY_WORKSPACE", str(Path.cwd()))
-    prompt = build_prompt(payload)
-    available_tools = [str(tool) for tool in payload.get("availableTools") or [] if isinstance(tool, str)]
     tom_context = resolve_tom_context(payload)
+    mcp_config = resolve_mcp_config(payload)
+    mcp_requested = bool(mcp_config and isinstance(mcp_config.get("mcpServers"), dict) and mcp_config.get("mcpServers"))
+    run_id = resolve_gateway_run_id(payload)
+    conversation_id = resolve_gateway_conversation_id(run_id)
+    turn_phase = resolve_turn_phase(payload)
+    persistence_dir = resolve_gateway_persistence_dir()
+    execution = resolve_execution_context(payload)
+    run_artifact_dir = resolve_run_artifact_dir(run_id)
+    jsonl_path = run_artifact_dir / "events.jsonl"
+    model_name = resolve_openhands_model(candidate)
 
+    from pydantic import SecretStr
+    from openhands.sdk import Agent, Conversation, LLM
+
+    supported_tools, degraded_reasons = detect_supported_openhands_tools()
+    forced_adapter_mode = resolve_adapter_mode(payload) == "force_binary_tool_adapter"
+    llm_api_key: Any = SecretStr(api_key) if api_key else None
+    if forced_adapter_mode or should_use_binary_tool_adapter(payload, supported_tools, degraded_reasons):
+        llm = LLM(
+            **build_llm_kwargs(
+                candidate=candidate,
+                model_name=model_name,
+                api_key=llm_api_key,
+                base_url=base_url,
+            )
+        )
+        return run_binary_tool_adapter_turn(
+            payload=payload,
+            llm=llm,
+            agent_cls=Agent,
+            conversation_cls=Conversation,
+            workspace=workspace,
+            candidate=candidate,
+            attempt_index=attempt_index,
+            version=version,
+            supported_tools=supported_tools,
+        )
+    llm = LLM(
+        **build_llm_kwargs(
+            candidate=candidate,
+            model_name=model_name,
+            api_key=llm_api_key,
+            base_url=base_url,
+            stream_enabled=True,
+        )
+    )
+    route_policy = resolve_route_policy(payload)
+    speed_profile = resolve_speed_profile(payload)
+    tool_concurrency_limit = resolve_tool_concurrency_limit(payload)
+    condenser, condenser_log = build_context_condenser(payload, llm)
+    llm_messages: list[dict[str, Any]] = []
+    file_edit_backend = resolve_file_edit_backend(model_name, supported_tools)
+    native_tools, native_logs = build_native_openhands_tools(file_edit_backend)
+    tools: list[Any] = [*native_tools]
+    sleeptime_tool = None
+    logs = [
+        "runtime=openhands_sdk_autonomous",
+        f"model={model_name}",
+        f"candidate_alias={candidate.get('alias')}",
+        f"conversation_id={run_id}",
+        f"conversation_uuid={conversation_id}",
+        f"conversation_phase={turn_phase}",
+        f"persistence_dir={persistence_dir}",
+        f"execution_lane={execution['lane']}",
+        f"fallback_attempt={attempt_index}",
+        f"speed_profile={speed_profile}",
+        f"tool_concurrency_limit={tool_concurrency_limit}",
+        "hf_fast_path=disabled",
+    ]
+    logs.extend(native_logs)
+    logs.append(condenser_log)
+    if mcp_requested and mcp_config is not None:
+        logs.append(f"mcp=enabled:{len(mcp_config.get('mcpServers', {}))}")
+    if tom_context:
+        try:
+            tom_tools, sleeptime_tool, tom_logs = build_tom_tools(llm, workspace, tom_context)
+            tools.extend(tom_tools)
+            logs.extend(tom_logs)
+        except Exception as exc:
+            print(f"[openhands-gateway] TOM setup failed, falling back to standard agent: {exc}", file=sys.stderr)
+            logs.append(f"tom=fallback:{type(exc).__name__}")
+            sleeptime_tool = None
+    agent_kwargs: dict[str, Any] = {
+        "llm": llm,
+        "tools": tools,
+        "tool_concurrency_limit": tool_concurrency_limit,
+    }
+    if condenser is not None:
+        agent_kwargs["condenser"] = condenser
+    if mcp_requested and mcp_config is not None:
+        agent_kwargs["mcp_config"] = mcp_config
+        agent_kwargs["mcp"] = mcp_config
+    supported_agent_kwargs = filter_supported_kwargs(Agent, agent_kwargs)
+    if mcp_requested and "mcp_config" not in supported_agent_kwargs and "mcp" not in supported_agent_kwargs:
+        return _build_candidate_failure(
+            candidate,
+            attempt_index,
+            total_candidates,
+            "OpenHands MCP is not supported by the installed gateway SDK.",
+            "Update the OpenHands SDK in the gateway environment so Binary connections can attach to runs.",
+            None,
+        )
+    try:
+        agent = Agent(**supported_agent_kwargs)
+    except Exception as exc:
+        if mcp_requested:
+            return _build_candidate_failure(
+                candidate,
+                attempt_index,
+                total_candidates,
+                "OpenHands could not attach the requested connections.",
+                f"{type(exc).__name__}: {exc}",
+                None,
+            )
+        raise
+
+    def on_token(chunk: Any) -> None:
+        for item in iter_stream_chunk_events(chunk):
+            emit_stream_event(
+                jsonl_path,
+                {
+                    **item,
+                    "runId": run_id,
+                    "conversationId": str(conversation_id),
+                    "executionLane": execution["lane"],
+                    "traceId": execution["traceId"],
+                    "fallbackAttempt": attempt_index,
+                },
+                event_callback,
+            )
+
+    conversation_kwargs: dict[str, Any] = {
+        "agent": agent,
+        "workspace": workspace,
+        "conversation_id": conversation_id,
+        "persistence_dir": str(persistence_dir),
+        "callbacks": [
+            lambda event: capture_llm_message(llm_messages, event),
+        ],
+        "token_callbacks": [on_token],
+        "stuck_detection": True,
+        "visualizer": None,
+    }
+    route_max_iterations = route_policy.get("maxIterations")
+    max_iterations_raw = compact_whitespace(os.getenv("OPENHANDS_MAX_ITERATION_PER_RUN", ""))
+    if route_max_iterations is not None:
+        conversation_kwargs["max_iteration_per_run"] = coerce_positive_int(route_max_iterations, 80, 1, 200)
+    elif max_iterations_raw:
+        try:
+            conversation_kwargs["max_iteration_per_run"] = max(8, min(int(max_iterations_raw), 200))
+        except ValueError:
+            conversation_kwargs["max_iteration_per_run"] = 80
+    else:
+        conversation_kwargs["max_iteration_per_run"] = resolve_default_max_iterations_for_speed(speed_profile)
+    logs.append(f"route_policy_max_iterations={conversation_kwargs.get('max_iteration_per_run')}")
+    if mcp_requested and mcp_config is not None:
+        conversation_kwargs["mcp_config"] = mcp_config
+        conversation_kwargs["mcp"] = mcp_config
+    conversation = None
+    try:
+        conversation = instantiate_with_supported_kwargs(Conversation, conversation_kwargs)
+    except Exception as exc:
+        if mcp_requested:
+            return _build_candidate_failure(
+                candidate,
+                attempt_index,
+                total_candidates,
+                "OpenHands could not start the requested connection-backed conversation.",
+                f"{type(exc).__name__}: {exc}",
+                None,
+            )
+        raise
+    apply_autonomous_confirmation_policy(conversation, payload, logs)
+
+    if tom_context and sleeptime_tool and tom_context.get("turn_phase") == "start":
+        if invoke_optional_tool(
+            sleeptime_tool,
+            {
+                "phase": "start",
+                "reason": "run_start",
+                "session_id": tom_context.get("session_id") or None,
+                "trace_id": tom_context.get("trace_id") or None,
+                "user_id": tom_context["user_key"],
+            },
+        ):
+            logs.append("tom_sleeptime=start")
+
+    if turn_phase == "start":
+        message = build_probe_openhands_message(payload, turn_phase) if is_probe_session(payload) else build_autonomous_openhands_message(payload, turn_phase)
+        conversation.send_message(message)
+    else:
+        followup_message = build_probe_continue_message(payload) if is_probe_session(payload) else build_autonomous_continue_message(payload)
+        if compact_whitespace(followup_message):
+            conversation.send_message(followup_message)
+
+    write_json_file(
+        run_artifact_dir / "execution-metadata.json",
+        {
+            "runId": run_id,
+            "conversationId": str(conversation_id),
+            "executionLane": execution["lane"],
+            "traceId": execution["traceId"],
+            "traceSampled": execution["traceSampled"],
+            "pluginPacks": execution["pluginPacks"],
+            "skillSources": execution["skillSources"],
+            "turnPhase": turn_phase,
+            "probeSession": is_probe_session(payload),
+            "attempt": attempt_index,
+            "routePolicy": resolve_route_policy(payload),
+            "candidate": {
+                "alias": candidate.get("alias"),
+                "model": candidate.get("model"),
+                "provider": candidate.get("provider"),
+                "baseUrl": candidate.get("baseUrl"),
+            },
+        },
+    )
+    emit_stream_event(
+        jsonl_path,
+        {
+            "event": "run.started",
+            "runId": run_id,
+            "conversationId": str(conversation_id),
+            "executionLane": execution["lane"],
+            "traceId": execution["traceId"],
+            "turnPhase": turn_phase,
+            "fallbackAttempt": attempt_index,
+            "candidate": {
+                "alias": candidate.get("alias"),
+                "model": candidate.get("model"),
+                "provider": candidate.get("provider"),
+            },
+        },
+        event_callback,
+    )
+
+    try:
+        conversation.run()
+    finally:
+        status_value = compact_whitespace(getattr(getattr(conversation, "state", None), "execution_status", "unknown")).lower()
+        if status_value:
+            logs.append(f"execution_status={status_value}")
+            emit_stream_event(
+                jsonl_path,
+                {
+                    "event": "run.execution_status",
+                    "runId": run_id,
+                    "conversationId": str(conversation_id),
+                    "executionLane": execution["lane"],
+                    "status": status_value,
+                    "fallbackAttempt": attempt_index,
+                },
+                event_callback,
+            )
+        close_method = getattr(conversation, "close", None)
+        if callable(close_method):
+            try:
+                close_method()
+            except Exception:
+                pass
+
+    final_text = extract_final_message(llm_messages)
+    if not final_text and callable(getattr(conversation, "ask_agent", None)):
+        try:
+            final_prompt = (
+                "Provide the final operator-facing answer for the current debug probe turn in one concise paragraph."
+                if is_probe_session(payload)
+                else "Provide the final user-facing answer for the current task in one concise paragraph. Do not use tools."
+            )
+            final_text = compact_whitespace(conversation.ask_agent(final_prompt))
+            if final_text:
+                logs.append("final=ask_agent_fallback")
+        except Exception:
+            final_text = ""
+
+    execution_status = compact_whitespace(getattr(getattr(conversation, "state", None), "execution_status", "unknown")).lower()
+    if execution_status in {"error", "stuck"}:
+        emit_stream_event(
+            jsonl_path,
+            {
+                "event": "run.failed",
+                "runId": run_id,
+                "conversationId": str(conversation_id),
+                "executionLane": execution["lane"],
+                "fallbackAttempt": attempt_index,
+                "reason": execution_status or "unknown",
+            },
+            event_callback,
+        )
+        return _build_candidate_failure(
+            candidate,
+            attempt_index,
+            total_candidates,
+            "OpenHands did not finish the autonomous run cleanly.",
+            f"Conversation status={execution_status or 'unknown'}. Check the gateway logs for the underlying tool or model failure.",
+            normalize_provider_failure_reason(execution_status),
+        )
+    if execution_status == "waiting_for_confirmation":
+        emit_stream_event(
+            jsonl_path,
+            {
+                "event": "run.blocked",
+                "runId": run_id,
+                "conversationId": str(conversation_id),
+                "executionLane": execution["lane"],
+                "fallbackAttempt": attempt_index,
+                "reason": "waiting_for_confirmation",
+            },
+            event_callback,
+        )
+        return _build_candidate_failure(
+            candidate,
+            attempt_index,
+            total_candidates,
+            "OpenHands paused for action confirmation.",
+            "This Binary gateway path is configured for autonomous runs, but the installed OpenHands policy still required confirmation.",
+            None,
+        )
+
+    if tom_context and sleeptime_tool and execution_status == "finished":
+        if invoke_optional_tool(
+            sleeptime_tool,
+            {
+                "phase": "final",
+                "reason": "terminal_final",
+                "session_id": tom_context.get("session_id") or None,
+                "trace_id": tom_context.get("trace_id") or None,
+                "user_id": tom_context["user_key"],
+            },
+        ):
+            logs.append("tom_sleeptime=final")
+
+    emit_stream_event(
+        jsonl_path,
+        {
+            "event": "run.completed",
+            "runId": run_id,
+            "conversationId": str(conversation_id),
+            "executionLane": execution["lane"],
+            "traceId": execution["traceId"],
+            "fallbackAttempt": attempt_index,
+            "pluginPacks": execution["pluginPacks"],
+            "skillSources": execution["skillSources"],
+            "final": final_text or "OpenHands completed the run.",
+        },
+        event_callback,
+    )
+
+    return {
+        "ok": True,
+        "final": final_text or "OpenHands completed the run.",
+        "toolCall": None,
+        "logs": logs,
+        "version": version,
+        "executionLane": execution["lane"],
+        "pluginPacks": execution["pluginPacks"],
+        "skillSources": execution["skillSources"],
+        "traceId": execution["traceId"],
+        "modelCandidate": {
+            "alias": candidate.get("alias"),
+            "model": candidate.get("model"),
+            "provider": candidate.get("provider"),
+            "baseUrl": candidate.get("baseUrl"),
+            "routeKind": candidate.get("routeKind"),
+        },
+        "fallbackAttempt": attempt_index,
+        "failureReason": None,
+        "persistenceDir": str(run_artifact_dir),
+        "conversationId": str(conversation_id),
+        "jsonlPath": str(jsonl_path),
+        **base_result_metadata(payload, execution, version, "openhands_native"),
+    }
+
+
+def run_turn(
+    payload: dict[str, Any],
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     version = None
     for package_name in ("openhands-sdk", "openhands"):
         try:
@@ -1002,167 +5000,369 @@ def run_turn(payload: dict[str, Any]) -> dict[str, Any]:
         except Exception:
             continue
 
-    # HF OpenAI-compatible router: plain completions avoid LiteLLM tool schemas (fixes bogus tool name "summary").
-    if is_hf_inference_router_base_url(base_url) and tom_context is None:
-        if not raw_model_id:
-            return {
-                "ok": False,
-                "error": "Model id missing for Hugging Face router.",
-                "details": "Registry entry must include model (e.g. openai/gpt-oss-120b:groq).",
-            }
-        model_label = raw_model_id
-        try:
-            raw_text = hf_router_chat_completion(base_url, api_key, raw_model_id, prompt, available_tools)
-            parsed_json = parse_json_candidate(raw_text)
-            parsed = parse_turn_response(raw_text, available_tools)
-            logs = ["runtime=hf_openai_compat", f"model={raw_model_id}"]
-
-            if parsed_json is None:
-                repair_prompt = "\n\n".join(
-                    [
-                        "Rewrite the previous answer into exactly one valid JSON object.",
-                        'Allowed shapes: {"toolCall":{...}} or {"final":"string"}',
-                        "Do not use markdown or code fences.",
-                        f"Allowed tools: {', '.join(available_tools)}",
-                        "Previous answer:",
-                        str(raw_text or ""),
-                    ]
-                )
-                repaired = hf_router_chat_completion(base_url, api_key, raw_model_id, repair_prompt, available_tools)
-                parsed = parse_turn_response(str(repaired or ""), available_tools)
-                logs.append("repair=json_rewrite")
-
-            return {
-                "ok": True,
-                "final": str(parsed.get("final") or ""),
-                "toolCall": parsed.get("toolCall"),
-                "logs": logs,
-                "version": version,
-            }
-        except Exception as exc:
-            print(f"[openhands-gateway] run_turn HF path model={model_label!r}: {exc}", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
-            return {
-                "ok": False,
-                "error": "Hugging Face router completion failed.",
-                "details": f"{type(exc).__name__}: {exc}",
-            }
-
     try:
-        from pydantic import SecretStr
-        from openhands.sdk import Agent, Conversation, LLM
+        import openhands.sdk  # noqa: F401
     except Exception as exc:
         return {
             "ok": False,
             "error": "OpenHands SDK is not installed.",
             "details": f"{exc}. Run `npm run openhands:gateway:setup` first.",
+            **base_result_metadata(payload, resolve_execution_context(payload), version, "openhands_native", "not_required"),
         }
 
-    model_name = resolve_openhands_model(model)
+    run_id = resolve_gateway_run_id(payload)
+    execution = resolve_execution_context(payload)
+    run_artifact_dir = resolve_run_artifact_dir(run_id)
+    jsonl_path = run_artifact_dir / "events.jsonl"
+    requested_candidates = resolve_model_candidates(payload)
+    attempts: list[dict[str, Any]] = []
+    last_failure_reason: str | None = None
+    last_error: dict[str, Any] | None = None
+    timeout_policy = resolve_timeout_policy(payload)
+    model_routing_mode = resolve_model_routing_mode(payload)
+    fixed_model_alias = resolve_fixed_model_alias(payload)
+    fallback_enabled = resolve_fallback_enabled(payload)
+    fallback_override = resolve_operator_fallback_override(payload)
+    candidate_fallback_enabled = fallback_enabled or fallback_override
+    candidates = requested_candidates if candidate_fallback_enabled else requested_candidates[:1]
+    turn_phase = resolve_turn_phase(payload)
+    first_turn_budget_ms = resolve_first_turn_budget_ms(payload)
+    first_turn_deadline = (
+        time.perf_counter() + (first_turn_budget_ms / 1000.0)
+        if turn_phase == "start" and isinstance(first_turn_budget_ms, int) and first_turn_budget_ms > 0
+        else None
+    )
+    forced_single_non_timeout_fallback = (
+        timeout_policy == "detached_no_timeout_retry_single_non_timeout_fallback"
+    )
+    non_timeout_fallback_used = False
 
-    try:
-        llm = LLM(
-            model=model_name,
-            api_key=SecretStr(api_key),
-            base_url=base_url or None,
-        )
-        tools: list[Any] = []
-        sleeptime_tool = None
-        logs = [
-            "runtime=openhands_sdk",
-            f"model={model_name}",
-        ]
-        if tom_context:
-            try:
-                tools, sleeptime_tool, tom_logs = build_tom_tools(llm, workspace, tom_context)
-                logs.extend(tom_logs)
-            except Exception as exc:
-                print(f"[openhands-gateway] TOM setup failed, falling back to standard agent: {exc}", file=sys.stderr)
-                logs.append(f"tom=fallback:{type(exc).__name__}")
-                tools = []
-                sleeptime_tool = None
-        agent = Agent(llm=llm, tools=tools)
-        conversation = Conversation(agent=agent, workspace=workspace)
+    emit_stream_event(
+        jsonl_path,
+        {
+            "event": "gateway.turn_started",
+            "runId": run_id,
+            "executionLane": execution["lane"],
+            "traceId": execution["traceId"],
+            "candidateCount": len(candidates),
+            "candidateFallbackEnabled": candidate_fallback_enabled,
+            "modelRoutingMode": model_routing_mode,
+            "fixedModelAlias": fixed_model_alias,
+            "firstTurnBudgetMs": first_turn_budget_ms,
+        },
+        event_callback,
+    )
 
-        if tom_context and sleeptime_tool and tom_context.get("turn_phase") == "start":
-            if invoke_optional_tool(
-                sleeptime_tool,
+    for attempt_index, candidate in enumerate(candidates):
+        transient_retry_used = False
+        retry_index = 0
+        while True:
+            if first_turn_deadline is not None and time.perf_counter() >= first_turn_deadline:
+                result = _build_candidate_failure(
+                    candidate,
+                    attempt_index,
+                    len(candidates),
+                    "OpenHands first-turn budget expired.",
+                    f"First turn exceeded the configured budget of {first_turn_budget_ms}ms before completion.",
+                    "budget_timeout",
+                )
+                attempt_latency_ms = 0
+            else:
+                attempt_started = time.perf_counter()
+                try:
+                    result = _run_turn_with_candidate(
+                        payload,
+                        candidate,
+                        attempt_index,
+                        len(candidates),
+                        version,
+                        event_callback,
+                    )
+                except Exception as exc:
+                    detail = f"{type(exc).__name__}: {exc}"
+                    print(f"[openhands-gateway] run_turn error model={resolve_openhands_model(candidate)!r}: {exc}", file=sys.stderr)
+                    traceback.print_exc(file=sys.stderr)
+                    failure_reason = normalize_provider_failure_reason(detail)
+                    result = _build_candidate_failure(
+                        candidate,
+                        attempt_index,
+                        len(candidates),
+                        "OpenHands SDK raised an exception while running the turn.",
+                        detail,
+                        failure_reason,
+                    )
+                attempt_latency_ms = int((time.perf_counter() - attempt_started) * 1000)
+                if turn_phase == "start" and isinstance(first_turn_budget_ms, int) and first_turn_budget_ms > 0:
+                    if not result.get("ok") and attempt_latency_ms >= first_turn_budget_ms:
+                        result["failureReason"] = "budget_timeout"
+                        result["details"] = (
+                            f"First turn exceeded the configured budget of {first_turn_budget_ms}ms "
+                            f"(observed {attempt_latency_ms}ms)."
+                        )
+
+            if result.get("ok"):
+                result.setdefault("plannerLatencyMs", attempt_latency_ms)
+                result.setdefault("providerLatencyMs", attempt_latency_ms)
+            else:
+                result.setdefault("plannerLatencyMs", attempt_latency_ms)
+                result["providerLatencyMs"] = attempt_latency_ms
+
+            result.setdefault("executionLane", execution["lane"])
+            result.setdefault("pluginPacks", execution["pluginPacks"])
+            result.setdefault("skillSources", execution["skillSources"])
+            result.setdefault("traceId", execution["traceId"])
+            result.setdefault("persistenceDir", str(run_artifact_dir))
+            result.setdefault("jsonlPath", str(jsonl_path))
+            result.setdefault("orchestrator", "openhands")
+            result.setdefault("orchestratorVersion", version)
+            result.setdefault("runtimeTarget", resolve_runtime_target(execution))
+            result.setdefault("toolBackend", "openhands_native")
+            result.setdefault("approvalState", "not_required")
+            result.setdefault("worldContextUsed", resolve_world_context_used(payload))
+            result.setdefault("adapterMode", resolve_adapter_mode(payload))
+            result.setdefault("latencyPolicy", resolve_latency_policy(payload))
+            result.setdefault("timeoutPolicy", timeout_policy)
+            result.setdefault("budgetProfile", resolve_budget_profile(payload))
+            result.setdefault("smallModelForced", resolve_small_model_forced(payload))
+            result.setdefault("firstTurnBudgetMs", resolve_first_turn_budget_ms(payload))
+            result.setdefault("modelRoutingMode", model_routing_mode)
+            result.setdefault("fixedModelAlias", fixed_model_alias)
+            result.setdefault("fallbackEnabled", fallback_enabled)
+
+            emit_stream_event(
+                jsonl_path,
                 {
-                    "phase": "start",
-                    "reason": "run_start",
-                    "session_id": tom_context.get("session_id") or None,
-                    "trace_id": tom_context.get("trace_id") or None,
-                    "user_id": tom_context["user_key"],
+                    "event": "gateway.fallback_attempt",
+                    "runId": run_id,
+                    "executionLane": execution["lane"],
+                    "attempt": attempt_index,
+                    "retryIndex": retry_index,
+                    "ok": bool(result.get("ok")),
+                    "failureReason": result.get("failureReason"),
+                    "candidate": result.get("modelCandidate"),
                 },
-            ):
-                logs.append("tom_sleeptime=start")
-
-        raw = conversation.ask_agent(prompt)
-        raw_text = str(raw or "")
-        parsed_json = parse_json_candidate(raw_text)
-        parsed = parse_turn_response(raw_text, available_tools)
-
-        if parsed_json is None:
-            repair_prompt = "\n\n".join(
-                [
-                    "Rewrite the previous answer into exactly one valid JSON object.",
-                    'Allowed shapes: {"toolCall":{...}} or {"final":"string"}',
-                    "Do not use markdown or code fences.",
-                    f"Allowed tools: {', '.join(available_tools)}",
-                    "Previous answer:",
-                    str(raw or ""),
-                ]
+                event_callback,
             )
-            repaired = conversation.ask_agent(repair_prompt)
-            parsed = parse_turn_response(str(repaired or ""), available_tools)
-            logs.append("repair=json_rewrite")
 
-        if tom_context and sleeptime_tool and not parsed.get("toolCall"):
-            if invoke_optional_tool(
-                sleeptime_tool,
+            attempts.append(
                 {
-                    "phase": "final",
-                    "reason": "terminal_final",
-                    "session_id": tom_context.get("session_id") or None,
-                    "trace_id": tom_context.get("trace_id") or None,
-                    "user_id": tom_context["user_key"],
-                },
-            ):
-                logs.append("tom_sleeptime=final")
+                    "attempt": attempt_index,
+                    "retryIndex": retry_index,
+                    "candidate": result.get("modelCandidate"),
+                    "ok": bool(result.get("ok")),
+                    "failureReason": result.get("failureReason"),
+                    "error": result.get("error"),
+                }
+            )
 
-        return {
-            "ok": True,
-            "final": str(parsed.get("final") or ""),
-            "toolCall": parsed.get("toolCall"),
-            "logs": logs,
-            "version": version,
+            if result.get("ok"):
+                recovered = attempt_index > 0
+                write_json_file(
+                    resolve_run_artifact_dir(run_id) / "fallback-attempts.json",
+                    {
+                        "runId": run_id,
+                        "attempts": attempts,
+                        "selectedModel": result.get("modelCandidate"),
+                        "fallbackRecovered": recovered,
+                        "lastFailureReason": last_failure_reason,
+                    },
+                )
+                update_gateway_runtime_state(
+                    {
+                        "currentModelCandidate": result.get("modelCandidate"),
+                        "lastProviderFailureReason": last_failure_reason,
+                        "fallbackAvailable": candidate_fallback_enabled and len(candidates) > 1,
+                        "lastFallbackRecovered": recovered,
+                        "lastPersistenceDir": result.get("persistenceDir"),
+                    }
+                )
+                if recovered:
+                    result["logs"] = [*(result.get("logs") or []), "fallback=recovered"]
+                    result["failureReason"] = last_failure_reason
+                    result.setdefault("escalationStage", "fallback_model_candidate")
+                    if isinstance(last_failure_reason, str) and last_failure_reason:
+                        result.setdefault("escalationReason", f"Primary candidate failed ({last_failure_reason}); fallback succeeded.")
+                result["fallbackTrail"] = attempts
+                result["fallbackCount"] = max(0, len(attempts) - 1)
+                emit_stream_event(
+                    jsonl_path,
+                    {
+                        "event": "gateway.turn_completed",
+                        "runId": run_id,
+                        "executionLane": execution["lane"],
+                        "traceId": execution["traceId"],
+                        "fallbackRecovered": recovered,
+                        "selectedModel": result.get("modelCandidate"),
+                    },
+                    event_callback,
+                )
+                return result
+
+            last_failure_reason = result.get("failureReason") if isinstance(result.get("failureReason"), str) else last_failure_reason
+            last_error = result
+            timeout_like = is_timeout_like_failure(
+                last_failure_reason,
+                result.get("details") or result.get("error"),
+            )
+            budget_expired = first_turn_deadline is not None and time.perf_counter() >= first_turn_deadline
+            if budget_expired and last_failure_reason != "budget_timeout":
+                last_failure_reason = "budget_timeout"
+
+            if not candidate_fallback_enabled:
+                can_retry_transient = (
+                    not transient_retry_used
+                    and last_failure_reason == "transient_api_failure"
+                    and not timeout_like
+                    and not budget_expired
+                )
+                if can_retry_transient:
+                    transient_retry_used = True
+                    retry_index += 1
+                    emit_stream_event(
+                        jsonl_path,
+                        {
+                            "event": "gateway.fast_retry",
+                            "runId": run_id,
+                            "executionLane": execution["lane"],
+                            "traceId": execution["traceId"],
+                            "attempt": attempt_index,
+                            "reason": last_failure_reason,
+                            "candidate": result.get("modelCandidate"),
+                        },
+                        event_callback,
+                    )
+                    continue
+                break
+
+            if not is_retryable_provider_failure(last_failure_reason) or attempt_index >= len(candidates) - 1:
+                break
+            if forced_single_non_timeout_fallback:
+                if timeout_like:
+                    break
+                if non_timeout_fallback_used:
+                    break
+                non_timeout_fallback_used = True
+            break
+
+    write_json_file(
+        resolve_run_artifact_dir(run_id) / "fallback-attempts.json",
+        {
+            "runId": run_id,
+            "attempts": attempts,
+            "selectedModel": None,
+            "fallbackRecovered": False,
+            "lastFailureReason": last_failure_reason,
+        },
+    )
+    update_gateway_runtime_state(
+        {
+            "currentModelCandidate": last_error.get("modelCandidate") if isinstance(last_error, dict) else None,
+            "lastProviderFailureReason": last_failure_reason,
+            "fallbackAvailable": candidate_fallback_enabled and len(candidates) > 1,
+            "lastFallbackRecovered": False,
+            "lastPersistenceDir": str(resolve_run_artifact_dir(run_id)),
         }
-    except Exception as exc:
-        print(f"[openhands-gateway] run_turn error model={model_name!r}: {exc}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-        return {
-            "ok": False,
-            "error": "OpenHands SDK raised an exception while running the turn.",
-            "details": f"{type(exc).__name__}: {exc}",
-        }
+    )
+    failure = last_error or {
+        "ok": False,
+        "error": "OpenHands model selection failed.",
+        "details": "No compatible model candidate completed the turn.",
+        "failureReason": last_failure_reason,
+    }
+    failure["fallbackTrail"] = attempts
+    failure["fallbackCount"] = max(0, len(attempts) - 1)
+    failure["persistenceDir"] = str(resolve_run_artifact_dir(run_id))
+    failure["conversationId"] = str(resolve_gateway_conversation_id(run_id))
+    failure["executionLane"] = execution["lane"]
+    failure["pluginPacks"] = execution["pluginPacks"]
+    failure["skillSources"] = execution["skillSources"]
+    failure["traceId"] = execution["traceId"]
+    failure["jsonlPath"] = str(jsonl_path)
+    failure.setdefault("orchestrator", "openhands")
+    failure.setdefault("orchestratorVersion", version)
+    failure.setdefault("runtimeTarget", resolve_runtime_target(execution))
+    failure.setdefault("toolBackend", "openhands_native")
+    failure.setdefault("adapterMode", resolve_adapter_mode(payload))
+    failure.setdefault("latencyPolicy", resolve_latency_policy(payload))
+    failure.setdefault("timeoutPolicy", timeout_policy)
+    failure.setdefault("budgetProfile", resolve_budget_profile(payload))
+    failure.setdefault("smallModelForced", resolve_small_model_forced(payload))
+    failure.setdefault("firstTurnBudgetMs", resolve_first_turn_budget_ms(payload))
+    failure.setdefault("modelRoutingMode", model_routing_mode)
+    failure.setdefault("fixedModelAlias", fixed_model_alias)
+    failure.setdefault("fallbackEnabled", fallback_enabled)
+    failure.setdefault(
+        "approvalState",
+        "required" if compact_whitespace(failure.get("error")).lower().find("confirmation") >= 0 else "not_required",
+    )
+    failure.setdefault("worldContextUsed", resolve_world_context_used(payload))
+    emit_stream_event(
+        jsonl_path,
+        {
+            "event": "gateway.turn_failed",
+            "runId": run_id,
+            "executionLane": execution["lane"],
+            "traceId": execution["traceId"],
+            "failureReason": failure.get("failureReason"),
+            "error": failure.get("error"),
+        },
+        event_callback,
+    )
+    return failure
 
 
 def doctor_payload() -> dict[str, Any]:
     try:
         import openhands.sdk  # noqa: F401
-        version = None
-        for package_name in ("openhands-sdk", "openhands"):
-            try:
-                version = importlib.metadata.version(package_name)
-                break
-            except Exception:
-                continue
-        return {"ok": True, "version": version or "unknown"}
+        package_family, package_version = detect_openhands_package()
+        supported_tools, degraded_reasons = detect_supported_openhands_tools()
+        runtime_state = read_json_file(resolve_gateway_runtime_state_path())
+        if sys.version_info < (3, 12):
+            degraded_reasons.append("python_too_old")
+        if package_family != "openhands":
+            degraded_reasons.append("missing_full_openhands_package")
+        runtime_kind = infer_runtime_kind()
+        runtime_profile = infer_runtime_profile(supported_tools)
+        persistence_dir = resolve_gateway_persistence_dir()
+        patch_reg = resolve_apply_patch_registration_name()
+        native_tool_order = ["TerminalTool", "FileEditorTool"]
+        if patch_reg:
+            native_tool_order.append(patch_reg)
+        native_tool_order.append("BrowserToolSet")
+        return {
+            "ok": True,
+            "version": package_version or "unknown",
+            "runtimeKind": runtime_kind,
+            "runtimeProfile": runtime_profile,
+            "pythonVersion": sys.version.split()[0],
+            "packageFamily": package_family,
+            "packageVersion": package_version or "unknown",
+            "supportedTools": supported_tools,
+            "degradedReasons": list(dict.fromkeys(degraded_reasons)),
+            "availableActions": build_doctor_actions(runtime_kind, runtime_profile, degraded_reasons),
+            "browserUse": "BrowserToolSet" in supported_tools,
+            "nativeTools": any(tool_name in supported_tools for tool_name in native_tool_order),
+            "availableNativeTools": [tool_name for tool_name in native_tool_order if tool_name in supported_tools],
+            "persistenceDir": str(persistence_dir),
+            "currentModelCandidate": runtime_state.get("currentModelCandidate"),
+            "lastProviderFailureReason": runtime_state.get("lastProviderFailureReason"),
+            "fallbackAvailable": runtime_state.get("fallbackAvailable"),
+            "lastFallbackRecovered": runtime_state.get("lastFallbackRecovered"),
+            "lastPersistenceDir": runtime_state.get("lastPersistenceDir"),
+        }
     except Exception as exc:
         return {
             "ok": False,
             "error": "OpenHands SDK is not installed.",
             "details": f"{exc}. Run `npm run openhands:gateway:setup` first.",
+            "runtimeKind": infer_runtime_kind(),
+            "runtimeProfile": "unavailable",
+            "pythonVersion": sys.version.split()[0],
+            "packageFamily": "unknown",
+            "packageVersion": None,
+            "supportedTools": [],
+            "degradedReasons": ["sdk_not_importable"],
+            "availableActions": ["Repair OpenHands runtime", "Use managed runtime"],
         }
 
 

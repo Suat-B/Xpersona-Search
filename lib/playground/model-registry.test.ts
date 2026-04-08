@@ -18,7 +18,8 @@ describe("playground model registry", () => {
     const selection = resolvePlaygroundModelSelection({ requested: "anything-custom" });
     expect(selection.requested).toBe("anything-custom");
     expect(selection.resolvedAlias).toBe(DEFAULT_PLAYGROUND_MODEL_ALIAS);
-    expect(selection.fallbackChain).toHaveLength(1);
+    expect(selection.fallbackChain.length).toBeGreaterThanOrEqual(1);
+    expect(selection.fallbackChain[0]?.alias).toBe("qwen-coder-32b");
   });
 
   it("resolves known built-in aliases", () => {
@@ -40,6 +41,8 @@ describe("playground model registry", () => {
     const selection = resolvePlaygroundModelSelection({ requested: "qwen-coder-32b" });
     expect(selection.resolvedAlias).toBe("qwen-coder-32b");
     expect(selection.resolvedEntry.model).toContain("Qwen/");
+    expect(selection.resolvedEntry.openhands.compatible).toBe(true);
+    expect(selection.resolvedEntry.openhands.providerModel).toContain("huggingface/");
   });
 
   it("keeps playground-default as a compatibility alias", () => {
@@ -60,6 +63,8 @@ describe("playground model registry", () => {
     expect(entry.certification).toBe("tool_ready");
     expect(entry.capabilities.supportsShellCommands).toBe(true);
     expect(entry.baseUrl).toBeTruthy();
+    expect(entry.openhands.compatible).toBe(false);
+    expect(entry.openhands.fallbackAliases).toContain("qwen-coder-32b");
   });
 
   it("publishes the minimal contract version", () => {

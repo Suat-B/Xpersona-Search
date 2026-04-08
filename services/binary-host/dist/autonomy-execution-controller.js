@@ -8,7 +8,12 @@ function asString(value) {
     return typeof value === "string" ? value.trim() : "";
 }
 function isDesktopObserveTool(name) {
-    return name === "desktop_list_apps" || name === "desktop_get_active_window" || name === "desktop_list_windows";
+    return (name === "desktop_list_apps" ||
+        name === "desktop_get_active_window" ||
+        name === "desktop_list_windows" ||
+        name === "desktop_query_controls" ||
+        name === "desktop_read_control" ||
+        name === "desktop_wait_for_control");
 }
 function isBrowserObserveTool(name) {
     return (name === "browser_list_pages" ||
@@ -24,12 +29,20 @@ function isBrowserObserveTool(name) {
 }
 function isBrowserInteractiveTool(name) {
     return (name === "browser_open_page" ||
+        name === "browser_search_and_open_best_result" ||
+        name === "browser_login_and_continue" ||
+        name === "browser_complete_form" ||
+        name === "browser_extract_and_decide" ||
+        name === "browser_recover_workflow" ||
         name === "browser_focus_page" ||
         name === "browser_navigate" ||
         name === "browser_click" ||
         name === "browser_type" ||
         name === "browser_press_keys" ||
         name === "browser_scroll");
+}
+function isTerminalTool(name) {
+    return name === "run_command" || name.startsWith("terminal_");
 }
 function defaultDecision(policy) {
     return {
@@ -44,6 +57,7 @@ function defaultDecision(policy) {
         focusLeaseActive: false,
         focusSuppressed: false,
         managedSessionPreferred: policy.sessionPolicy !== "live_session",
+        browserSessionPreference: policy.sessionPolicy === "managed_only" ? "managed_only" : null,
         summary: "Binary selected a background-safe execution path.",
     };
 }
@@ -96,7 +110,7 @@ export class AutonomyExecutionController {
             this.policy.suppressForegroundWhileTyping &&
             focusLease?.surface === "desktop";
         let decision = defaultDecision(this.policy);
-        if (toolName === "run_command") {
+        if (isTerminalTool(toolName)) {
             decision = {
                 lane: "terminal_background",
                 executionVisibility: "background",
@@ -109,6 +123,7 @@ export class AutonomyExecutionController {
                 focusLeaseActive,
                 focusSuppressed: false,
                 managedSessionPreferred: false,
+                browserSessionPreference: null,
                 summary: "Binary selected the terminal lane for a background-safe coding or system step.",
             };
         }
@@ -157,7 +172,7 @@ export class AutonomyExecutionController {
         }
         else if (toolName.startsWith("browser_")) {
             const sessionPolicy = this.policy.sessionPolicy;
-            const managedPreferred = sessionPolicy !== "live_session";
+            const managedPreferred = sessionPolicy === "managed_only";
             if (isBrowserObserveTool(toolName)) {
                 decision = {
                     lane: managedPreferred ? "managed_session_background" : "attached_session_low_focus",
@@ -171,9 +186,10 @@ export class AutonomyExecutionController {
                     focusLeaseActive,
                     focusSuppressed: false,
                     managedSessionPreferred: managedPreferred,
+                    browserSessionPreference: managedPreferred ? "managed_only" : "reuse_first",
                     summary: managedPreferred
                         ? "Binary selected a managed browser session so inspection can stay in the background."
-                        : "Binary is carefully attaching to an existing browser session for low-focus inspection.",
+                        : "Binary is carefully reusing the user's signed-in browser first and will only isolate if reuse is unavailable.",
                 };
             }
             else if (toolName === "browser_focus_page" || explicitForeground) {
@@ -189,25 +205,30 @@ export class AutonomyExecutionController {
                     focusLeaseActive,
                     focusSuppressed: false,
                     managedSessionPreferred: false,
+                    browserSessionPreference: null,
                     visibleFallbackReason: "Focusing a live page would pull the browser to the foreground.",
                     summary: "This browser step requires a visible foreground handoff.",
                 };
             }
             else if (isBrowserInteractiveTool(toolName)) {
+                const shouldPreferManaged = managedPreferred || focusLeaseActive;
                 decision = {
-                    lane: managedPreferred ? "managed_session_background" : "attached_session_low_focus",
-                    executionVisibility: managedPreferred ? "background" : "low_focus",
-                    foregroundDisruptionRisk: managedPreferred ? "low" : "medium",
-                    interactionMode: managedPreferred ? "managed_browser" : "attached_browser",
+                    lane: shouldPreferManaged ? "managed_session_background" : "attached_session_low_focus",
+                    executionVisibility: shouldPreferManaged ? "background" : "low_focus",
+                    foregroundDisruptionRisk: shouldPreferManaged ? "low" : "medium",
+                    interactionMode: shouldPreferManaged ? "managed_browser" : "attached_browser",
                     focusPolicy: this.policy.focusPolicy,
                     sessionPolicy,
-                    backgroundSafe: managedPreferred,
+                    backgroundSafe: shouldPreferManaged,
                     requiresVisibleInteraction: false,
                     focusLeaseActive,
                     focusSuppressed: false,
-                    managedSessionPreferred: managedPreferred,
-                    summary: managedPreferred
-                        ? "Binary selected a managed browser session to keep interaction out of your foreground workspace."
+                    managedSessionPreferred: shouldPreferManaged,
+                    browserSessionPreference: managedPreferred ? "managed_only" : "reuse_first",
+                    summary: shouldPreferManaged
+                        ? managedPreferred
+                            ? "Binary selected a managed browser session so the workflow stays isolated."
+                            : "Binary will try your existing signed-in browser first, then your real profile, and only fall back to an isolated session if reuse is not stable."
                         : "Binary is using a low-focus attached browser path and will avoid visible fallback if possible.",
                 };
             }

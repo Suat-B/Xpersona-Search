@@ -163,6 +163,88 @@ describe("hosted-transport", () => {
     );
   });
 
+  it("forwards MCP config to hosted assist", async () => {
+    const fetchImpl = async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body || "{}")) as {
+        mcp?: { mcpServers?: Record<string, Record<string, unknown>> };
+      };
+      expect(body.mcp?.mcpServers?.Docs).toEqual({
+        url: "https://example.com/mcp",
+        transport: "http",
+      });
+      return createSseResponse(["data: [DONE]\n\n"]);
+    };
+
+    await streamHostedAssist(
+      {
+        baseUrl: "http://localhost:3000",
+        apiKey: "test-key",
+        request: {
+          ...createAssistRequest(),
+          mcp: {
+            mcpServers: {
+              Docs: {
+                url: "https://example.com/mcp",
+                transport: "http",
+              },
+            },
+          },
+        },
+        onEvent: () => {},
+      },
+      {
+        fetchImpl: fetchImpl as typeof fetch,
+        fetchTimeoutMs: 50,
+        streamIdleTimeoutMs: 50,
+      }
+    );
+  });
+
+  it("forwards connected provider candidates to hosted assist", async () => {
+    const fetchImpl = async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body || "{}")) as {
+        chatModelSource?: string;
+        fallbackToPlatformModel?: boolean;
+        userConnectedModels?: Array<{ alias?: string; provider?: string }>;
+      };
+      expect(body.chatModelSource).toBe("user_connected");
+      expect(body.fallbackToPlatformModel).toBe(true);
+      expect(body.userConnectedModels?.[0]?.alias).toBe("user:openai");
+      expect(body.userConnectedModels?.[0]?.provider).toBe("openai");
+      return createSseResponse(["data: [DONE]\n\n"]);
+    };
+
+    await streamHostedAssist(
+      {
+        baseUrl: "http://localhost:3000",
+        apiKey: "test-key",
+        request: {
+          ...createAssistRequest(),
+          chatModelSource: "user_connected",
+          fallbackToPlatformModel: true,
+          userConnectedModels: [
+            {
+              alias: "user:openai",
+              provider: "openai",
+              displayName: "OpenAI",
+              model: "gpt-5.4",
+              baseUrl: "https://api.openai.com/v1",
+              apiKey: "sk-test",
+              authSource: "user_connected",
+              candidateSource: "user_connected",
+            },
+          ],
+        },
+        onEvent: () => {},
+      },
+      {
+        fetchImpl: fetchImpl as typeof fetch,
+        fetchTimeoutMs: 50,
+        streamIdleTimeoutMs: 50,
+      }
+    );
+  });
+
   it("times out when the continue call hangs", async () => {
     await expect(
       continueHostedRun(

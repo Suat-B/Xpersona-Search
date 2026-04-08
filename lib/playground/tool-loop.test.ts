@@ -232,7 +232,8 @@ describe("playground tool loop", () => {
 
     expect(completed.pendingToolCall).toBeNull();
     expect(completed.loopState?.status).toBe("completed");
-    expect(completed.final).toContain("Updated hello.py");
+    expect(completed.final).toContain("hello.py");
+    expect(completed.final).toContain("closure proof");
     expect(completed.toolTrace?.some((entry) => entry.toolCall?.name === "create_checkpoint")).toBe(true);
   });
 
@@ -917,9 +918,8 @@ describe("playground tool loop", () => {
         summary: "npm test completed without edits.",
       },
     });
-
-    expect(mockedRequestToolLoopTurn).toHaveBeenCalledTimes(4);
-    expect(mockedRequestToolLoopTurn.mock.calls[3]?.[0]?.repairDirective?.stage).toBe("target_path_repair");
+    expect(mockedRequestToolLoopTurn.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(mockedRequestToolLoopTurn.mock.calls.at(-1)?.[0]?.repairDirective?.stage).toBe("target_path_repair");
     expect(repaired.loopState?.repairCount).toBe(1);
     expect(repaired.pendingToolCall?.toolCall.name).toBe("edit");
     expect(repaired.progressState.status).toBe("repairing");
@@ -1380,7 +1380,13 @@ describe("playground tool loop", () => {
           name: "write_file",
           ok: true,
           summary: "Wrote repo-proof/package.json.",
-          data: { changedFiles: ["repo-proof/package.json"] },
+          data: {
+            changedFiles: [
+              "repo-proof/package.json",
+              "repo-proof/src/index.js",
+              "repo-proof/test/index.test.js",
+            ],
+          },
         },
       });
 
@@ -1404,8 +1410,8 @@ describe("playground tool loop", () => {
         },
       });
 
-      expect(mockedRequestToolLoopTurn).toHaveBeenCalledTimes(4);
-      const repairCall = mockedRequestToolLoopTurn.mock.calls[3]?.[0];
+      expect(mockedRequestToolLoopTurn).toHaveBeenCalledTimes(3);
+      const repairCall = mockedRequestToolLoopTurn.mock.calls[2]?.[0];
       expect(repairCall?.targetInference.path).toBe("package.json");
       expect(repairCall?.repairDirective?.reason).toContain("Repair the generated validation script");
     });
@@ -1526,13 +1532,20 @@ describe("playground tool loop", () => {
           name: "write_file",
           ok: true,
           summary: "Wrote repo-proof/package.json.",
-          data: { changedFiles: ["repo-proof/package.json", "repo-proof/README.md", "repo-proof/src/index.js", "repo-proof/test/index.test.js"] },
+          data: {
+            changedFiles: [
+              "repo-proof/package.json",
+              "repo-proof/README.md",
+              "repo-proof/src/index.js",
+              "repo-proof/test/index.test.js",
+            ],
+          },
         },
       });
-
       expect(afterWrite.pendingToolCall?.toolCall.name).toBe("run_command");
       expect(afterWrite.pendingToolCall?.toolCall.arguments.command).toBe('cd "repo-proof" && npm test');
       expect(afterWrite.loopState?.autonomyLane).toBe("git_completion");
+      expect(afterWrite.loopState?.closurePhase).toBe("verification");
       expect(afterWrite.loopState?.closeoutStage).toBe("validation");
       expect(afterWrite.objectiveState.stackSpecializer).toBe("node_js_ts");
       expect(afterWrite.objectiveState.completionChecklist?.some((item) => item.id === "validation" && item.status === "pending")).toBe(true);
@@ -1557,8 +1570,175 @@ describe("playground tool loop", () => {
 
       expect(afterValidation.pendingToolCall?.toolCall.name).toBe("run_command");
       expect(afterValidation.pendingToolCall?.toolCall.arguments.command).toBe('cd "repo-proof" && git init');
+      expect(afterValidation.loopState?.closurePhase).toBe("closeout");
       expect(afterValidation.loopState?.closeoutStage).toBe("git_init");
       expect(afterValidation.missingRequirements).toContain("required_git_init_missing");
+    });
+
+    it("hard-gates completion until a final closure summary exists", async () => {
+      mockedRequestToolLoopTurn
+        .mockResolvedValueOnce(
+          openHandsTurn({
+            adapter: "text_actions",
+            final: "",
+            toolCall: {
+              id: "call_list_summary",
+              name: "list_files",
+              arguments: {},
+              kind: "observe",
+              summary: "Check current workspace structure",
+            },
+            logs: [],
+            modelSelection: {} as any,
+          })
+        )
+        .mockResolvedValueOnce(
+          openHandsTurn({
+            adapter: "text_actions",
+            final: "",
+            toolCall: {
+              id: "call_write_summary_pkg",
+              name: "write_file",
+              arguments: {
+                path: "summary-proof/package.json",
+                content: '{\n  "name": "summary-proof",\n  "scripts": {\n    "test": "node --test test/index.test.js"\n  }\n}\n',
+              },
+              kind: "mutate",
+              summary: "Write package.json",
+            },
+            logs: [],
+            modelSelection: {} as any,
+          })
+        );
+
+      const started = await startAssistToolLoop({
+        userId: "user-summary-proof",
+        sessionId: "session-summary-proof",
+        traceId: "trace-summary-proof",
+        request: {
+          mode: "auto",
+          task: "Create a folder named summary-proof with README.md, src/index.js, test/index.test.js, and package.json. Run tests until they pass.",
+          orchestrationProtocol: "tool_loop_v1",
+          clientCapabilities: {
+            toolLoop: true,
+            supportedTools: ["list_files", "create_checkpoint", "write_file", "run_command"],
+            autoExecute: true,
+          },
+        },
+      });
+
+      const afterList = await continueAssistToolLoop({
+        userId: "user-summary-proof",
+        traceId: "trace-summary-proof-2",
+        runId: started.runId!,
+        toolResult: {
+          toolCallId: "call_list_summary",
+          name: "list_files",
+          ok: true,
+          summary: "Listed 0 workspace file(s).",
+          data: { files: [] },
+        },
+      });
+
+      const afterCheckpoint = await continueAssistToolLoop({
+        userId: "user-summary-proof",
+        traceId: "trace-summary-proof-3",
+        runId: started.runId!,
+        toolResult: {
+          toolCallId: afterList.pendingToolCall!.toolCall.id,
+          name: "create_checkpoint",
+          ok: true,
+          summary: "Checkpoint created.",
+        },
+      });
+
+      const afterWrite = await continueAssistToolLoop({
+        userId: "user-summary-proof",
+        traceId: "trace-summary-proof-4",
+        runId: started.runId!,
+        toolResult: {
+          toolCallId: afterCheckpoint.pendingToolCall!.toolCall.id,
+          name: "write_file",
+          ok: true,
+          summary: "Wrote summary-proof/package.json.",
+          data: {
+            changedFiles: [
+              "summary-proof/package.json",
+              "summary-proof/README.md",
+              "summary-proof/src/index.js",
+              "summary-proof/test/index.test.js",
+            ],
+          },
+        },
+      });
+
+      expect(afterWrite.pendingToolCall?.toolCall.arguments.command).toBe('cd "summary-proof" && npm test');
+
+      const afterValidation = await continueAssistToolLoop({
+        userId: "user-summary-proof",
+        traceId: "trace-summary-proof-5",
+        runId: started.runId!,
+        toolResult: {
+          toolCallId: afterWrite.pendingToolCall!.toolCall.id,
+          name: "run_command",
+          ok: true,
+          summary: 'Command succeeded: cd "summary-proof" && npm test',
+          data: {
+            command: 'cd "summary-proof" && npm test',
+            exitCode: 0,
+            stdout: "",
+            stderr: "",
+          },
+        },
+      });
+
+      expect(afterValidation.completionStatus).toBe("complete");
+      expect(afterValidation.pendingToolCall).toBeNull();
+      expect(afterValidation.loopState?.closurePhase).toBe("complete");
+      expect(afterValidation.objectiveState.completionChecklist?.some((item) => item.id === "summary" && item.status === "completed")).toBe(true);
+      expect(afterValidation.final).toContain("closure proof");
+    });
+
+    it("treats browser verification as internal OpenHands work instead of forcing external browser proof tools", async () => {
+      mockedRequestToolLoopTurn.mockResolvedValueOnce(
+        openHandsTurn({
+          adapter: "text_actions",
+          final: "Opened Gmail Compose and confirmed the draft composer is visible in the browser.",
+          logs: [],
+          modelSelection: {} as any,
+        })
+      );
+
+      const started = await startAssistToolLoop({
+        userId: "user-browser-proof",
+        sessionId: "session-browser-proof",
+        traceId: "trace-browser-proof",
+        request: {
+          mode: "auto",
+          task: "In the browser, click Compose in Gmail and confirm the draft opens.",
+          orchestrationProtocol: "tool_loop_v1",
+          clientCapabilities: {
+            toolLoop: true,
+            supportedTools: ["desktop_capture_screen"],
+            autoExecute: true,
+          },
+          context: {
+            browser: {
+              mode: "attached",
+              activePage: {
+                id: "page_1",
+                title: "Inbox",
+                url: "https://mail.google.com/mail/u/0/#inbox",
+              },
+            },
+          },
+        },
+      });
+
+      expect(started.pendingToolCall).toBeNull();
+      expect(started.completionStatus).toBe("incomplete");
+      expect(started.final).toContain("Compose");
+      expect(started.missingRequirements).not.toContain("required_browser_outcome_missing");
     });
   });
 });

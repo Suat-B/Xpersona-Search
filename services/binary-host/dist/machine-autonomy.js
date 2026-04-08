@@ -11,7 +11,7 @@ function nowIso() {
 }
 export function defaultMachineAutonomyPolicy() {
     return {
-        enabled: false,
+        enabled: true,
         alwaysOn: true,
         allowAppLaunch: true,
         allowShellCommands: true,
@@ -21,11 +21,11 @@ export function defaultMachineAutonomyPolicy() {
         allowBrowserNative: true,
         allowEventAgents: true,
         allowWholeMachineAccess: true,
-        allowElevation: true,
-        focusPolicy: "never_steal",
+        allowElevation: false,
+        focusPolicy: "avoid_if_possible",
         sessionPolicy: "attach_carefully",
-        allowVisibleFallback: false,
-        autonomyPosture: "near_total",
+        allowVisibleFallback: true,
+        autonomyPosture: "guarded",
         suppressForegroundWhileTyping: true,
         focusLeaseTtlMs: 4_000,
         preferTerminalForCoding: true,
@@ -95,7 +95,9 @@ function scoreCandidate(app, query) {
         score += 4;
     return score;
 }
-export function findBestAppMatch(apps, query) {
+const DEFAULT_MIN_APP_MATCH_SCORE = 32;
+export function findBestAppMatch(apps, query, options) {
+    const minScore = Math.max(0, options?.minScore ?? DEFAULT_MIN_APP_MATCH_SCORE);
     let best = null;
     for (const app of apps) {
         const score = scoreCandidate(app, query);
@@ -105,7 +107,9 @@ export function findBestAppMatch(apps, query) {
             best = { app, score };
         }
     }
-    return best?.app || null;
+    if (!best || best.score < minScore)
+        return null;
+    return best.app;
 }
 export function parseMachineAutonomyTask(task) {
     const trimmed = String(task || "").trim();
@@ -298,13 +302,37 @@ function dedupeApps(apps) {
     }
     return out.sort((a, b) => a.name.localeCompare(b.name));
 }
-async function launchShellTarget(target) {
-    if (process.platform === "win32") {
-        const command = `start "" "${target.replace(/"/g, '""')}"`;
+function escapePowerShellSingleQuoted(value) {
+    return String(value || "").replace(/'/g, "''");
+}
+async function runWindowsLaunchCommand(command, timeoutMs = 7_000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
         await execAsync(command, {
             windowsHide: true,
             shell: process.env.ComSpec || "cmd.exe",
+            signal: controller.signal,
         });
+    }
+    catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+            throw new Error(`Timed out while launching app target after ${timeoutMs}ms.`);
+        }
+        throw error;
+    }
+    finally {
+        clearTimeout(timer);
+    }
+}
+function buildWindowsStartProcessCommand(target) {
+    const psTarget = escapePowerShellSingleQuoted(target);
+    return `powershell -NoProfile -Command "Start-Process -FilePath '${psTarget}'"`;
+}
+async function launchShellTarget(target) {
+    if (process.platform === "win32") {
+        const command = buildWindowsStartProcessCommand(target);
+        await runWindowsLaunchCommand(command);
         return command;
     }
     const command = `open ${JSON.stringify(target)}`;
@@ -315,11 +343,8 @@ async function launchShellTarget(target) {
 }
 async function launchPathTarget(target) {
     if (process.platform === "win32") {
-        const command = `start "" "${target.replace(/"/g, '""')}"`;
-        await execAsync(command, {
-            windowsHide: true,
-            shell: process.env.ComSpec || "cmd.exe",
-        });
+        const command = buildWindowsStartProcessCommand(target);
+        await runWindowsLaunchCommand(command);
         return command;
     }
     const command = `open ${JSON.stringify(target)}`;
@@ -334,6 +359,53 @@ async function launchBundleTarget(target) {
         shell: "/bin/sh",
     });
     return command;
+}
+const WINDOWS_QUICK_APP_ALIASES = [
+    {
+        id: "calculator",
+        name: "Calculator",
+        aliases: ["calculator", "calc", "windows calculator"],
+        shellTarget: "calc.exe",
+    },
+    {
+        id: "notepad",
+        name: "Notepad",
+        aliases: ["notepad", "note pad", "editor"],
+        shellTarget: "notepad.exe",
+    },
+    {
+        id: "file-explorer",
+        name: "File Explorer",
+        aliases: ["file explorer", "explorer", "windows explorer"],
+        shellTarget: "explorer.exe",
+    },
+];
+async function tryLaunchQuickAlias(query) {
+    if (process.platform !== "win32")
+        return null;
+    const normalizedQuery = normalizeSearchText(query);
+    if (!normalizedQuery)
+        return null;
+    const match = WINDOWS_QUICK_APP_ALIASES.find((entry) => entry.aliases.some((alias) => normalizeSearchText(alias) === normalizedQuery));
+    if (!match)
+        return null;
+    const command = await launchShellTarget(match.shellTarget);
+    return {
+        app: {
+            id: `quick:${match.id}`,
+            name: match.name,
+            aliases: uniqueAliases([match.name, ...match.aliases]),
+            platform: process.platform,
+            source: "windows_quick_alias",
+            launch: {
+                kind: "shell",
+                target: match.shellTarget,
+            },
+        },
+        summary: `Launched ${match.name} from quick alias routing.`,
+        command,
+        createdAt: nowIso(),
+    };
 }
 export class MachineAutonomyController {
     cache = null;
@@ -357,6 +429,9 @@ export class MachineAutonomyController {
         return { apps, indexedAt };
     }
     async launchApp(query) {
+        const quickAliasResult = await tryLaunchQuickAlias(query);
+        if (quickAliasResult)
+            return quickAliasResult;
         const { apps } = await this.listApps();
         const app = findBestAppMatch(apps, query);
         if (!app) {

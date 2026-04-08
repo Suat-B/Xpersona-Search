@@ -14,6 +14,9 @@ type AssistInput = {
     tom?: {
         enabled?: boolean;
     };
+    mcp?: {
+        mcpServers: Record<string, Record<string, unknown>>;
+    };
 };
 type ExecuteAction = {
     type: "command";

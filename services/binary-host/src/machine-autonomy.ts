@@ -47,7 +47,7 @@ export type DiscoveredApp = {
   name: string;
   aliases: string[];
   platform: NodeJS.Platform;
-  source: "windows_start_apps" | "windows_shortcut" | "windows_steam" | "mac_applications";
+  source: "windows_start_apps" | "windows_shortcut" | "windows_steam" | "windows_quick_alias" | "mac_applications";
   installLocation?: string;
   appId?: string;
   launch:
@@ -75,7 +75,7 @@ function nowIso(): string {
 
 export function defaultMachineAutonomyPolicy(): MachineAutonomyPolicy {
   return {
-    enabled: false,
+    enabled: true,
     alwaysOn: true,
     allowAppLaunch: true,
     allowShellCommands: true,
@@ -85,11 +85,11 @@ export function defaultMachineAutonomyPolicy(): MachineAutonomyPolicy {
     allowBrowserNative: true,
     allowEventAgents: true,
     allowWholeMachineAccess: true,
-    allowElevation: true,
-    focusPolicy: "never_steal",
+    allowElevation: false,
+    focusPolicy: "avoid_if_possible",
     sessionPolicy: "attach_carefully",
-    allowVisibleFallback: false,
-    autonomyPosture: "near_total",
+    allowVisibleFallback: true,
+    autonomyPosture: "guarded",
     suppressForegroundWhileTyping: true,
     focusLeaseTtlMs: 4_000,
     preferTerminalForCoding: true,
@@ -155,7 +155,14 @@ function scoreCandidate(app: DiscoveredApp, query: string): number {
   return score;
 }
 
-export function findBestAppMatch(apps: DiscoveredApp[], query: string): DiscoveredApp | null {
+const DEFAULT_MIN_APP_MATCH_SCORE = 32;
+
+export function findBestAppMatch(
+  apps: DiscoveredApp[],
+  query: string,
+  options?: { minScore?: number }
+): DiscoveredApp | null {
+  const minScore = Math.max(0, options?.minScore ?? DEFAULT_MIN_APP_MATCH_SCORE);
   let best: { app: DiscoveredApp; score: number } | null = null;
   for (const app of apps) {
     const score = scoreCandidate(app, query);
@@ -164,7 +171,8 @@ export function findBestAppMatch(apps: DiscoveredApp[], query: string): Discover
       best = { app, score };
     }
   }
-  return best?.app || null;
+  if (!best || best.score < minScore) return null;
+  return best.app;
 }
 
 export function parseMachineAutonomyTask(task: string): ParsedMachineAutonomyTask {
@@ -360,13 +368,38 @@ function dedupeApps(apps: DiscoveredApp[]): DiscoveredApp[] {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function launchShellTarget(target: string): Promise<string> {
-  if (process.platform === "win32") {
-    const command = `start "" "${target.replace(/"/g, '""')}"`;
+function escapePowerShellSingleQuoted(value: string): string {
+  return String(value || "").replace(/'/g, "''");
+}
+
+async function runWindowsLaunchCommand(command: string, timeoutMs = 7_000): Promise<void> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
     await execAsync(command, {
       windowsHide: true,
       shell: process.env.ComSpec || "cmd.exe",
+      signal: controller.signal,
     });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Timed out while launching app target after ${timeoutMs}ms.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function buildWindowsStartProcessCommand(target: string): string {
+  const psTarget = escapePowerShellSingleQuoted(target);
+  return `powershell -NoProfile -Command "Start-Process -FilePath '${psTarget}'"`;
+}
+
+async function launchShellTarget(target: string): Promise<string> {
+  if (process.platform === "win32") {
+    const command = buildWindowsStartProcessCommand(target);
+    await runWindowsLaunchCommand(command);
     return command;
   }
 
@@ -379,11 +412,8 @@ async function launchShellTarget(target: string): Promise<string> {
 
 async function launchPathTarget(target: string): Promise<string> {
   if (process.platform === "win32") {
-    const command = `start "" "${target.replace(/"/g, '""')}"`;
-    await execAsync(command, {
-      windowsHide: true,
-      shell: process.env.ComSpec || "cmd.exe",
-    });
+    const command = buildWindowsStartProcessCommand(target);
+    await runWindowsLaunchCommand(command);
     return command;
   }
 
@@ -400,6 +430,54 @@ async function launchBundleTarget(target: string): Promise<string> {
     shell: "/bin/sh",
   });
   return command;
+}
+
+const WINDOWS_QUICK_APP_ALIASES: Array<{ name: string; aliases: string[]; shellTarget: string; id: string }> = [
+  {
+    id: "calculator",
+    name: "Calculator",
+    aliases: ["calculator", "calc", "windows calculator"],
+    shellTarget: "calc.exe",
+  },
+  {
+    id: "notepad",
+    name: "Notepad",
+    aliases: ["notepad", "note pad", "editor"],
+    shellTarget: "notepad.exe",
+  },
+  {
+    id: "file-explorer",
+    name: "File Explorer",
+    aliases: ["file explorer", "explorer", "windows explorer"],
+    shellTarget: "explorer.exe",
+  },
+];
+
+async function tryLaunchQuickAlias(query: string): Promise<AppLaunchResult | null> {
+  if (process.platform !== "win32") return null;
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return null;
+  const match = WINDOWS_QUICK_APP_ALIASES.find((entry) =>
+    entry.aliases.some((alias) => normalizeSearchText(alias) === normalizedQuery)
+  );
+  if (!match) return null;
+  const command = await launchShellTarget(match.shellTarget);
+  return {
+    app: {
+      id: `quick:${match.id}`,
+      name: match.name,
+      aliases: uniqueAliases([match.name, ...match.aliases]),
+      platform: process.platform,
+      source: "windows_quick_alias",
+      launch: {
+        kind: "shell",
+        target: match.shellTarget,
+      },
+    },
+    summary: `Launched ${match.name} from quick alias routing.`,
+    command,
+    createdAt: nowIso(),
+  };
 }
 
 export class MachineAutonomyController {
@@ -427,6 +505,9 @@ export class MachineAutonomyController {
   }
 
   async launchApp(query: string): Promise<AppLaunchResult> {
+    const quickAliasResult = await tryLaunchQuickAlias(query);
+    if (quickAliasResult) return quickAliasResult;
+
     const { apps } = await this.listApps();
     const app = findBestAppMatch(apps, query);
     if (!app) {

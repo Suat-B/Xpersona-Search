@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { promises as fs } from "node:fs";
+import { existsSync, promises as fs } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { createHash, randomBytes } from "node:crypto";
-import { exec } from "node:child_process";
+import { exec, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { createInterface } from "node:readline/promises";
 import { PlaygroundClient, toHostedAssistMode } from "./client.js";
@@ -24,9 +24,27 @@ Core commands:
   binary commands                     Show all commands + aliases
   binary chat                         Interactive chat with streaming
   binary debug-runtime "<task>"      Safe hosted runtime debug in an isolated temp workspace
+  binary benchmark                   Run host latency benchmark against current model/orchestration
+  binary test openhands-gateway      Run OpenHands gateway pytest suite (no Binary Host required)
+  binary inspect <path>               Inspect binary metadata + analysis
+  binary hexdump <path>               Preview a binary range as hex + ASCII
+  binary hash <path>                  Hash a binary target
   binary login                        One-shot browser sign-in
   binary run "<task>"                One-shot task execution
   binary run "<task>" --detach       Start an unattended Binary Host run
+  binary connections list
+  binary connections add web
+  binary connections add remote --name "<name>" --url <url>
+  binary connections test <id>
+  binary connections enable <id>
+  binary connections disable <id>
+  binary connections remove <id>
+  binary connections import --file <path>
+  binary provider list
+  binary provider login <provider>
+  binary provider import <provider>
+  binary provider test <provider>
+  binary provider logout <provider>
   binary automations list
   binary automations create --name "<name>" --prompt "<prompt>" --trigger <manual|schedule_nl|file_event|process_event|notification>
   binary automations show <id>
@@ -34,6 +52,17 @@ Core commands:
   binary automations pause <id>
   binary automations resume <id>
   binary automations tail <id>
+  binary jobs list
+  binary jobs run "<task>"
+  binary jobs show <id>
+  binary jobs tail <id>
+  binary jobs pause <id>
+  binary jobs resume <id>
+  binary jobs cancel <id>
+  binary jobs remote-health
+  binary debug-agent chat [sessionId]
+  binary debug-agent show <sessionId>
+  binary debug-agent tail <sessionId>
   binary runs list [--limit 20]
   binary runs tail <runId>
   binary runs stream <runId>
@@ -56,6 +85,7 @@ Auth/config:
   binary config set-transport <auto|host|direct>
   binary config set-tom <on|off>
   binary config show
+  binary mcp ...                     Power-user alias for binary connections ...
 
 Execution/index:
   binary replay <sessionId> [--mode plan]
@@ -77,16 +107,37 @@ Primary:
   binary commands
   binary chat
   binary debug-runtime "<task>"
+  binary benchmark
+  binary test openhands-gateway [--workspace <dir>] [--python <exe>] [-q]
+  binary inspect <path>
+  binary hexdump <path> [--offset 0] [--length 256]
+  binary hash <path>
   binary login
   binary run "<task>"
   binary run "<task>" --detach
+  binary connections list
+  binary connections add web
+  binary connections add remote --name "<name>" --url <url>
+  binary connections test <id>
+  binary connections enable <id>
+  binary connections disable <id>
+  binary connections remove <id>
+  binary connections import --file <path>
+  binary provider list
+  binary provider login <provider>
+  binary provider import <provider>
+  binary provider test <provider>
+  binary provider logout <provider>
   binary automations list
   binary automations create --name "<name>" --prompt "<prompt>" --trigger <manual|schedule_nl|file_event|process_event|notification>
   binary automations show <id>
   binary automations run <id>
   binary automations pause <id>
   binary automations resume <id>
-  binary automations tail <id> [--interval 1200]
+  binary automations tail <id>
+  binary debug-agent chat [sessionId]
+  binary debug-agent show <sessionId>
+  binary debug-agent tail <sessionId>
   binary runs list [--limit 20]
   binary runs tail <runId>
   binary runs stream <runId>
@@ -111,6 +162,28 @@ Config:
   binary config set-model <model>
   binary config set-transport <auto|host|direct>
   binary config set-tom <on|off>
+
+Connections:
+  binary connections list
+  binary connections add web
+  binary connections add remote --name <name> --url <url> [--transport http|sse] [--auth none|bearer|api-key|oauth]
+  binary connections test <id>
+  binary connections enable <id>
+  binary connections disable <id>
+  binary connections remove <id>
+  binary connections import --file <path>
+  binary mcp ...     -> same commands as binary connections ...
+
+Providers:
+  binary provider list
+ binary provider login <provider> [--base-url <url>] [--model <model>] [--default]
+ binary provider import <provider> [--base-url <url>] [--model <model>] [--default]
+ binary provider open <provider>
+ binary provider status <provider>
+ binary provider test <provider>
+ binary provider refresh <provider>
+ binary provider default <provider>
+ binary provider logout <provider>
 
 Sessions:
   binary sessions list [--limit 20]
@@ -247,6 +320,14 @@ function isHelp(parsed) {
 function printJson(value) {
     console.log(JSON.stringify(value, null, 2));
 }
+const WEB_STARTER_CONNECTION = {
+    name: "Browse websites",
+    transport: "sse",
+    url: process.env.BINARY_CONNECTIONS_WEB_STARTER_URL || "http://127.0.0.1:8081/sse",
+    authMode: "none",
+    enabled: true,
+    source: "starter",
+};
 function maskSecret(value) {
     if (!value)
         return value;
@@ -268,6 +349,57 @@ function redactConfigForDisplay(config) {
             }
             : {}),
     };
+}
+function printConnectionSummary(connection) {
+    const tone = connection.status === "connected"
+        ? "green"
+        : connection.status === "needs_auth"
+            ? "yellow"
+            : connection.status === "failed_test"
+                ? "red"
+                : "cyan";
+    console.log([
+        color(connection.name, "cyan"),
+        dim(`(${connection.id})`),
+        badge("status:", connection.status.replace(/_/g, " "), tone),
+        badge("transport:", connection.transport.toUpperCase(), "magenta"),
+        badge("auth:", connection.authMode, "yellow"),
+    ].join(" "));
+    console.log(dim(`  ${connection.url}`));
+    if (connection.lastValidationError) {
+        console.log(dim(`  last test: ${connection.lastValidationError}`));
+    }
+}
+function printProviderSummary(provider) {
+    const tone = provider.status === "connected"
+        ? "green"
+        : provider.status === "needs_auth"
+            ? "yellow"
+            : provider.status === "failed_test"
+                ? "magenta"
+                : "cyan";
+    const flags = [
+        badge("status:", provider.status.replace(/_/g, " "), tone),
+        badge("runtime:", provider.runtimeKind.replace(/_/g, " "), "magenta"),
+        badge("connect:", provider.connectionMode.replace(/_/g, " "), provider.supportsBrowserAuth ? "green" : "yellow"),
+    ];
+    if (provider.isDefault)
+        flags.push(badge("default:", "yes", "green"));
+    console.log([color(provider.displayName, "cyan"), dim(`(${provider.id})`), ...flags].join(" "));
+    console.log(dim(`  ${provider.configuredBaseUrl || provider.defaultBaseUrl}`));
+    console.log(dim(`  model: ${provider.configuredModel || provider.defaultModel}`));
+    if (provider.linkedAccountLabel)
+        console.log(dim(`  account: ${provider.linkedAccountLabel}`));
+    if (provider.routeLabel)
+        console.log(dim(`  route: ${provider.routeLabel}`));
+    if (provider.runtimeReady === false && provider.runtimeReadinessReason) {
+        console.log(dim(`  runtime: ${provider.runtimeReadinessReason}`));
+    }
+    if (provider.availableModels?.length)
+        console.log(dim(`  models: ${provider.availableModels.slice(0, 5).join(", ")}`));
+    if (provider.lastError) {
+        console.log(dim(`  last test: ${provider.lastError}`));
+    }
 }
 function isReadlineClosedError(error) {
     return error instanceof Error && /readline was closed/i.test(error.message);
@@ -390,7 +522,7 @@ function getHostedModeNotice(mode) {
         return null;
     return `Hosted runtime currently maps '${mode}' to '${hostedMode}'.`;
 }
-function parseTransport(value, fallback = "auto") {
+function parseTransport(value, fallback = "host") {
     if (!value)
         return fallback;
     if (value === "auto" || value === "host" || value === "direct")
@@ -420,7 +552,7 @@ function resolveTomEnabled(config, parsed, defaultEnabled) {
 async function resolveTransport(config, parsed, options) {
     const configured = options?.forceDirect
         ? "direct"
-        : parseTransport(getFlagString(parsed ?? { positionals: [], flags: {} }, "transport"), config.transport ?? "auto");
+        : parseTransport(getFlagString(parsed ?? { positionals: [], flags: {} }, "transport"), config.transport ?? "host");
     if (configured === "direct") {
         return {
             configured,
@@ -439,14 +571,7 @@ async function resolveTransport(config, parsed, options) {
             hostClient,
         };
     }
-    if (configured === "host") {
-        throw new Error(`Binary Host is not reachable at ${hostUrl}. Start it first or rerun with --transport direct.`);
-    }
-    return {
-        configured,
-        selected: "direct",
-        reason: `Binary Host unavailable at ${hostUrl}, falling back to direct hosted mode`,
-    };
+    throw new Error(`Binary Host is not reachable at ${hostUrl}. CLI parity requires the local host + OpenHands orchestration path. Start it first or rerun with --transport direct if you explicitly want the legacy direct hosted path.`);
 }
 async function ensureHostTrust(hostClient, workspaceRoot) {
     await hostClient.trustWorkspace({
@@ -713,6 +838,7 @@ async function streamPrompt(client, input, ui) {
     };
     let printedToken = false;
     let printedFinal = false;
+    let partialSnapshot = "";
     await client.assistStream(input, (event) => {
         if (!event || typeof event !== "object")
             return;
@@ -853,6 +979,7 @@ async function runLocalHostPrompt(hostClient, input, workspaceRoot, ui) {
     };
     let printedToken = false;
     let printedFinal = false;
+    let partialSnapshot = "";
     await ensureHostTrust(hostClient, workspaceRoot);
     await hostClient.assistStream({
         task: input.task,
@@ -861,6 +988,11 @@ async function runLocalHostPrompt(hostClient, input, workspaceRoot, ui) {
         historySessionId: input.historySessionId,
         tom: input.tom,
         workspaceRoot,
+        ...(input.executionLane ? { executionLane: input.executionLane } : {}),
+        ...(input.pluginPacks ? { pluginPacks: input.pluginPacks } : {}),
+        ...(input.expectedLongRun !== undefined ? { expectedLongRun: input.expectedLongRun } : {}),
+        ...(input.requireIsolation !== undefined ? { requireIsolation: input.requireIsolation } : {}),
+        ...(input.debugTracing !== undefined ? { debugTracing: input.debugTracing } : {}),
         client: {
             surface: "cli",
             version: "0.1.0",
@@ -953,9 +1085,23 @@ async function runLocalHostPrompt(hostClient, input, workspaceRoot, ui) {
             Object.assign(envelope, data);
             return;
         }
-        if (ev === "token" || ev === "partial") {
+        if (ev === "token") {
             printedToken = true;
             const tokenText = String(event.data ?? "");
+            partialSnapshot += tokenText;
+            if (ui?.onToken)
+                ui.onToken(tokenText);
+            else
+                process.stdout.write(tokenText);
+            return;
+        }
+        if (ev === "partial") {
+            const snapshot = String(event.data ?? "");
+            const tokenText = snapshot.startsWith(partialSnapshot) ? snapshot.slice(partialSnapshot.length) : snapshot;
+            partialSnapshot = snapshot;
+            if (!tokenText)
+                return;
+            printedToken = true;
             if (ui?.onToken)
                 ui.onToken(tokenText);
             else
@@ -1271,6 +1417,7 @@ async function handleConfig(parsed, config) {
     if (!sub || sub === "show") {
         const hostClient = new LocalHostClient(config.localHostUrl || "http://127.0.0.1:7777");
         const hostHealth = await hostClient.checkHealth();
+        const connections = hostHealth ? (await hostClient.listConnections().catch(() => ({ connections: [] }))).connections : [];
         printJson({
             ...redactConfigForDisplay(config),
             resolvedTransport: await resolveTransport(config, parsed).then((value) => value.selected).catch(() => "direct"),
@@ -1279,6 +1426,20 @@ async function handleConfig(parsed, config) {
                     url: hostClient.url,
                     version: hostHealth.version,
                     secureStorageAvailable: hostHealth.secureStorageAvailable,
+                    openhandsRuntime: hostHealth.openhandsRuntime
+                        ? {
+                            readiness: hostHealth.openhandsRuntime.readiness,
+                            runtimeKind: hostHealth.openhandsRuntime.runtimeKind,
+                            runtimeProfile: hostHealth.openhandsRuntime.runtimeProfile,
+                            message: hostHealth.openhandsRuntime.message,
+                            degradedReasons: hostHealth.openhandsRuntime.degradedReasons,
+                            availableActions: hostHealth.openhandsRuntime.availableActions,
+                        }
+                        : null,
+                    connections: {
+                        total: connections.length,
+                        enabled: connections.filter((item) => item.enabled).length,
+                    },
                 }
                 : {
                     url: hostClient.url,
@@ -1315,7 +1476,7 @@ async function handleConfig(parsed, config) {
         return;
     }
     if (sub === "set-transport") {
-        const transport = parseTransport(parsed.positionals[2], config.transport ?? "auto");
+        const transport = parseTransport(parsed.positionals[2], config.transport ?? "host");
         const next = { ...config, transport };
         await saveConfig(next);
         if (transport === "host") {
@@ -1324,6 +1485,10 @@ async function handleConfig(parsed, config) {
             console.log(hostHealth
                 ? `Default transport set to host (${hostClient.url}).`
                 : `Default transport set to host. Binary Host is not reachable yet at ${hostClient.url}.`);
+            return;
+        }
+        if (transport === "auto") {
+            console.log("Default transport set to auto (treated as host parity mode).");
             return;
         }
         console.log(`Default transport set to ${transport}.`);
@@ -1445,6 +1610,7 @@ async function handleChat(parsed, config) {
         return;
     }
     let activeConfig = config;
+    await assertDirectTransportHasNoConnections(config, "chat");
     let resolvedAuth = await resolveAuth(activeConfig);
     activeConfig = resolvedAuth.config;
     const client = new PlaygroundClient({
@@ -1606,6 +1772,8 @@ async function handleRun(parsed, config) {
     const tomEnabled = resolveTomEnabled(config, parsed, true);
     const hostedModeNotice = getHostedModeNotice(mode);
     const detach = Boolean(parsed.flags.detach);
+    const executionLane = getFlagString(parsed, "lane");
+    const pluginPacks = parseCsvFlag(getFlagString(parsed, "plugin-packs"));
     const transport = await resolveTransport(config, parsed);
     if (hostedModeNotice)
         console.log(dim(`Mode note: ${hostedModeNotice}`));
@@ -1622,6 +1790,13 @@ async function handleRun(parsed, config) {
             tom: { enabled: tomEnabled },
             workspaceRoot: process.cwd(),
             detach: true,
+            ...(executionLane ? { executionLane: executionLane } : {}),
+            ...(pluginPacks
+                ? { pluginPacks: pluginPacks }
+                : {}),
+            expectedLongRun: parsed.flags["short"] === true ? false : true,
+            requireIsolation: parsed.flags["require-isolation"] === true,
+            debugTracing: parsed.flags["trace"] === true,
             client: {
                 surface: "cli",
                 version: "0.1.0",
@@ -1634,7 +1809,19 @@ async function handleRun(parsed, config) {
         return;
     }
     if (transport.selected === "host" && transport.hostClient) {
-        await runLocalHostPrompt(transport.hostClient, { task, mode, model, tom: { enabled: tomEnabled } }, process.cwd(), {
+        await runLocalHostPrompt(transport.hostClient, {
+            task,
+            mode,
+            model,
+            tom: { enabled: tomEnabled },
+            ...(executionLane ? { executionLane: executionLane } : {}),
+            ...(pluginPacks
+                ? { pluginPacks: pluginPacks }
+                : {}),
+            expectedLongRun: parsed.flags["long"] === true,
+            requireIsolation: parsed.flags["require-isolation"] === true,
+            debugTracing: parsed.flags["trace"] === true,
+        }, process.cwd(), {
             onToolStart: (pendingToolCall) => {
                 process.stdout.write(`\n${dim("tool")} step ${pendingToolCall.step}: ${pendingToolCall.toolCall.name}`);
             },
@@ -1644,6 +1831,7 @@ async function handleRun(parsed, config) {
         });
         return;
     }
+    await assertDirectTransportHasNoConnections(config, "run");
     const resolved = await resolveAuth(config);
     const client = new PlaygroundClient({
         baseUrl: resolved.config.baseUrl,
@@ -1660,7 +1848,10 @@ async function handleRun(parsed, config) {
 }
 function printRunSummary(summary) {
     console.log(`${summary.id}  [${summary.status}]  ${summary.request.mode}  ${summary.request.task.slice(0, 80)}${summary.request.task.length > 80 ? "…" : ""}`);
-    console.log(dim(`updated ${summary.updatedAt}  trust=${summary.workspaceTrustMode}  trace=${summary.traceId}${summary.runId ? `  hostedRun=${summary.runId}` : ""}`));
+    console.log(dim(`updated ${summary.updatedAt}  trust=${summary.workspaceTrustMode}  trace=${summary.traceId}${summary.runId ? `  hostedRun=${summary.runId}` : ""}${summary.executionLane ? `  lane=${summary.executionLane}` : ""}`));
+    if (summary.pluginPacks?.length) {
+        console.log(dim(`plugin packs: ${summary.pluginPacks.map((pack) => pack.id).join(", ")}`));
+    }
     if (summary.takeoverReason) {
         console.log(dim(`takeover: ${summary.takeoverReason}`));
     }
@@ -1699,6 +1890,86 @@ function printAutomationEvent(event) {
     const error = typeof data.error === "string" ? data.error : "";
     const bits = [summary, runId ? `run=${runId}` : "", error].filter(Boolean);
     console.log(`${dim(name)}${bits.length ? ` ${bits.join("  ")}` : ""}`);
+}
+function printAgentProbeSession(session) {
+    console.log(`${session.id}  [${session.status}]  ${session.title}`);
+    console.log(dim(`turns=${session.turnCount}  updated=${session.updatedAt}${session.gatewayRunId ? `  gatewayRun=${session.gatewayRunId}` : ""}${session.workspaceRoot ? `  workspace=${session.workspaceRoot}` : ""}`));
+    if (session.currentModelCandidate?.alias || session.currentModelCandidate?.model) {
+        console.log(dim(`model=${session.currentModelCandidate.alias || session.currentModelCandidate.model}${session.currentModelCandidate.provider ? `  provider=${session.currentModelCandidate.provider}` : ""}`));
+    }
+    if (session.lastFailureReason) {
+        console.log(dim(`last failure=${session.lastFailureReason}`));
+    }
+    if (session.persistenceDir) {
+        console.log(dim(`artifacts=${session.persistenceDir}`));
+    }
+}
+function printAgentProbeTurnOutcome(session) {
+    const turn = session.turns[session.turns.length - 1];
+    if (!turn) {
+        console.log(dim("No probe turns yet."));
+        return;
+    }
+    if (turn.status === "failed") {
+        console.log(`${color("probe", "red")} ${turn.error || "Agent probe turn failed."}`);
+        return;
+    }
+    if (turn.fallbackAttempt && turn.fallbackAttempt > 0) {
+        const candidate = turn.modelCandidate?.alias || turn.modelCandidate?.model || "fallback model";
+        console.log(dim(`fallback recovered on attempt ${turn.fallbackAttempt} via ${candidate}${turn.failureReason ? ` after ${turn.failureReason}` : ""}`));
+    }
+    if (turn.persistenceDir) {
+        console.log(dim(`artifacts -> ${turn.persistenceDir}`));
+    }
+    if (turn.assistantMessage?.trim()) {
+        console.log(`${color("assistant", "green")} ${color(">", "gray")} ${turn.assistantMessage}`);
+    }
+    else {
+        console.log(dim("Probe turn completed without an assistant message."));
+    }
+}
+function printAgentProbeEvent(event) {
+    const root = asObject(event.event);
+    const name = typeof root.event === "string" ? root.event : "agent_probe.event";
+    const data = asObject(root.data);
+    const fallbackAttempt = typeof data.fallbackAttempt === "number" && data.fallbackAttempt > 0
+        ? `fallback=${data.fallbackAttempt}`
+        : "";
+    const failureReason = typeof data.failureReason === "string" ? data.failureReason : "";
+    const error = typeof data.error === "string" ? data.error : "";
+    const summary = typeof data.final === "string"
+        ? data.final
+        : typeof data.message === "string"
+            ? data.message
+            : "";
+    const parts = [summary, fallbackAttempt, failureReason, error].filter(Boolean);
+    console.log(`${dim(name)}${parts.length ? ` ${parts.join("  ")}` : ""}`);
+}
+function printAgentJobSummary(job) {
+    console.log(`${job.id}  [${job.status}]  lane=${job.executionLane}  model=${job.model}`);
+    console.log(dim(`updated=${job.updatedAt}${job.runId ? `  run=${job.runId}` : ""}${job.workspaceRoot ? `  workspace=${job.workspaceRoot}` : ""}`));
+    if (job.pluginPacks.length) {
+        console.log(dim(`plugin packs: ${job.pluginPacks.map((pack) => pack.id).join(", ")}`));
+    }
+    const skillPaths = job.skillSources.filter((source) => source.available).map((source) => source.path || source.label);
+    if (skillPaths.length) {
+        console.log(dim(`skills: ${skillPaths.join(", ")}`));
+    }
+    if (job.persistenceDir) {
+        console.log(dim(`artifacts=${job.persistenceDir}`));
+    }
+    if (job.error) {
+        console.log(dim(`error=${job.error}`));
+    }
+}
+function printAgentJobEvent(event) {
+    const root = asObject(event.event);
+    const name = typeof root.event === "string" ? root.event : "agent_job.event";
+    const data = asObject(root.data);
+    const lane = typeof data.executionLane === "string" ? data.executionLane : "";
+    const error = typeof data.error === "string" ? data.error : "";
+    const parts = [lane, error].filter(Boolean);
+    console.log(`${dim(name)}${parts.length ? ` ${parts.join("  ")}` : ""}`);
 }
 function parseCsvFlag(value) {
     if (!value)
@@ -1763,76 +2034,89 @@ function buildAutomationTriggerFromArgs(parsed) {
     }
     throw new Error("Unknown --trigger. Use manual|schedule_nl|file_event|process_event|notification.");
 }
-function printTailEvent(event) {
-    const root = asObject(event.event);
-    const name = typeof root.event === "string" ? root.event : "event";
-    const data = root.data;
-    if (name === "token" || name === "partial") {
-        process.stdout.write(String(data ?? ""));
-        return;
-    }
-    if (name === "final") {
-        process.stdout.write(`\n${color("assistant", "green")} ${color(">", "gray")} ${String(data ?? "")}\n`);
-        return;
-    }
-    if (name === "host.status") {
-        const info = asObject(data);
-        const message = typeof info.message === "string" ? info.message : "Binary Host status";
-        console.log(`${dim("host")} ${message}`);
-        return;
-    }
-    if (name === "host.heartbeat") {
-        const info = asObject(data);
-        const status = typeof info.status === "string" ? info.status : "running";
-        const heartbeatAt = typeof info.heartbeatAt === "string" ? info.heartbeatAt : event.capturedAt;
-        console.log(`${dim("heartbeat")} ${status} ${heartbeatAt}`);
-        return;
-    }
-    if (name === "host.budget") {
-        const info = asObject(data);
-        const budget = asObject(info.budgetState);
-        const used = typeof budget.usedSteps === "number" ? budget.usedSteps : "?";
-        const remaining = typeof budget.remainingSteps === "number" ? budget.remainingSteps : "?";
-        console.log(`${dim("budget")} steps ${used}/${remaining}`);
-        return;
-    }
-    if (name === "host.checkpoint") {
-        const info = asObject(data);
-        const checkpoint = asObject(info.checkpoint);
-        const summary = typeof checkpoint.summary === "string" ? checkpoint.summary : "checkpoint";
-        console.log(`${dim("checkpoint")} ${summary}`);
-        return;
-    }
-    if (name === "host.stall" || name === "host.takeover_required") {
-        const info = asObject(data);
-        const reason = typeof info.reason === "string" ? info.reason : name;
-        console.log(`${dim(name)} ${reason}`);
-        return;
-    }
-    if (name === "tool_request") {
-        const info = asObject(data);
-        const tool = asObject(info.toolCall);
-        const toolName = typeof tool.name === "string" ? tool.name : "tool";
-        const step = typeof info.step === "number" ? info.step : "?";
-        console.log(`${dim("tool")} step ${step}: ${toolName}`);
-        return;
-    }
-    if (name === "tool_result") {
-        const info = asObject(data);
-        const summary = typeof info.summary === "string" ? info.summary : "tool finished";
-        const ok = Boolean(info.ok);
-        console.log(`${dim(ok ? "tool ok" : "tool fail")} ${summary}`);
-        return;
-    }
-    if (name === "meta") {
-        const info = asObject(data);
-        const completion = typeof info.completionStatus === "string" ? info.completionStatus : "";
-        if (completion) {
-            console.log(`${dim("meta")} completion=${completion}`);
+function createTailEventPrinter() {
+    let partialSnapshot = "";
+    return (event) => {
+        const root = asObject(event.event);
+        const name = typeof root.event === "string" ? root.event : "event";
+        const data = root.data;
+        if (name === "token") {
+            const tokenText = String(data ?? "");
+            partialSnapshot += tokenText;
+            process.stdout.write(tokenText);
+            return;
         }
-        return;
-    }
-    console.log(`${dim(name)} ${JSON.stringify(data ?? root)}`);
+        if (name === "partial") {
+            const snapshot = String(data ?? "");
+            const tokenText = snapshot.startsWith(partialSnapshot) ? snapshot.slice(partialSnapshot.length) : snapshot;
+            partialSnapshot = snapshot;
+            if (tokenText)
+                process.stdout.write(tokenText);
+            return;
+        }
+        if (name === "final") {
+            process.stdout.write(`\n${color("assistant", "green")} ${color(">", "gray")} ${String(data ?? "")}\n`);
+            return;
+        }
+        if (name === "host.status") {
+            const info = asObject(data);
+            const message = typeof info.message === "string" ? info.message : "Binary Host status";
+            console.log(`${dim("host")} ${message}`);
+            return;
+        }
+        if (name === "host.heartbeat") {
+            const info = asObject(data);
+            const status = typeof info.status === "string" ? info.status : "running";
+            const heartbeatAt = typeof info.heartbeatAt === "string" ? info.heartbeatAt : event.capturedAt;
+            console.log(`${dim("heartbeat")} ${status} ${heartbeatAt}`);
+            return;
+        }
+        if (name === "host.budget") {
+            const info = asObject(data);
+            const budget = asObject(info.budgetState);
+            const used = typeof budget.usedSteps === "number" ? budget.usedSteps : "?";
+            const remaining = typeof budget.remainingSteps === "number" ? budget.remainingSteps : "?";
+            console.log(`${dim("budget")} steps ${used}/${remaining}`);
+            return;
+        }
+        if (name === "host.checkpoint") {
+            const info = asObject(data);
+            const checkpoint = asObject(info.checkpoint);
+            const summary = typeof checkpoint.summary === "string" ? checkpoint.summary : "checkpoint";
+            console.log(`${dim("checkpoint")} ${summary}`);
+            return;
+        }
+        if (name === "host.stall" || name === "host.takeover_required") {
+            const info = asObject(data);
+            const reason = typeof info.reason === "string" ? info.reason : name;
+            console.log(`${dim(name)} ${reason}`);
+            return;
+        }
+        if (name === "tool_request") {
+            const info = asObject(data);
+            const tool = asObject(info.toolCall);
+            const toolName = typeof tool.name === "string" ? tool.name : "tool";
+            const step = typeof info.step === "number" ? info.step : "?";
+            console.log(`${dim("tool")} step ${step}: ${toolName}`);
+            return;
+        }
+        if (name === "tool_result") {
+            const info = asObject(data);
+            const summary = typeof info.summary === "string" ? info.summary : "tool finished";
+            const ok = Boolean(info.ok);
+            console.log(`${dim(ok ? "tool ok" : "tool fail")} ${summary}`);
+            return;
+        }
+        if (name === "meta") {
+            const info = asObject(data);
+            const completion = typeof info.completionStatus === "string" ? info.completionStatus : "";
+            if (completion) {
+                console.log(`${dim("meta")} completion=${completion}`);
+            }
+            return;
+        }
+        console.log(`${dim(name)} ${JSON.stringify(data ?? root)}`);
+    };
 }
 async function requireHostClient(config) {
     const hostClient = new LocalHostClient(config.localHostUrl || "http://127.0.0.1:7777");
@@ -1842,6 +2126,28 @@ async function requireHostClient(config) {
     }
     return hostClient;
 }
+async function requireConnectionsHostClient(config) {
+    const hostClient = new LocalHostClient(config.localHostUrl || "http://127.0.0.1:7777");
+    const health = await hostClient.checkHealth();
+    if (!health) {
+        throw new Error(`Binary Host is not reachable at ${hostClient.url}. Start Binary Host/Desktop first.`);
+    }
+    return hostClient;
+}
+async function getHostConnectionViews(config) {
+    const hostClient = new LocalHostClient(config.localHostUrl || "http://127.0.0.1:7777");
+    const health = await hostClient.checkHealth();
+    if (!health)
+        return [];
+    return (await hostClient.listConnections()).connections;
+}
+async function assertDirectTransportHasNoConnections(config, commandName) {
+    const connections = await getHostConnectionViews(config);
+    const active = connections.filter((connection) => connection.enabled);
+    if (!active.length)
+        return;
+    throw new Error(`Binary has ${active.length} enabled connection(s), and direct transport cannot attach them for \`${commandName}\`. Switch to --transport host or disable the connections first.`);
+}
 function normalizeRunAction(input) {
     if (input === "pause" || input === "resume" || input === "cancel" || input === "repair" || input === "takeover") {
         return input;
@@ -1850,6 +2156,659 @@ function normalizeRunAction(input) {
         return "retry_last_turn";
     }
     throw new Error(`Unknown runs subcommand '${input}'.`);
+}
+function toFiniteNumber(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+}
+function parsePositiveInteger(value, fallback) {
+    const parsed = Number.parseInt(String(value || ""), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0)
+        return fallback;
+    return parsed;
+}
+function formatMs(value) {
+    return Number.isFinite(value) ? `${Math.round(value)}ms` : "n/a";
+}
+function mean(values) {
+    if (!values.length)
+        return undefined;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+function percentile(values, ratio) {
+    if (!values.length)
+        return undefined;
+    const sorted = [...values].sort((left, right) => left - right);
+    const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1));
+    return sorted[index];
+}
+async function runLatencyBenchmarkTurn(input) {
+    const startedAt = Date.now();
+    let firstEventMs;
+    let firstTokenMs;
+    let runId;
+    let runtimeReadyMs;
+    let firstTurnReadyMs;
+    let plannerLatencyMs;
+    let providerLatencyMs;
+    let executionLane;
+    let orchestrator;
+    let finalText = "";
+    let status = "completed";
+    let capturedError;
+    try {
+        const started = await input.hostClient.startDetachedRun({
+            task: input.task,
+            mode: input.mode,
+            model: input.model,
+            tom: { enabled: input.tomEnabled },
+            ...(input.workspaceRoot ? { workspaceRoot: input.workspaceRoot } : {}),
+            client: {
+                surface: "cli",
+                version: "0.1.0",
+            },
+        });
+        runId = started.id;
+        status = started.status;
+        await input.hostClient.streamRun(started.id, async (event) => {
+            if (!firstEventMs)
+                firstEventMs = Date.now() - startedAt;
+            const root = asObject(event);
+            const name = typeof root.event === "string" ? root.event : "";
+            const data = asObject(root.data);
+            if (name === "token" || name === "partial") {
+                const token = String(root.data ?? "");
+                if (token.trim().length > 0 && !firstTokenMs) {
+                    firstTokenMs = Date.now() - startedAt;
+                }
+                return;
+            }
+            if (name === "final") {
+                finalText = String(root.data ?? "");
+                if (finalText.trim().length > 0 && !firstTokenMs) {
+                    firstTokenMs = Date.now() - startedAt;
+                }
+                return;
+            }
+            if (name === "run") {
+                if (typeof data.runId === "string" && data.runId.trim())
+                    runId = data.runId;
+                return;
+            }
+            if (name === "meta") {
+                runtimeReadyMs = toFiniteNumber(data.runtimeReadyMs) ?? runtimeReadyMs;
+                firstTurnReadyMs = toFiniteNumber(data.firstTurnReadyMs) ?? firstTurnReadyMs;
+                plannerLatencyMs = toFiniteNumber(data.plannerLatencyMs) ?? plannerLatencyMs;
+                providerLatencyMs = toFiniteNumber(data.providerLatencyMs) ?? providerLatencyMs;
+                executionLane = typeof data.executionLane === "string" ? data.executionLane : executionLane;
+                orchestrator = typeof data.orchestrator === "string" ? data.orchestrator : orchestrator;
+                const startupDurations = asObject(data.startupPhaseDurations);
+                runtimeReadyMs = toFiniteNumber(startupDurations.runtimeReadyMs) ?? runtimeReadyMs;
+                firstTurnReadyMs = toFiniteNumber(startupDurations.firstTurnReadyMs) ?? firstTurnReadyMs;
+            }
+        });
+        const runRecord = runId ? await input.hostClient.getRun(runId).catch(() => null) : null;
+        if (runRecord) {
+            status = runRecord.status;
+            const runObject = asObject(runRecord);
+            const timingState = asObject(runObject.timingState);
+            const startupDurations = asObject(timingState.startupPhaseDurations);
+            runtimeReadyMs = toFiniteNumber(startupDurations.runtimeReadyMs) ?? runtimeReadyMs;
+            firstTurnReadyMs = toFiniteNumber(startupDurations.firstTurnReadyMs) ?? firstTurnReadyMs;
+            const executionState = asObject(runObject.lastExecutionState);
+            plannerLatencyMs = toFiniteNumber(executionState.plannerLatencyMs) ?? plannerLatencyMs;
+            providerLatencyMs = toFiniteNumber(executionState.providerLatencyMs) ?? providerLatencyMs;
+            executionLane =
+                (typeof runObject.executionLane === "string" ? runObject.executionLane : undefined) ??
+                    (typeof executionState.executionLane === "string" ? executionState.executionLane : executionLane);
+            orchestrator =
+                (typeof executionState.orchestrator === "string" ? executionState.orchestrator : undefined) ?? orchestrator;
+            const finalEnvelope = asObject(runObject.finalEnvelope);
+            finalText = typeof finalEnvelope.final === "string" ? finalEnvelope.final : finalText;
+        }
+    }
+    catch (error) {
+        capturedError = error instanceof Error ? error.message : String(error);
+        status = "failed";
+    }
+    return {
+        index: input.index,
+        ...(runId ? { runId } : {}),
+        status,
+        totalMs: Date.now() - startedAt,
+        ...(firstEventMs !== undefined ? { firstEventMs } : {}),
+        ...(firstTokenMs !== undefined ? { firstTokenMs } : {}),
+        ...(runtimeReadyMs !== undefined ? { runtimeReadyMs } : {}),
+        ...(firstTurnReadyMs !== undefined ? { firstTurnReadyMs } : {}),
+        ...(plannerLatencyMs !== undefined ? { plannerLatencyMs } : {}),
+        ...(providerLatencyMs !== undefined ? { providerLatencyMs } : {}),
+        ...(executionLane ? { executionLane } : {}),
+        ...(orchestrator ? { orchestrator } : {}),
+        ...(finalText.trim()
+            ? {
+                finalPreview: finalText.trim().length > 140 ? `${finalText.trim().slice(0, 137)}...` : finalText.trim(),
+            }
+            : {}),
+        ...(capturedError ? { error: capturedError } : {}),
+    };
+}
+async function handleBenchmark(parsed, config) {
+    const hostClient = await requireHostClient(config);
+    const count = Math.min(parsePositiveInteger(getFlagString(parsed, "count", "n"), 3), 20);
+    const warmupCount = Math.min(parsePositiveInteger(getFlagString(parsed, "warmup"), 1), 5);
+    const mode = parseMode(getFlagString(parsed, "mode", "m"), config.mode ?? "auto");
+    const model = getFlagString(parsed, "model") ?? config.model ?? "Binary IDE";
+    const tomEnabled = resolveTomEnabled(config, parsed, true);
+    const workspaceFlag = getFlagString(parsed, "workspace");
+    const workspaceRoot = workspaceFlag ? path.resolve(workspaceFlag) : undefined;
+    const task = getFlagString(parsed, "task") || parsed.positionals.slice(1).join(" ").trim() || "hello";
+    const jsonMode = parsed.flags["json"] === true;
+    console.log(color("Binary Host Latency Benchmark", "cyan"));
+    console.log(dim(rule()));
+    console.log(`Host: ${hostClient.url}`);
+    console.log(`Task: ${task}`);
+    console.log(`Mode: ${mode}`);
+    console.log(`Model: ${model}`);
+    console.log(`Runs: ${count} (warmup ${warmupCount})`);
+    if (workspaceRoot)
+        console.log(`Workspace: ${workspaceRoot}`);
+    for (let i = 1; i <= warmupCount; i += 1) {
+        process.stdout.write(`${dim("warmup")} ${i}/${warmupCount}...\n`);
+        await runLatencyBenchmarkTurn({
+            hostClient,
+            index: i,
+            task,
+            mode,
+            model,
+            tomEnabled,
+            workspaceRoot,
+        });
+    }
+    const samples = [];
+    for (let i = 1; i <= count; i += 1) {
+        process.stdout.write(`${dim("run")} ${i}/${count}...\n`);
+        const sample = await runLatencyBenchmarkTurn({
+            hostClient,
+            index: i,
+            task,
+            mode,
+            model,
+            tomEnabled,
+            workspaceRoot,
+        });
+        samples.push(sample);
+        const statusTone = sample.status === "completed" ? "green" : "yellow";
+        const statusLine = `${color(sample.status, statusTone)} total=${formatMs(sample.totalMs)} first-token=${formatMs(sample.firstTokenMs)} runtime-ready=${formatMs(sample.runtimeReadyMs)} planner=${formatMs(sample.plannerLatencyMs)} provider=${formatMs(sample.providerLatencyMs)}`;
+        console.log(`  ${statusLine}`);
+        if (sample.error)
+            console.log(`  ${dim(`error: ${sample.error}`)}`);
+    }
+    const successful = samples.filter((sample) => !sample.error);
+    const totals = successful.map((sample) => sample.totalMs);
+    const firstTokens = successful
+        .map((sample) => sample.firstTokenMs)
+        .filter((value) => Number.isFinite(value));
+    const runtimeReady = successful
+        .map((sample) => sample.runtimeReadyMs)
+        .filter((value) => Number.isFinite(value));
+    const planner = successful
+        .map((sample) => sample.plannerLatencyMs)
+        .filter((value) => Number.isFinite(value));
+    const provider = successful
+        .map((sample) => sample.providerLatencyMs)
+        .filter((value) => Number.isFinite(value));
+    const summary = {
+        task,
+        mode,
+        model,
+        count,
+        warmupCount,
+        successfulRuns: successful.length,
+        failedRuns: samples.length - successful.length,
+        metrics: {
+            totalMs: {
+                mean: mean(totals),
+                p50: percentile(totals, 0.5),
+                p95: percentile(totals, 0.95),
+            },
+            firstTokenMs: {
+                mean: mean(firstTokens),
+                p50: percentile(firstTokens, 0.5),
+                p95: percentile(firstTokens, 0.95),
+            },
+            runtimeReadyMs: {
+                mean: mean(runtimeReady),
+                p50: percentile(runtimeReady, 0.5),
+                p95: percentile(runtimeReady, 0.95),
+            },
+            plannerLatencyMs: {
+                mean: mean(planner),
+                p50: percentile(planner, 0.5),
+                p95: percentile(planner, 0.95),
+            },
+            providerLatencyMs: {
+                mean: mean(provider),
+                p50: percentile(provider, 0.5),
+                p95: percentile(provider, 0.95),
+            },
+        },
+        samples,
+    };
+    if (jsonMode) {
+        printJson(summary);
+        return;
+    }
+    console.log(dim(rule()));
+    console.log(`Total latency: mean ${formatMs(summary.metrics.totalMs.mean)} | p50 ${formatMs(summary.metrics.totalMs.p50)} | p95 ${formatMs(summary.metrics.totalMs.p95)}`);
+    console.log(`First token:  mean ${formatMs(summary.metrics.firstTokenMs.mean)} | p50 ${formatMs(summary.metrics.firstTokenMs.p50)} | p95 ${formatMs(summary.metrics.firstTokenMs.p95)}`);
+    console.log(`Runtime ready: mean ${formatMs(summary.metrics.runtimeReadyMs.mean)} | p50 ${formatMs(summary.metrics.runtimeReadyMs.p50)} | p95 ${formatMs(summary.metrics.runtimeReadyMs.p95)}`);
+    console.log(`Planner:      mean ${formatMs(summary.metrics.plannerLatencyMs.mean)} | p50 ${formatMs(summary.metrics.plannerLatencyMs.p50)} | p95 ${formatMs(summary.metrics.plannerLatencyMs.p95)}`);
+    console.log(`Provider:     mean ${formatMs(summary.metrics.providerLatencyMs.mean)} | p50 ${formatMs(summary.metrics.providerLatencyMs.p50)} | p95 ${formatMs(summary.metrics.providerLatencyMs.p95)}`);
+    console.log(dim(`Tip: use --json to capture full per-run timing and metadata.`));
+}
+function resolveOpenhandsGatewayTestsLayout(startDir) {
+    let cursor = path.resolve(startDir);
+    for (let depth = 0; depth < 24; depth += 1) {
+        const gatewayDir = path.join(cursor, "services", "openhands-gateway");
+        const marker = path.join(gatewayDir, "agent_turn.py");
+        const testsDir = path.join(gatewayDir, "tests");
+        if (existsSync(marker) && existsSync(testsDir)) {
+            return { repoRoot: cursor, gatewayDir };
+        }
+        const parent = path.dirname(cursor);
+        if (!parent || parent === cursor)
+            break;
+        cursor = parent;
+    }
+    return null;
+}
+function runPytestInGatewayDir(options) {
+    return new Promise((resolve) => {
+        const args = ["-m", "pytest", ...options.pytestArgs];
+        const child = spawn(options.pythonExe, args, {
+            cwd: options.gatewayDir,
+            stdio: "inherit",
+            env: {
+                ...process.env,
+                PYTHONUTF8: process.env.PYTHONUTF8 || "1",
+            },
+        });
+        child.on("error", (err) => {
+            console.error(err instanceof Error ? err.message : String(err));
+            resolve(127);
+        });
+        child.on("close", (code) => {
+            resolve(typeof code === "number" ? code : 1);
+        });
+    });
+}
+async function handleTestSuite(parsed) {
+    const sub = (parsed.positionals[1] || "").trim().toLowerCase();
+    if (!sub || sub === "help") {
+        console.log(dim("Usage: binary test openhands-gateway [--workspace <dir>] [--python <exe>] [-q] [extra pytest path args...]"));
+        console.log(dim("Runs pytest from services/openhands-gateway (no Binary Host or API keys required)."));
+        return;
+    }
+    const workspaceFlag = getFlagString(parsed, "workspace");
+    const startDir = workspaceFlag ? path.resolve(workspaceFlag) : process.cwd();
+    const layout = resolveOpenhandsGatewayTestsLayout(startDir);
+    if (!layout) {
+        throw new Error("Could not find services/openhands-gateway (agent_turn.py + tests/). Run from inside the Xpersona repo or pass --workspace <repoRoot>.");
+    }
+    if (sub !== "openhands-gateway" && sub !== "gateway") {
+        throw new Error(`Unknown test suite '${parsed.positionals[1]}'. Supported: openhands-gateway`);
+    }
+    const pythonExe = getFlagString(parsed, "python") || process.env.PYTHON || "python";
+    const quiet = parsed.flags.quiet === true || parsed.flags.q === true;
+    const pytestArgs = [];
+    if (quiet)
+        pytestArgs.push("-q");
+    else
+        pytestArgs.push("-v");
+    pytestArgs.push("tests");
+    const passThrough = parsed.positionals.slice(2).map((p) => p.trim()).filter(Boolean);
+    pytestArgs.push(...passThrough);
+    console.log(color("OpenHands gateway tests", "cyan"));
+    console.log(dim(rule()));
+    console.log(dim(`repo: ${layout.repoRoot}`));
+    console.log(dim(`cwd:  ${layout.gatewayDir}`));
+    console.log(dim(`py:   ${pythonExe}`));
+    const code = await runPytestInGatewayDir({
+        gatewayDir: layout.gatewayDir,
+        pythonExe,
+        pytestArgs,
+    });
+    if (code !== 0) {
+        process.exit(code);
+    }
+}
+function parseHeaderFlag(value) {
+    const raw = String(value || "").trim();
+    if (!raw)
+        return undefined;
+    const separator = raw.includes(":") ? ":" : raw.includes("=") ? "=" : "";
+    if (!separator) {
+        throw new Error("Headers must use the format \"Name: Value\".");
+    }
+    const index = raw.indexOf(separator);
+    const key = raw.slice(0, index).trim();
+    const headerValue = raw.slice(index + 1).trim();
+    if (!key || !headerValue) {
+        throw new Error("Headers must use the format \"Name: Value\".");
+    }
+    return { [key]: headerValue };
+}
+async function handleConnections(parsed, config) {
+    const hostClient = await requireConnectionsHostClient(config);
+    const sub = parsed.positionals[1] || "list";
+    if (sub === "list") {
+        const response = await hostClient.listConnections();
+        if (!response.connections.length) {
+            console.log("No connections yet. Add one with `binary connections add remote ...` or `binary connections add web`.");
+            return;
+        }
+        for (const connection of response.connections) {
+            printConnectionSummary(connection);
+        }
+        return;
+    }
+    if (sub === "add") {
+        const kind = parsed.positionals[2] || "remote";
+        if (kind === "web") {
+            const saved = await hostClient.saveConnection(WEB_STARTER_CONNECTION);
+            console.log("Starter connection added:");
+            printConnectionSummary(saved.connection);
+            console.log(dim("Tip: if the local fetch proxy is not running yet, update the URL or import an advanced MCP config later."));
+            return;
+        }
+        if (kind !== "remote") {
+            throw new Error("Usage: binary connections add web | binary connections add remote --name <name> --url <url>");
+        }
+        const name = getFlagString(parsed, "name");
+        const url = getFlagString(parsed, "url");
+        if (!name || !url) {
+            throw new Error("Usage: binary connections add remote --name <name> --url <url>");
+        }
+        const auth = (getFlagString(parsed, "auth") || "none").trim();
+        const transport = (getFlagString(parsed, "transport") || "http").trim();
+        const saved = await hostClient.saveConnection({
+            name,
+            url,
+            transport,
+            authMode: auth,
+            enabled: parsed.flags.disabled ? false : true,
+            source: "guided",
+            ...(getFlagString(parsed, "header-name") ? { headerName: getFlagString(parsed, "header-name") } : {}),
+            ...(getFlagString(parsed, "bearer") ? { bearerToken: getFlagString(parsed, "bearer") } : {}),
+            ...(getFlagString(parsed, "api-key") ? { apiKey: getFlagString(parsed, "api-key") } : {}),
+            ...(getFlagString(parsed, "public-header")
+                ? { publicHeaders: parseHeaderFlag(getFlagString(parsed, "public-header")) }
+                : {}),
+            ...(getFlagString(parsed, "secret-header")
+                ? { secretHeaders: parseHeaderFlag(getFlagString(parsed, "secret-header")) }
+                : {}),
+            ...(auth === "oauth" ? { oauthSupported: true } : {}),
+        });
+        console.log("Connection saved:");
+        printConnectionSummary(saved.connection);
+        return;
+    }
+    if (sub === "import") {
+        const file = getFlagString(parsed, "file");
+        if (!file)
+            throw new Error("Usage: binary connections import --file <path>");
+        const resolvedPath = path.resolve(file);
+        const raw = await fs.readFile(resolvedPath, "utf8");
+        const response = await hostClient.importConnections(raw, resolvedPath);
+        if (!response.connections.length) {
+            console.log("No supported remote connections were imported.");
+            return;
+        }
+        console.log(`Imported ${response.connections.length} connection(s):`);
+        for (const connection of response.connections) {
+            printConnectionSummary(connection);
+        }
+        return;
+    }
+    const connectionId = parsed.positionals[2];
+    if (!connectionId) {
+        throw new Error(`Usage: binary connections ${sub} <id>`);
+    }
+    if (sub === "test") {
+        const result = await hostClient.testConnection(connectionId);
+        printConnectionSummary(result.connection);
+        console.log(result.test.message);
+        return;
+    }
+    if (sub === "enable") {
+        const result = await hostClient.enableConnection(connectionId);
+        printConnectionSummary(result.connection);
+        return;
+    }
+    if (sub === "disable") {
+        const result = await hostClient.disableConnection(connectionId);
+        printConnectionSummary(result.connection);
+        return;
+    }
+    if (sub === "remove") {
+        await hostClient.removeConnection(connectionId);
+        console.log(`Removed connection ${connectionId}.`);
+        return;
+    }
+    throw new Error(`Unknown connections subcommand '${sub}'.`);
+}
+async function handleProviders(parsed, config) {
+    const hostClient = await requireConnectionsHostClient(config);
+    const sub = parsed.positionals[1] || "list";
+    if (sub === "list") {
+        const [catalogResponse, providersResponse] = await Promise.all([
+            hostClient.listProviderCatalog(),
+            hostClient.listProviders(),
+        ]);
+        if (!catalogResponse.providers.length) {
+            console.log("No built-in providers are available in this Binary Host build.");
+            return;
+        }
+        for (const provider of providersResponse.providers) {
+            printProviderSummary(provider);
+        }
+        return;
+    }
+    const providerId = parsed.positionals[2];
+    if (!providerId) {
+        throw new Error(`Usage: binary provider ${sub} <provider>`);
+    }
+    if (sub === "open") {
+        const response = await hostClient.openProviderBrowser(providerId);
+        console.log(`Opened ${providerId} in your browser.`);
+        console.log(dim(response.url));
+        return;
+    }
+    if (sub === "login" || sub === "connect") {
+        const catalogResponse = await hostClient.listProviderCatalog();
+        const catalog = catalogResponse.providers.find((item) => item.id === providerId);
+        if (!catalog)
+            throw new Error(`Provider ${providerId} is not available in this Binary Host build.`);
+        if (catalog.connectionMode === "portal_session" || catalog.connectionMode === "local_credential_adapter") {
+            const result = await hostClient.startProviderBrowserSession({
+                providerId,
+                ...(getFlagString(parsed, "base-url") ? { baseUrl: getFlagString(parsed, "base-url") } : {}),
+                ...(getFlagString(parsed, "model") ? { defaultModel: getFlagString(parsed, "model") } : {}),
+                setDefault: parsed.flags.default === true,
+            });
+            console.log(`Opened ${providerId} browser linking in your browser.`);
+            const startedAt = Date.now();
+            while (Date.now() - startedAt < 180_000) {
+                await new Promise((resolve) => setTimeout(resolve, 1500));
+                const poll = await hostClient.pollProviderBrowserSession(result.session.sessionId);
+                if (poll.session.status === "connected" && poll.provider) {
+                    printProviderSummary(poll.provider);
+                    console.log("Browser session linked.");
+                    return;
+                }
+                if (poll.session.status === "failed" || poll.session.status === "cancelled") {
+                    throw new Error(poll.session.error || "Provider login did not complete.");
+                }
+            }
+            console.log("Browser linking is still pending. Re-run `binary provider status <provider>` in a moment.");
+            return;
+        }
+        const result = await hostClient.startProviderOAuth({
+            providerId,
+            ...(getFlagString(parsed, "base-url") ? { baseUrl: getFlagString(parsed, "base-url") } : {}),
+            ...(getFlagString(parsed, "model") ? { defaultModel: getFlagString(parsed, "model") } : {}),
+            setDefault: parsed.flags.default === true,
+        });
+        console.log(`Opened ${providerId} account linking in your browser.`);
+        if (result.userCode && result.verificationUri) {
+            console.log(dim(`Open ${result.verificationUri} and enter code ${result.userCode}.`));
+        }
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < 180_000) {
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            const poll = await hostClient.pollProviderOAuth(result.sessionId);
+            if (poll.session.status === "connected" && poll.provider) {
+                printProviderSummary(poll.provider);
+                console.log("Browser auth completed.");
+                return;
+            }
+            if (poll.session.status === "failed" || poll.session.status === "cancelled") {
+                throw new Error(poll.session.error || "Provider login did not complete.");
+            }
+        }
+        console.log("Browser auth is still pending. Re-run `binary provider status <provider>` in a moment.");
+        return;
+    }
+    if (sub === "import") {
+        const result = await hostClient.importProviderLocalAuth({
+            providerId,
+            ...(getFlagString(parsed, "base-url") ? { baseUrl: getFlagString(parsed, "base-url") } : {}),
+            ...(getFlagString(parsed, "model") ? { defaultModel: getFlagString(parsed, "model") } : {}),
+            setDefault: parsed.flags.default === true,
+        });
+        printProviderSummary(result.provider);
+        console.log(`Imported local ${providerId} credentials.`);
+        return;
+    }
+    if (sub === "status") {
+        const response = await hostClient.listProviders();
+        const provider = response.providers.find((item) => item.id === providerId);
+        if (!provider)
+            throw new Error(`Provider ${providerId} is not available in this Binary Host build.`);
+        printProviderSummary(provider);
+        return;
+    }
+    if (sub === "test") {
+        const result = await hostClient.testProvider(providerId);
+        printProviderSummary(result.provider);
+        console.log(result.test.message);
+        if (result.test.availableModels?.length) {
+            console.log(dim(`validated against ${result.test.availableModels.length} model id(s)`));
+        }
+        return;
+    }
+    if (sub === "refresh") {
+        const result = await hostClient.refreshProvider(providerId);
+        printProviderSummary(result.provider);
+        console.log(`Refreshed ${providerId}.`);
+        return;
+    }
+    if (sub === "default") {
+        const result = await hostClient.setDefaultProvider(providerId);
+        const provider = result.providers.find((item) => item.id === providerId);
+        if (provider)
+            printProviderSummary(provider);
+        console.log(`Default model provider set to ${providerId}.`);
+        return;
+    }
+    if (sub === "disconnect" || sub === "remove" || sub === "logout") {
+        await hostClient.disconnectProvider(providerId);
+        console.log(`Disconnected provider ${providerId}.`);
+        return;
+    }
+    throw new Error(`Unknown provider subcommand '${sub}'.`);
+}
+async function handleJobs(parsed, config) {
+    const hostClient = await requireHostClient(config);
+    const sub = parsed.positionals[1] || "list";
+    if (sub === "list") {
+        const limitRaw = getFlagString(parsed, "limit", "l");
+        const limit = limitRaw ? Number.parseInt(limitRaw, 10) : 20;
+        const response = await hostClient.listAgentJobs(Number.isFinite(limit) ? limit : 20);
+        if (!response.jobs.length) {
+            console.log("No Binary agent jobs found.");
+            return;
+        }
+        for (const job of response.jobs) {
+            printAgentJobSummary(job);
+        }
+        return;
+    }
+    if (sub === "run" || sub === "create") {
+        const task = parsed.positionals.slice(2).join(" ").trim() || getFlagString(parsed, "task");
+        if (!task) {
+            throw new Error("Usage: binary jobs run \"<task>\" [--workspace <path>] [--lane <local_interactive|openhands_headless|openhands_remote>]");
+        }
+        const workspaceRoot = getFlagString(parsed, "workspace");
+        const lane = getFlagString(parsed, "lane");
+        const pluginPacks = parseCsvFlag(getFlagString(parsed, "plugin-packs"));
+        const job = await hostClient.createAgentJob({
+            task,
+            mode: (getFlagString(parsed, "mode") || "auto") || "auto",
+            model: getFlagString(parsed, "model") || config.model || "Binary IDE",
+            detach: true,
+            ...(workspaceRoot ? { workspaceRoot: path.resolve(workspaceRoot) } : {}),
+            ...(lane ? { executionLane: lane } : {}),
+            ...(pluginPacks ? { pluginPacks: pluginPacks } : {}),
+            expectedLongRun: parsed.flags["short"] === true ? false : true,
+            requireIsolation: parsed.flags["require-isolation"] === true,
+            debugTracing: parsed.flags["trace"] === true,
+            client: {
+                surface: "cli",
+            },
+        });
+        printAgentJobSummary(job);
+        return;
+    }
+    if (sub === "show") {
+        const jobId = parsed.positionals[2];
+        if (!jobId)
+            throw new Error("Usage: binary jobs show <jobId>");
+        printJson(await hostClient.getAgentJob(jobId));
+        return;
+    }
+    if (sub === "tail") {
+        const jobId = parsed.positionals[2];
+        if (!jobId)
+            throw new Error("Usage: binary jobs tail <jobId>");
+        let after = 0;
+        while (true) {
+            const response = await hostClient.getAgentJobEvents(jobId, after);
+            if (!response.job)
+                throw new Error(`Unknown Binary agent job '${jobId}'.`);
+            for (const event of response.events) {
+                printAgentJobEvent(event);
+                after = Math.max(after, event.seq);
+            }
+            if (response.done) {
+                console.log(dim(`job finished with status ${response.job.status}`));
+                return;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 1200));
+        }
+    }
+    if (sub === "remote-health") {
+        printJson(await hostClient.getRemoteAgentHealth());
+        return;
+    }
+    const jobId = parsed.positionals[2];
+    if (!jobId) {
+        throw new Error(`Usage: binary jobs ${sub} <jobId>`);
+    }
+    if (sub !== "pause" && sub !== "resume" && sub !== "cancel") {
+        throw new Error(`Unknown jobs subcommand '${sub}'.`);
+    }
+    printAgentJobSummary(await hostClient.controlAgentJob(jobId, sub, getFlagString(parsed, "note")));
 }
 async function handleRuns(parsed, config) {
     const hostClient = await requireHostClient(config);
@@ -1881,6 +2840,7 @@ async function handleRuns(parsed, config) {
         const intervalRaw = getFlagString(parsed, "interval");
         const interval = intervalRaw ? Number.parseInt(intervalRaw, 10) : 1200;
         let after = 0;
+        const printTailEvent = createTailEventPrinter();
         while (true) {
             const response = await hostClient.getRunEvents(runId, after);
             for (const event of response.events) {
@@ -1898,6 +2858,7 @@ async function handleRuns(parsed, config) {
         const runId = parsed.positionals[2];
         if (!runId)
             throw new Error("Usage: binary runs stream <runId>");
+        const printTailEvent = createTailEventPrinter();
         await hostClient.streamRun(runId, async (event) => {
             const payload = asObject(event);
             const seq = typeof payload.seq === "number" ? payload.seq : 0;
@@ -1993,19 +2954,113 @@ async function handleAutomations(parsed, config) {
         const automationId = parsed.positionals[2];
         if (!automationId)
             throw new Error("Usage: binary automations tail <id>");
-        const intervalRaw = getFlagString(parsed, "interval");
-        const interval = intervalRaw ? Number.parseInt(intervalRaw, 10) : 1200;
-        let after = 0;
-        while (true) {
-            const response = await hostClient.getAutomationEvents(automationId, after);
-            for (const event of response.events) {
-                printAutomationEvent(event);
-                after = Math.max(after, event.seq);
-            }
-            await new Promise((resolve) => setTimeout(resolve, Number.isFinite(interval) ? interval : 1200));
-        }
+        await hostClient.streamAutomationEvents(automationId, async (event) => {
+            const payload = asObject(event);
+            const seq = typeof payload.seq === "number" ? payload.seq : 0;
+            const capturedAt = typeof payload.capturedAt === "string" ? payload.capturedAt : new Date().toISOString();
+            printAutomationEvent({
+                seq,
+                capturedAt,
+                event: payload,
+            });
+        });
+        return;
     }
     throw new Error(`Unknown automations subcommand '${sub}'.`);
+}
+async function handleDebugAgent(parsed, config) {
+    const hostClient = await requireHostClient(config);
+    const sub = parsed.positionals[1] || "chat";
+    if (sub === "show") {
+        const sessionId = parsed.positionals[2];
+        if (!sessionId)
+            throw new Error("Usage: binary debug-agent show <sessionId>");
+        const session = await hostClient.getAgentProbeSession(sessionId);
+        printAgentProbeSession(session);
+        printAgentProbeTurnOutcome(session);
+        return;
+    }
+    if (sub === "tail") {
+        const sessionId = parsed.positionals[2];
+        if (!sessionId)
+            throw new Error("Usage: binary debug-agent tail <sessionId>");
+        let after = 0;
+        while (true) {
+            const response = await hostClient.getAgentProbeEvents(sessionId, after);
+            if (!response.session) {
+                throw new Error(`Unknown agent probe session '${sessionId}'.`);
+            }
+            for (const event of response.events) {
+                printAgentProbeEvent(event);
+                after = Math.max(after, event.seq);
+            }
+            if (response.done) {
+                console.log(dim(`probe session finished with status ${response.session.status}`));
+                return;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 1200));
+        }
+    }
+    if (sub !== "chat") {
+        throw new Error(`Unknown debug-agent subcommand '${sub}'.`);
+    }
+    const model = getFlagString(parsed, "model") ?? config.model ?? "Binary IDE";
+    const workspaceFlag = getFlagString(parsed, "workspace");
+    const defaultWorkspaceRoot = workspaceFlag ? path.resolve(workspaceFlag) : process.cwd();
+    let session = parsed.positionals[2]
+        ? await hostClient.getAgentProbeSession(parsed.positionals[2])
+        : await hostClient.createAgentProbeSession({
+            title: getFlagString(parsed, "title") ?? "Agent probe",
+            model,
+            workspaceRoot: defaultWorkspaceRoot,
+        });
+    const inputSource = await createChatInputSource();
+    clearIfTty();
+    console.log(color("Binary Agent Probe", "magenta"));
+    console.log(dim(rule()));
+    printAgentProbeSession(session);
+    console.log(dim("Commands: /help  /new  /pause  /resume  /show  /exit"));
+    while (true) {
+        const prompt = `${color("probe", "magenta")} ${color(">", "gray")} `;
+        const rawLine = await inputSource.next(prompt);
+        if (rawLine == null)
+            break;
+        const line = rawLine.trim();
+        if (!line)
+            continue;
+        if (line === "/exit" || line === "/quit")
+            break;
+        if (line === "/help") {
+            console.log(dim("Commands: /help  /new  /pause  /resume  /show  /exit"));
+            continue;
+        }
+        if (line === "/show") {
+            printAgentProbeSession(session);
+            continue;
+        }
+        if (line === "/pause") {
+            session = await hostClient.controlAgentProbeSession(session.id, "pause");
+            printAgentProbeSession(session);
+            continue;
+        }
+        if (line === "/resume") {
+            session = await hostClient.controlAgentProbeSession(session.id, "resume");
+            printAgentProbeSession(session);
+            continue;
+        }
+        if (line === "/new") {
+            session = await hostClient.createAgentProbeSession({
+                title: getFlagString(parsed, "title") ?? "Agent probe",
+                model,
+                workspaceRoot: defaultWorkspaceRoot,
+            });
+            printAgentProbeSession(session);
+            continue;
+        }
+        session = await hostClient.submitAgentProbeMessage(session.id, { message: line });
+        printAgentProbeTurnOutcome(session);
+    }
+    inputSource.close();
 }
 async function handleSessions(parsed, config) {
     const resolved = await resolveAuth(config);
@@ -2132,6 +3187,85 @@ function parseExecuteActions(value) {
         }
     }
     return actions;
+}
+function makeCliToolCall(name, argumentsValue) {
+    return {
+        step: 1,
+        adapter: "cli",
+        requiresClientExecution: false,
+        toolCall: {
+            id: `${name}-${randomBytes(4).toString("hex")}`,
+            name,
+            arguments: argumentsValue,
+        },
+        createdAt: new Date().toISOString(),
+    };
+}
+function printBinaryHexdump(result) {
+    const offset = typeof result.offset === "number" ? result.offset : 0;
+    const bytesBase64 = typeof result.bytesBase64 === "string" ? result.bytesBase64 : "";
+    const bytes = Buffer.from(bytesBase64, "base64");
+    const lineWidth = 16;
+    for (let index = 0; index < bytes.length; index += lineWidth) {
+        const slice = bytes.subarray(index, index + lineWidth);
+        const hex = Array.from(slice)
+            .map((value) => value.toString(16).padStart(2, "0"))
+            .join(" ")
+            .padEnd(lineWidth * 3 - 1, " ");
+        const ascii = Array.from(slice)
+            .map((value) => (value >= 32 && value <= 126 ? String.fromCharCode(value) : "."))
+            .join("");
+        console.log(`${(offset + index).toString(16).padStart(8, "0")}  ${hex}  ${ascii}`);
+    }
+}
+async function handleBinaryUtility(command, parsed) {
+    const targetPath = parsed.positionals.slice(1).join(" ").trim();
+    if (!targetPath) {
+        throw new Error(`Usage: binary ${command} <path>`);
+    }
+    const workspaceRoot = path.resolve(getFlagString(parsed, "workspace") ?? process.cwd());
+    const executor = new CliToolExecutor(workspaceRoot);
+    if (command === "inspect") {
+        const [statResult, analysisResult, chunkResult] = await Promise.all([
+            executor.execute(makeCliToolCall("stat_binary", { path: targetPath })),
+            executor.execute(makeCliToolCall("analyze_binary", { path: targetPath })),
+            executor.execute(makeCliToolCall("read_binary_chunk", { path: targetPath, offset: 0, length: 256 })),
+        ]);
+        printJson({
+            descriptor: statResult.data || null,
+            analysis: analysisResult.ok ? analysisResult.data || null : null,
+            preview: chunkResult.ok
+                ? {
+                    offset: chunkResult.data?.offset,
+                    length: chunkResult.data?.length,
+                    hexPreview: chunkResult.data?.hexPreview,
+                    asciiPreview: chunkResult.data?.asciiPreview,
+                    truncated: chunkResult.data?.truncated,
+                }
+                : null,
+        });
+        return;
+    }
+    if (command === "hash") {
+        const result = await executor.execute(makeCliToolCall("hash_binary", { path: targetPath }));
+        if (!result.ok)
+            throw new Error(result.error || result.summary);
+        printJson(result.data || {});
+        return;
+    }
+    const offsetRaw = getFlagString(parsed, "offset");
+    const lengthRaw = getFlagString(parsed, "length");
+    const offset = offsetRaw ? Number.parseInt(offsetRaw, 10) : 0;
+    const length = lengthRaw ? Number.parseInt(lengthRaw, 10) : 256;
+    const result = await executor.execute(makeCliToolCall("read_binary_chunk", {
+        path: targetPath,
+        offset: Number.isFinite(offset) ? offset : 0,
+        length: Number.isFinite(length) ? length : 256,
+    }));
+    if (!result.ok || !result.data)
+        throw new Error(result.error || result.summary);
+    console.log(`${result.data.path}  offset=${result.data.offset}  length=${result.data.length}  sha256=${result.data.sha256}`);
+    printBinaryHexdump(result.data);
 }
 async function handleExecute(parsed, config) {
     const resolved = await resolveAuth(config);
@@ -2302,6 +3436,10 @@ async function run() {
         printCommands();
         return;
     }
+    if (command === "inspect" || command === "hexdump" || command === "hash") {
+        await handleBinaryUtility(command, parsed);
+        return;
+    }
     if (command === "whoami") {
         await handleAuth({ positionals: ["auth", "status"], flags: parsed.flags }, config);
         return;
@@ -2343,6 +3481,10 @@ async function run() {
         await handleRuns({ positionals: ["runs", "tail", ...(idArg ? [idArg] : [])], flags: parsed.flags }, config);
         return;
     }
+    if (command === "jobs-list") {
+        await handleJobs({ positionals: ["jobs", "list"], flags: parsed.flags }, config);
+        return;
+    }
     if (command === "index-upsert") {
         await handleIndex({ positionals: ["index", "upsert"], flags: parsed.flags }, config);
         return;
@@ -2372,6 +3514,14 @@ async function run() {
         await handleDebugRuntime(parsed, config);
         return;
     }
+    if (command === "benchmark") {
+        await handleBenchmark(parsed, config);
+        return;
+    }
+    if (command === "test") {
+        await handleTestSuite(parsed);
+        return;
+    }
     if (command === "run") {
         await handleRun(parsed, config);
         return;
@@ -2384,8 +3534,28 @@ async function run() {
         await handleRuns(parsed, config);
         return;
     }
+    if (command === "jobs") {
+        await handleJobs(parsed, config);
+        return;
+    }
+    if (command === "connections") {
+        await handleConnections(parsed, config);
+        return;
+    }
+    if (command === "provider" || command === "providers") {
+        await handleProviders(parsed, config);
+        return;
+    }
+    if (command === "mcp") {
+        await handleConnections({ positionals: ["connections", ...parsed.positionals.slice(1)], flags: parsed.flags }, config);
+        return;
+    }
     if (command === "automations") {
         await handleAutomations(parsed, config);
+        return;
+    }
+    if (command === "debug-agent") {
+        await handleDebugAgent(parsed, config);
         return;
     }
     if (command === "usage") {

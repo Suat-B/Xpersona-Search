@@ -41,7 +41,7 @@ function authHeaders(auth?: AuthHeadersInput): HeadersInit {
 export async function requestJson<T>(input: {
   url: string;
   auth?: AuthHeadersInput;
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
 }): Promise<T> {
   const response = await fetch(input.url, {

@@ -1,0 +1,9 @@
+
+> xpersona-casino@0.1.0 binary:host
+> npm --prefix services/binary-host run dev
+
+
+> @binary-ide/host@0.1.0 dev
+> node ../../node_modules/tsx/dist/cli.mjs src/server.ts
+
+Binary Host listening on http://127.0.0.1:7777

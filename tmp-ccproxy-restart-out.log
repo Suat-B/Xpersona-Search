@@ -1,0 +1,124 @@
+2026-04-05 03:23:53.123 [warning  ] [core        ] [plugin    ] plugins_directories_missing    [ccproxy.core.plugins.discovery] cmd_id=b1d19971 paths=['C:\\Users\\suatb\\.config\\ccproxy\\plugins'] type=filesystem
+2026-04-05 03:23:53.238 [warning  ] [core        ] [plugin    ] plugin_dependency_missing      [ccproxy.core.plugins.discovery] cmd_id=b1d19971 dependency=sqlmodel details=entrypoint name=access_log type=entrypoint
+2026-04-05 03:23:53.262 [warning  ] [core        ] [general   ] plugin_dependency_missing {'dependency': 'sqlmodel', 'details': 'entrypoint'} [root] cmd_id=b1d19971
+2026-04-05 03:23:53.274 [warning  ] [core        ] [plugin    ] plugin_dependency_missing      [ccproxy.core.plugins.discovery] cmd_id=b1d19971 dependency=sqlmodel details=entrypoint name=analytics type=entrypoint
+2026-04-05 03:23:53.281 [warning  ] [core        ] [general   ] plugin_dependency_missing {'dependency': 'sqlmodel', 'details': 'entrypoint'} [root] cmd_id=b1d19971
+2026-04-05 03:23:53.288 [warning  ] [core        ] [plugin    ] plugin_dependency_missing      [ccproxy.core.plugins.discovery] cmd_id=b1d19971 dependency=claude_agent_sdk details=entrypoint name=claude_sdk type=entrypoint
+2026-04-05 03:23:53.297 [warning  ] [core        ] [general   ] plugin_dependency_missing {'dependency': 'claude_agent_sdk', 'details': 'entrypoint'} [root] cmd_id=b1d19971
+2026-04-05 03:23:53.303 [warning  ] [core        ] [plugin    ] plugin_dependency_missing      [ccproxy.core.plugins.discovery] cmd_id=b1d19971 dependency=sqlmodel details=entrypoint name=duckdb_storage type=entrypoint
+2026-04-05 03:23:53.310 [warning  ] [core        ] [general   ] plugin_dependency_missing {'dependency': 'sqlmodel', 'details': 'entrypoint'} [root] cmd_id=b1d19971
+2026-04-05 03:23:53.316 [warning  ] [core        ] [plugin    ] plugin_dependency_missing      [ccproxy.core.plugins.discovery] cmd_id=b1d19971 dependency=fastapi_mcp details=entrypoint name=permissions type=entrypoint
+2026-04-05 03:23:53.323 [warning  ] [core        ] [general   ] plugin_dependency_missing {'dependency': 'fastapi_mcp', 'details': 'entrypoint'} [root] cmd_id=b1d19971
+2026-04-05 03:23:55.242 [warning  ] [core        ] [general   ] credential_balancer_no_providers_configured [ccproxy.plugins.credential_balancer.plugin] cmd_id=b1d19971
+2026-04-05 03:23:56.685 [error    ] [core        ] [general   ] cli_detection_failed           [ccproxy.services.cli_detection] binary=claude cmd_id=b1d19971 package=@anthropic-ai/claude-code
+2026-04-05 03:23:56.690 [warning  ] [core        ] [plugin    ] claude_version_detection_failed [ccproxy.plugins.claude_api.detection_service] cmd_id=b1d19971 error='Claude CLI not found'
+2026-04-05 03:23:56.806 [warning  ] [core        ] [plugin    ] detection_claude_headers_failed [ccproxy.plugins.claude_api.detection_service] cmd_id=b1d19971 error=FileNotFoundError('Claude CLI not found for header detection') fallback=True
+2026-04-05 03:23:56.812 [warning  ] [core        ] [plugin    ] using_fallback_claude_data     [ccproxy.plugins.claude_api.detection_service] cmd_id=b1d19971
+2026-04-05 03:23:56.950 [warning  ] [core        ] [plugin    ] detection_claude_headers_failed [ccproxy.plugins.claude_api.detection_service] cmd_id=b1d19971 error=FileNotFoundError('Claude CLI not found for header detection') fallback=True
+2026-04-05 03:23:56.956 [warning  ] [core        ] [plugin    ] using_fallback_claude_data     [ccproxy.plugins.claude_api.detection_service] cmd_id=b1d19971
+2026-04-05 03:23:56.963 [warning  ] [core        ] [general   ] cli_detection_completed        [ccproxy.plugins.claude_api.plugin] cli_available=False cli_path=None cmd_id=b1d19971 source=unknown version=None
+2026-04-05 03:23:57.669 [error    ] [core        ] [general   ] cli_detection_failed           [ccproxy.services.cli_detection] binary=codex cmd_id=b1d19971 package=@openai/codex
+2026-04-05 03:23:57.676 [warning  ] [core        ] [plugin    ] codex_version_detection_failed [ccproxy.plugins.codex.detection_service] cmd_id=b1d19971 error='Codex CLI not found'
+2026-04-05 03:23:57.797 [warning  ] [core        ] [plugin    ] detection_codex_headers_failed [ccproxy.plugins.codex.detection_service] cmd_id=b1d19971 fallback=True
+2026-04-05 03:23:58.446 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service] cmd_id=b1d19971
+2026-04-05 03:23:58.455 [warning  ] [core        ] [general   ] cli_detection_completed        [ccproxy.plugins.codex.plugin] cli_available=False cli_path=None cmd_id=b1d19971 source=unknown version=None
+2026-04-05 03:26:12.649 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:26:12.657 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:26:21.510 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:26:21.518 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:26:37.911 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:26:37.916 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:27:10.341 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:27:10.346 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:28:15.042 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:28:15.048 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:28:15.591 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:28:15.597 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:28:23.889 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:28:23.895 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:28:40.313 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:28:40.319 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:29:12.755 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:29:12.765 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:30:17.403 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:30:17.408 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:31:10.379 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:31:10.388 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:31:19.056 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:31:19.064 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:31:37.805 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:31:37.811 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:32:10.301 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:32:10.306 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:33:14.812 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:33:14.817 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:33:15.401 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:33:15.407 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:33:23.706 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:33:23.955 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:33:40.378 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:33:40.383 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:34:10.392 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:34:10.402 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:34:12.788 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:34:12.794 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:34:18.850 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:34:18.855 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:34:35.305 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:34:35.310 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:35:07.757 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:35:07.858 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:35:17.114 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:35:17.120 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:36:12.306 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:36:12.312 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:36:12.954 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:36:12.960 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:36:21.372 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:36:21.379 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:36:37.813 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:36:37.818 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:37:10.284 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:37:10.289 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:38:14.704 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:38:14.711 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:38:16.004 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:38:16.012 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:38:24.340 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:38:24.348 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:38:40.922 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:38:40.927 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:39:13.326 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:39:13.332 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:39:31.015 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:39:31.021 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:39:39.426 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:39:39.886 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:39:56.448 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:39:56.453 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:40:17.754 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:40:17.759 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:40:18.348 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:40:18.354 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:40:26.667 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:40:26.672 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:40:29.099 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:40:29.105 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:40:43.339 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:40:43.349 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:41:15.788 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:41:15.794 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:41:33.548 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:41:33.554 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:41:34.049 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:41:34.056 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:41:42.374 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:41:42.380 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:41:58.905 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:41:58.910 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:42:20.225 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:42:20.230 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:42:31.330 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:42:31.335 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:43:35.766 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]
+2026-04-05 03:43:35.771 [warning  ] [core        ] [plugin    ] using_fallback_codex_data      [ccproxy.plugins.codex.detection_service]

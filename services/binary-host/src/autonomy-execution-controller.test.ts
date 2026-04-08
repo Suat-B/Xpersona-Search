@@ -45,11 +45,35 @@ describe("AutonomyExecutionController", () => {
   });
 
   it("uses managed browser background sessions for inspection by default", () => {
-    const controller = new AutonomyExecutionController(defaultMachineAutonomyPolicy());
+    const policy = defaultMachineAutonomyPolicy();
+    policy.sessionPolicy = "managed_only";
+    const controller = new AutonomyExecutionController(policy);
     const decision = controller.decide(buildPendingToolCall("browser_snapshot_dom", { pageId: "page_1" }));
 
     expect(decision.lane).toBe("managed_session_background");
     expect(decision.executionVisibility).toBe("background");
     expect(decision.interactionMode).toBe("managed_browser");
+  });
+
+  it("prefers reusing the user's browser before isolation while a desktop focus lease is active", () => {
+    const policy = defaultMachineAutonomyPolicy();
+    policy.sessionPolicy = "attach_carefully";
+    const controller = new AutonomyExecutionController(policy);
+    controller.updateFocusLease({
+      surface: "desktop",
+      source: "typing",
+      leaseMs: 5000,
+      active: true,
+    });
+
+    const decision = controller.decide(
+      buildPendingToolCall("browser_search_and_open_best_result", { url: "https://www.youtube.com/", query: "outdoor boys" })
+    );
+
+    expect(decision.focusLeaseActive).toBe(true);
+    expect(decision.managedSessionPreferred).toBe(true);
+    expect(decision.browserSessionPreference).toBe("reuse_first");
+    expect(decision.interactionMode).toBe("managed_browser");
+    expect(decision.executionVisibility).toBe("background");
   });
 });

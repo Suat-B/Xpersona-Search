@@ -14,12 +14,14 @@ const DEFAULT_CONFIG: CliConfig = {
   model: "Binary IDE",
   reasoning: "medium",
   includeIdeContext: true,
-  transport: (process.env.BINARY_IDE_TRANSPORT as CliConfig["transport"]) ?? "auto",
+  transport: (process.env.BINARY_IDE_TRANSPORT as CliConfig["transport"]) ?? "host",
   tomEnabled: true,
 };
 
 function normalizeTransport(value: unknown): CliConfig["transport"] {
-  return value === "host" || value === "direct" || value === "auto" ? value : DEFAULT_CONFIG.transport;
+  if (value === "direct") return "direct";
+  if (value === "host" || value === "auto") return "host";
+  return DEFAULT_CONFIG.transport;
 }
 
 function normalizeTomEnabled(value: unknown): boolean {
@@ -95,6 +97,9 @@ export async function saveConfig(config: CliConfig): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
   const next = normalizeConfig(config);
   await fs.writeFile(getConfigPath(), JSON.stringify(next, null, 2), "utf8");
+  if (process.platform !== "win32") {
+    await fs.chmod(getConfigPath(), 0o600).catch(() => undefined);
+  }
 }
 
 export function getApiKey(config: CliConfig): string | null {

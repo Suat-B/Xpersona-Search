@@ -53,8 +53,6 @@ export async function POST(request: NextRequest, ctx: Ctx): Promise<Response> {
           parsed.data.action === "repair" ||
           parsed.data.action === "retry_last_turn"
         ? "running"
-        : parsed.data.action === "takeover"
-          ? "needs_review"
         : existing.status;
 
   const updated = await updateAgentRun({

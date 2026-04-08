@@ -13,6 +13,7 @@ import {
   continueOpenHandsGatewayRun,
   isOpenHandsGatewayEnabled,
   startOpenHandsGatewayRun,
+  type OpenHandsGatewayEvent,
 } from "@/lib/playground/openhands-gateway";
 import type {
   AssistContextSelection,
@@ -48,6 +49,9 @@ export type ToolLoopTurnInput = {
     sessionId?: string;
     traceId?: string;
   };
+  mcp?: {
+    mcpServers: Record<string, Record<string, unknown>>;
+  };
   targetInference: AssistTargetInference;
   contextSelection: AssistContextSelection;
   fallbackPlan: AssistPlan;
@@ -65,6 +69,7 @@ export type ToolLoopTurnInput = {
       | "pine_specialization";
     reason: string;
   } | null;
+  onGatewayEvent?: (event: OpenHandsGatewayEvent) => Promise<void> | void;
 };
 
 export type ToolLoopTurnOutput = {
@@ -77,6 +82,12 @@ export type ToolLoopTurnOutput = {
   orchestrator?: "in_house" | "openhands";
   orchestratorVersion?: string | null;
   orchestratorRunId?: string | null;
+  modelCandidate?: Record<string, unknown> | null;
+  fallbackAttempt?: number;
+  failureReason?: string | null;
+  persistenceDir?: string | null;
+  conversationId?: string | null;
+  fallbackTrail?: Array<Record<string, unknown>>;
 };
 
 function compactWhitespace(value: string): string {
@@ -153,38 +164,32 @@ function buildToolCatalog(tools: PlaygroundToolName[]): string {
     desktop_scroll:
       "Scroll on the desktop. Args: { displayId?: string, viewport?: { displayId: string, width: number, height: number }, normalizedX?: number, normalizedY?: number, deltaX?: number, deltaY?: number }",
     desktop_wait: "Wait for a period of time. Args: { durationMs: number }",
-    browser_list_pages: "List browser pages/tabs currently available to the native browser runtime. Args: {}",
-    browser_get_active_page: "Return the active browser page/tab. Args: {}",
-    browser_open_page: "Open a URL in a browser-native page/tab. Args: { url: string }",
-    browser_focus_page: "Focus a specific browser page/tab. Args: { pageId: string }",
-    browser_navigate: "Navigate an existing browser page/tab. Args: { pageId: string, url: string }",
-    browser_snapshot_dom:
-      "Capture a semantic DOM snapshot and affordance graph for a browser page. Args: { pageId: string, query?: string, limit?: number }",
-    browser_query_elements:
-      "Query interactive DOM elements by text or label and return stable element refs. Args: { pageId: string, query?: string, limit?: number }",
-    browser_click: "Click a browser element by elementId or selector. Args: { pageId: string, elementId?: string, selector?: string }",
-    browser_type:
-      "Type into a browser form control by elementId or selector. Args: { pageId: string, text: string, elementId?: string, selector?: string }",
-    browser_press_keys: "Send keyboard input to a browser page. Args: { pageId: string, keys: string[] }",
-    browser_scroll: "Scroll a browser page or element. Args: { pageId: string, deltaY?: number, elementId?: string, selector?: string }",
-    browser_wait_for:
-      "Wait for a browser-native condition. Args: { pageId: string, durationMs?: number, selector?: string, text?: string, urlIncludes?: string, titleIncludes?: string }",
-    browser_read_text: "Read text from a browser element. Args: { pageId: string, elementId?: string, selector?: string }",
-    browser_read_form_state: "Read browser form controls and current values. Args: { pageId: string }",
-    browser_capture_page: "Capture a browser screenshot proof artifact. Args: { pageId: string }",
-    browser_get_network_activity: "Return recent browser network activity. Args: { pageId: string, limit?: number }",
-    browser_get_console_messages: "Return recent browser console messages and exceptions. Args: { pageId: string, limit?: number }",
     world_get_summary: "Load the current machine world-model summary. Args: {}",
     world_get_active_context: "Load the current active machine context slice. Args: {}",
     world_query_graph: "Query world-model nodes and connected edges. Args: { query?: string, type?: string, limit?: number }",
     world_get_neighbors: "Load neighboring nodes and edges for a world-model node. Args: { nodeId: string, limit?: number }",
     world_get_recent_changes: "Load recent world-model changes and environment deltas. Args: { limit?: number }",
+    world_get_route_stats: "Load learned route-performance stats from the world model. Args: { kind?: string, featureKey?: string, limit?: number }",
     world_get_affordances: "Load current machine affordances and blocked/background-safe routes. Args: {}",
     world_find_routine: "Find learned machine/app/browser/terminal routines. Args: { query?: string, limit?: number }",
     world_record_observation: "Commit a structured observation to the local world model. Args: { label: string, summary?: string, data?: object, runId?: string }",
     world_record_proof: "Commit proof to the local world model. Args: { label: string, summary?: string, toolName?: string, nodeIds?: string[], data?: object, runId?: string }",
     world_commit_memory: "Commit durable semantic memory to the local world model. Args: { label: string, summary?: string, scope?: string, tags?: string[], data?: object }",
+    world_record_route_outcome:
+      "Record explicit route feedback into the world model. Args: { decisionId?: string, runId?: string, routeKind?: string, featureKey?: string, toolFamily?: string, outcome: string, advancedGoal?: boolean, verificationStatus?: string, fallbackToRouteKind?: string, summary?: string }",
     world_score_route: "Score candidate routes against current machine affordances. Args: { routes: Array<{ id?: string, kind?: string, steps?: string[], requiresVisibleInteraction?: boolean, confidence?: number }> }",
+    repo_get_summary:
+      "Load the current repo cognition summary, including hotspots, likely tests, route hints, and learned repo habits. Args: { task?: string }",
+    repo_query_symbols:
+      "Query repo symbols discovered from the local repo model. Args: { query?: string, path?: string, limit?: number }",
+    repo_find_references:
+      "Find likely references for a symbol using the local repo model. Args: { symbol: string, limit?: number }",
+    repo_get_change_impact:
+      "Estimate which files and symbols are impacted by a candidate file or symbol change. Args: { path?: string, symbol?: string, limit?: number }",
+    repo_get_validation_plan:
+      "Load the repo's canonical validation and verifier plan. Args: { paths?: string[] }",
+    repo_record_verification:
+      "Record a verification receipt into local repo memory. Args: { label: string, summary?: string, status?: 'pending' | 'running' | 'passed' | 'failed', command?: string, failureCategory?: string, targetHint?: string }",
   };
   return tools.map((tool) => `- ${tool}: ${details[tool]}`).join("\n");
 }
@@ -254,13 +259,12 @@ function buildToolLoopUserPrompt(input: ToolLoopTurnInput, tools: PlaygroundTool
       : "Acceptance tests: none.",
     "Return either one toolCall or a final answer. Do not return an actions array in tool_loop_v1.",
     "Desktop and whole-PC tasks are natural-language intent problems, not shortcut commands. Infer intent dynamically from the user's phrasing.",
-    "Browser tasks should prefer the browser-native lane first. Use browser_* tools for web pages and only fall back to desktop_* tools when the browser-native path is blocked or cannot prove progress.",
+    "Browser tasks are handled internally by OpenHands Browser Use. Do not emit browser_* tool calls for web interaction or verification.",
     "Use world_* tools to reason over the machine graph, recent environment changes, known routines, and route affordances instead of repeatedly re-inspecting raw machine state.",
+    "Use repo_* tools to inspect the repo graph, validation plan, symbol relationships, and change impact before broad edits on coding tasks.",
+    "Prefer repo_get_summary early in coding runs, then use repo_query_symbols, repo_find_references, repo_get_change_impact, and repo_get_validation_plan to tighten target selection and verification.",
     "Prefer world_get_active_context or world_get_summary early on long-horizon machine tasks, then drill deeper with world_query_graph, world_get_neighbors, or world_find_routine only when needed.",
-    "For browser tasks, prefer browser_snapshot_dom or browser_query_elements before acting when the page state or target element is uncertain.",
-    "Prefer semantic browser actions on pageIds and element refs over coordinate-based desktop actions whenever browser_* tools are available.",
-    "After meaningful browser actions such as open, navigate, click, type, keypress, or form submission, prefer verification with browser_get_active_page, browser_snapshot_dom, browser_read_text, browser_read_form_state, browser_get_network_activity, or browser_capture_page before finishing.",
-    "If a browser-native action fails to prove progress, explain the likely blockage through tool choice by switching to inspection or, only when necessary, desktop fallback.",
+    "For browser tasks, describe the user goal clearly and let the internal Browser Use runner perform the web interaction and verification.",
     "For desktop tasks, inspect first when uncertain. Prefer desktop_list_apps, desktop_get_active_window, desktop_list_windows, or desktop_capture_screen before acting if the target may be ambiguous.",
     "After a meaningful desktop action such as desktop_open_app, desktop_open_url, desktop_focus_window, typing, or keypress, prefer a verification turn before finishing when a read-only desktop tool can confirm the outcome.",
     "If proof does not match the user's intent, replan instead of repeatedly issuing the same desktop action.",
@@ -291,7 +295,7 @@ function buildTextActionsSystemPrompt(): string {
     "Paths must stay workspace-relative.",
     "Never return an actions array in tool_loop_v1.",
     "Desktop automation requests are freeform. Use desktop inspection tools first when the machine target is ambiguous, and verify desktop actions before you finish when feasible.",
-    "Browser automation requests are also freeform. Prefer browser_* tools for structured web control, inspect the page before acting when uncertain, and use desktop_* only as explicit fallback.",
+    "Browser automation requests are handled internally by OpenHands Browser Use. Do not emit browser_* tool calls.",
     "When the task centers on a named project folder, keep generated file paths inside that folder unless the task explicitly asks for a workspace-root file.",
     "For Node and JavaScript project scaffolds, use modern built-in node:test defaults like `node --test` unless the existing repo clearly uses another runner.",
     "Never invent obsolete Node flags or unsupported command syntaxes.",
@@ -495,6 +499,7 @@ async function requestOpenHandsTurn(input: {
   selection: PlaygroundResolvedModelSelection;
   request: ToolLoopTurnInput["request"];
   tom?: ToolLoopTurnInput["tom"];
+  mcp?: ToolLoopTurnInput["mcp"];
   targetInference: ToolLoopTurnInput["targetInference"];
   contextSelection: ToolLoopTurnInput["contextSelection"];
   fallbackPlan: ToolLoopTurnInput["fallbackPlan"];
@@ -504,10 +509,12 @@ async function requestOpenHandsTurn(input: {
   latestToolResult?: ToolResultContract | null;
   repairDirective?: ToolLoopTurnInput["repairDirective"];
   orchestratorRunId?: string | null;
+  onGatewayEvent?: ToolLoopTurnInput["onGatewayEvent"];
 }): Promise<ToolLoopTurnOutput> {
   const payload = {
     request: input.request,
     tom: input.tom,
+    mcp: input.mcp,
     targetInference: input.targetInference,
     contextSelection: input.contextSelection,
     fallbackPlan: input.fallbackPlan,
@@ -523,8 +530,9 @@ async function requestOpenHandsTurn(input: {
     ? await continueOpenHandsGatewayRun({
         runId: input.orchestratorRunId,
         payload,
+        onEvent: input.onGatewayEvent,
       })
-    : await startOpenHandsGatewayRun(payload);
+    : await startOpenHandsGatewayRun(payload, input.onGatewayEvent ? { onEvent: input.onGatewayEvent } : undefined);
 
   let final = response.final;
   let toolCall = response.toolCall;
@@ -551,6 +559,12 @@ async function requestOpenHandsTurn(input: {
     orchestrator: "openhands",
     orchestratorVersion: response.version || null,
     orchestratorRunId: response.runId,
+    modelCandidate: response.modelCandidate || null,
+    fallbackAttempt: response.fallbackAttempt || 0,
+    failureReason: response.failureReason || null,
+    persistenceDir: response.persistenceDir || null,
+    conversationId: response.conversationId || null,
+    fallbackTrail: response.fallbackTrail || [],
   };
 }
 
@@ -1025,7 +1039,10 @@ function buildOpenAIToolSpec(name: PlaygroundToolName) {
 async function callTextActionsTurn(input: ToolLoopTurnInput, tools: PlaygroundToolName[]): Promise<string | null> {
   const token = getHfRouterToken();
   if (!token) return null;
-  const selection = resolvePlaygroundModelSelection({ requested: input.request.model });
+  const selection = resolvePlaygroundModelSelection({
+    requested: input.request.model,
+    userConnectedModels: input.request.userConnectedModels,
+  });
   const model = normalizeHfRouterModelId(selection.resolvedEntry.model);
   if (!model) throw new Error("HF router model is not configured.");
   const response = await fetch(`${HF_ROUTER_BASE_URL}/chat/completions`, {
@@ -1066,7 +1083,10 @@ async function callNativeToolTurn(input: ToolLoopTurnInput, tools: PlaygroundToo
 }> {
   const token = getHfRouterToken();
   if (!token) throw new Error("HF router token is not configured.");
-  const selection = resolvePlaygroundModelSelection({ requested: input.request.model });
+  const selection = resolvePlaygroundModelSelection({
+    requested: input.request.model,
+    userConnectedModels: input.request.userConnectedModels,
+  });
   const model = normalizeHfRouterModelId(selection.resolvedEntry.model);
   if (!model) throw new Error("HF router model is not configured.");
   const response = await fetch(`${HF_ROUTER_BASE_URL}/chat/completions`, {
@@ -1138,11 +1158,17 @@ async function callNativeToolTurn(input: ToolLoopTurnInput, tools: PlaygroundToo
   return {};
 }
 
-export function selectToolLoopAdapter(requestedModel?: string): {
+export function selectToolLoopAdapter(input?: {
+  requestedModel?: string;
+  userConnectedModels?: ToolLoopTurnInput["request"]["userConnectedModels"];
+}): {
   adapter: PlaygroundAdapter;
   modelSelection: PlaygroundResolvedModelSelection;
 } {
-  const modelSelection = resolvePlaygroundModelSelection({ requested: requestedModel });
+  const modelSelection = resolvePlaygroundModelSelection({
+    requested: input?.requestedModel,
+    userConnectedModels: input?.userConnectedModels,
+  });
   const capabilities = modelSelection.resolvedEntry.capabilities;
   const adapter: PlaygroundAdapter = capabilities.supportsNativeToolCalls
     ? "native_tools"
@@ -1156,7 +1182,10 @@ export function selectToolLoopAdapter(requestedModel?: string): {
 }
 
 export async function requestToolLoopTurn(input: ToolLoopTurnInput): Promise<ToolLoopTurnOutput> {
-  const selection = selectToolLoopAdapter(input.request.model);
+  const selection = selectToolLoopAdapter({
+    requestedModel: input.request.model,
+    userConnectedModels: input.request.userConnectedModels,
+  });
   const clientTools = input.request.clientCapabilities?.supportedTools || PLAYGROUND_TOOL_LOOP_TOOLS;
   const availableTools = PLAYGROUND_TOOL_LOOP_TOOLS.filter(
     (tool): tool is PlaygroundToolName =>
@@ -1172,6 +1201,7 @@ export async function requestToolLoopTurn(input: ToolLoopTurnInput): Promise<Too
     selection: selection.modelSelection,
     request: input.request,
     tom: input.tom,
+    mcp: input.mcp,
     targetInference: input.targetInference,
     contextSelection: input.contextSelection,
     fallbackPlan,
@@ -1181,5 +1211,6 @@ export async function requestToolLoopTurn(input: ToolLoopTurnInput): Promise<Too
     latestToolResult: input.latestToolResult,
     repairDirective: input.repairDirective,
     orchestratorRunId: input.orchestratorRunId,
+    onGatewayEvent: input.onGatewayEvent,
   });
 }

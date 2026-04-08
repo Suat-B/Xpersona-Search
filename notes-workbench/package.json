@@ -1,0 +1,13 @@
+{
+  "name": "notes-workbench",
+  "version": "1.0.0",
+  "description": "A tiny notes summarizer",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node --test test/index.test.js"
+  },
+  "keywords": ["notes", "summarizer"],
+  "author": "",
+  "license": "MIT",
+  "type": "module"
+}

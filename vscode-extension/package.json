@@ -121,7 +121,7 @@
             "Use the hosted Binary IDE API with the shared agentic coding orchestrator (OpenHands).",
             "Use the hosted Binary IDE API with the Qwen-flavored OpenHands profile while preserving the legacy runtime key for compatibility."
           ],
-          "default": "cutie",
+          "default": "playgroundApi",
           "description": "Compatibility runtime selector for hosted OpenHands orchestration profiles."
         },
         "xpersona.binary.agent.modelAlias": {

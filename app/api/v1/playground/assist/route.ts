@@ -169,7 +169,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   });
 
   // Orchestration matrix: docs/cutie-openhands-orchestration.md (default: greeting + plan use runAssist; auto coding uses OpenHands tool loop).
-  const runTask = async () => {
+  const runTask = async (options?: { onOrchestratorEvent?: (event: Record<string, unknown>) => Promise<void> | void }) => {
     const planMode = mode === "plan";
     const maxOut = Math.min(access.limits?.maxOutputTokens ?? 2048, 2048);
     const chatInteraction = body.interactionKind === "chat";
@@ -207,6 +207,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           maxTokens: maxOut,
           ...overrides,
         },
+        onGatewayEvent: options?.onOrchestratorEvent,
       });
     };
 
@@ -340,11 +341,51 @@ export async function POST(request: NextRequest): Promise<Response> {
   };
 
   void (async () => {
+    let streamedAssistantTokens = false;
     try {
       await emit("ack", "Assist stream connected.");
       await emit("status", "Starting Playground assist run...");
       await emit("activity", "Resolving context and orchestration plan.");
-      const result = await runTask();
+      const result = await runTask({
+        onOrchestratorEvent: async (event) => {
+          await emit("gateway_event", event);
+          const eventName = typeof event.event === "string" ? event.event : "";
+          if (!eventName) return;
+          if (eventName === "token") {
+            const token = typeof event.data === "string" ? event.data : "";
+            if (token) {
+              streamedAssistantTokens = true;
+              await emit("token", token);
+            }
+            return;
+          }
+          if (eventName === "gateway.turn_started") {
+            await emit("activity", "OpenHands gateway turn started.");
+            return;
+          }
+          if (eventName === "run.started") {
+            await emit("activity", "OpenHands run started.");
+            return;
+          }
+          if (eventName === "run.execution_status") {
+            const status =
+              typeof event.status === "string"
+                ? event.status
+                : event.data && typeof event.data === "object" && typeof (event.data as Record<string, unknown>).status === "string"
+                  ? String((event.data as Record<string, unknown>).status)
+                  : "running";
+            await emit("status", `OpenHands execution status: ${status}.`);
+            return;
+          }
+          if (eventName === "gateway.turn_completed") {
+            await emit("activity", "OpenHands gateway turn completed.");
+            return;
+          }
+          if (eventName === "gateway.turn_failed" || eventName === "run.failed" || eventName === "run.blocked") {
+            await emit("status", `OpenHands reported ${eventName}.`);
+          }
+        },
+      });
       await emit(
         "activity",
         result.orchestrationProtocol === "tool_loop_v1"
@@ -379,6 +420,12 @@ export async function POST(request: NextRequest): Promise<Response> {
         sessionId: session.id,
         traceId,
         runId: result.runId,
+        modelCandidate: result.modelCandidate ?? null,
+        fallbackAttempt: typeof result.fallbackAttempt === "number" ? result.fallbackAttempt : 0,
+        failureReason: result.failureReason ?? null,
+        persistenceDir: result.persistenceDir ?? null,
+        conversationId: result.conversationId ?? null,
+        fallbackTrail: result.fallbackTrail ?? [],
         orchestrationProtocol: result.orchestrationProtocol,
         adapter: result.adapter,
         loopState: result.loopState,
@@ -388,8 +435,10 @@ export async function POST(request: NextRequest): Promise<Response> {
         checkpoint: result.checkpoint,
         reviewState: result.reviewState,
       });
-      for (const partial of buildPartialPrefixes(result.final)) {
-        await emit("partial", partial);
+      if (!streamedAssistantTokens) {
+        for (const partial of buildPartialPrefixes(result.final)) {
+          await emit("partial", partial);
+        }
       }
       await emit("final", result.final);
       await writer.write(encoder.encode("data: [DONE]\n\n"));
