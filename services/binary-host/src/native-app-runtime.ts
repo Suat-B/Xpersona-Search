@@ -44,6 +44,16 @@ type NativeAppSession = {
   lastSeenAt: string;
 };
 
+const NATIVE_STATUS_PROBE_TTL_MS = 12_000;
+const SIDE_CAR_RECOVERY_METHODS = new Set<NativeAppMethod>([
+  "ping",
+  "list_windows",
+  "get_active_window",
+  "query_controls",
+  "read_control",
+  "wait_for_control",
+]);
+
 export type NativeAppStatus = {
   platform: string;
   available: boolean;
@@ -135,6 +145,7 @@ export class NativeAppRuntime {
   private readBuffer = "";
   private readonly pending = new Map<string, PendingResponse>();
   private readonly sessions = new Map<string, NativeAppSession>();
+  private lastStatusProbeAt = 0;
   private status: NativeAppStatus = {
     platform: process.platform,
     available: false,
@@ -153,11 +164,30 @@ export class NativeAppRuntime {
     }
     try {
       await this.ensureStarted();
-      await this.ping();
     } catch (error) {
       this.status.available = false;
       this.status.lastLaunchError = error instanceof Error ? error.message : String(error);
+      this.lastStatusProbeAt = 0;
+      return { ...this.status, scriptPath: buildScriptPath() };
     }
+    const now = Date.now();
+    const sidecarRunning = Boolean(this.child && !this.child.killed && this.child.exitCode === null);
+    if (sidecarRunning) {
+      this.status = {
+        ...this.status,
+        platform: process.platform,
+        available: true,
+        pythonCommand: this.status.pythonCommand || "python",
+        scriptPath: buildScriptPath(),
+        lastLaunchError: undefined,
+      };
+      if (this.lastStatusProbeAt === 0 || now - this.lastStatusProbeAt > NATIVE_STATUS_PROBE_TTL_MS) {
+        this.lastStatusProbeAt = now;
+      }
+      return { ...this.status, scriptPath: buildScriptPath() };
+    }
+    this.status.available = false;
+    this.status.lastLaunchError = this.status.lastLaunchError || "Native app sidecar is not running.";
     return { ...this.status, scriptPath: buildScriptPath() };
   }
 
@@ -169,7 +199,9 @@ export class NativeAppRuntime {
     return (await this.call("get_active_window", {})) as Record<string, unknown>;
   }
 
-  async queryControls(input: NativeAppWindowTarget & { query?: string; selector?: NativeAppControlSelector; limit?: number }): Promise<NativeAppQueryResult> {
+  async queryControls(
+    input: NativeAppWindowTarget & { query?: string; selector?: NativeAppControlSelector; limit?: number; timeoutMs?: number }
+  ): Promise<NativeAppQueryResult> {
     const session = this.resolveSession(input);
     const adapter = matchNativeAppAdapter(session?.appName || input.app, session?.windowTitle || input.title);
     const result = (await this.call("query_controls", {
@@ -201,11 +233,15 @@ export class NativeAppRuntime {
     };
   }
 
-  async readControl(input: NativeAppWindowTarget & { query?: string; selector?: NativeAppControlSelector }): Promise<NativeAppActionResult> {
+  async readControl(
+    input: NativeAppWindowTarget & { query?: string; selector?: NativeAppControlSelector; timeoutMs?: number }
+  ): Promise<NativeAppActionResult> {
     return this.callAction("read_control", input);
   }
 
-  async invokeControl(input: NativeAppWindowTarget & { query?: string; selector?: NativeAppControlSelector }): Promise<NativeAppActionResult> {
+  async invokeControl(
+    input: NativeAppWindowTarget & { query?: string; selector?: NativeAppControlSelector; timeoutMs?: number }
+  ): Promise<NativeAppActionResult> {
     return this.callAction("invoke_control", input);
   }
 
@@ -227,7 +263,7 @@ export class NativeAppRuntime {
     return this.callAction("toggle_control", input);
   }
 
-  async sendShortcut(input: NativeAppWindowTarget & { keys: string }): Promise<NativeAppActionResult> {
+  async sendShortcut(input: NativeAppWindowTarget & { keys: string; timeoutMs?: number }): Promise<NativeAppActionResult> {
     return this.callAction("send_shortcut", input);
   }
 
@@ -329,6 +365,7 @@ export class NativeAppRuntime {
       lastLaunchError: typeof result.importError === "string" && result.importError.trim() ? result.importError : undefined,
       scriptPath: buildScriptPath(),
     };
+    this.lastStatusProbeAt = Date.now();
     if (!this.status.available) {
       throw new Error(
         this.status.lastLaunchError ||
@@ -388,6 +425,7 @@ export class NativeAppRuntime {
       this.pending.clear();
       this.child = null;
       this.status.available = false;
+      this.lastStatusProbeAt = 0;
     });
     child.on("error", (error) => {
       this.status.lastLaunchError = error instanceof Error ? error.message : String(error);
@@ -415,7 +453,40 @@ export class NativeAppRuntime {
     pending.reject(new Error(payload.error?.message || "Unknown native app sidecar error."));
   }
 
-  private async call(method: NativeAppMethod, params: Record<string, unknown>): Promise<unknown> {
+  private async restartSidecar(reason: string): Promise<void> {
+    const child = this.child;
+    this.child = null;
+    this.readBuffer = "";
+    this.status.available = false;
+    this.lastStatusProbeAt = 0;
+    this.status.lastLaunchError = reason || this.status.lastLaunchError;
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error(reason || "Native app sidecar restarted."));
+    }
+    this.pending.clear();
+    if (child && !child.killed) {
+      try {
+        child.kill();
+      } catch {}
+    }
+    await new Promise((resolve) => setTimeout(resolve, 80));
+  }
+
+  private shouldRetryAfterTransportFailure(method: NativeAppMethod, error: unknown): boolean {
+    if (!SIDE_CAR_RECOVERY_METHODS.has(method)) return false;
+    const message = String(error instanceof Error ? error.message : error || "").toLowerCase();
+    if (!message) return false;
+    return (
+      message.includes("timed out while handling") ||
+      message.includes("exited unexpectedly") ||
+      message.includes("write after end") ||
+      message.includes("epipe") ||
+      message.includes("native app sidecar failed to start")
+    );
+  }
+
+  private async callOnce(method: NativeAppMethod, params: Record<string, unknown>): Promise<unknown> {
     await this.ensureStarted();
     const child = this.child;
     if (!child) {
@@ -444,21 +515,44 @@ export class NativeAppRuntime {
     });
   }
 
+  private async call(method: NativeAppMethod, params: Record<string, unknown>): Promise<unknown> {
+    try {
+      return await this.callOnce(method, params);
+    } catch (error) {
+      if (!this.shouldRetryAfterTransportFailure(method, error)) throw error;
+      await this.restartSidecar(error instanceof Error ? error.message : String(error));
+      return await this.callOnce(method, params);
+    }
+  }
+
   private resolveMethodTimeoutMs(method: NativeAppMethod, params: Record<string, unknown>): number {
+    const requestedTimeoutMs =
+      typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs) ? params.timeoutMs : Number.NaN;
     if (method === "wait_for_control") {
-      const requested =
-        typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs)
-          ? params.timeoutMs
-          : Number.NaN;
-      if (Number.isFinite(requested)) {
-        return Math.max(2_500, Math.min(Math.round(requested + 1_200), 12_000));
+      if (Number.isFinite(requestedTimeoutMs)) {
+        return Math.max(2_500, Math.min(Math.round(requestedTimeoutMs + 1_200), 12_000));
       }
       return 7_500;
     }
     if (method === "query_controls" || method === "read_control" || method === "get_active_window" || method === "list_windows") {
-      return 6_000;
+      if (Number.isFinite(requestedTimeoutMs)) {
+        return Math.max(1_800, Math.min(Math.round(requestedTimeoutMs), 8_000));
+      }
+      return 4_000;
     }
-    if (method === "ping") return 4_000;
+    if (method === "invoke_control" || method === "send_shortcut" || method === "type_into_control") {
+      if (Number.isFinite(requestedTimeoutMs)) {
+        return Math.max(2_200, Math.min(Math.round(requestedTimeoutMs), 10_000));
+      }
+      return 5_500;
+    }
+    if (method === "select_option" || method === "toggle_control") {
+      if (Number.isFinite(requestedTimeoutMs)) {
+        return Math.max(2_200, Math.min(Math.round(requestedTimeoutMs), 10_000));
+      }
+      return 5_500;
+    }
+    if (method === "ping") return 6_000;
     return 9_000;
   }
 

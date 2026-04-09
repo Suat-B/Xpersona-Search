@@ -53,6 +53,7 @@ export declare class NativeAppRuntime {
     private readBuffer;
     private readonly pending;
     private readonly sessions;
+    private lastStatusProbeAt;
     private status;
     private readonly pythonSitePackages;
     getStatus(): Promise<NativeAppStatus>;
@@ -62,14 +63,17 @@ export declare class NativeAppRuntime {
         query?: string;
         selector?: NativeAppControlSelector;
         limit?: number;
+        timeoutMs?: number;
     }): Promise<NativeAppQueryResult>;
     readControl(input: NativeAppWindowTarget & {
         query?: string;
         selector?: NativeAppControlSelector;
+        timeoutMs?: number;
     }): Promise<NativeAppActionResult>;
     invokeControl(input: NativeAppWindowTarget & {
         query?: string;
         selector?: NativeAppControlSelector;
+        timeoutMs?: number;
     }): Promise<NativeAppActionResult>;
     typeIntoControl(input: NativeAppWindowTarget & {
         query?: string;
@@ -89,6 +93,7 @@ export declare class NativeAppRuntime {
     }): Promise<NativeAppActionResult>;
     sendShortcut(input: NativeAppWindowTarget & {
         keys: string;
+        timeoutMs?: number;
     }): Promise<NativeAppActionResult>;
     waitForControl(input: NativeAppWindowTarget & {
         query?: string;
@@ -104,6 +109,9 @@ export declare class NativeAppRuntime {
     private ping;
     private ensureStarted;
     private handleResponseLine;
+    private restartSidecar;
+    private shouldRetryAfterTransportFailure;
+    private callOnce;
     private call;
     private resolveMethodTimeoutMs;
     private ensurePythonDependenciesInstalled;

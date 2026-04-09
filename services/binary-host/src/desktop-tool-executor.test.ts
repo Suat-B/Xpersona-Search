@@ -98,7 +98,24 @@ describe("DesktopToolExecutor", () => {
       }),
     } as unknown as MachineAutonomyController;
 
-    const executor = new DesktopToolExecutor(controller, buildPolicy());
+    let listWindowsCallCount = 0;
+    const executor = new DesktopToolExecutor(controller, buildPolicy(), undefined, undefined, undefined, {
+      deps: {
+        listWindows: async () => {
+          listWindowsCallCount += 1;
+          if (listWindowsCallCount <= 2) return [];
+          return [
+            {
+              id: "1400",
+              title: "Dota 2",
+              app: "Dota 2",
+            },
+          ];
+        },
+        getActiveWindow: async () => null,
+        focusWindow: async () => "focused",
+      },
+    });
     const result = await executor.execute(buildPendingToolCall("desktop_open_app", { app: "Dota" }));
 
     expect(result.ok).toBe(true);
@@ -107,6 +124,48 @@ describe("DesktopToolExecutor", () => {
       appName: "Dota 2",
       source: "windows_steam",
     });
+  });
+
+  it("reuses existing app windows in background mode without active-window lookup", async () => {
+    const controller = {
+      listApps: async () => ({ indexedAt: "2026-03-31T00:00:00.000Z", apps: [] }),
+      launchApp: async () => {
+        throw new Error("launch should not be called");
+      },
+    } as unknown as MachineAutonomyController;
+
+    let activeWindowCalls = 0;
+    const executor = new DesktopToolExecutor(controller, buildPolicy(), undefined, undefined, undefined, {
+      deps: {
+        listWindows: async () => [
+          {
+            id: "7001",
+            title: "Untitled - Notepad",
+            app: "Notepad",
+          },
+        ],
+        getActiveWindow: async () => {
+          activeWindowCalls += 1;
+          return {
+            id: "999",
+            title: "Some Other App",
+            app: "Other",
+          };
+        },
+        focusWindow: async () => "focused",
+      },
+    });
+
+    const result = await executor.execute(
+      buildPendingToolCall("desktop_open_app", {
+        app: "Notepad",
+        allowBackground: true,
+      })
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.data?.backgroundReused).toBe(true);
+    expect(activeWindowCalls).toBe(0);
   });
 
   it("blocks app launches when app-launch autonomy is disabled", async () => {
@@ -255,7 +314,24 @@ describe("DesktopToolExecutor", () => {
       buildPolicy(),
       undefined,
       nativeRuntime,
-      'Launch Discord and message Sam "Hi thanks for dinner last night"'
+      'Launch Discord and message Sam "Hi thanks for dinner last night"',
+      {
+        deps: {
+          listWindows: async () => [
+            {
+              id: "300",
+              title: "Discord",
+              app: "Discord",
+            },
+          ],
+          getActiveWindow: async () => ({
+            id: "300",
+            title: "Discord",
+            app: "Discord",
+          }),
+          focusWindow: async () => "focused",
+        },
+      }
     );
     const result = await executor.execute(
       buildPendingToolCall("desktop_invoke_control", {

@@ -46,6 +46,8 @@ export type DesktopCleanupSummary = {
         error: string;
     }>;
     skipped: boolean;
+    skippedPreExistingCount: number;
+    cleanupErrors: number;
 };
 export declare function collectDesktopContext(input: {
     machineAutonomyController: MachineAutonomyController;
@@ -82,6 +84,9 @@ export declare class DesktopToolExecutor {
     private readonly launchedWindowTargets;
     private readonly recoveryLaunchHistory;
     private readonly openedAppIntentKeys;
+    private readonly appSessions;
+    private readonly windowAffinityBindings;
+    private totalRecoveryLaunches;
     private readonly deps;
     constructor(machineAutonomyController: MachineAutonomyController, policy: MachineAutonomyPolicy, executionController?: AutonomyExecutionController | undefined, nativeAppRuntime?: NativeAppRuntime | undefined, task?: string | undefined, options?: {
         autoCloseLaunchedApps?: boolean;
@@ -94,17 +99,33 @@ export declare class DesktopToolExecutor {
     private buildNativeResult;
     private shouldAutoCloseLaunchedApps;
     private resolveTargetAppIntent;
+    private resolveRuntimeAppName;
+    private normalizeIntentKind;
+    private normalizeExecutionMode;
+    private inferIntentKind;
+    private normalizeDesktopToolArgs;
+    private resolveWindowAffinityToken;
+    private updateWindowAffinityBinding;
     private buildDesktopIntentMetadata;
+    private composeFocusGuardMetadataOptions;
     private shouldPreferBackgroundExecution;
     private resolveMatchingWindowTarget;
     private launchAppForRecovery;
     private getRecoveryLaunchKey;
+    private getOrCreateAppSession;
+    private findAppSession;
+    private updateAppSessionFromWindow;
+    private recordProofArtifact;
     private buildRecoverySuppressedReason;
     private markAppIntentOpened;
     private wasAppIntentOpened;
-    private canAttemptRecoveryLaunch;
+    private getRecoveryLaunchDecision;
     private recordRecoveryLaunch;
     private tryFocusExistingWindowForIntent;
+    private captureForegroundLeaseContext;
+    private restoreForegroundLease;
+    private sendWindowsShortcutWithBackgroundRecovery;
+    private releaseForegroundLeaseIfNeeded;
     private enforceWindowTarget;
     private captureWindowProcessIds;
     private detectNewLaunchProcessIds;

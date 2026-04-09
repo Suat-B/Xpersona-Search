@@ -120,6 +120,18 @@ type BinaryOrchestrationPolicy = {
 type BinaryIntendedUse = "chat" | "action" | "repair";
 type BinaryStartupPhase = "fast_start" | "context_enrichment" | "full_run";
 type BinaryTaskSpeedClass = "chat_only" | "simple_action" | "tool_heavy" | "deep_code";
+type BinaryDesktopIntentKind = "open" | "draft_text" | "compute" | "navigate_path" | "verify" | "cleanup";
+type BinaryBrowserIntentKind =
+  | "open_site"
+  | "search"
+  | "login"
+  | "fill_form"
+  | "extract"
+  | "recover"
+  | "verify"
+  | "cleanup";
+type BinaryIntentKind = BinaryDesktopIntentKind | BinaryBrowserIntentKind;
+type BinaryScreenshotReason = "explicit_user_request" | "debug_mode" | "proof_fallback";
 type BinaryHostRunStatus =
   | "queued"
   | "running"
@@ -174,13 +186,33 @@ type ToolResult = {
 type AssistRunEnvelope = {
   sessionId?: string;
   traceId?: string;
+  intentStepId?: string;
+  intentKind?: BinaryIntentKind;
+  executionMode?: "background_safe" | "foreground_lease" | "takeover";
+  windowAffinityToken?: string;
   targetAppIntent?: string;
   targetResolvedApp?: string;
+  targetConfidence?: number;
+  pageLeaseId?: string;
+  targetOrigin?: string;
   focusRecoveryAttempted?: boolean;
+  focusModeApplied?: "background_safe" | "foreground_lease";
+  foregroundLeaseMs?: number;
+  focusLeaseRestored?: boolean;
   recoverySuppressedReason?: string;
+  relaunchAttempt?: number;
+  relaunchSuppressed?: boolean;
+  relaunchSuppressionReason?: string;
   verificationRequired?: boolean;
   verificationPassed?: boolean;
+  domProofArtifacts?: string[];
+  screenshotCaptured?: boolean;
+  screenshotReason?: BinaryScreenshotReason;
+  proofProgress?: number;
+  proofArtifacts?: string[];
   cleanupClosedCount?: number;
+  cleanupSkippedPreExistingCount?: number;
+  cleanupErrors?: number;
   adapterMode?: BinaryAdapterMode;
   latencyPolicy?: BinaryLatencyPolicy;
   smallModelForced?: boolean;
@@ -498,13 +530,33 @@ type BinaryHostExecutionState = {
   seedToolInjected?: boolean;
   invalidToolNameRecovered?: boolean;
   jsonlPath?: string | null;
+  intentStepId?: string;
+  intentKind?: BinaryIntentKind;
+  executionMode?: "background_safe" | "foreground_lease" | "takeover";
+  windowAffinityToken?: string;
   targetAppIntent?: string;
   targetResolvedApp?: string;
+  targetConfidence?: number;
+  pageLeaseId?: string;
+  targetOrigin?: string;
   focusRecoveryAttempted?: boolean;
+  focusModeApplied?: "background_safe" | "foreground_lease";
+  foregroundLeaseMs?: number;
+  focusLeaseRestored?: boolean;
   recoverySuppressedReason?: string;
+  relaunchAttempt?: number;
+  relaunchSuppressed?: boolean;
+  relaunchSuppressionReason?: string;
   verificationRequired?: boolean;
   verificationPassed?: boolean;
+  domProofArtifacts?: string[];
+  screenshotCaptured?: boolean;
+  screenshotReason?: BinaryScreenshotReason;
+  proofProgress?: number;
+  proofArtifacts?: string[];
   cleanupClosedCount?: number;
+  cleanupSkippedPreExistingCount?: number;
+  cleanupErrors?: number;
   terminalState?: BinaryHostTerminalState | null;
   selectedContextTier?: "minimal" | "standard" | "full";
   decisionFeatures?: Record<string, unknown> | null;
@@ -619,6 +671,7 @@ const THOROUGH_TURN_BUDGET_MS = 90_000;
 const FORCED_SMALL_MODEL_FIRST_TURN_BUDGET_MS = 15_000;
 const FORCED_SMALL_MODEL_DEEP_CODE_FIRST_TURN_BUDGET_MS = 45_000;
 const FORCED_SMALL_MODEL_CONTINUE_TURN_BUDGET_MS = 35_000;
+const FORCED_SMALL_MODEL_DEEP_CODE_CONTINUE_TURN_BUDGET_MS = 60_000;
 const LATENCY_POLICY_INTERACTIVE_FIRST_TURN_BUDGET_MS = 8_000;
 const LATENCY_POLICY_DESKTOP_FIRST_TURN_BUDGET_MS = 12_000;
 const LATENCY_POLICY_DEEP_CODE_FIRST_TURN_BUDGET_MS = 20_000;
@@ -632,6 +685,7 @@ const BALANCED_STALL_TIMEOUT_MS = 18_000;
 const THOROUGH_STALL_TIMEOUT_MS = 30_000;
 const BROWSER_MICRO_STALL_REPEATS = 2;
 const OAUTH_REFRESH_SKEW_MS = 90_000;
+const DEFAULT_FIXED_FREE_MODEL_ALIAS = "openai/gpt-oss-20b:free";
 const DEFAULT_SMALL_MODEL_ALLOWLIST = [
   "alias:user:openrouter",
   "alias:openrouter",
@@ -838,6 +892,8 @@ type LocalToolExecutor = {
     closed: number;
     failed: Array<{ pid: number; error: string }>;
     skipped: boolean;
+    skippedPreExistingCount: number;
+    cleanupErrors: number;
   }>;
 };
 
@@ -1335,7 +1391,7 @@ function defaultOrchestrationPolicy(): BinaryOrchestrationPolicy {
     detachedFirstTurnBudgetMs: FORCED_SMALL_MODEL_FIRST_TURN_BUDGET_MS,
     smallModelAllowlist: [...DEFAULT_SMALL_MODEL_ALLOWLIST],
     modelRoutingMode: "single_fixed_free",
-    fixedModelAlias: "",
+    fixedModelAlias: DEFAULT_FIXED_FREE_MODEL_ALIAS,
     fallbackEnabled: false,
     latencyBudgetsMs: {
       interactive: LATENCY_POLICY_INTERACTIVE_FIRST_TURN_BUDGET_MS,
@@ -1359,6 +1415,10 @@ function normalizeOrchestrationPolicy(
     : fallback.smallModelAllowlist;
   const modelRoutingMode = normalizeRoutingMode(value?.modelRoutingMode, fallback.modelRoutingMode);
   const fixedModelAliasRaw = typeof value?.fixedModelAlias === "string" ? value.fixedModelAlias.trim() : fallback.fixedModelAlias || "";
+  const fixedModelAlias =
+    modelRoutingMode === "single_fixed_free"
+      ? fixedModelAliasRaw || DEFAULT_FIXED_FREE_MODEL_ALIAS
+      : fixedModelAliasRaw;
   const fallbackEnabled = Object.prototype.hasOwnProperty.call(value || {}, "fallbackEnabled")
     ? value?.fallbackEnabled === true
     : fallback.fallbackEnabled === true;
@@ -1372,7 +1432,7 @@ function normalizeOrchestrationPolicy(
     ),
     smallModelAllowlist: allowlist.length ? allowlist : [...DEFAULT_SMALL_MODEL_ALLOWLIST],
     modelRoutingMode,
-    ...(fixedModelAliasRaw ? { fixedModelAlias: fixedModelAliasRaw } : {}),
+    ...(fixedModelAlias ? { fixedModelAlias } : {}),
     fallbackEnabled,
     latencyBudgetsMs,
     desktopProofMode,
@@ -1644,6 +1704,42 @@ function taskLikelyTargetsDesktop(task: string): boolean {
   return /\b(desktop|window|windows|notepad|calculator|calc|file explorer|explorer|discord|slack|outlook|mail)\b/i.test(
     normalized
   );
+}
+
+function taskLikelyNeedsRichSurfaceContext(task: string, taskSpeedClass: BinaryTaskSpeedClass): boolean {
+  if (taskSpeedClass === "chat_only") return false;
+  if (looksLikeWebAutomationIntent(task)) return true;
+  if (taskLikelyTargetsDesktop(task)) return true;
+  if (taskLikelyRequiresDesktopVerification(task)) return true;
+  // Deep code / workspace-heavy requests should not pay machine/browser context tax on first turn.
+  if (taskSpeedClass === "deep_code") return false;
+  return taskSpeedClass === "tool_heavy";
+}
+
+function taskLikelyReferencesWorkspaceArtifacts(task: string): boolean {
+  const normalized = String(task || "").toLowerCase();
+  if (!normalized) return false;
+  if (
+    /\b(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|readme\.md|tsconfig\.json|pyproject\.toml|requirements\.txt|dockerfile|makefile|\.gitignore|\.env)\b/i.test(
+      normalized
+    )
+  ) {
+    return true;
+  }
+  if (/\b([a-z0-9._-]+(?:\/[a-z0-9._-]+)+|[a-z0-9._-]+\.(?:json|md|markdown|yaml|yml|toml|ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|kt|swift|c|cc|cpp|h|hpp|cs|php|sh|ps1|sql|xml))\b/i.test(normalized)) {
+    return true;
+  }
+  return /\b(create|edit|write|update|fix|implement|refactor|patch|modify|run tests?|test|verify|validation|lint|module|function|class|script)\b/i.test(
+    normalized
+  );
+}
+
+function taskLikelyTargetsBrowser(task: string): boolean {
+  const normalized = String(task || "").toLowerCase();
+  if (!normalized) return false;
+  if (taskLikelyTargetsDesktop(task)) return false;
+  if (taskLikelyRequiresWorkspaceAction(task) || taskLikelyReferencesWorkspaceArtifacts(task)) return false;
+  return looksLikeWebAutomationIntent(task);
 }
 
 function runLikelyDesktopTask(run: StoredHostRun): boolean {
@@ -1944,6 +2040,8 @@ function buildGatewayExecutionHints(input: {
   const fixedModelAlias = typeof policy.fixedModelAlias === "string" && policy.fixedModelAlias.trim() ? policy.fixedModelAlias.trim() : undefined;
   const smallModelForced =
     modelRoutingMode === "single_fixed_free" || isSmallModelForcedCandidate(input.candidate, input.orchestrationPolicy);
+  const browserTask = taskLikelyTargetsBrowser(input.run.request.task);
+  const adapterMode: BinaryAdapterMode = smallModelForced && !browserTask ? "force_binary_tool_adapter" : "auto";
   const detachedForced = input.run.request.detach === true;
   const budgetProfile = detachedForced
     ? `single_fixed_detached_${Math.round(firstTurnBudgetMs / 1000)}s`
@@ -1953,7 +2051,7 @@ function buildGatewayExecutionHints(input: {
         ? `single_fixed_desktop_${Math.round(firstTurnBudgetMs / 1000)}s`
         : `single_fixed_interactive_${Math.round(firstTurnBudgetMs / 1000)}s`;
   return {
-    adapterMode: smallModelForced ? "force_binary_tool_adapter" : "auto",
+    adapterMode,
     latencyPolicy: detachedForced ? "detached_15s_cap" : "default",
     timeoutPolicy: detachedForced
       ? "detached_no_timeout_retry_single_non_timeout_fallback"
@@ -4011,10 +4109,12 @@ async function runLocalGatewayAssist(input: LocalGatewayAssistInput): Promise<As
   const forcedSmallContinueBudgetMs = Math.max(
     10_000,
     Math.round(
-      Math.min(
-        routePolicy.turnBudgetMs,
-        FORCED_SMALL_MODEL_CONTINUE_TURN_BUDGET_MS
-      )
+      input.taskSpeedClass === "deep_code"
+        ? Math.max(
+            FORCED_SMALL_MODEL_DEEP_CODE_CONTINUE_TURN_BUDGET_MS,
+            Math.min(routePolicy.turnBudgetMs, THOROUGH_TURN_BUDGET_MS)
+          )
+        : Math.min(routePolicy.turnBudgetMs, FORCED_SMALL_MODEL_CONTINUE_TURN_BUDGET_MS)
     )
   );
   const detachedTurnBudgetMs =
@@ -7260,19 +7360,64 @@ function attachHostMetadata(envelope: AssistRunEnvelope, run: StoredHostRun): As
             envelope.invalidToolNameRecovered ?? run.lastExecutionState?.invalidToolNameRecovered,
         }
       : {}),
+    ...(typeof envelope.intentStepId === "string" || typeof run.lastExecutionState?.intentStepId === "string"
+      ? { intentStepId: envelope.intentStepId || run.lastExecutionState?.intentStepId }
+      : {}),
+    ...(envelope.intentKind || run.lastExecutionState?.intentKind
+      ? { intentKind: envelope.intentKind || run.lastExecutionState?.intentKind }
+      : {}),
+    ...(envelope.executionMode || run.lastExecutionState?.executionMode
+      ? { executionMode: envelope.executionMode || run.lastExecutionState?.executionMode }
+      : {}),
+    ...(typeof envelope.windowAffinityToken === "string" || typeof run.lastExecutionState?.windowAffinityToken === "string"
+      ? { windowAffinityToken: envelope.windowAffinityToken || run.lastExecutionState?.windowAffinityToken }
+      : {}),
     ...(typeof envelope.targetAppIntent === "string" || typeof run.lastExecutionState?.targetAppIntent === "string"
       ? { targetAppIntent: envelope.targetAppIntent || run.lastExecutionState?.targetAppIntent }
       : {}),
     ...(typeof envelope.targetResolvedApp === "string" || typeof run.lastExecutionState?.targetResolvedApp === "string"
       ? { targetResolvedApp: envelope.targetResolvedApp || run.lastExecutionState?.targetResolvedApp }
       : {}),
+    ...(typeof envelope.targetConfidence === "number" || typeof run.lastExecutionState?.targetConfidence === "number"
+      ? { targetConfidence: envelope.targetConfidence ?? run.lastExecutionState?.targetConfidence }
+      : {}),
+    ...(typeof envelope.pageLeaseId === "string" || typeof run.lastExecutionState?.pageLeaseId === "string"
+      ? { pageLeaseId: envelope.pageLeaseId || run.lastExecutionState?.pageLeaseId }
+      : {}),
+    ...(typeof envelope.targetOrigin === "string" || typeof run.lastExecutionState?.targetOrigin === "string"
+      ? { targetOrigin: envelope.targetOrigin || run.lastExecutionState?.targetOrigin }
+      : {}),
     ...(typeof envelope.focusRecoveryAttempted === "boolean" ||
     typeof run.lastExecutionState?.focusRecoveryAttempted === "boolean"
       ? { focusRecoveryAttempted: envelope.focusRecoveryAttempted ?? run.lastExecutionState?.focusRecoveryAttempted }
       : {}),
+    ...(envelope.focusModeApplied || run.lastExecutionState?.focusModeApplied
+      ? { focusModeApplied: envelope.focusModeApplied || run.lastExecutionState?.focusModeApplied }
+      : {}),
+    ...(typeof envelope.foregroundLeaseMs === "number" || typeof run.lastExecutionState?.foregroundLeaseMs === "number"
+      ? { foregroundLeaseMs: envelope.foregroundLeaseMs ?? run.lastExecutionState?.foregroundLeaseMs }
+      : {}),
+    ...(typeof envelope.focusLeaseRestored === "boolean" ||
+    typeof run.lastExecutionState?.focusLeaseRestored === "boolean"
+      ? { focusLeaseRestored: envelope.focusLeaseRestored ?? run.lastExecutionState?.focusLeaseRestored }
+      : {}),
     ...(typeof envelope.recoverySuppressedReason === "string" ||
     typeof run.lastExecutionState?.recoverySuppressedReason === "string"
       ? { recoverySuppressedReason: envelope.recoverySuppressedReason || run.lastExecutionState?.recoverySuppressedReason }
+      : {}),
+    ...(typeof envelope.relaunchAttempt === "number" || typeof run.lastExecutionState?.relaunchAttempt === "number"
+      ? { relaunchAttempt: envelope.relaunchAttempt ?? run.lastExecutionState?.relaunchAttempt }
+      : {}),
+    ...(typeof envelope.relaunchSuppressed === "boolean" ||
+    typeof run.lastExecutionState?.relaunchSuppressed === "boolean"
+      ? { relaunchSuppressed: envelope.relaunchSuppressed ?? run.lastExecutionState?.relaunchSuppressed }
+      : {}),
+    ...(typeof envelope.relaunchSuppressionReason === "string" ||
+    typeof run.lastExecutionState?.relaunchSuppressionReason === "string"
+      ? {
+          relaunchSuppressionReason:
+            envelope.relaunchSuppressionReason || run.lastExecutionState?.relaunchSuppressionReason,
+        }
       : {}),
     ...(typeof envelope.verificationRequired === "boolean" ||
     typeof run.lastExecutionState?.verificationRequired === "boolean"
@@ -7282,8 +7427,34 @@ function attachHostMetadata(envelope: AssistRunEnvelope, run: StoredHostRun): As
     typeof run.lastExecutionState?.verificationPassed === "boolean"
       ? { verificationPassed: envelope.verificationPassed ?? run.lastExecutionState?.verificationPassed }
       : {}),
+    ...(Array.isArray(envelope.domProofArtifacts) || Array.isArray(run.lastExecutionState?.domProofArtifacts)
+      ? { domProofArtifacts: envelope.domProofArtifacts || run.lastExecutionState?.domProofArtifacts || [] }
+      : {}),
+    ...(typeof envelope.screenshotCaptured === "boolean" ||
+    typeof run.lastExecutionState?.screenshotCaptured === "boolean"
+      ? { screenshotCaptured: envelope.screenshotCaptured ?? run.lastExecutionState?.screenshotCaptured }
+      : {}),
+    ...(typeof envelope.screenshotReason === "string" || typeof run.lastExecutionState?.screenshotReason === "string"
+      ? { screenshotReason: envelope.screenshotReason || run.lastExecutionState?.screenshotReason }
+      : {}),
+    ...(typeof envelope.proofProgress === "number" || typeof run.lastExecutionState?.proofProgress === "number"
+      ? { proofProgress: envelope.proofProgress ?? run.lastExecutionState?.proofProgress }
+      : {}),
+    ...(Array.isArray(envelope.proofArtifacts) || Array.isArray(run.lastExecutionState?.proofArtifacts)
+      ? { proofArtifacts: envelope.proofArtifacts || run.lastExecutionState?.proofArtifacts || [] }
+      : {}),
     ...(typeof envelope.cleanupClosedCount === "number" || typeof run.lastExecutionState?.cleanupClosedCount === "number"
       ? { cleanupClosedCount: envelope.cleanupClosedCount ?? run.lastExecutionState?.cleanupClosedCount }
+      : {}),
+    ...(typeof envelope.cleanupSkippedPreExistingCount === "number" ||
+    typeof run.lastExecutionState?.cleanupSkippedPreExistingCount === "number"
+      ? {
+          cleanupSkippedPreExistingCount:
+            envelope.cleanupSkippedPreExistingCount ?? run.lastExecutionState?.cleanupSkippedPreExistingCount,
+        }
+      : {}),
+    ...(typeof envelope.cleanupErrors === "number" || typeof run.lastExecutionState?.cleanupErrors === "number"
+      ? { cleanupErrors: envelope.cleanupErrors ?? run.lastExecutionState?.cleanupErrors }
       : {}),
     ...(mergedLoopState ? { loopState: mergedLoopState } : {}),
     ...(mergedProgressState ? { progressState: mergedProgressState } : {}),
@@ -7353,13 +7524,32 @@ function applyEnvelopeToRun(run: StoredHostRun, envelope: AssistRunEnvelope): vo
     ...(typeof envelope.invalidToolNameRecovered === "boolean"
       ? { invalidToolNameRecovered: envelope.invalidToolNameRecovered }
       : {}),
+    ...(typeof envelope.intentStepId === "string" ? { intentStepId: envelope.intentStepId } : {}),
+    ...(envelope.intentKind ? { intentKind: envelope.intentKind } : {}),
+    ...(envelope.executionMode ? { executionMode: envelope.executionMode } : {}),
+    ...(typeof envelope.windowAffinityToken === "string" ? { windowAffinityToken: envelope.windowAffinityToken } : {}),
     ...(typeof envelope.targetAppIntent === "string" ? { targetAppIntent: envelope.targetAppIntent } : {}),
     ...(typeof envelope.targetResolvedApp === "string" ? { targetResolvedApp: envelope.targetResolvedApp } : {}),
+    ...(typeof envelope.targetConfidence === "number" ? { targetConfidence: envelope.targetConfidence } : {}),
+    ...(typeof envelope.pageLeaseId === "string" ? { pageLeaseId: envelope.pageLeaseId } : {}),
+    ...(typeof envelope.targetOrigin === "string" ? { targetOrigin: envelope.targetOrigin } : {}),
     ...(typeof envelope.focusRecoveryAttempted === "boolean"
       ? { focusRecoveryAttempted: envelope.focusRecoveryAttempted }
       : {}),
+    ...(envelope.focusModeApplied ? { focusModeApplied: envelope.focusModeApplied } : {}),
+    ...(typeof envelope.foregroundLeaseMs === "number" ? { foregroundLeaseMs: envelope.foregroundLeaseMs } : {}),
+    ...(typeof envelope.focusLeaseRestored === "boolean"
+      ? { focusLeaseRestored: envelope.focusLeaseRestored }
+      : {}),
     ...(typeof envelope.recoverySuppressedReason === "string"
       ? { recoverySuppressedReason: envelope.recoverySuppressedReason }
+      : {}),
+    ...(typeof envelope.relaunchAttempt === "number" ? { relaunchAttempt: envelope.relaunchAttempt } : {}),
+    ...(typeof envelope.relaunchSuppressed === "boolean"
+      ? { relaunchSuppressed: envelope.relaunchSuppressed }
+      : {}),
+    ...(typeof envelope.relaunchSuppressionReason === "string"
+      ? { relaunchSuppressionReason: envelope.relaunchSuppressionReason }
       : {}),
     ...(typeof envelope.verificationRequired === "boolean"
       ? { verificationRequired: envelope.verificationRequired }
@@ -7367,9 +7557,20 @@ function applyEnvelopeToRun(run: StoredHostRun, envelope: AssistRunEnvelope): vo
     ...(typeof envelope.verificationPassed === "boolean"
       ? { verificationPassed: envelope.verificationPassed }
       : {}),
+    ...(Array.isArray(envelope.domProofArtifacts) ? { domProofArtifacts: envelope.domProofArtifacts } : {}),
+    ...(typeof envelope.screenshotCaptured === "boolean"
+      ? { screenshotCaptured: envelope.screenshotCaptured }
+      : {}),
+    ...(typeof envelope.screenshotReason === "string" ? { screenshotReason: envelope.screenshotReason } : {}),
+    ...(typeof envelope.proofProgress === "number" ? { proofProgress: envelope.proofProgress } : {}),
+    ...(Array.isArray(envelope.proofArtifacts) ? { proofArtifacts: envelope.proofArtifacts } : {}),
     ...(typeof envelope.cleanupClosedCount === "number"
       ? { cleanupClosedCount: envelope.cleanupClosedCount }
       : {}),
+    ...(typeof envelope.cleanupSkippedPreExistingCount === "number"
+      ? { cleanupSkippedPreExistingCount: envelope.cleanupSkippedPreExistingCount }
+      : {}),
+    ...(typeof envelope.cleanupErrors === "number" ? { cleanupErrors: envelope.cleanupErrors } : {}),
     ...(typeof envelope.jsonlPath === "string" ? { jsonlPath: envelope.jsonlPath } : {}),
     ...(typeof envelope.escalationStage === "string" ? { escalationStage: envelope.escalationStage } : {}),
     ...(typeof envelope.escalationReason === "string" ? { escalationReason: envelope.escalationReason } : {}),
@@ -7553,28 +7754,101 @@ function sanitizeToolResultForUi(toolResult: ToolResult): Record<string, unknown
 }
 
 function extractDesktopToolMetadata(toolResult: ToolResult): {
+  intentStepId?: string;
+  intentKind?: BinaryIntentKind;
+  executionMode?: "background_safe" | "foreground_lease" | "takeover";
+  windowAffinityToken?: string;
   targetAppIntent?: string;
   targetResolvedApp?: string;
+  targetConfidence?: number;
+  pageLeaseId?: string;
+  targetOrigin?: string;
   focusRecoveryAttempted?: boolean;
+  focusModeApplied?: "background_safe" | "foreground_lease";
+  foregroundLeaseMs?: number;
+  focusLeaseRestored?: boolean;
   recoverySuppressedReason?: string;
+  relaunchAttempt?: number;
+  relaunchSuppressed?: boolean;
+  relaunchSuppressionReason?: string;
   verificationRequired?: boolean;
   verificationPassed?: boolean;
+  domProofArtifacts?: string[];
+  screenshotCaptured?: boolean;
+  screenshotReason?: BinaryScreenshotReason;
+  proofProgress?: number;
+  proofArtifacts?: string[];
 } {
   const data = toolResult.data && typeof toolResult.data === "object" ? (toolResult.data as Record<string, unknown>) : null;
+  const intentKind = data && typeof data.intentKind === "string" ? String(data.intentKind) : "";
+  const normalizedScreenshotReason = data && typeof data.screenshotReason === "string" ? String(data.screenshotReason) : "";
   return {
+    ...(data && typeof data.intentStepId === "string" ? { intentStepId: data.intentStepId } : {}),
+    ...(intentKind &&
+    (intentKind === "open" ||
+      intentKind === "draft_text" ||
+      intentKind === "compute" ||
+      intentKind === "navigate_path" ||
+      intentKind === "verify" ||
+      intentKind === "cleanup" ||
+      intentKind === "open_site" ||
+      intentKind === "search" ||
+      intentKind === "login" ||
+      intentKind === "fill_form" ||
+      intentKind === "extract" ||
+      intentKind === "recover")
+      ? { intentKind: intentKind as BinaryIntentKind }
+      : {}),
+    ...(data &&
+    (data.executionMode === "background_safe" ||
+      data.executionMode === "foreground_lease" ||
+      data.executionMode === "takeover")
+      ? { executionMode: data.executionMode }
+      : {}),
+    ...(data && typeof data.windowAffinityToken === "string" ? { windowAffinityToken: data.windowAffinityToken } : {}),
     ...(data && typeof data.targetAppIntent === "string" ? { targetAppIntent: data.targetAppIntent } : {}),
     ...(data && typeof data.targetResolvedApp === "string" ? { targetResolvedApp: data.targetResolvedApp } : {}),
+    ...(data && typeof data.targetConfidence === "number"
+      ? { targetConfidence: data.targetConfidence }
+      : data && typeof data.confidence === "number"
+        ? { targetConfidence: data.confidence }
+        : {}),
+    ...(data && typeof data.pageLeaseId === "string" ? { pageLeaseId: data.pageLeaseId } : {}),
+    ...(data && typeof data.targetOrigin === "string" ? { targetOrigin: data.targetOrigin } : {}),
     ...(data && typeof data.focusRecoveryAttempted === "boolean"
       ? { focusRecoveryAttempted: data.focusRecoveryAttempted }
       : {}),
+    ...(data && (data.focusModeApplied === "background_safe" || data.focusModeApplied === "foreground_lease")
+      ? { focusModeApplied: data.focusModeApplied }
+      : {}),
+    ...(data && typeof data.foregroundLeaseMs === "number" ? { foregroundLeaseMs: data.foregroundLeaseMs } : {}),
+    ...(data && typeof data.focusLeaseRestored === "boolean" ? { focusLeaseRestored: data.focusLeaseRestored } : {}),
     ...(data && typeof data.recoverySuppressedReason === "string"
       ? { recoverySuppressedReason: data.recoverySuppressedReason }
+      : {}),
+    ...(data && typeof data.relaunchAttempt === "number" ? { relaunchAttempt: data.relaunchAttempt } : {}),
+    ...(data && typeof data.relaunchSuppressed === "boolean" ? { relaunchSuppressed: data.relaunchSuppressed } : {}),
+    ...(data && typeof data.relaunchSuppressionReason === "string"
+      ? { relaunchSuppressionReason: data.relaunchSuppressionReason }
       : {}),
     ...(data && typeof data.verificationRequired === "boolean"
       ? { verificationRequired: data.verificationRequired }
       : {}),
     ...(data && typeof data.verificationPassed === "boolean"
       ? { verificationPassed: data.verificationPassed }
+      : {}),
+    ...(data && Array.isArray(data.domProofArtifacts)
+      ? { domProofArtifacts: data.domProofArtifacts.filter((item) => typeof item === "string") as string[] }
+      : {}),
+    ...(data && typeof data.screenshotCaptured === "boolean" ? { screenshotCaptured: data.screenshotCaptured } : {}),
+    ...(normalizedScreenshotReason === "explicit_user_request" ||
+    normalizedScreenshotReason === "debug_mode" ||
+    normalizedScreenshotReason === "proof_fallback"
+      ? { screenshotReason: normalizedScreenshotReason as BinaryScreenshotReason }
+      : {}),
+    ...(data && typeof data.proofProgress === "number" ? { proofProgress: data.proofProgress } : {}),
+    ...(data && Array.isArray(data.proofArtifacts)
+      ? { proofArtifacts: data.proofArtifacts.filter((item) => typeof item === "string") as string[] }
       : {}),
   };
 }
@@ -8380,8 +8654,9 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
       !machineShortcutIntent &&
       (taskSpeedClass === "chat_only" || taskSpeedClass === "simple_action");
     const shouldCollectMachineSurfaceContext =
-      executionConfig.executionLane !== "local_interactive" ||
-      (machineShortcutIntent && taskSpeedClass === "simple_action");
+      (executionConfig.executionLane !== "local_interactive" ||
+        (machineShortcutIntent && taskSpeedClass === "simple_action")) &&
+      taskLikelyNeedsRichSurfaceContext(run.request.task, taskSpeedClass);
     const shouldEmitWorldRouteDecision =
       !deferInitialContextHydration && shouldCollectMachineSurfaceContext && taskSpeedClass !== "chat_only";
     debugHostProgress(
@@ -10507,6 +10782,8 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
         run.lastExecutionState = {
           ...(run.lastExecutionState || {}),
           cleanupClosedCount: cleanup.closed,
+          cleanupSkippedPreExistingCount: cleanup.skippedPreExistingCount,
+          cleanupErrors: cleanup.cleanupErrors,
         };
         await appendRunEvent(
           run,
@@ -10518,6 +10795,8 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
               failed: cleanup.failed,
               skipped: cleanup.skipped,
               cleanupClosedCount: cleanup.closed,
+              cleanupSkippedPreExistingCount: cleanup.skippedPreExistingCount,
+              cleanupErrors: cleanup.cleanupErrors,
             },
           },
           attachedRes
@@ -10530,6 +10809,8 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
             {
               desktopCleanup: cleanup,
               cleanupClosedCount: cleanup.closed,
+              cleanupSkippedPreExistingCount: cleanup.skippedPreExistingCount,
+              cleanupErrors: cleanup.cleanupErrors,
             }
           );
         }

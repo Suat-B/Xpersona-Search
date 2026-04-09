@@ -36,6 +36,13 @@ export declare class BrowserToolExecutor {
     private readonly policy;
     private readonly executionController?;
     constructor(runtime: BrowserRuntimeController, policy: MachineAutonomyPolicy, executionController?: AutonomyExecutionController | undefined);
+    private normalizeOrigin;
+    private resolveScreenshotReason;
+    private inferIntentKind;
+    private requiresVerification;
+    private inferDomProofArtifacts;
+    private buildBrowserMetadata;
+    private assertTargetGuards;
     private resolvePageId;
     execute(pendingToolCall: PendingToolCall): Promise<ToolResult>;
 }

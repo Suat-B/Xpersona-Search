@@ -10,12 +10,12 @@
     "validationSuccessRate": 0.5,
     "repairSuccessRate": 0,
     "gitCloseoutSuccessRate": 1,
-    "endToEndCompletionRate": 0.7142857142857143,
+    "endToEndCompletionRate": 0.8571428571428571,
     "closureCompletionRate": 0,
     "meanStepsToClosure": 15,
     "meanRepairsToClosure": 0,
     "avoidableTakeoverRate": 0,
-    "desktopCompletionRate": 0.6666666666666666,
+    "desktopCompletionRate": 1,
     "desktopWrongTargetTotal": 0,
     "desktopTimeoutCount": 0
   },
@@ -34,24 +34,24 @@
           "ttfrMs": 5,
           "firstToolMs": null,
           "firstVisibleMs": 5,
-          "totalRunMs": 8228,
-          "elapsedMs": 8503
+          "totalRunMs": 7047,
+          "elapsedMs": 7272
         },
         "desktop": {
           "count": 6,
-          "ttfrMs": 5.5,
-          "firstToolMs": 715.5,
-          "firstVisibleMs": 715.5,
-          "totalRunMs": 53017,
-          "elapsedMs": 55189.5
+          "ttfrMs": 4.5,
+          "firstToolMs": 1249.5,
+          "firstVisibleMs": 1249.5,
+          "totalRunMs": 34953,
+          "elapsedMs": 35311.5
         },
         "coding": {
           "count": 6,
-          "ttfrMs": 5,
-          "firstToolMs": 1208,
-          "firstVisibleMs": 1208,
-          "totalRunMs": 16422.5,
-          "elapsedMs": 17226.5
+          "ttfrMs": 4,
+          "firstToolMs": 1496,
+          "firstVisibleMs": 1496,
+          "totalRunMs": 22886,
+          "elapsedMs": 23614.5
         }
       },
       "chatProbeCount": 1,
@@ -59,9 +59,9 @@
       "codingTargetCount": 2,
       "medianChatTtfrMs": 5,
       "medianChatFirstToolMs": 5,
-      "medianCodingElapsedMs": 17226.5,
-      "medianCodingTotalRunMs": 16422.5,
-      "medianDesktopElapsedMs": 55189.5,
+      "medianCodingElapsedMs": 23614.5,
+      "medianCodingTotalRunMs": 22886,
+      "medianDesktopElapsedMs": 35311.5,
       "medianFallbackCount": 0
     },
     "chatFirstToolImprovement": null,
@@ -95,7 +95,6 @@
   "passing": false,
   "failingReasons": [
     "coding completion 0.67 < 0.80",
-    "validation success 0.50 < 0.80",
-    "desktop completion 0.67 < 1.00"
+    "validation success 0.50 < 0.80"
   ]
 }

@@ -9,6 +9,10 @@ const BROWSER_READY_TIMEOUT_MS = 6_000;
 const MAX_CONSOLE_EVENTS = 60;
 const MAX_NETWORK_EVENTS = 120;
 const MAX_SNAPSHOTS = 80;
+const MAX_ACTION_LOOP_HISTORY = 120;
+const BROWSER_OPEN_LOOP_MAX_ATTEMPTS = 3;
+const BROWSER_MISSION_LOOP_MAX_ATTEMPTS = 3;
+const BROWSER_MUTATION_LOOP_MAX_ATTEMPTS = 4;
 const CANDIDATE_DEBUG_PORTS = [9222, 9223, 9333, 9334, 9444];
 const BROWSER_FAMILY_LABELS = {
     chrome: "Google Chrome",
@@ -34,6 +38,16 @@ function originFromUrl(url) {
         return "";
     }
 }
+function normalizeOriginLike(value) {
+    const compact = compactWhitespace(value).toLowerCase();
+    if (!compact)
+        return "";
+    if (/^https?:\/\//i.test(compact))
+        return originFromUrl(compact) || compact;
+    if (/^[a-z0-9.-]+\.[a-z]{2,}(?::\d+)?$/i.test(compact))
+        return `https://${compact}`;
+    return compact;
+}
 function safeDomain(url) {
     try {
         return new URL(url).hostname.toLowerCase();
@@ -47,6 +61,16 @@ function compactTerms(value) {
         .toLowerCase()
         .split(/\s+/)
         .filter(Boolean);
+}
+function parseEnvBool(value, defaultValue) {
+    const normalized = compactWhitespace(value || "").toLowerCase();
+    if (!normalized)
+        return defaultValue;
+    if (["1", "true", "yes", "on"].includes(normalized))
+        return true;
+    if (["0", "false", "no", "off"].includes(normalized))
+        return false;
+    return defaultValue;
 }
 export function buildBrowserSiteSearchUrl(baseUrl, query) {
     const compactQuery = compactWhitespace(query);
@@ -317,6 +341,7 @@ async function launchManagedBrowser(policy) {
     if (!resolved) {
         throw new Error("Binary could not find a supported Chromium-family browser to launch.");
     }
+    const managedHeadless = parseEnvBool(process.env.BINARY_BROWSER_MANAGED_HEADLESS, true);
     const port = await allocatePort();
     const userDataDir = path.join(os.tmpdir(), `binary-browser-profile-${port}`);
     await fs.mkdir(userDataDir, { recursive: true });
@@ -328,6 +353,9 @@ async function launchManagedBrowser(policy) {
         "--disable-default-apps",
         "about:blank",
     ];
+    if (managedHeadless) {
+        args.splice(args.length - 1, 0, "--headless=new", "--disable-gpu", "--window-size=1366,900");
+    }
     const child = spawn(resolved.executablePath, args, {
         detached: true,
         stdio: "ignore",
@@ -878,8 +906,75 @@ export class BrowserRuntimeController {
     elementRefs = new Map();
     snapshots = new Map();
     pageLeases = new Map();
+    actionLoops = new Map();
     lastActivePageId = null;
     sessionModeOverride = null;
+    loopActionKey(kind, key) {
+        return `${kind}:${compactWhitespace(key).toLowerCase().slice(0, 220)}`;
+    }
+    beginLoopAction(kind, key, input) {
+        const now = Date.now();
+        const normalizedKey = this.loopActionKey(kind, key);
+        const existing = this.actionLoops.get(normalizedKey);
+        if (existing?.suppressedUntil && now < existing.suppressedUntil) {
+            const remaining = Math.max(1, Math.ceil((existing.suppressedUntil - now) / 1000));
+            return {
+                allowed: false,
+                attempt: existing.attempts,
+                recoverySuggested: false,
+                reason: `Binary suppressed repeated ${kind.replace(/_/g, " ")} attempts for ${remaining}s to prevent browser loops.`,
+            };
+        }
+        const next = existing
+            ? {
+                ...existing,
+                attempts: existing.attempts + 1,
+                lastAttemptAt: now,
+            }
+            : {
+                attempts: 1,
+                firstAttemptAt: now,
+                lastAttemptAt: now,
+                recoveryUsed: false,
+            };
+        const elapsed = now - next.firstAttemptAt;
+        if (next.attempts > input.maxAttempts && elapsed < input.cooldownMs) {
+            next.suppressedUntil = now + input.suppressionMs;
+            this.actionLoops.set(normalizedKey, next);
+            return {
+                allowed: false,
+                attempt: next.attempts,
+                recoverySuggested: false,
+                reason: `Binary blocked repeated ${kind.replace(/_/g, " ")} attempts without progress. ` +
+                    "Refresh the page state or use browser_recover_workflow before retrying.",
+            };
+        }
+        const recoverySuggested = !next.recoveryUsed && next.attempts >= Math.max(2, input.maxAttempts - 1);
+        if (recoverySuggested) {
+            next.recoveryUsed = true;
+        }
+        this.actionLoops.set(normalizedKey, next);
+        this.pruneLoopState();
+        return {
+            allowed: true,
+            attempt: next.attempts,
+            recoverySuggested,
+        };
+    }
+    markLoopActionSuccess(kind, key) {
+        const normalizedKey = this.loopActionKey(kind, key);
+        this.actionLoops.delete(normalizedKey);
+    }
+    pruneLoopState() {
+        if (this.actionLoops.size <= MAX_ACTION_LOOP_HISTORY)
+            return;
+        const ordered = [...this.actionLoops.entries()].sort((left, right) => left[1].lastAttemptAt - right[1].lastAttemptAt);
+        while (ordered.length > MAX_ACTION_LOOP_HISTORY) {
+            const removed = ordered.shift();
+            if (removed)
+                this.actionLoops.delete(removed[0]);
+        }
+    }
     async getStatus(policy) {
         const pages = policy.allowBrowserNative ? await this.listPages(policy).catch(() => []) : [];
         return {
@@ -1034,6 +1129,34 @@ export class BrowserRuntimeController {
         const pages = await this.listPages(policy);
         return pages.find((page) => page.id === pageId) || null;
     }
+    async getPageSummary(policy, pageId) {
+        return await this.getPageById(policy, pageId);
+    }
+    getMissionLease(pageId) {
+        const lease = this.pageLeases.get(pageId);
+        return lease ? { ...lease } : null;
+    }
+    async assertPageTarget(policy, input) {
+        const page = await this.getPageById(policy, input.pageId);
+        if (!page) {
+            throw new Error(`Browser target guard could not find page ${input.pageId}.`);
+        }
+        const expectedOrigin = normalizeOriginLike(String(input.targetOrigin || ""));
+        if (expectedOrigin) {
+            const actualOrigin = normalizeOriginLike(page.origin || page.url || "");
+            if (actualOrigin && expectedOrigin !== actualOrigin) {
+                throw new Error(`Browser wrong-target guard blocked mutation. Expected origin ${expectedOrigin}, resolved ${actualOrigin}.`);
+            }
+        }
+        const expectedLeaseId = compactWhitespace(input.pageLeaseId || "");
+        if (expectedLeaseId) {
+            const lease = this.pageLeases.get(input.pageId);
+            if (!lease || lease.leaseId !== expectedLeaseId) {
+                throw new Error(`Browser wrong-target guard blocked mutation. Expected lease ${expectedLeaseId} but the page lease no longer matches.`);
+            }
+        }
+        return page;
+    }
     async resolveMissionResultPage(policy, pageId, fallback) {
         const resolved = (await this.getPageById(policy, pageId)) || fallback;
         this.touchMissionLease(pageId, resolved || undefined);
@@ -1134,6 +1257,14 @@ export class BrowserRuntimeController {
     }
     async openPage(policy, url) {
         this.assertUrlAllowed(policy, url);
+        const loopGuard = this.beginLoopAction("open_page", originFromUrl(url) || url, {
+            maxAttempts: BROWSER_OPEN_LOOP_MAX_ATTEMPTS,
+            cooldownMs: 15_000,
+            suppressionMs: 10_000,
+        });
+        if (!loopGuard.allowed) {
+            throw new Error(loopGuard.reason || "Binary blocked repeated browser page open attempts.");
+        }
         const session = await this.ensureSession(policy, true);
         if (!session)
             throw new Error("Binary could not initialize a browser-native runtime.");
@@ -1149,6 +1280,7 @@ export class BrowserRuntimeController {
         }
         this.lastActivePageId = page.id;
         this.ensurePageState(page.id).worldModel.recentNavigations.push(url);
+        this.markLoopActionSuccess("open_page", originFromUrl(url) || url);
         return page;
     }
     async focusPage(policy, pageId) {
@@ -1227,22 +1359,46 @@ export class BrowserRuntimeController {
         return await this.evaluate(session.sessionId, buildFormStateScript());
     }
     async click(policy, input) {
+        const loopGuard = this.beginLoopAction("click", `${input.pageId}|${input.elementId || input.selector || "auto"}`, {
+            maxAttempts: BROWSER_MUTATION_LOOP_MAX_ATTEMPTS,
+            cooldownMs: 10_000,
+            suppressionMs: 8_000,
+        });
+        if (!loopGuard.allowed) {
+            throw new Error(loopGuard.reason || "Binary blocked repeated browser click attempts.");
+        }
         const session = await this.ensurePageSession(policy, input.pageId);
-        return await this.evaluateWithSelectorFallback(session.sessionId, input.pageId, {
+        const result = await this.evaluateWithSelectorFallback(session.sessionId, input.pageId, {
             elementId: input.elementId,
             selector: input.selector,
             purpose: "click",
             expression: (selector) => buildClickScript(selector),
         });
+        if (result.ok === true) {
+            this.markLoopActionSuccess("click", `${input.pageId}|${input.elementId || input.selector || "auto"}`);
+        }
+        return result;
     }
     async type(policy, input) {
+        const loopGuard = this.beginLoopAction("type", `${input.pageId}|${input.elementId || input.selector || "auto"}`, {
+            maxAttempts: BROWSER_MUTATION_LOOP_MAX_ATTEMPTS,
+            cooldownMs: 10_000,
+            suppressionMs: 8_000,
+        });
+        if (!loopGuard.allowed) {
+            throw new Error(loopGuard.reason || "Binary blocked repeated browser type attempts.");
+        }
         const session = await this.ensurePageSession(policy, input.pageId);
-        return await this.evaluateWithSelectorFallback(session.sessionId, input.pageId, {
+        const result = await this.evaluateWithSelectorFallback(session.sessionId, input.pageId, {
             elementId: input.elementId,
             selector: input.selector,
             purpose: "type",
             expression: (selector) => buildTypeScript(selector, input.text),
         });
+        if (result.ok === true) {
+            this.markLoopActionSuccess("type", `${input.pageId}|${input.elementId || input.selector || "auto"}`);
+        }
+        return result;
     }
     async pressKeys(policy, input) {
         const session = await this.ensurePageSession(policy, input.pageId);
@@ -1263,6 +1419,17 @@ export class BrowserRuntimeController {
             return existing;
         }
         if (url) {
+            const requestedOrigin = originFromUrl(url);
+            const pages = await this.listPages(policy);
+            const sameOrigin = pages.find((page) => page.active && requestedOrigin && page.origin === requestedOrigin) ||
+                pages.find((page) => requestedOrigin && page.origin === requestedOrigin);
+            if (sameOrigin) {
+                if (sameOrigin.url === url) {
+                    this.lastActivePageId = sameOrigin.id;
+                    return sameOrigin;
+                }
+                return await this.navigate(policy, { pageId: sameOrigin.id, url });
+            }
             return await this.openPage(policy, url);
         }
         const active = await this.getActivePage(policy);
@@ -1413,6 +1580,14 @@ export class BrowserRuntimeController {
         if (!query) {
             throw new Error("browser_search_and_open_best_result requires a query.");
         }
+        const searchLoop = this.beginLoopAction("search_mission", `${query}|${compactWhitespace(input.url || input.pageId || "active")}`, {
+            maxAttempts: BROWSER_MISSION_LOOP_MAX_ATTEMPTS,
+            cooldownMs: 18_000,
+            suppressionMs: 12_000,
+        });
+        if (!searchLoop.allowed) {
+            throw new Error(searchLoop.reason || "Binary blocked repeated browser search mission attempts.");
+        }
         let searchPage = null;
         const directSearchUrl = typeof input.url === "string" && input.url.trim() ? buildBrowserSiteSearchUrl(input.url, query) : null;
         if (directSearchUrl) {
@@ -1471,6 +1646,12 @@ export class BrowserRuntimeController {
             throw new Error("Binary could not resolve the browser page after searching.");
         }
         return await this.runMissionWithLease("browser_search_and_open_best_result", currentPage, async () => {
+            if (searchLoop.recoverySuggested) {
+                await this.snapshotDom(policy, {
+                    pageId: currentPage.id,
+                    limit: Math.max(8, Math.min(Number(input.limit || 12), 24)),
+                }).catch(() => null);
+            }
             const desiredResultQuery = compactWhitespace(input.resultQuery || query);
             const rankedCandidates = await this.collectMissionCandidates(policy, currentPage, desiredResultQuery, Math.max(12, Math.min(Number(input.limit || 12) * 3, 40)));
             const bestResult = rankedCandidates[0] || null;
@@ -1489,6 +1670,7 @@ export class BrowserRuntimeController {
                 selector: bestResult.selector,
             });
             await sleep(1_100);
+            this.markLoopActionSuccess("search_mission", `${query}|${compactWhitespace(input.url || input.pageId || "active")}`);
             const finalPage = await this.resolveMissionResultPage(policy, currentPage.id, currentPage);
             return {
                 searchPage: currentPage,
@@ -1821,6 +2003,10 @@ export class BrowserRuntimeController {
     async ensureSession(policy, allowManagedLaunch) {
         if (!policy.enabled || !policy.allowBrowserNative)
             return null;
+        const allowAttachExisting = parseEnvBool(process.env.BINARY_BROWSER_ATTACH_EXISTING, false) &&
+            this.sessionModeOverride !== "managed_only" &&
+            policy.browserAttachMode !== "managed_only";
+        const allowProfileFallback = parseEnvBool(process.env.BINARY_BROWSER_ALLOW_PROFILE_FALLBACK, false);
         if (this.session) {
             if (this.sessionModeOverride === "managed_only" && this.session.mode !== "managed") {
                 this.resetPageTracking();
@@ -1846,13 +2032,13 @@ export class BrowserRuntimeController {
                 this.session = null;
             }
         }
-        if (this.sessionModeOverride !== "managed_only" && policy.browserAttachMode !== "managed_only") {
+        if (allowAttachExisting) {
             const attached = await discoverExistingSession(policy);
             if (attached) {
                 this.session = attached;
                 return attached;
             }
-            if (allowManagedLaunch) {
+            if (allowManagedLaunch && allowProfileFallback) {
                 const profileSession = await launchProfileBackedBrowser(policy);
                 if (profileSession) {
                     this.session = profileSession;
@@ -1983,6 +2169,7 @@ export class BrowserRuntimeController {
         this.elementRefs.clear();
         this.snapshots.clear();
         this.pageLeases.clear();
+        this.actionLoops.clear();
         this.lastActivePageId = null;
     }
     ensurePageState(pageId) {

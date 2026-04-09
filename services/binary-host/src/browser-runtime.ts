@@ -38,6 +38,16 @@ type BrowserSession = {
   process?: ChildProcess;
 };
 
+type BrowserLoopActionKind = "open_page" | "search_mission" | "click" | "type";
+
+type BrowserLoopActionState = {
+  attempts: number;
+  firstAttemptAt: number;
+  lastAttemptAt: number;
+  recoveryUsed: boolean;
+  suppressedUntil?: number;
+};
+
 type BrowserPageState = {
   pageId: string;
   targetId: string;
@@ -100,6 +110,10 @@ const BROWSER_READY_TIMEOUT_MS = 6_000;
 const MAX_CONSOLE_EVENTS = 60;
 const MAX_NETWORK_EVENTS = 120;
 const MAX_SNAPSHOTS = 80;
+const MAX_ACTION_LOOP_HISTORY = 120;
+const BROWSER_OPEN_LOOP_MAX_ATTEMPTS = 3;
+const BROWSER_MISSION_LOOP_MAX_ATTEMPTS = 3;
+const BROWSER_MUTATION_LOOP_MAX_ATTEMPTS = 4;
 const CANDIDATE_DEBUG_PORTS = [9222, 9223, 9333, 9334, 9444];
 
 const BROWSER_FAMILY_LABELS: Record<BrowserFamily, string> = {
@@ -130,6 +144,14 @@ function originFromUrl(url: string): string {
   }
 }
 
+function normalizeOriginLike(value: string): string {
+  const compact = compactWhitespace(value).toLowerCase();
+  if (!compact) return "";
+  if (/^https?:\/\//i.test(compact)) return originFromUrl(compact) || compact;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}(?::\d+)?$/i.test(compact)) return `https://${compact}`;
+  return compact;
+}
+
 function safeDomain(url: string): string {
   try {
     return new URL(url).hostname.toLowerCase();
@@ -143,6 +165,14 @@ function compactTerms(value: string): string[] {
     .toLowerCase()
     .split(/\s+/)
     .filter(Boolean);
+}
+
+function parseEnvBool(value: string | undefined, defaultValue: boolean): boolean {
+  const normalized = compactWhitespace(value || "").toLowerCase();
+  if (!normalized) return defaultValue;
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return defaultValue;
 }
 
 export function buildBrowserSiteSearchUrl(baseUrl: string, query: string): string | null {
@@ -415,6 +445,7 @@ async function launchManagedBrowser(policy: MachineAutonomyPolicy): Promise<Brow
   if (!resolved) {
     throw new Error("Binary could not find a supported Chromium-family browser to launch.");
   }
+  const managedHeadless = parseEnvBool(process.env.BINARY_BROWSER_MANAGED_HEADLESS, true);
   const port = await allocatePort();
   const userDataDir = path.join(os.tmpdir(), `binary-browser-profile-${port}`);
   await fs.mkdir(userDataDir, { recursive: true });
@@ -426,6 +457,9 @@ async function launchManagedBrowser(policy: MachineAutonomyPolicy): Promise<Brow
     "--disable-default-apps",
     "about:blank",
   ];
+  if (managedHeadless) {
+    args.splice(args.length - 1, 0, "--headless=new", "--disable-gpu", "--window-size=1366,900");
+  }
   const child = spawn(resolved.executablePath, args, {
     detached: true,
     stdio: "ignore",
@@ -1147,8 +1181,88 @@ export class BrowserRuntimeController {
   private readonly elementRefs = new Map<string, ElementRefRecord>();
   private readonly snapshots = new Map<string, SnapshotRecord>();
   private readonly pageLeases = new Map<string, BrowserMissionLease>();
+  private readonly actionLoops = new Map<string, BrowserLoopActionState>();
   private lastActivePageId: string | null = null;
   private sessionModeOverride: "managed_only" | "reuse_first" | null = null;
+
+  private loopActionKey(kind: BrowserLoopActionKind, key: string): string {
+    return `${kind}:${compactWhitespace(key).toLowerCase().slice(0, 220)}`;
+  }
+
+  private beginLoopAction(
+    kind: BrowserLoopActionKind,
+    key: string,
+    input: {
+      maxAttempts: number;
+      cooldownMs: number;
+      suppressionMs: number;
+    }
+  ): { allowed: boolean; attempt: number; recoverySuggested: boolean; reason?: string } {
+    const now = Date.now();
+    const normalizedKey = this.loopActionKey(kind, key);
+    const existing = this.actionLoops.get(normalizedKey);
+    if (existing?.suppressedUntil && now < existing.suppressedUntil) {
+      const remaining = Math.max(1, Math.ceil((existing.suppressedUntil - now) / 1000));
+      return {
+        allowed: false,
+        attempt: existing.attempts,
+        recoverySuggested: false,
+        reason: `Binary suppressed repeated ${kind.replace(/_/g, " ")} attempts for ${remaining}s to prevent browser loops.`,
+      };
+    }
+    const next: BrowserLoopActionState = existing
+      ? {
+          ...existing,
+          attempts: existing.attempts + 1,
+          lastAttemptAt: now,
+        }
+      : {
+          attempts: 1,
+          firstAttemptAt: now,
+          lastAttemptAt: now,
+          recoveryUsed: false,
+        };
+    const elapsed = now - next.firstAttemptAt;
+    if (next.attempts > input.maxAttempts && elapsed < input.cooldownMs) {
+      next.suppressedUntil = now + input.suppressionMs;
+      this.actionLoops.set(normalizedKey, next);
+      return {
+        allowed: false,
+        attempt: next.attempts,
+        recoverySuggested: false,
+        reason:
+          `Binary blocked repeated ${kind.replace(/_/g, " ")} attempts without progress. ` +
+          "Refresh the page state or use browser_recover_workflow before retrying.",
+      };
+    }
+    const recoverySuggested = !next.recoveryUsed && next.attempts >= Math.max(2, input.maxAttempts - 1);
+    if (recoverySuggested) {
+      next.recoveryUsed = true;
+    }
+    this.actionLoops.set(normalizedKey, next);
+    this.pruneLoopState();
+    return {
+      allowed: true,
+      attempt: next.attempts,
+      recoverySuggested,
+    };
+  }
+
+  private markLoopActionSuccess(kind: BrowserLoopActionKind, key: string): void {
+    const normalizedKey = this.loopActionKey(kind, key);
+    this.actionLoops.delete(normalizedKey);
+  }
+
+  private pruneLoopState(): void {
+    if (this.actionLoops.size <= MAX_ACTION_LOOP_HISTORY) return;
+    const ordered = [...this.actionLoops.entries()].sort(
+      (left, right) => left[1].lastAttemptAt - right[1].lastAttemptAt
+    );
+    while (ordered.length > MAX_ACTION_LOOP_HISTORY) {
+      const removed = ordered.shift();
+      if (removed) this.actionLoops.delete(removed[0]);
+    }
+  }
 
   async getStatus(policy: MachineAutonomyPolicy): Promise<JsonRecord> {
     const pages = policy.allowBrowserNative ? await this.listPages(policy).catch(() => []) : [];
@@ -1314,6 +1428,44 @@ export class BrowserRuntimeController {
     return pages.find((page) => page.id === pageId) || null;
   }
 
+  async getPageSummary(policy: MachineAutonomyPolicy, pageId: string): Promise<BrowserPageSummary | null> {
+    return await this.getPageById(policy, pageId);
+  }
+
+  getMissionLease(pageId: string): BrowserMissionLease | null {
+    const lease = this.pageLeases.get(pageId);
+    return lease ? { ...lease } : null;
+  }
+
+  async assertPageTarget(
+    policy: MachineAutonomyPolicy,
+    input: { pageId: string; targetOrigin?: string; pageLeaseId?: string }
+  ): Promise<BrowserPageSummary> {
+    const page = await this.getPageById(policy, input.pageId);
+    if (!page) {
+      throw new Error(`Browser target guard could not find page ${input.pageId}.`);
+    }
+    const expectedOrigin = normalizeOriginLike(String(input.targetOrigin || ""));
+    if (expectedOrigin) {
+      const actualOrigin = normalizeOriginLike(page.origin || page.url || "");
+      if (actualOrigin && expectedOrigin !== actualOrigin) {
+        throw new Error(
+          `Browser wrong-target guard blocked mutation. Expected origin ${expectedOrigin}, resolved ${actualOrigin}.`
+        );
+      }
+    }
+    const expectedLeaseId = compactWhitespace(input.pageLeaseId || "");
+    if (expectedLeaseId) {
+      const lease = this.pageLeases.get(input.pageId);
+      if (!lease || lease.leaseId !== expectedLeaseId) {
+        throw new Error(
+          `Browser wrong-target guard blocked mutation. Expected lease ${expectedLeaseId} but the page lease no longer matches.`
+        );
+      }
+    }
+    return page;
+  }
+
   private async resolveMissionResultPage(
     policy: MachineAutonomyPolicy,
     pageId: string,
@@ -1438,6 +1590,14 @@ export class BrowserRuntimeController {
 
   async openPage(policy: MachineAutonomyPolicy, url: string): Promise<BrowserPageSummary> {
     this.assertUrlAllowed(policy, url);
+    const loopGuard = this.beginLoopAction("open_page", originFromUrl(url) || url, {
+      maxAttempts: BROWSER_OPEN_LOOP_MAX_ATTEMPTS,
+      cooldownMs: 15_000,
+      suppressionMs: 10_000,
+    });
+    if (!loopGuard.allowed) {
+      throw new Error(loopGuard.reason || "Binary blocked repeated browser page open attempts.");
+    }
     const session = await this.ensureSession(policy, true);
     if (!session) throw new Error("Binary could not initialize a browser-native runtime.");
     const browserConnection = await this.ensureBrowserConnection(session);
@@ -1451,6 +1611,7 @@ export class BrowserRuntimeController {
     }
     this.lastActivePageId = page.id;
     this.ensurePageState(page.id).worldModel.recentNavigations.push(url);
+    this.markLoopActionSuccess("open_page", originFromUrl(url) || url);
     return page;
   }
 
@@ -1553,26 +1714,50 @@ export class BrowserRuntimeController {
     policy: MachineAutonomyPolicy,
     input: { pageId: string; elementId?: string; selector?: string }
   ): Promise<JsonRecord> {
+    const loopGuard = this.beginLoopAction("click", `${input.pageId}|${input.elementId || input.selector || "auto"}`, {
+      maxAttempts: BROWSER_MUTATION_LOOP_MAX_ATTEMPTS,
+      cooldownMs: 10_000,
+      suppressionMs: 8_000,
+    });
+    if (!loopGuard.allowed) {
+      throw new Error(loopGuard.reason || "Binary blocked repeated browser click attempts.");
+    }
     const session = await this.ensurePageSession(policy, input.pageId);
-    return await this.evaluateWithSelectorFallback(session.sessionId, input.pageId, {
+    const result = await this.evaluateWithSelectorFallback(session.sessionId, input.pageId, {
       elementId: input.elementId,
       selector: input.selector,
       purpose: "click",
       expression: (selector) => buildClickScript(selector),
     });
+    if (result.ok === true) {
+      this.markLoopActionSuccess("click", `${input.pageId}|${input.elementId || input.selector || "auto"}`);
+    }
+    return result;
   }
 
   async type(
     policy: MachineAutonomyPolicy,
     input: { pageId: string; text: string; elementId?: string; selector?: string }
   ): Promise<JsonRecord> {
+    const loopGuard = this.beginLoopAction("type", `${input.pageId}|${input.elementId || input.selector || "auto"}`, {
+      maxAttempts: BROWSER_MUTATION_LOOP_MAX_ATTEMPTS,
+      cooldownMs: 10_000,
+      suppressionMs: 8_000,
+    });
+    if (!loopGuard.allowed) {
+      throw new Error(loopGuard.reason || "Binary blocked repeated browser type attempts.");
+    }
     const session = await this.ensurePageSession(policy, input.pageId);
-    return await this.evaluateWithSelectorFallback(session.sessionId, input.pageId, {
+    const result = await this.evaluateWithSelectorFallback(session.sessionId, input.pageId, {
       elementId: input.elementId,
       selector: input.selector,
       purpose: "type",
       expression: (selector) => buildTypeScript(selector, input.text),
     });
+    if (result.ok === true) {
+      this.markLoopActionSuccess("type", `${input.pageId}|${input.elementId || input.selector || "auto"}`);
+    }
+    return result;
   }
 
   async pressKeys(policy: MachineAutonomyPolicy, input: { pageId: string; keys: string[] }): Promise<JsonRecord> {
@@ -1598,6 +1783,18 @@ export class BrowserRuntimeController {
       return existing;
     }
     if (url) {
+      const requestedOrigin = originFromUrl(url);
+      const pages = await this.listPages(policy);
+      const sameOrigin =
+        pages.find((page) => page.active && requestedOrigin && page.origin === requestedOrigin) ||
+        pages.find((page) => requestedOrigin && page.origin === requestedOrigin);
+      if (sameOrigin) {
+        if (sameOrigin.url === url) {
+          this.lastActivePageId = sameOrigin.id;
+          return sameOrigin;
+        }
+        return await this.navigate(policy, { pageId: sameOrigin.id, url });
+      }
       return await this.openPage(policy, url);
     }
     const active = await this.getActivePage(policy);
@@ -1794,6 +1991,18 @@ export class BrowserRuntimeController {
     if (!query) {
       throw new Error("browser_search_and_open_best_result requires a query.");
     }
+    const searchLoop = this.beginLoopAction(
+      "search_mission",
+      `${query}|${compactWhitespace(input.url || input.pageId || "active")}`,
+      {
+        maxAttempts: BROWSER_MISSION_LOOP_MAX_ATTEMPTS,
+        cooldownMs: 18_000,
+        suppressionMs: 12_000,
+      }
+    );
+    if (!searchLoop.allowed) {
+      throw new Error(searchLoop.reason || "Binary blocked repeated browser search mission attempts.");
+    }
 
     let searchPage: BrowserPageSummary | null = null;
     const directSearchUrl =
@@ -1856,6 +2065,12 @@ export class BrowserRuntimeController {
       throw new Error("Binary could not resolve the browser page after searching.");
     }
     return await this.runMissionWithLease("browser_search_and_open_best_result", currentPage, async () => {
+      if (searchLoop.recoverySuggested) {
+        await this.snapshotDom(policy, {
+          pageId: currentPage.id,
+          limit: Math.max(8, Math.min(Number(input.limit || 12), 24)),
+        }).catch(() => null);
+      }
       const desiredResultQuery = compactWhitespace(input.resultQuery || query);
       const rankedCandidates = await this.collectMissionCandidates(
         policy,
@@ -1881,6 +2096,7 @@ export class BrowserRuntimeController {
         selector: bestResult.selector,
       });
       await sleep(1_100);
+      this.markLoopActionSuccess("search_mission", `${query}|${compactWhitespace(input.url || input.pageId || "active")}`);
 
       const finalPage = await this.resolveMissionResultPage(policy, currentPage.id, currentPage);
       return {
@@ -2302,6 +2518,11 @@ export class BrowserRuntimeController {
 
   private async ensureSession(policy: MachineAutonomyPolicy, allowManagedLaunch: boolean): Promise<BrowserSession | null> {
     if (!policy.enabled || !policy.allowBrowserNative) return null;
+    const allowAttachExisting =
+      parseEnvBool(process.env.BINARY_BROWSER_ATTACH_EXISTING, false) &&
+      this.sessionModeOverride !== "managed_only" &&
+      policy.browserAttachMode !== "managed_only";
+    const allowProfileFallback = parseEnvBool(process.env.BINARY_BROWSER_ALLOW_PROFILE_FALLBACK, false);
     if (this.session) {
       if (this.sessionModeOverride === "managed_only" && this.session.mode !== "managed") {
         this.resetPageTracking();
@@ -2326,13 +2547,13 @@ export class BrowserRuntimeController {
       }
     }
 
-    if (this.sessionModeOverride !== "managed_only" && policy.browserAttachMode !== "managed_only") {
+    if (allowAttachExisting) {
       const attached = await discoverExistingSession(policy);
       if (attached) {
         this.session = attached;
         return attached;
       }
-      if (allowManagedLaunch) {
+      if (allowManagedLaunch && allowProfileFallback) {
         const profileSession = await launchProfileBackedBrowser(policy);
         if (profileSession) {
           this.session = profileSession;
@@ -2481,6 +2702,7 @@ export class BrowserRuntimeController {
     this.elementRefs.clear();
     this.snapshots.clear();
     this.pageLeases.clear();
+    this.actionLoops.clear();
     this.lastActivePageId = null;
   }
 

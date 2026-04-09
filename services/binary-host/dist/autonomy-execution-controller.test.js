@@ -44,9 +44,10 @@ describe("AutonomyExecutionController", () => {
         expect(decision.executionVisibility).toBe("background");
         expect(decision.interactionMode).toBe("managed_browser");
     });
-    it("prefers reusing the user's browser before isolation while a desktop focus lease is active", () => {
+    it("uses managed-only browser preference when attach mode is managed_only", () => {
         const policy = defaultMachineAutonomyPolicy();
         policy.sessionPolicy = "attach_carefully";
+        policy.browserAttachMode = "managed_only";
         const controller = new AutonomyExecutionController(policy);
         controller.updateFocusLease({
             surface: "desktop",
@@ -57,8 +58,19 @@ describe("AutonomyExecutionController", () => {
         const decision = controller.decide(buildPendingToolCall("browser_search_and_open_best_result", { url: "https://www.youtube.com/", query: "outdoor boys" }));
         expect(decision.focusLeaseActive).toBe(true);
         expect(decision.managedSessionPreferred).toBe(true);
-        expect(decision.browserSessionPreference).toBe("reuse_first");
+        expect(decision.browserSessionPreference).toBe("managed_only");
         expect(decision.interactionMode).toBe("managed_browser");
         expect(decision.executionVisibility).toBe("background");
+    });
+    it("uses reuse-first preference only when attach mode allows existing sessions", () => {
+        const policy = defaultMachineAutonomyPolicy();
+        policy.sessionPolicy = "attach_carefully";
+        policy.browserAttachMode = "existing_or_managed";
+        const controller = new AutonomyExecutionController(policy);
+        const decision = controller.decide(buildPendingToolCall("browser_search_and_open_best_result", { url: "https://www.youtube.com/", query: "outdoor boys" }));
+        expect(decision.managedSessionPreferred).toBe(false);
+        expect(decision.browserSessionPreference).toBe("reuse_first");
+        expect(decision.interactionMode).toBe("attached_browser");
+        expect(decision.executionVisibility).toBe("low_focus");
     });
 });

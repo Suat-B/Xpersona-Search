@@ -182,8 +182,13 @@ export declare class BrowserRuntimeController {
     private readonly elementRefs;
     private readonly snapshots;
     private readonly pageLeases;
+    private readonly actionLoops;
     private lastActivePageId;
     private sessionModeOverride;
+    private loopActionKey;
+    private beginLoopAction;
+    private markLoopActionSuccess;
+    private pruneLoopState;
     getStatus(policy: MachineAutonomyPolicy): Promise<JsonRecord>;
     currentSessionKind(): "managed" | "existing" | "none";
     runWithSessionPreference<T>(mode: "managed_only" | "reuse_first" | null, action: () => Promise<T>): Promise<T>;
@@ -194,6 +199,13 @@ export declare class BrowserRuntimeController {
     listPages(policy: MachineAutonomyPolicy): Promise<BrowserPageSummary[]>;
     getActivePage(policy: MachineAutonomyPolicy): Promise<BrowserPageSummary | null>;
     private getPageById;
+    getPageSummary(policy: MachineAutonomyPolicy, pageId: string): Promise<BrowserPageSummary | null>;
+    getMissionLease(pageId: string): BrowserMissionLease | null;
+    assertPageTarget(policy: MachineAutonomyPolicy, input: {
+        pageId: string;
+        targetOrigin?: string;
+        pageLeaseId?: string;
+    }): Promise<BrowserPageSummary>;
     private resolveMissionResultPage;
     private getActiveMissionLease;
     private createMissionLease;

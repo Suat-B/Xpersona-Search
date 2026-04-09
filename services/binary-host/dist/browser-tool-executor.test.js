@@ -576,7 +576,122 @@ describe("BrowserToolExecutor", () => {
             actionTaken: "clicked:continue",
         }));
     });
-    it("uses managed session preference for browser missions while the user is active", async () => {
+    it("enforces screenshot policy for browser_capture_page when no reason is provided", async () => {
+        const runtime = {
+            currentSessionKind: () => "existing",
+            listPages: async () => [
+                {
+                    id: "page_1",
+                    title: "Example",
+                    url: "https://example.com",
+                    origin: "https://example.com",
+                    browserName: "Google Chrome",
+                    lane: "browser_native",
+                    active: true,
+                },
+            ],
+            capturePage: async () => ({
+                snapshotId: "snap_should_not_happen",
+                mimeType: "image/png",
+                dataBase64: "abc",
+            }),
+        };
+        const executor = new BrowserToolExecutor(runtime, buildPolicy());
+        const result = await executor.execute(buildPendingToolCall("browser_capture_page", {
+            pageId: "page_1",
+        }));
+        expect(result.ok).toBe(false);
+        expect(result.blocked).toBe(true);
+        expect(result.summary).toContain("screenshot policy blocked");
+    });
+    it("captures screenshot when explicitly allowed and emits screenshot metadata", async () => {
+        const runtime = {
+            currentSessionKind: () => "existing",
+            listPages: async () => [
+                {
+                    id: "page_1",
+                    title: "Example",
+                    url: "https://example.com",
+                    origin: "https://example.com",
+                    browserName: "Google Chrome",
+                    lane: "browser_native",
+                    active: true,
+                },
+            ],
+            capturePage: async () => ({
+                snapshotId: "snap_1",
+                mimeType: "image/png",
+                dataBase64: "abcdef",
+            }),
+        };
+        const executor = new BrowserToolExecutor(runtime, buildPolicy());
+        const result = await executor.execute(buildPendingToolCall("browser_capture_page", {
+            pageId: "page_1",
+            screenshotReason: "explicit_user_request",
+        }));
+        expect(result.ok).toBe(true);
+        expect(result.data).toEqual(expect.objectContaining({
+            screenshotCaptured: true,
+            screenshotReason: "explicit_user_request",
+            verificationRequired: true,
+            verificationPassed: true,
+        }));
+    });
+    it("enforces browser target guards before mutation tools", async () => {
+        const guardCalls = [];
+        const runtime = {
+            currentSessionKind: () => "existing",
+            listPages: async () => [
+                {
+                    id: "page_1",
+                    title: "Example",
+                    url: "https://example.com",
+                    origin: "https://example.com",
+                    browserName: "Google Chrome",
+                    lane: "browser_native",
+                    active: true,
+                },
+            ],
+            assertPageTarget: async (_policy, input) => {
+                guardCalls.push(input);
+                return {
+                    id: "page_1",
+                    title: "Example",
+                    url: "https://example.com",
+                    origin: "https://example.com",
+                    browserName: "Google Chrome",
+                    lane: "browser_native",
+                    active: true,
+                };
+            },
+            click: async () => ({
+                ok: true,
+                url: "https://example.com",
+                title: "Example",
+            }),
+        };
+        const executor = new BrowserToolExecutor(runtime, buildPolicy());
+        const result = await executor.execute(buildPendingToolCall("browser_click", {
+            pageId: "page_1",
+            targetOrigin: "https://example.com",
+            pageLeaseId: "lease_1",
+        }));
+        expect(result.ok).toBe(true);
+        expect(guardCalls).toEqual([
+            expect.objectContaining({
+                pageId: "page_1",
+                targetOrigin: "https://example.com",
+                pageLeaseId: "lease_1",
+            }),
+        ]);
+        expect(result.data).toEqual(expect.objectContaining({
+            targetOrigin: "https://example.com",
+            pageLeaseId: "lease_1",
+            verificationRequired: true,
+            verificationPassed: true,
+        }));
+    });
+    it("switches to managed-only browser preference while the user is actively focused", async () => {
         let observedMode = null;
         const runtime = {
             currentSessionKind: () => "existing",
@@ -627,7 +742,7 @@ describe("BrowserToolExecutor", () => {
             query: "outdoor boys",
         }));
         expect(result.ok).toBe(true);
-        expect(observedMode).toBe("reuse_first");
+        expect(observedMode).toBe("managed_only");
     });
     it("returns mission lease conflict metadata on browser mission failures", async () => {
         const runtime = {

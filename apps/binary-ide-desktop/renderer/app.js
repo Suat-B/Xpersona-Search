@@ -684,6 +684,13 @@ function inferDesktopPhase(toolName, metadata = {}, fallback = "Acting") {
   if (!normalized) return fallback;
   if (normalized === "host.desktop_cleanup" || normalized.includes("cleanup")) return "Cleaning up";
   if (
+    metadata?.relaunchSuppressed === true ||
+    typeof metadata?.relaunchAttempt === "number" ||
+    metadata?.focusRecoveryAttempted === true
+  ) {
+    return "Resolving";
+  }
+  if (
     normalized.includes("focus") ||
     normalized === "desktop_open_app" ||
     normalized === "desktop_get_active_window" ||
@@ -731,10 +738,20 @@ function syncDesktopLiveStateFromRun(run) {
   }
   if (run && isTerminalStatus(run.status)) {
     state.desktopLivePhase = "Cleaning up";
-    state.desktopLiveSummary =
-      typeof execution.cleanupClosedCount === "number"
-        ? `Closed ${Math.max(0, execution.cleanupClosedCount)} run-launched app(s).`
-        : "Desktop run completed.";
+    const closed = Number.isFinite(Number(execution.cleanupClosedCount))
+      ? Math.max(0, Number(execution.cleanupClosedCount))
+      : null;
+    const skipped = Number.isFinite(Number(execution.cleanupSkippedPreExistingCount))
+      ? Math.max(0, Number(execution.cleanupSkippedPreExistingCount))
+      : null;
+    if (closed !== null || skipped !== null) {
+      const parts = [];
+      if (closed !== null) parts.push(`Closed ${closed} run-launched app(s)`);
+      if (skipped !== null) parts.push(`left ${skipped} pre-existing app(s) open`);
+      state.desktopLiveSummary = `${parts.join(", ")}.`;
+    } else {
+      state.desktopLiveSummary = "Desktop run completed.";
+    }
   }
 }
 
@@ -1001,15 +1018,35 @@ function buildDesktopLiveActionStrip() {
   const phase = String(state.desktopLivePhase || (state.activeStream ? "Thinking" : "Acting")).trim() || "Thinking";
   const targetApp =
     String(state.desktopLiveTargetApp || execution.targetResolvedApp || execution.targetAppIntent || "").trim();
+  const intentKind = String(execution.intentKind || "").trim();
   const summary = String(state.desktopLiveSummary || state.streamStatusText || state.latestToolSummaries[0] || "").trim();
   const recoverySuppressedReason = String(
     state.desktopRecoverySuppressedReason || execution.recoverySuppressedReason || ""
   ).trim();
   const blockedReason = String(state.desktopBlockedReason || "").trim();
   const recoveryAttempted = state.currentExecution?.focusRecoveryAttempted === true;
+  const relaunchAttempt = Number.isFinite(Number(state.currentExecution?.relaunchAttempt))
+    ? Math.max(0, Number(state.currentExecution.relaunchAttempt))
+    : null;
+  const foregroundLeaseMs = Number.isFinite(Number(state.currentExecution?.foregroundLeaseMs))
+    ? Math.max(0, Number(state.currentExecution.foregroundLeaseMs))
+    : null;
+  const proofProgress = Number.isFinite(Number(state.currentExecution?.proofProgress))
+    ? Math.max(0, Math.min(1, Number(state.currentExecution.proofProgress)))
+    : null;
+  const focusLeaseRestored =
+    typeof state.currentExecution?.focusLeaseRestored === "boolean" ? state.currentExecution.focusLeaseRestored : null;
   const detailLines = [];
   if (summary) detailLines.push(summary);
+  if (intentKind) detailLines.push(`Intent ${intentKind.replace(/_/g, " ")}.`);
+  if (proofProgress !== null) detailLines.push(`Proof progress ${Math.round(proofProgress * 100)}%.`);
   if (recoveryAttempted) detailLines.push("Focus recovery attempted.");
+  if (focusLeaseRestored === true) detailLines.push("Restored your previous window focus.");
+  if (focusLeaseRestored === false && execution.focusModeApplied === "foreground_lease") {
+    detailLines.push("Foreground lease ended without fully restoring prior focus.");
+  }
+  if (relaunchAttempt !== null && relaunchAttempt > 0) detailLines.push(`Relaunch attempt ${relaunchAttempt}.`);
+  if (foregroundLeaseMs !== null && foregroundLeaseMs > 0) detailLines.push(`Foreground lease ${foregroundLeaseMs}ms.`);
   if (recoverySuppressedReason) detailLines.push(recoverySuppressedReason);
   if (blockedReason) detailLines.push(blockedReason);
   return `
@@ -1041,13 +1078,29 @@ function buildDesktopProofLine(run) {
       : execution.verificationRequired === true
         ? "verification not fully confirmed"
         : "no explicit verification required";
+  const cleanupClosed = Number.isFinite(Number(execution.cleanupClosedCount))
+    ? Math.max(0, Number(execution.cleanupClosedCount))
+    : null;
+  const cleanupSkipped = Number.isFinite(Number(execution.cleanupSkippedPreExistingCount))
+    ? Math.max(0, Number(execution.cleanupSkippedPreExistingCount))
+    : null;
   const cleanupText =
-    typeof execution.cleanupClosedCount === "number"
-      ? `${Math.max(0, execution.cleanupClosedCount)} run-launched app(s) closed`
+    cleanupClosed !== null
+      ? `${cleanupClosed} run-launched app(s) closed${
+          cleanupSkipped !== null ? `, ${cleanupSkipped} pre-existing app(s) preserved` : ""
+        }`
       : "no run-launched app cleanup needed";
+  const proofArtifacts = Array.isArray(execution.proofArtifacts)
+    ? execution.proofArtifacts.filter((item) => typeof item === "string")
+    : [];
+  const proofProgress = Number.isFinite(Number(execution.proofProgress))
+    ? Math.max(0, Math.min(1, Number(execution.proofProgress)))
+    : null;
   return `Desktop proof: requested ${requested ? `"${requested}"` : "desktop actions"}, ${verificationText}${
     target ? ` on ${target}` : ""
-  }, ${cleanupText}.`;
+  }, ${cleanupText}${proofArtifacts.length ? `, proofs ${proofArtifacts.join(", ")}` : ""}${
+    proofProgress !== null ? `, proof progress ${Math.round(proofProgress * 100)}%` : ""
+  }.`;
 }
 
 function buildCompletionReceipt() {
@@ -2040,15 +2093,37 @@ function applyEventToState(event) {
   const desktopMetadata =
     data && typeof data === "object"
       ? {
+          intentStepId: typeof data.intentStepId === "string" ? data.intentStepId : undefined,
+          intentKind: typeof data.intentKind === "string" ? data.intentKind : undefined,
+          executionMode: typeof data.executionMode === "string" ? data.executionMode : undefined,
+          windowAffinityToken: typeof data.windowAffinityToken === "string" ? data.windowAffinityToken : undefined,
           targetAppIntent: typeof data.targetAppIntent === "string" ? data.targetAppIntent : undefined,
           targetResolvedApp: typeof data.targetResolvedApp === "string" ? data.targetResolvedApp : undefined,
+          targetConfidence: typeof data.targetConfidence === "number" ? data.targetConfidence : undefined,
           focusRecoveryAttempted:
             typeof data.focusRecoveryAttempted === "boolean" ? data.focusRecoveryAttempted : undefined,
+          focusModeApplied:
+            data.focusModeApplied === "background_safe" || data.focusModeApplied === "foreground_lease"
+              ? data.focusModeApplied
+              : undefined,
+          foregroundLeaseMs: typeof data.foregroundLeaseMs === "number" ? data.foregroundLeaseMs : undefined,
+          focusLeaseRestored: typeof data.focusLeaseRestored === "boolean" ? data.focusLeaseRestored : undefined,
           recoverySuppressedReason:
             typeof data.recoverySuppressedReason === "string" ? data.recoverySuppressedReason : undefined,
+          relaunchAttempt: typeof data.relaunchAttempt === "number" ? data.relaunchAttempt : undefined,
+          relaunchSuppressed: typeof data.relaunchSuppressed === "boolean" ? data.relaunchSuppressed : undefined,
+          relaunchSuppressionReason:
+            typeof data.relaunchSuppressionReason === "string" ? data.relaunchSuppressionReason : undefined,
           verificationRequired: typeof data.verificationRequired === "boolean" ? data.verificationRequired : undefined,
           verificationPassed: typeof data.verificationPassed === "boolean" ? data.verificationPassed : undefined,
+          proofProgress: typeof data.proofProgress === "number" ? data.proofProgress : undefined,
+          proofArtifacts: Array.isArray(data.proofArtifacts)
+            ? data.proofArtifacts.filter((item) => typeof item === "string")
+            : undefined,
           cleanupClosedCount: typeof data.cleanupClosedCount === "number" ? data.cleanupClosedCount : undefined,
+          cleanupSkippedPreExistingCount:
+            typeof data.cleanupSkippedPreExistingCount === "number" ? data.cleanupSkippedPreExistingCount : undefined,
+          cleanupErrors: typeof data.cleanupErrors === "number" ? data.cleanupErrors : undefined,
         }
       : {};
   const execution =
@@ -2144,12 +2219,19 @@ function applyEventToState(event) {
   if (eventName === "host.desktop_cleanup") {
     const attempted = Number(data?.attempted || 0);
     const closed = Number(data?.closed || 0);
+    const skipped = Number(data?.cleanupSkippedPreExistingCount || 0);
     state.desktopRunActive = true;
     state.desktopLivePhase = "Cleaning up";
-    state.desktopLiveSummary = attempted > 0 ? `Closed ${closed}/${attempted} run-launched app(s).` : "Cleanup finished.";
+    state.desktopLiveSummary =
+      attempted > 0
+        ? `Closed ${closed}/${attempted} run-launched app(s), preserved ${Math.max(0, skipped)} pre-existing app(s).`
+        : "Cleanup finished.";
     state.currentExecution = {
       ...(state.currentExecution || {}),
       cleanupClosedCount: Number.isFinite(closed) ? Math.max(0, closed) : undefined,
+      cleanupSkippedPreExistingCount: Number.isFinite(skipped) ? Math.max(0, skipped) : undefined,
+      cleanupErrors:
+        typeof data?.cleanupErrors === "number" ? Math.max(0, Number(data.cleanupErrors)) : undefined,
       executionSummary: state.desktopLiveSummary,
     };
   }

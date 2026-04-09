@@ -118,7 +118,12 @@ function isTerminalTool(name: string): boolean {
   return name === "run_command" || name.startsWith("terminal_");
 }
 
+function prefersManagedBrowserSession(policy: MachineAutonomyPolicy): boolean {
+  return policy.browserAttachMode === "managed_only" || policy.sessionPolicy === "managed_only";
+}
+
 function defaultDecision(policy: MachineAutonomyPolicy): ExecutionPolicyDecision {
+  const managedPreferred = prefersManagedBrowserSession(policy);
   return {
     lane: "structured_background",
     executionVisibility: "background",
@@ -130,8 +135,8 @@ function defaultDecision(policy: MachineAutonomyPolicy): ExecutionPolicyDecision
     requiresVisibleInteraction: false,
     focusLeaseActive: false,
     focusSuppressed: false,
-    managedSessionPreferred: policy.sessionPolicy !== "live_session",
-    browserSessionPreference: policy.sessionPolicy === "managed_only" ? "managed_only" : null,
+    managedSessionPreferred: managedPreferred,
+    browserSessionPreference: managedPreferred ? "managed_only" : null,
     summary: "Binary selected a background-safe execution path.",
   };
 }
@@ -254,7 +259,9 @@ export class AutonomyExecutionController {
       }
     } else if (toolName.startsWith("browser_")) {
       const sessionPolicy = this.policy.sessionPolicy;
-      const managedPreferred = sessionPolicy === "managed_only";
+      const managedPreferred = prefersManagedBrowserSession(this.policy);
+      const allowsReuseFirst = this.policy.browserAttachMode !== "managed_only" && sessionPolicy !== "managed_only";
+      const defaultBrowserPreference: "managed_only" | "reuse_first" = allowsReuseFirst ? "reuse_first" : "managed_only";
       if (isBrowserObserveTool(toolName)) {
         decision = {
           lane: managedPreferred ? "managed_session_background" : "attached_session_low_focus",
@@ -268,7 +275,7 @@ export class AutonomyExecutionController {
           focusLeaseActive,
           focusSuppressed: false,
           managedSessionPreferred: managedPreferred,
-          browserSessionPreference: managedPreferred ? "managed_only" : "reuse_first",
+          browserSessionPreference: managedPreferred ? "managed_only" : defaultBrowserPreference,
           summary: managedPreferred
             ? "Binary selected a managed browser session so inspection can stay in the background."
             : "Binary is carefully reusing the user's signed-in browser first and will only isolate if reuse is unavailable.",
@@ -292,6 +299,9 @@ export class AutonomyExecutionController {
         };
       } else if (isBrowserInteractiveTool(toolName)) {
         const shouldPreferManaged = managedPreferred || focusLeaseActive;
+        const browserSessionPreference: "managed_only" | "reuse_first" = shouldPreferManaged
+          ? "managed_only"
+          : defaultBrowserPreference;
         decision = {
           lane: shouldPreferManaged ? "managed_session_background" : "attached_session_low_focus",
           executionVisibility: shouldPreferManaged ? "background" : "low_focus",
@@ -304,11 +314,11 @@ export class AutonomyExecutionController {
           focusLeaseActive,
           focusSuppressed: false,
           managedSessionPreferred: shouldPreferManaged,
-          browserSessionPreference: managedPreferred ? "managed_only" : "reuse_first",
+          browserSessionPreference,
           summary: shouldPreferManaged
             ? managedPreferred
               ? "Binary selected a managed browser session so the workflow stays isolated."
-              : "Binary will try your existing signed-in browser first, then your real profile, and only fall back to an isolated session if reuse is not stable."
+              : "Binary selected an isolated managed browser session to avoid disrupting your active desktop focus."
             : "Binary is using a low-focus attached browser path and will avoid visible fallback if possible.",
         };
       }

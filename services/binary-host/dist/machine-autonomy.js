@@ -29,7 +29,7 @@ export function defaultMachineAutonomyPolicy() {
         suppressForegroundWhileTyping: true,
         focusLeaseTtlMs: 4_000,
         preferTerminalForCoding: true,
-        browserAttachMode: "existing_or_managed",
+        browserAttachMode: "managed_only",
         allowedBrowsers: ["chrome", "edge", "brave", "arc", "chromium"],
         blockedDomains: [],
         elevatedTrustDomains: [],

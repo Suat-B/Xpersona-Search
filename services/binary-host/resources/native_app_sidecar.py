@@ -134,6 +134,7 @@ def serialize_control(wrapper, index: int, adapter: Optional[Dict[str, Any]]) ->
 def window_matches(wrapper, params: Dict[str, Any]) -> int:
     score = 0
     title = normalize_text(wrapper_name(wrapper))
+    cls = normalize_text(class_name(wrapper))
     app = normalize_text(params.get("app"))
     window_title = normalize_text(params.get("title") or params.get("windowTitle"))
     query = normalize_text(params.get("query"))
@@ -143,6 +144,8 @@ def window_matches(wrapper, params: Dict[str, Any]) -> int:
         score += 90
     if app and app in title:
         score += 70
+    if app and app in cls:
+        score += 55
     if query and query in title:
         score += 25
     return score
@@ -244,13 +247,21 @@ def resolve_window(params: Dict[str, Any]):
         return desktop.window(handle=handle)
     best = None
     best_score = 0
+    target_hint = bool(
+        normalize_text(params.get("app"))
+        or normalize_text(params.get("title") or params.get("windowTitle"))
+        or normalize_text(params.get("query"))
+    )
     for wrapper in desktop.windows():
-        if not safe_call(lambda: wrapper.is_visible(), False):
+        visible = safe_call(lambda: wrapper.is_visible(), False)
+        if not visible and not target_hint:
             continue
         name = wrapper_name(wrapper)
         if not name:
             continue
         score = window_matches(wrapper, params)
+        if not visible:
+            score = max(0, score - 15)
         if score > best_score:
             best = wrapper
             best_score = score

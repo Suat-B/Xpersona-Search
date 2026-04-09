@@ -4,6 +4,18 @@ export type BinaryAdapterMode = "auto" | "force_binary_tool_adapter";
 export type BinaryLatencyPolicy = "default" | "detached_15s_cap";
 export type BinaryModelRoutingMode = "single_fixed_free";
 export type BinaryDesktopProofMode = "adaptive" | "strict";
+export type BinaryDesktopIntentKind = "open" | "draft_text" | "compute" | "navigate_path" | "verify" | "cleanup";
+export type BinaryBrowserIntentKind =
+  | "open_site"
+  | "search"
+  | "login"
+  | "fill_form"
+  | "extract"
+  | "recover"
+  | "verify"
+  | "cleanup";
+export type BinaryIntentKind = BinaryDesktopIntentKind | BinaryBrowserIntentKind;
+export type BinaryScreenshotReason = "explicit_user_request" | "debug_mode" | "proof_fallback";
 export type BinaryOrchestrationLatencyBudgets = {
   interactive: number;
   desktop: number;
@@ -114,13 +126,33 @@ export type BinaryRunLatencyMetadata = {
 export type AssistRunEnvelope = {
   sessionId?: string;
   traceId?: string;
+  intentStepId?: string;
+  intentKind?: BinaryIntentKind;
+  executionMode?: "background_safe" | "foreground_lease" | "takeover";
+  windowAffinityToken?: string;
   targetAppIntent?: string;
   targetResolvedApp?: string;
+  targetConfidence?: number;
+  pageLeaseId?: string;
+  targetOrigin?: string;
   focusRecoveryAttempted?: boolean;
+  focusModeApplied?: "background_safe" | "foreground_lease";
+  foregroundLeaseMs?: number;
+  focusLeaseRestored?: boolean;
   recoverySuppressedReason?: string;
+  relaunchAttempt?: number;
+  relaunchSuppressed?: boolean;
+  relaunchSuppressionReason?: string;
   verificationRequired?: boolean;
   verificationPassed?: boolean;
+  domProofArtifacts?: string[];
+  screenshotCaptured?: boolean;
+  screenshotReason?: BinaryScreenshotReason;
+  proofProgress?: number;
+  proofArtifacts?: string[];
   cleanupClosedCount?: number;
+  cleanupSkippedPreExistingCount?: number;
+  cleanupErrors?: number;
   adapterMode?: BinaryAdapterMode;
   latencyPolicy?: BinaryLatencyPolicy;
   smallModelForced?: boolean;
@@ -378,13 +410,33 @@ export type BinaryHostExecutionState = BinaryRunLatencyMetadata & {
   coercionApplied?: boolean;
   seedToolInjected?: boolean;
   invalidToolNameRecovered?: boolean;
+  intentStepId?: string;
+  intentKind?: BinaryIntentKind;
+  executionMode?: "background_safe" | "foreground_lease" | "takeover";
+  windowAffinityToken?: string;
   targetAppIntent?: string;
   targetResolvedApp?: string;
+  targetConfidence?: number;
+  pageLeaseId?: string;
+  targetOrigin?: string;
   focusRecoveryAttempted?: boolean;
+  focusModeApplied?: "background_safe" | "foreground_lease";
+  foregroundLeaseMs?: number;
+  focusLeaseRestored?: boolean;
   recoverySuppressedReason?: string;
+  relaunchAttempt?: number;
+  relaunchSuppressed?: boolean;
+  relaunchSuppressionReason?: string;
   verificationRequired?: boolean;
   verificationPassed?: boolean;
+  domProofArtifacts?: string[];
+  screenshotCaptured?: boolean;
+  screenshotReason?: BinaryScreenshotReason;
+  proofProgress?: number;
+  proofArtifacts?: string[];
   cleanupClosedCount?: number;
+  cleanupSkippedPreExistingCount?: number;
+  cleanupErrors?: number;
   actionLatencyMs?: number;
 };
 

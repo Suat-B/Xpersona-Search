@@ -326,4 +326,60 @@ describe("BrowserRuntimeController selector inference", () => {
         expect(closed).toBe(true);
         expect(controller.sessionModeOverride).toBeNull();
     });
+    it("allows assertPageTarget when origin and lease match", async () => {
+        const controller = new BrowserRuntimeController();
+        const policy = {
+            enabled: true,
+            allowBrowserNative: true,
+        };
+        controller.getPageById = async () => ({
+            id: "page_1",
+            title: "Example",
+            url: "https://example.com/path",
+            origin: "https://example.com",
+            browserName: "Google Chrome",
+            lane: "browser_native",
+            active: true,
+        });
+        controller.pageLeases.set("page_1", {
+            leaseId: "lease_1",
+            missionKind: "browser_search_and_open_best_result",
+            pageId: "page_1",
+            sessionMode: "attached",
+            startedAt: new Date("2026-04-02T00:00:00.000Z").toISOString(),
+            updatedAt: new Date("2026-04-02T00:00:01.000Z").toISOString(),
+            state: "active",
+            expectedUrl: "https://example.com/path",
+            expectedOrigin: "https://example.com",
+            conflictDetected: false,
+        });
+        await expect(controller.assertPageTarget(policy, {
+            pageId: "page_1",
+            targetOrigin: "example.com",
+            pageLeaseId: "lease_1",
+        })).resolves.toEqual(expect.objectContaining({
+            id: "page_1",
+            origin: "https://example.com",
+        }));
+    });
+    it("blocks assertPageTarget on origin mismatch", async () => {
+        const controller = new BrowserRuntimeController();
+        const policy = {
+            enabled: true,
+            allowBrowserNative: true,
+        };
+        controller.getPageById = async () => ({
+            id: "page_1",
+            title: "Example",
+            url: "https://example.com/path",
+            origin: "https://example.com",
+            browserName: "Google Chrome",
+            lane: "browser_native",
+            active: true,
+        });
+        await expect(controller.assertPageTarget(policy, {
+            pageId: "page_1",
+            targetOrigin: "https://youtube.com",
+        })).rejects.toThrow(/wrong-target guard blocked mutation/i);
+    });
 });

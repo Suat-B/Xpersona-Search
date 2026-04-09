@@ -241,6 +241,14 @@ export class CliToolExecutor {
     if (!normalized) return null;
     const [topLevel] = normalized.split("/");
     if (topLevel && topLevel === observedRoot) return null;
+    if (topLevel) {
+      const explicitTopLevelTarget = path.resolve(this.workspaceRoot, topLevel);
+      const explicitTopLevelExists = await fs
+        .stat(explicitTopLevelTarget)
+        .then(() => true)
+        .catch(() => false);
+      if (explicitTopLevelExists) return null;
+    }
 
     const rewritten = normalizeWorkspacePath(`${observedRoot}/${normalized}`);
     const resolved = resolveWorkspacePath(this.workspaceRoot, rewritten);

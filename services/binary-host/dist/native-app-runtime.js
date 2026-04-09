@@ -7,6 +7,15 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { matchNativeAppAdapter } from "./native-app-adapters.js";
 const execFileAsync = promisify(execFile);
+const NATIVE_STATUS_PROBE_TTL_MS = 12_000;
+const SIDE_CAR_RECOVERY_METHODS = new Set([
+    "ping",
+    "list_windows",
+    "get_active_window",
+    "query_controls",
+    "read_control",
+    "wait_for_control",
+]);
 function nowIso() {
     return new Date().toISOString();
 }
@@ -41,6 +50,7 @@ export class NativeAppRuntime {
     readBuffer = "";
     pending = new Map();
     sessions = new Map();
+    lastStatusProbeAt = 0;
     status = {
         platform: process.platform,
         available: false,
@@ -58,12 +68,31 @@ export class NativeAppRuntime {
         }
         try {
             await this.ensureStarted();
-            await this.ping();
         }
         catch (error) {
             this.status.available = false;
             this.status.lastLaunchError = error instanceof Error ? error.message : String(error);
+            this.lastStatusProbeAt = 0;
+            return { ...this.status, scriptPath: buildScriptPath() };
         }
+        const now = Date.now();
+        const sidecarRunning = Boolean(this.child && !this.child.killed && this.child.exitCode === null);
+        if (sidecarRunning) {
+            this.status = {
+                ...this.status,
+                platform: process.platform,
+                available: true,
+                pythonCommand: this.status.pythonCommand || "python",
+                scriptPath: buildScriptPath(),
+                lastLaunchError: undefined,
+            };
+            if (this.lastStatusProbeAt === 0 || now - this.lastStatusProbeAt > NATIVE_STATUS_PROBE_TTL_MS) {
+                this.lastStatusProbeAt = now;
+            }
+            return { ...this.status, scriptPath: buildScriptPath() };
+        }
+        this.status.available = false;
+        this.status.lastLaunchError = this.status.lastLaunchError || "Native app sidecar is not running.";
         return { ...this.status, scriptPath: buildScriptPath() };
     }
     async listWindows() {
@@ -210,6 +239,7 @@ export class NativeAppRuntime {
             lastLaunchError: typeof result.importError === "string" && result.importError.trim() ? result.importError : undefined,
             scriptPath: buildScriptPath(),
         };
+        this.lastStatusProbeAt = Date.now();
         if (!this.status.available) {
             throw new Error(this.status.lastLaunchError ||
                 "Native app sidecar did not report itself as available.");
@@ -267,6 +297,7 @@ export class NativeAppRuntime {
             this.pending.clear();
             this.child = null;
             this.status.available = false;
+            this.lastStatusProbeAt = 0;
         });
         child.on("error", (error) => {
             this.status.lastLaunchError = error instanceof Error ? error.message : String(error);
@@ -294,7 +325,39 @@ export class NativeAppRuntime {
         }
         pending.reject(new Error(payload.error?.message || "Unknown native app sidecar error."));
     }
-    async call(method, params) {
+    async restartSidecar(reason) {
+        const child = this.child;
+        this.child = null;
+        this.readBuffer = "";
+        this.status.available = false;
+        this.lastStatusProbeAt = 0;
+        this.status.lastLaunchError = reason || this.status.lastLaunchError;
+        for (const pending of this.pending.values()) {
+            clearTimeout(pending.timeout);
+            pending.reject(new Error(reason || "Native app sidecar restarted."));
+        }
+        this.pending.clear();
+        if (child && !child.killed) {
+            try {
+                child.kill();
+            }
+            catch { }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+    shouldRetryAfterTransportFailure(method, error) {
+        if (!SIDE_CAR_RECOVERY_METHODS.has(method))
+            return false;
+        const message = String(error instanceof Error ? error.message : error || "").toLowerCase();
+        if (!message)
+            return false;
+        return (message.includes("timed out while handling") ||
+            message.includes("exited unexpectedly") ||
+            message.includes("write after end") ||
+            message.includes("epipe") ||
+            message.includes("native app sidecar failed to start"));
+    }
+    async callOnce(method, params) {
         await this.ensureStarted();
         const child = this.child;
         if (!child) {
@@ -320,21 +383,45 @@ export class NativeAppRuntime {
             })}\n`);
         });
     }
+    async call(method, params) {
+        try {
+            return await this.callOnce(method, params);
+        }
+        catch (error) {
+            if (!this.shouldRetryAfterTransportFailure(method, error))
+                throw error;
+            await this.restartSidecar(error instanceof Error ? error.message : String(error));
+            return await this.callOnce(method, params);
+        }
+    }
     resolveMethodTimeoutMs(method, params) {
+        const requestedTimeoutMs = typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs) ? params.timeoutMs : Number.NaN;
         if (method === "wait_for_control") {
-            const requested = typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs)
-                ? params.timeoutMs
-                : Number.NaN;
-            if (Number.isFinite(requested)) {
-                return Math.max(2_500, Math.min(Math.round(requested + 1_200), 12_000));
+            if (Number.isFinite(requestedTimeoutMs)) {
+                return Math.max(2_500, Math.min(Math.round(requestedTimeoutMs + 1_200), 12_000));
             }
             return 7_500;
         }
         if (method === "query_controls" || method === "read_control" || method === "get_active_window" || method === "list_windows") {
-            return 6_000;
+            if (Number.isFinite(requestedTimeoutMs)) {
+                return Math.max(1_800, Math.min(Math.round(requestedTimeoutMs), 8_000));
+            }
+            return 4_000;
+        }
+        if (method === "invoke_control" || method === "send_shortcut" || method === "type_into_control") {
+            if (Number.isFinite(requestedTimeoutMs)) {
+                return Math.max(2_200, Math.min(Math.round(requestedTimeoutMs), 10_000));
+            }
+            return 5_500;
+        }
+        if (method === "select_option" || method === "toggle_control") {
+            if (Number.isFinite(requestedTimeoutMs)) {
+                return Math.max(2_200, Math.min(Math.round(requestedTimeoutMs), 10_000));
+            }
+            return 5_500;
         }
         if (method === "ping")
-            return 4_000;
+            return 6_000;
         return 9_000;
     }
     async ensurePythonDependenciesInstalled() {

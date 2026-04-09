@@ -63,6 +63,13 @@ const CATEGORY_DEFS = [
     expectedPaths: [],
   },
   {
+    id: "browser_dom_mission_probe",
+    gateLane: "browser_latency_probe",
+    task:
+      "Open YouTube in the browser, search for Outdoor Boys, open the best matching result, then report the final page title and URL.",
+    expectedPaths: [],
+  },
+  {
     id: "desktop_latency_probe",
     gateLane: "desktop_latency_probe",
     task:
@@ -421,6 +428,14 @@ function classifyLatencyLane(item) {
   const category = String(item?.category || "");
   if (gateLane === "chat_probe" || category === "chat_only_probe") return "chat";
   if (
+    gateLane === "browser_latency_probe" ||
+    category === "browser_dom_mission_probe" ||
+    gateLane.startsWith("browser_") ||
+    category.startsWith("browser_")
+  ) {
+    return "browser";
+  }
+  if (
     gateLane === "desktop_latency_probe" ||
     category === "desktop_latency_probe" ||
     gateLane.startsWith("desktop_") ||
@@ -463,6 +478,7 @@ function summarizeLaneMetrics(items) {
 function summarizeLatency(results) {
   const lanes = {
     chat: summarizeLaneMetrics(results.filter((item) => classifyLatencyLane(item) === "chat")),
+    browser: summarizeLaneMetrics(results.filter((item) => classifyLatencyLane(item) === "browser")),
     desktop: summarizeLaneMetrics(results.filter((item) => classifyLatencyLane(item) === "desktop")),
     coding: summarizeLaneMetrics(results.filter((item) => classifyLatencyLane(item) === "coding")),
   };
@@ -472,10 +488,12 @@ function summarizeLatency(results) {
   return {
     laneMedians: lanes,
     chatProbeCount: lanes.chat.count,
+    browserProbeCount: lanes.browser.count,
     desktopProbeCount: lanes.desktop.count,
     codingTargetCount: codingTargets.length,
     medianChatTtfrMs: lanes.chat.ttfrMs,
     medianChatFirstToolMs: lanes.chat.firstVisibleMs,
+    medianBrowserElapsedMs: lanes.browser.elapsedMs,
     medianCodingElapsedMs: lanes.coding.elapsedMs,
     medianCodingTotalRunMs: lanes.coding.totalRunMs,
     medianDesktopElapsedMs: lanes.desktop.elapsedMs,
@@ -511,6 +529,9 @@ function parseBaselineLatency(summary) {
       numericOrNull(laneMedians?.chat?.firstVisibleMs) ??
       numericOrNull(laneMedians?.chat?.firstToolMs) ??
       numericOrNull(laneMedians?.chat?.ttfrMs),
+    medianBrowserElapsedMs:
+      numericOrNull(summary.medianBrowserElapsedMs) ??
+      numericOrNull(laneMedians?.browser?.elapsedMs),
     medianCodingElapsedMs: numericOrNull(summary.medianCodingElapsedMs) ?? numericOrNull(laneMedians?.coding?.elapsedMs),
     medianCodingTotalRunMs:
       numericOrNull(summary.medianCodingTotalRunMs) ??

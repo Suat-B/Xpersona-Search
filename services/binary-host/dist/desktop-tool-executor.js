@@ -4,9 +4,23 @@ import process from "node:process";
 import { promisify } from "node:util";
 import { isDangerousNativeAction, matchNativeAppAdapter, } from "./native-app-adapters.js";
 const execAsync = promisify(exec);
-const RECOVERY_LAUNCH_COOLDOWN_MS = 6_000;
+const RECOVERY_LAUNCH_COOLDOWN_MS = 15_000;
 const RECOVERY_LAUNCH_MAX_PER_APP = 2;
-const RECOVERY_LAUNCH_WINDOW_MS = 60_000;
+const RECOVERY_LAUNCH_MAX_PER_RUN = 4;
+const FOREGROUND_LEASE_MAX_MS = 1_200;
+const FOREGROUND_LEASE_RESTORE_TIMEOUT_MS = 450;
+const FOREGROUND_LEASE_RESTORE_ATTEMPTS = 1;
+const APP_LAUNCH_WINDOW_DETECT_ATTEMPTS = 10;
+const APP_LAUNCH_WINDOW_DETECT_DELAY_MS = 160;
+const BACKGROUND_RECOVERY_WINDOW_POLL_ATTEMPTS = 14;
+const BACKGROUND_RECOVERY_WINDOW_POLL_DELAY_MS = 120;
+const FOREGROUND_RECOVERY_SETTLE_ATTEMPTS = 12;
+const FOREGROUND_RECOVERY_SETTLE_DELAY_MS = 160;
+const WINDOWS_SENDKEYS_SETTLE_MS = 80;
+const CALCULATOR_CONTROL_STEP_DELAY_MS = 24;
+const CALCULATOR_CONTROL_INVOKE_TIMEOUT_MS = 2_200;
+const CALCULATOR_READBACK_TIMEOUT_MS = 2_200;
+const CALCULATOR_SHORTCUT_TIMEOUT_MS = 3_200;
 function nowIso() {
     return new Date().toISOString();
 }
@@ -436,6 +450,47 @@ function toWindowsSendKeysPattern(input) {
     }
     return out;
 }
+async function sendWindowsShortcutToApp(keys, targetApp = "Calculator") {
+    if (process.platform !== "win32")
+        return false;
+    const sendKeysPattern = toWindowsSendKeysPattern(keys);
+    const escapedKeys = escapePowerShellSingleQuoted(sendKeysPattern);
+    const canonicalTarget = canonicalizeAppIntent(targetApp) || targetApp;
+    const candidates = new Set();
+    for (const candidate of [targetApp, canonicalTarget]) {
+        const raw = String(candidate || "").trim();
+        if (raw)
+            candidates.add(raw);
+    }
+    if (canonicalTarget === "Calculator") {
+        for (const alias of ["Calculator", "calc", "CalculatorApp", "Windows Calculator"]) {
+            candidates.add(alias);
+        }
+    }
+    const visibleWindows = await listWindows().catch(() => []);
+    for (const window of visibleWindows) {
+        if (windowMatchesAppIntent(window, canonicalTarget)) {
+            if (window.title)
+                candidates.add(String(window.title));
+            if (window.app)
+                candidates.add(String(window.app));
+        }
+    }
+    for (const label of candidates) {
+        const escapedTarget = escapePowerShellSingleQuoted(label);
+        const command = `powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; ` +
+            `if (-not $ws.AppActivate('${escapedTarget}')) { throw 'Window not found.' }; ` +
+            `Start-Sleep -Milliseconds ${WINDOWS_SENDKEYS_SETTLE_MS}; $ws.SendKeys('${escapedKeys}')"`; // deterministic keyboard fallback when UIA shortcut routing cannot resolve Calculator.
+        try {
+            await runPlatformCommand(command);
+            return true;
+        }
+        catch {
+            // try next candidate label
+        }
+    }
+    return false;
+}
 async function invokeCalculatorExpressionViaControls(runtime, keys, target) {
     const tokens = parseCalculatorShortcutTokens(keys);
     if (!tokens.length)
@@ -456,6 +511,7 @@ async function invokeCalculatorExpressionViaControls(runtime, keys, target) {
             .invokeControl({
             ...currentTarget,
             selector: mapped.selector,
+            timeoutMs: CALCULATOR_CONTROL_INVOKE_TIMEOUT_MS,
         })
             .catch(() => null);
         if (!step) {
@@ -463,6 +519,7 @@ async function invokeCalculatorExpressionViaControls(runtime, keys, target) {
                 .invokeControl({
                 ...currentTarget,
                 query: mapped.query,
+                timeoutMs: CALCULATOR_CONTROL_INVOKE_TIMEOUT_MS,
             })
                 .catch(() => null);
         }
@@ -476,7 +533,7 @@ async function invokeCalculatorExpressionViaControls(runtime, keys, target) {
             windowId: step.windowId || currentTarget.windowId,
             allowBackground: currentTarget.allowBackground,
         };
-        await sleep(40);
+        await sleep(CALCULATOR_CONTROL_STEP_DELAY_MS);
     }
     return last;
 }
@@ -636,6 +693,9 @@ export class DesktopToolExecutor {
     launchedWindowTargets = new Map();
     recoveryLaunchHistory = new Map();
     openedAppIntentKeys = new Set();
+    appSessions = new Map();
+    windowAffinityBindings = new Map();
+    totalRecoveryLaunches = 0;
     deps;
     constructor(machineAutonomyController, policy, executionController, nativeAppRuntime, task, options) {
         this.machineAutonomyController = machineAutonomyController;
@@ -713,25 +773,200 @@ export class DesktopToolExecutor {
             return explicit;
         return canonicalizeAppIntent(args.app);
     }
+    resolveRuntimeAppName(...candidates) {
+        for (const candidate of candidates) {
+            const canonical = canonicalizeAppIntent(candidate);
+            if (canonical)
+                return canonical;
+            const raw = String(candidate || "").trim();
+            if (raw)
+                return raw;
+        }
+        return undefined;
+    }
+    normalizeIntentKind(value) {
+        const normalized = String(value || "").trim().toLowerCase();
+        if (normalized === "open")
+            return "open";
+        if (normalized === "draft_text")
+            return "draft_text";
+        if (normalized === "compute")
+            return "compute";
+        if (normalized === "navigate_path")
+            return "navigate_path";
+        if (normalized === "verify")
+            return "verify";
+        if (normalized === "cleanup")
+            return "cleanup";
+        return undefined;
+    }
+    normalizeExecutionMode(value) {
+        const normalized = String(value || "").trim().toLowerCase();
+        if (normalized === "background_safe")
+            return "background_safe";
+        if (normalized === "foreground_lease")
+            return "foreground_lease";
+        if (normalized === "takeover")
+            return "takeover";
+        return undefined;
+    }
+    inferIntentKind(toolName, args) {
+        if (toolName === "desktop_open_app") {
+            const appIntent = this.resolveTargetAppIntent(args);
+            const targetPath = normalizeWindowsFilesystemTarget(String(args.path || args.target || args.url || "").trim());
+            const appToken = String(args.app || "").trim();
+            if ((appIntent === "File Explorer" && targetPath) ||
+                (appIntent === "File Explorer" && (/^[a-z]:/i.test(appToken) || /\bdrive\b/i.test(appToken)))) {
+                return "navigate_path";
+            }
+            return "open";
+        }
+        if (toolName === "desktop_open_url") {
+            return normalizeWindowsFilesystemTarget(String(args.url || "").trim()) ? "navigate_path" : "open";
+        }
+        if (toolName === "desktop_type_into_control")
+            return "draft_text";
+        if (toolName === "desktop_send_shortcut") {
+            const appIntent = this.resolveTargetAppIntent(args);
+            const keys = String(args.keys || "").trim();
+            if (appIntent === "Calculator" || /[0-9]\s*[\+\-\*\/x]\s*[0-9]|[=~]/i.test(keys))
+                return "compute";
+            return "draft_text";
+        }
+        if (toolName === "desktop_wait")
+            return "verify";
+        if (toolName.startsWith("desktop_"))
+            return "verify";
+        return "verify";
+    }
+    normalizeDesktopToolArgs(toolCall, pendingToolCall) {
+        const args = asRecord(toolCall.arguments) ? { ...toolCall.arguments } : {};
+        const targetAppIntent = this.resolveTargetAppIntent(args);
+        if (targetAppIntent && typeof args.targetAppIntent !== "string") {
+            args.targetAppIntent = targetAppIntent;
+        }
+        const intentKind = this.normalizeIntentKind(args.intentKind) || this.inferIntentKind(toolCall.name, args);
+        if (intentKind)
+            args.intentKind = intentKind;
+        const rawStep = Number(pendingToolCall.step || 1);
+        const safeStep = Number.isFinite(rawStep) && rawStep > 0 ? Math.floor(rawStep) : 1;
+        if (typeof args.intentStepId !== "string" || !String(args.intentStepId).trim()) {
+            const suffix = String(toolCall.id || toolCall.name || "step")
+                .replace(/[^a-z0-9_:-]+/gi, "_")
+                .slice(0, 120);
+            args.intentStepId = `desktop_step_${safeStep}_${suffix}`;
+        }
+        else {
+            args.intentStepId = String(args.intentStepId).trim().slice(0, 160);
+        }
+        const executionMode = this.normalizeExecutionMode(args.executionMode) ||
+            (this.shouldPreferBackgroundExecution(args) ? "background_safe" : "foreground_lease");
+        args.executionMode = executionMode;
+        if (typeof args.windowAffinityToken !== "string" || !String(args.windowAffinityToken).trim()) {
+            const appToken = normalizeAppToken(targetAppIntent || args.app || "desktop") || "desktop";
+            const stepToken = String(args.intentStepId || "step").replace(/[^a-z0-9_:-]+/gi, "_");
+            args.windowAffinityToken = `desktop_affinity_${appToken}_${stepToken}`.slice(0, 180);
+        }
+        else {
+            args.windowAffinityToken = String(args.windowAffinityToken).trim().slice(0, 180);
+        }
+        return args;
+    }
+    resolveWindowAffinityToken(args) {
+        const token = String(args.windowAffinityToken || "").trim();
+        return token ? token : undefined;
+    }
+    updateWindowAffinityBinding(token, binding) {
+        if (!token)
+            return;
+        this.windowAffinityBindings.set(token, {
+            ...(binding.targetAppIntent ? { targetAppIntent: binding.targetAppIntent } : {}),
+            ...(binding.targetResolvedApp ? { targetResolvedApp: binding.targetResolvedApp } : {}),
+            ...(binding.windowId ? { windowId: binding.windowId } : {}),
+            ...(binding.windowTitle ? { windowTitle: binding.windowTitle } : {}),
+            boundAt: nowIso(),
+        });
+    }
     buildDesktopIntentMetadata(args, options) {
         const targetAppIntent = this.resolveTargetAppIntent(args);
+        const intentStepId = String(options?.intentStepId || args.intentStepId || "").trim();
+        const intentKind = this.normalizeIntentKind(options?.intentKind || args.intentKind);
+        const executionMode = this.normalizeExecutionMode(options?.executionMode || args.executionMode) ||
+            (options?.focusModeApplied ? options.focusModeApplied : undefined);
+        const windowAffinityToken = String(options?.windowAffinityToken || args.windowAffinityToken || "").trim();
+        const targetConfidenceValue = typeof options?.targetConfidence === "number"
+            ? options.targetConfidence
+            : Number.isFinite(Number(args.targetConfidence))
+                ? Number(args.targetConfidence)
+                : undefined;
+        const verificationRequired = typeof options?.verificationRequired === "boolean" ? options.verificationRequired : undefined;
+        const verificationPassed = typeof options?.verificationPassed === "boolean" ? options.verificationPassed : undefined;
+        const proofProgressRaw = typeof options?.proofProgress === "number"
+            ? options.proofProgress
+            : verificationRequired === true
+                ? verificationPassed === true
+                    ? 1
+                    : 0
+                : Array.isArray(options?.proofArtifacts) && options?.proofArtifacts.length > 0
+                    ? 1
+                    : undefined;
+        const proofProgress = typeof proofProgressRaw === "number" && Number.isFinite(proofProgressRaw)
+            ? Math.max(0, Math.min(1, Number(proofProgressRaw)))
+            : undefined;
         return {
+            ...(intentStepId ? { intentStepId } : {}),
+            ...(intentKind ? { intentKind } : {}),
+            ...(executionMode ? { executionMode } : {}),
+            ...(windowAffinityToken ? { windowAffinityToken } : {}),
             ...(targetAppIntent ? { targetAppIntent } : {}),
             ...(typeof options?.targetResolvedApp === "string" && options.targetResolvedApp.trim()
                 ? { targetResolvedApp: options.targetResolvedApp.trim() }
                 : {}),
+            ...(typeof targetConfidenceValue === "number" ? { targetConfidence: targetConfidenceValue } : {}),
             ...(typeof options?.focusRecoveryAttempted === "boolean"
                 ? { focusRecoveryAttempted: options.focusRecoveryAttempted }
                 : {}),
-            ...(typeof options?.verificationRequired === "boolean"
-                ? { verificationRequired: options.verificationRequired }
+            ...(typeof options?.focusLeaseRestored === "boolean" ? { focusLeaseRestored: options.focusLeaseRestored } : {}),
+            ...(typeof verificationRequired === "boolean"
+                ? { verificationRequired }
                 : {}),
-            ...(typeof options?.verificationPassed === "boolean"
-                ? { verificationPassed: options.verificationPassed }
+            ...(typeof verificationPassed === "boolean"
+                ? { verificationPassed }
                 : {}),
+            ...(typeof proofProgress === "number" ? { proofProgress } : {}),
             ...(typeof options?.recoverySuppressedReason === "string" && options.recoverySuppressedReason.trim()
                 ? { recoverySuppressedReason: options.recoverySuppressedReason.trim() }
                 : {}),
+            ...(typeof options?.relaunchAttempt === "number" ? { relaunchAttempt: Math.max(0, Math.floor(options.relaunchAttempt)) } : {}),
+            ...(typeof options?.relaunchSuppressed === "boolean" ? { relaunchSuppressed: options.relaunchSuppressed } : {}),
+            ...(typeof options?.relaunchSuppressionReason === "string" && options.relaunchSuppressionReason.trim()
+                ? { relaunchSuppressionReason: options.relaunchSuppressionReason.trim() }
+                : {}),
+            ...(options?.focusModeApplied ? { focusModeApplied: options.focusModeApplied } : {}),
+            ...(typeof options?.foregroundLeaseMs === "number" ? { foregroundLeaseMs: Math.max(0, Math.floor(options.foregroundLeaseMs)) } : {}),
+            ...(Array.isArray(options?.proofArtifacts) && options?.proofArtifacts.length > 0 ? { proofArtifacts: options?.proofArtifacts } : {}),
+        };
+    }
+    composeFocusGuardMetadataOptions(focusGuard, options) {
+        return {
+            ...(typeof focusGuard.targetResolvedApp === "string" && focusGuard.targetResolvedApp.trim()
+                ? { targetResolvedApp: focusGuard.targetResolvedApp }
+                : {}),
+            ...(typeof focusGuard.focusRecoveryAttempted === "boolean"
+                ? { focusRecoveryAttempted: focusGuard.focusRecoveryAttempted }
+                : {}),
+            ...(typeof focusGuard.recoverySuppressedReason === "string" && focusGuard.recoverySuppressedReason.trim()
+                ? { recoverySuppressedReason: focusGuard.recoverySuppressedReason }
+                : {}),
+            ...(typeof focusGuard.relaunchAttempt === "number" ? { relaunchAttempt: focusGuard.relaunchAttempt } : {}),
+            ...(typeof focusGuard.relaunchSuppressed === "boolean"
+                ? { relaunchSuppressed: focusGuard.relaunchSuppressed }
+                : {}),
+            ...(typeof focusGuard.relaunchSuppressionReason === "string" && focusGuard.relaunchSuppressionReason.trim()
+                ? { relaunchSuppressionReason: focusGuard.relaunchSuppressionReason }
+                : {}),
+            ...(focusGuard.focusModeApplied ? { focusModeApplied: focusGuard.focusModeApplied } : {}),
+            ...(options || {}),
         };
     }
     shouldPreferBackgroundExecution(args) {
@@ -776,14 +1011,88 @@ export class DesktopToolExecutor {
             ? await this.detectNewLaunchProcessIds(beforeLaunchProcessIds, launched.app.name).catch(() => [])
             : [];
         this.trackLaunchedProcesses(launchedProcessIds);
-        const launchedWindow = await this.detectLaunchedWindowTarget(beforeWindows, canonicalizeAppIntent(app) || launched.app.name);
-        this.rememberLaunchedWindowTarget(canonicalizeAppIntent(app) || launched.app.name, launchedWindow);
+        const canonicalApp = canonicalizeAppIntent(app) || launched.app.name;
+        const launchedWindow = await this.detectLaunchedWindowTarget(beforeWindows, canonicalApp);
+        this.rememberLaunchedWindowTarget(canonicalApp, launchedWindow);
+        this.updateAppSessionFromWindow(canonicalApp, launchedWindow, {
+            runLaunched: true,
+        });
     }
     getRecoveryLaunchKey(app) {
         return String(canonicalizeAppIntent(app) || app || "").trim().toLowerCase();
     }
-    buildRecoverySuppressedReason(app) {
-        return `Recovery launch suppressed for ${app} to prevent repeated app re-open loops.`;
+    getOrCreateAppSession(app) {
+        const canonical = canonicalizeAppIntent(app) || String(app || "").trim() || "App";
+        const key = this.getRecoveryLaunchKey(canonical);
+        const existing = this.appSessions.get(key);
+        if (existing)
+            return existing;
+        const created = {
+            appIntent: canonical,
+            appName: canonical,
+            preExisting: false,
+            runLaunched: false,
+            openAttempts: 0,
+            relaunchAttempts: 0,
+        };
+        this.appSessions.set(key, created);
+        return created;
+    }
+    findAppSession(app) {
+        const canonical = canonicalizeAppIntent(app);
+        const key = canonical ? this.getRecoveryLaunchKey(canonical) : "";
+        if (!key)
+            return null;
+        return this.appSessions.get(key) || null;
+    }
+    updateAppSessionFromWindow(app, window, options) {
+        const session = this.getOrCreateAppSession(app);
+        const normalizedAppName = String(window?.app || app || session.appName || session.appIntent || "").trim();
+        session.appName = normalizedAppName || session.appName;
+        session.appIntent = canonicalizeAppIntent(session.appIntent || app || normalizedAppName) || session.appIntent;
+        if (window?.id) {
+            session.windowId = String(window.id);
+            const pid = parseProcessId(window.id);
+            if (pid)
+                session.processId = pid;
+        }
+        if (window?.title)
+            session.windowTitle = String(window.title);
+        if (options?.preExisting === true)
+            session.preExisting = true;
+        if (options?.runLaunched === true)
+            session.runLaunched = true;
+        if (options?.incrementOpenAttempt === true) {
+            session.openAttempts = Math.max(0, session.openAttempts) + 1;
+        }
+        if (options?.incrementRelaunch === true) {
+            session.relaunchAttempts = Math.max(0, session.relaunchAttempts) + 1;
+        }
+        const key = this.getRecoveryLaunchKey(session.appIntent || session.appName);
+        if (key)
+            this.appSessions.set(key, session);
+        return session;
+    }
+    recordProofArtifact(app, proofLabel) {
+        const normalizedApp = canonicalizeAppIntent(app) || app;
+        if (!normalizedApp)
+            return;
+        const session = this.getOrCreateAppSession(normalizedApp);
+        if (!proofLabel)
+            return;
+        session.lastProofAt = nowIso();
+        const key = this.getRecoveryLaunchKey(normalizedApp);
+        if (key)
+            this.appSessions.set(key, session);
+    }
+    buildRecoverySuppressedReason(app, context) {
+        if (context === "per_run_limit") {
+            return `Recovery launch suppressed for ${app}: the run-level relaunch governor reached ${RECOVERY_LAUNCH_MAX_PER_RUN} launches.`;
+        }
+        if (context === "per_app_limit") {
+            return `Recovery launch suppressed for ${app}: the per-app relaunch governor reached ${RECOVERY_LAUNCH_MAX_PER_APP} launches for this run.`;
+        }
+        return `Recovery launch suppressed for ${app}: please wait at least ${Math.round(RECOVERY_LAUNCH_COOLDOWN_MS / 1000)}s before another relaunch attempt.`;
     }
     markAppIntentOpened(app) {
         const key = this.getRecoveryLaunchKey(app);
@@ -797,28 +1106,61 @@ export class DesktopToolExecutor {
             return false;
         return this.openedAppIntentKeys.has(key);
     }
-    canAttemptRecoveryLaunch(app) {
+    getRecoveryLaunchDecision(app) {
         const key = this.getRecoveryLaunchKey(app);
-        if (!key)
-            return false;
+        if (!key) {
+            return {
+                allowed: false,
+                reason: this.buildRecoverySuppressedReason(app, "per_app_limit"),
+                relaunchAttempt: 0,
+            };
+        }
+        const session = this.getOrCreateAppSession(app);
         const now = Date.now();
-        const history = (this.recoveryLaunchHistory.get(key) || []).filter((timestamp) => now - timestamp <= RECOVERY_LAUNCH_WINDOW_MS);
+        const history = (this.recoveryLaunchHistory.get(key) || []).filter((timestamp) => now - timestamp <= 86_400_000);
         this.recoveryLaunchHistory.set(key, history);
-        if (history.length >= RECOVERY_LAUNCH_MAX_PER_APP)
-            return false;
+        if (this.totalRecoveryLaunches >= RECOVERY_LAUNCH_MAX_PER_RUN) {
+            return {
+                allowed: false,
+                reason: this.buildRecoverySuppressedReason(session.appIntent || app, "per_run_limit"),
+                relaunchAttempt: Math.max(0, session.relaunchAttempts || history.length),
+            };
+        }
+        if (history.length >= RECOVERY_LAUNCH_MAX_PER_APP) {
+            return {
+                allowed: false,
+                reason: this.buildRecoverySuppressedReason(session.appIntent || app, "per_app_limit"),
+                relaunchAttempt: Math.max(0, session.relaunchAttempts || history.length),
+            };
+        }
         const mostRecent = history.length > 0 ? history[history.length - 1] : 0;
-        if (mostRecent && now - mostRecent < RECOVERY_LAUNCH_COOLDOWN_MS)
-            return false;
-        return true;
+        if (mostRecent && now - mostRecent < RECOVERY_LAUNCH_COOLDOWN_MS) {
+            return {
+                allowed: false,
+                reason: this.buildRecoverySuppressedReason(session.appIntent || app, "cooldown"),
+                relaunchAttempt: Math.max(0, session.relaunchAttempts || history.length),
+            };
+        }
+        return {
+            allowed: true,
+            relaunchAttempt: Math.max(0, session.relaunchAttempts || history.length) + 1,
+        };
     }
-    recordRecoveryLaunch(app) {
+    recordRecoveryLaunch(app, matchedWindow = null) {
         const key = this.getRecoveryLaunchKey(app);
+        const session = this.getOrCreateAppSession(app);
         if (!key)
-            return;
+            return session;
         const now = Date.now();
-        const history = (this.recoveryLaunchHistory.get(key) || []).filter((timestamp) => now - timestamp <= RECOVERY_LAUNCH_WINDOW_MS);
+        const history = (this.recoveryLaunchHistory.get(key) || []).filter((timestamp) => now - timestamp <= 86_400_000);
         history.push(now);
         this.recoveryLaunchHistory.set(key, history);
+        this.totalRecoveryLaunches = Math.max(0, this.totalRecoveryLaunches) + 1;
+        return this.updateAppSessionFromWindow(app, matchedWindow, {
+            runLaunched: true,
+            incrementRelaunch: true,
+            incrementOpenAttempt: true,
+        });
     }
     async tryFocusExistingWindowForIntent(targetAppIntent, title, windowId) {
         const windows = await this.deps.listWindows().catch(() => []);
@@ -842,23 +1184,127 @@ export class DesktopToolExecutor {
         }
         return false;
     }
+    async captureForegroundLeaseContext() {
+        const activeWindow = await this.deps.getActiveWindow().catch(() => null);
+        if (!activeWindow)
+            return undefined;
+        return {
+            ...(activeWindow.id ? { previousWindowId: String(activeWindow.id) } : {}),
+            ...(activeWindow.title ? { previousWindowTitle: String(activeWindow.title) } : {}),
+            ...(activeWindow.app ? { previousWindowApp: String(activeWindow.app) } : {}),
+            startedAt: Date.now(),
+        };
+    }
+    async restoreForegroundLease(lease) {
+        if (!lease)
+            return { attempted: false, restored: false };
+        const startedAt = lease.startedAt || Date.now();
+        const finish = () => Math.min(FOREGROUND_LEASE_MAX_MS, Math.max(0, Date.now() - startedAt));
+        const focusInput = {
+            ...(lease.previousWindowId ? { windowId: lease.previousWindowId } : {}),
+            ...(lease.previousWindowTitle ? { title: lease.previousWindowTitle } : {}),
+            ...(lease.previousWindowApp ? { app: lease.previousWindowApp } : {}),
+        };
+        if (!focusInput.windowId && !focusInput.title && !focusInput.app) {
+            return { attempted: false, restored: false, foregroundLeaseMs: finish() };
+        }
+        for (let attempt = 0; attempt < FOREGROUND_LEASE_RESTORE_ATTEMPTS; attempt += 1) {
+            const restoreResult = await withTimeout(this.deps.focusWindow(focusInput).then(() => true).catch(() => false), Math.min(FOREGROUND_LEASE_MAX_MS, FOREGROUND_LEASE_RESTORE_TIMEOUT_MS), false);
+            if (restoreResult) {
+                return { attempted: true, restored: true, foregroundLeaseMs: finish() };
+            }
+            await sleep(80);
+        }
+        return { attempted: true, restored: false, foregroundLeaseMs: finish() };
+    }
+    async sendWindowsShortcutWithBackgroundRecovery(keys, app, preferBackground) {
+        const targetApp = String(app || "").trim() || "Calculator";
+        if (!preferBackground) {
+            const sent = await sendWindowsShortcutToApp(keys, targetApp);
+            return {
+                sent,
+                focusStolen: sent,
+            };
+        }
+        const lease = await this.captureForegroundLeaseContext();
+        const sent = await sendWindowsShortcutToApp(keys, targetApp);
+        if (!sent) {
+            return {
+                sent: false,
+                focusStolen: false,
+            };
+        }
+        const restored = await this.restoreForegroundLease(lease);
+        return {
+            sent: true,
+            focusStolen: !restored.restored,
+            ...(typeof restored.restored === "boolean" ? { focusLeaseRestored: restored.restored } : {}),
+            ...(typeof restored.foregroundLeaseMs === "number" ? { foregroundLeaseMs: restored.foregroundLeaseMs } : {}),
+        };
+    }
+    async releaseForegroundLeaseIfNeeded(focusGuard) {
+        if (focusGuard.focusModeApplied !== "foreground_lease") {
+            return this.composeFocusGuardMetadataOptions(focusGuard);
+        }
+        const restored = await this.restoreForegroundLease(focusGuard.foregroundLease);
+        return this.composeFocusGuardMetadataOptions(focusGuard, {
+            focusModeApplied: "foreground_lease",
+            ...(typeof restored.foregroundLeaseMs === "number"
+                ? { foregroundLeaseMs: restored.foregroundLeaseMs }
+                : {}),
+            focusLeaseRestored: restored.restored,
+        });
+    }
     async enforceWindowTarget(toolCall, args, options) {
         const preferBackground = options?.preferBackground === true;
-        const targetAppIntent = this.resolveTargetAppIntent(args);
-        const title = typeof args.title === "string" ? args.title : undefined;
-        const windowId = typeof args.windowId === "string" ? args.windowId : undefined;
+        const affinityToken = this.resolveWindowAffinityToken(args);
+        const affinityBinding = affinityToken ? this.windowAffinityBindings.get(affinityToken) : undefined;
+        const explicitTargetAppIntent = this.resolveTargetAppIntent(args);
+        const boundTargetAppIntent = canonicalizeAppIntent(affinityBinding?.targetAppIntent);
+        if (explicitTargetAppIntent && boundTargetAppIntent && explicitTargetAppIntent !== boundTargetAppIntent) {
+            return {
+                ok: false,
+                message: `Window affinity token blocked ${toolCall.name}: intended ${explicitTargetAppIntent}, but token is bound to ${boundTargetAppIntent}.`,
+                targetAppIntent: explicitTargetAppIntent,
+                targetResolvedApp: affinityBinding?.targetResolvedApp,
+                targetWindowId: affinityBinding?.windowId,
+                targetWindowTitle: affinityBinding?.windowTitle,
+                focusRecoveryAttempted: false,
+                focusStolen: false,
+            };
+        }
+        const targetAppIntent = explicitTargetAppIntent || boundTargetAppIntent;
+        const title = typeof args.title === "string" && args.title.trim()
+            ? args.title
+            : typeof affinityBinding?.windowTitle === "string"
+                ? affinityBinding.windowTitle
+                : undefined;
+        const windowId = typeof args.windowId === "string" && args.windowId.trim()
+            ? args.windowId
+            : typeof affinityBinding?.windowId === "string"
+                ? affinityBinding.windowId
+                : undefined;
         const hasExplicitTarget = Boolean(targetAppIntent || title || windowId);
         if (!hasExplicitTarget) {
-            return { ok: true, focusRecoveryAttempted: false, focusStolen: false };
+            return {
+                ok: true,
+                focusRecoveryAttempted: false,
+                focusStolen: false,
+                ...(preferBackground ? { focusModeApplied: "background_safe" } : {}),
+            };
         }
         if (preferBackground) {
             let focusRecoveryAttempted = false;
             let recoverySuppressedReason;
+            let relaunchAttempt;
+            let relaunchSuppressed = false;
             let matchedTargetWindow = await this.resolveMatchingWindowTarget(targetAppIntent, title, windowId);
             if (!matchedTargetWindow && targetAppIntent) {
                 focusRecoveryAttempted = true;
-                if (!this.canAttemptRecoveryLaunch(targetAppIntent)) {
-                    recoverySuppressedReason = this.buildRecoverySuppressedReason(targetAppIntent);
+                const relaunchDecision = this.getRecoveryLaunchDecision(targetAppIntent);
+                if (!relaunchDecision.allowed) {
+                    recoverySuppressedReason = relaunchDecision.reason || this.buildRecoverySuppressedReason(targetAppIntent, "per_app_limit");
+                    relaunchSuppressed = true;
                     return {
                         ok: false,
                         message: recoverySuppressedReason,
@@ -866,16 +1312,23 @@ export class DesktopToolExecutor {
                         focusRecoveryAttempted,
                         focusStolen: false,
                         backgroundTargetBound: false,
+                        focusModeApplied: "background_safe",
+                        relaunchSuppressed: true,
+                        relaunchSuppressionReason: recoverySuppressedReason,
+                        ...(typeof relaunchDecision.relaunchAttempt === "number"
+                            ? { relaunchAttempt: relaunchDecision.relaunchAttempt }
+                            : {}),
                         ...(recoverySuppressedReason ? { recoverySuppressedReason } : {}),
                     };
                 }
-                this.recordRecoveryLaunch(targetAppIntent);
+                relaunchAttempt = relaunchDecision.relaunchAttempt;
+                this.recordRecoveryLaunch(targetAppIntent, null);
                 await this.launchAppForRecovery(targetAppIntent);
-                for (let attempt = 0; attempt < 20; attempt += 1) {
+                for (let attempt = 0; attempt < BACKGROUND_RECOVERY_WINDOW_POLL_ATTEMPTS; attempt += 1) {
                     matchedTargetWindow = await this.resolveMatchingWindowTarget(targetAppIntent, title, windowId);
                     if (matchedTargetWindow)
                         break;
-                    await sleep(180);
+                    await sleep(BACKGROUND_RECOVERY_WINDOW_POLL_DELAY_MS);
                 }
             }
             if (!matchedTargetWindow) {
@@ -888,26 +1341,52 @@ export class DesktopToolExecutor {
                     focusRecoveryAttempted,
                     focusStolen: false,
                     backgroundTargetBound: false,
+                    focusModeApplied: "background_safe",
+                    ...(typeof relaunchAttempt === "number" ? { relaunchAttempt } : {}),
+                    ...(relaunchSuppressed
+                        ? { relaunchSuppressed, relaunchSuppressionReason: recoverySuppressedReason || undefined }
+                        : {}),
                     ...(recoverySuppressedReason ? { recoverySuppressedReason } : {}),
                 };
             }
+            this.updateAppSessionFromWindow(targetAppIntent || matchedTargetWindow.app || "App", matchedTargetWindow, {
+                preExisting: true,
+                incrementOpenAttempt: true,
+            });
+            this.updateWindowAffinityBinding(affinityToken, {
+                targetAppIntent,
+                targetResolvedApp: this.resolveRuntimeAppName(matchedTargetWindow.app, targetAppIntent) || undefined,
+                windowId: String(matchedTargetWindow.id || ""),
+                windowTitle: String(matchedTargetWindow.title || ""),
+            });
             return {
                 ok: true,
                 ...(targetAppIntent ? { targetAppIntent } : {}),
-                targetResolvedApp: String(matchedTargetWindow.app || targetAppIntent || ""),
+                targetResolvedApp: this.resolveRuntimeAppName(matchedTargetWindow.app, targetAppIntent) || "",
                 targetWindowId: String(matchedTargetWindow.id || ""),
                 targetWindowTitle: String(matchedTargetWindow.title || ""),
                 focusRecoveryAttempted,
                 focusStolen: false,
                 backgroundTargetBound: true,
+                focusModeApplied: "background_safe",
+                ...(typeof relaunchAttempt === "number" ? { relaunchAttempt } : {}),
                 ...(recoverySuppressedReason ? { recoverySuppressedReason } : {}),
             };
         }
         let focusRecoveryAttempted = false;
         let focusStolen = false;
         let recoverySuppressedReason;
+        let relaunchAttempt;
+        let relaunchSuppressed = false;
+        const foregroundLease = await this.captureForegroundLeaseContext();
         try {
-            await this.deps.focusWindow({ app: targetAppIntent, title, windowId });
+            const focused = await withTimeout(this.deps
+                .focusWindow({ app: targetAppIntent, title, windowId })
+                .then(() => true)
+                .catch(() => false), FOREGROUND_LEASE_MAX_MS, false);
+            if (!focused) {
+                throw new Error(targetAppIntent ? `Window not found for ${targetAppIntent}.` : "Window not found.");
+            }
             focusStolen = true;
         }
         catch (error) {
@@ -918,6 +1397,7 @@ export class DesktopToolExecutor {
                     targetAppIntent,
                     focusRecoveryAttempted,
                     focusStolen,
+                    ...(focusStolen ? { focusModeApplied: "foreground_lease", foregroundLease } : {}),
                     ...(recoverySuppressedReason ? { recoverySuppressedReason } : {}),
                 };
             }
@@ -929,6 +1409,12 @@ export class DesktopToolExecutor {
                     .then((windows) => windows.filter((window) => windowMatchesAppIntent(window, targetAppIntent)));
                 if (existingWindowMatches.length > 0) {
                     const fallbackWindow = existingWindowMatches[0] || null;
+                    this.updateWindowAffinityBinding(affinityToken, {
+                        targetAppIntent,
+                        targetResolvedApp: fallbackWindow?.app ? String(fallbackWindow.app) : targetAppIntent,
+                        windowId: fallbackWindow?.id ? String(fallbackWindow.id) : undefined,
+                        windowTitle: fallbackWindow?.title ? String(fallbackWindow.title) : undefined,
+                    });
                     return {
                         ok: true,
                         targetAppIntent,
@@ -938,14 +1424,15 @@ export class DesktopToolExecutor {
                         focusRecoveryAttempted,
                         focusStolen: false,
                         backgroundTargetBound: true,
+                        focusModeApplied: "background_safe",
                         ...(recoverySuppressedReason ? { recoverySuppressedReason } : {}),
                     };
                 }
                 let focusedExisting = await this.tryFocusExistingWindowForIntent(targetAppIntent, title, windowId);
-                if (!focusedExisting && !this.canAttemptRecoveryLaunch(targetAppIntent)) {
+                if (!focusedExisting && !this.getRecoveryLaunchDecision(targetAppIntent).allowed) {
                     // Give newly launched UWP/Electron apps a short settle window before suppressing recovery.
-                    for (let waitAttempt = 0; waitAttempt < 30; waitAttempt += 1) {
-                        await sleep(250);
+                    for (let waitAttempt = 0; waitAttempt < FOREGROUND_RECOVERY_SETTLE_ATTEMPTS; waitAttempt += 1) {
+                        await sleep(FOREGROUND_RECOVERY_SETTLE_DELAY_MS);
                         focusedExisting = await this.tryFocusExistingWindowForIntent(targetAppIntent, title, windowId);
                         if (focusedExisting)
                             break;
@@ -955,23 +1442,37 @@ export class DesktopToolExecutor {
                     focusStolen = true;
                 }
                 else {
-                    if (!this.canAttemptRecoveryLaunch(targetAppIntent)) {
-                        recoverySuppressedReason = this.buildRecoverySuppressedReason(targetAppIntent);
+                    const relaunchDecision = this.getRecoveryLaunchDecision(targetAppIntent);
+                    if (!relaunchDecision.allowed) {
+                        recoverySuppressedReason = relaunchDecision.reason || this.buildRecoverySuppressedReason(targetAppIntent, "per_app_limit");
+                        relaunchSuppressed = true;
                         throw new Error(recoverySuppressedReason);
                     }
-                    this.recordRecoveryLaunch(targetAppIntent);
+                    relaunchAttempt = relaunchDecision.relaunchAttempt;
+                    this.recordRecoveryLaunch(targetAppIntent, null);
                     await this.launchAppForRecovery(targetAppIntent);
                 }
                 let focused = false;
-                for (let attempt = 0; attempt < 20; attempt += 1) {
+                for (let attempt = 0; attempt < 2; attempt += 1) {
+                    const refreshedTarget = await this.resolveMatchingWindowTarget(targetAppIntent, title, windowId);
                     try {
-                        await this.deps.focusWindow({ app: targetAppIntent, title, windowId });
+                        const focusedAttempt = await withTimeout(this.deps
+                            .focusWindow({
+                            app: targetAppIntent,
+                            title: refreshedTarget?.title || title,
+                            windowId: refreshedTarget?.id || windowId,
+                        })
+                            .then(() => true)
+                            .catch(() => false), FOREGROUND_LEASE_MAX_MS, false);
+                        if (!focusedAttempt) {
+                            throw new Error(`Window not found for ${targetAppIntent}.`);
+                        }
                         focusStolen = true;
                         focused = true;
                         break;
                     }
                     catch {
-                        await sleep(250);
+                        await sleep(120);
                     }
                 }
                 if (!focused) {
@@ -985,17 +1486,22 @@ export class DesktopToolExecutor {
                     targetAppIntent,
                     focusRecoveryAttempted,
                     focusStolen,
+                    ...(focusStolen ? { focusModeApplied: "foreground_lease", foregroundLease } : {}),
+                    ...(typeof relaunchAttempt === "number" ? { relaunchAttempt } : {}),
+                    ...(relaunchSuppressed
+                        ? { relaunchSuppressed, relaunchSuppressionReason: recoverySuppressedReason || undefined }
+                        : {}),
                     ...(recoverySuppressedReason ? { recoverySuppressedReason } : {}),
                 };
             }
         }
         let activeWindow = null;
         let matchedTargetWindow = null;
-        for (let attempt = 0; attempt < 4; attempt += 1) {
+        for (let attempt = 0; attempt < 2; attempt += 1) {
             activeWindow = await this.deps.getActiveWindow().catch(() => null);
             if (activeWindow)
                 break;
-            await sleep(120);
+            await sleep(80);
         }
         if (targetAppIntent) {
             const visibleWindows = await this.deps.listWindows().catch(() => []);
@@ -1004,23 +1510,21 @@ export class DesktopToolExecutor {
                 activeWindow = matchedTargetWindow;
         }
         const resolvedWindow = matchedTargetWindow || activeWindow || null;
-        const targetResolvedApp = resolvedWindow?.app ? String(resolvedWindow.app) : undefined;
+        const targetResolvedApp = this.resolveRuntimeAppName(resolvedWindow?.app, targetAppIntent);
         const targetWindowId = resolvedWindow?.id ? String(resolvedWindow.id) : undefined;
         const targetWindowTitle = resolvedWindow?.title ? String(resolvedWindow.title) : undefined;
+        if (targetResolvedApp || targetAppIntent) {
+            this.updateAppSessionFromWindow(targetResolvedApp || targetAppIntent || "App", resolvedWindow, {
+                preExisting: true,
+            });
+        }
+        this.updateWindowAffinityBinding(affinityToken, {
+            targetAppIntent,
+            targetResolvedApp,
+            windowId: targetWindowId,
+            windowTitle: targetWindowTitle,
+        });
         if (targetAppIntent && activeWindow && !windowMatchesAppIntent(activeWindow, targetAppIntent)) {
-            if (matchedTargetWindow) {
-                return {
-                    ok: true,
-                    targetAppIntent,
-                    targetResolvedApp,
-                    targetWindowId,
-                    targetWindowTitle,
-                    focusRecoveryAttempted,
-                    focusStolen: false,
-                    backgroundTargetBound: true,
-                    ...(recoverySuppressedReason ? { recoverySuppressedReason } : {}),
-                };
-            }
             const activeLabel = activeWindow
                 ? `${activeWindow.app || "unknown app"} (${activeWindow.title || "untitled window"})`
                 : "no active window";
@@ -1034,6 +1538,11 @@ export class DesktopToolExecutor {
                 focusRecoveryAttempted,
                 focusStolen,
                 backgroundTargetBound: false,
+                ...(focusStolen ? { focusModeApplied: "foreground_lease", foregroundLease } : {}),
+                ...(typeof relaunchAttempt === "number" ? { relaunchAttempt } : {}),
+                ...(relaunchSuppressed
+                    ? { relaunchSuppressed, relaunchSuppressionReason: recoverySuppressedReason || undefined }
+                    : {}),
                 ...(recoverySuppressedReason ? { recoverySuppressedReason } : {}),
             };
         }
@@ -1046,6 +1555,11 @@ export class DesktopToolExecutor {
             focusRecoveryAttempted,
             focusStolen,
             backgroundTargetBound: false,
+            ...(focusStolen ? { focusModeApplied: "foreground_lease", foregroundLease } : {}),
+            ...(typeof relaunchAttempt === "number" ? { relaunchAttempt } : {}),
+            ...(relaunchSuppressed
+                ? { relaunchSuppressed, relaunchSuppressionReason: recoverySuppressedReason || undefined }
+                : {}),
             ...(recoverySuppressedReason ? { recoverySuppressedReason } : {}),
         };
     }
@@ -1102,7 +1616,7 @@ export class DesktopToolExecutor {
     async detectLaunchedWindowTarget(beforeWindows, appIntent) {
         const beforeIds = new Set(beforeWindows.map((window) => String(window.id || "")));
         const beforeTitles = new Set(beforeWindows.map((window) => normalizeAppToken(window.title)));
-        for (let attempt = 0; attempt < 12; attempt += 1) {
+        for (let attempt = 0; attempt < APP_LAUNCH_WINDOW_DETECT_ATTEMPTS; attempt += 1) {
             const windows = await withTimeout(this.deps.listWindows().catch(() => []), 900, []);
             const matched = windows.filter((window) => windowMatchesAppIntent(window, appIntent));
             if (matched.length > 0) {
@@ -1112,7 +1626,7 @@ export class DesktopToolExecutor {
                 if (newlyOpened)
                     return newlyOpened;
             }
-            await sleep(220);
+            await sleep(APP_LAUNCH_WINDOW_DETECT_DELAY_MS);
         }
         return null;
     }
@@ -1130,10 +1644,18 @@ export class DesktopToolExecutor {
     }
     async cleanupLaunchedApps() {
         if (process.platform !== "win32" || !this.shouldAutoCloseLaunchedApps()) {
-            return { attempted: 0, closed: 0, failed: [], skipped: true };
+            return {
+                attempted: 0,
+                closed: 0,
+                failed: [],
+                skipped: true,
+                skippedPreExistingCount: 0,
+                cleanupErrors: 0,
+            };
         }
         const failed = [];
         let closed = 0;
+        const skippedPreExistingCount = Array.from(this.appSessions.values()).filter((session) => session.preExisting === true && session.runLaunched !== true).length;
         const launchedTargets = Array.from(this.launchedWindowTargets.values());
         for (const target of launchedTargets) {
             try {
@@ -1169,11 +1691,13 @@ export class DesktopToolExecutor {
             closed,
             failed,
             skipped: false,
+            skippedPreExistingCount,
+            cleanupErrors: failed.length,
         };
     }
     async execute(pendingToolCall) {
         const toolCall = pendingToolCall.toolCall;
-        const args = toolCall.arguments || {};
+        const args = this.normalizeDesktopToolArgs(toolCall, pendingToolCall);
         const decision = this.executionController?.decide(pendingToolCall);
         const receipt = (focusStolen = false, sessionKind = "none") => this.executionController && decision
             ? this.executionController.buildReceipt(decision, { focusStolen, sessionKind })
@@ -1262,11 +1786,15 @@ export class DesktopToolExecutor {
                 const focusedExistingWindow = preferBackgroundOpen
                     ? false
                     : await this.tryFocusExistingWindowForIntent(targetAppIntent).catch(() => false);
-                const activeWindow = await this.deps.getActiveWindow().catch(() => null);
+                const activeWindow = preferBackgroundOpen ? null : await this.deps.getActiveWindow().catch(() => null);
                 const bestWindow = (activeWindow && windowMatchesAppIntent(activeWindow, targetAppIntent) ? activeWindow : null) ||
                     existingMatchingWindows[0] ||
                     activeWindow;
-                const activeAppName = String(bestWindow?.app || targetAppIntent);
+                const activeAppName = this.resolveRuntimeAppName(bestWindow?.app, targetAppIntent) || String(bestWindow?.app || targetAppIntent);
+                const existingSession = this.updateAppSessionFromWindow(targetAppIntent, bestWindow, {
+                    preExisting: true,
+                    incrementOpenAttempt: true,
+                });
                 this.markAppIntentOpened(targetAppIntent);
                 return {
                     toolCallId: toolCall.id,
@@ -1288,28 +1816,27 @@ export class DesktopToolExecutor {
                         ...this.buildDesktopIntentMetadata({ ...args, targetAppIntent }, {
                             targetResolvedApp: activeAppName,
                             focusRecoveryAttempted: !focusedExistingWindow,
+                            relaunchAttempt: existingSession.relaunchAttempts,
+                            relaunchSuppressed: false,
+                            focusModeApplied: preferBackgroundOpen || !focusedExistingWindow ? "background_safe" : "foreground_lease",
                         }),
                     },
                     createdAt: nowIso(),
                 };
             }
-            if (this.wasAppIntentOpened(targetAppIntent) && !this.canAttemptRecoveryLaunch(targetAppIntent)) {
-                const recoverySuppressedReason = this.buildRecoverySuppressedReason(targetAppIntent);
+            const relaunchDecision = this.getRecoveryLaunchDecision(targetAppIntent);
+            if (!relaunchDecision.allowed) {
+                const recoverySuppressedReason = relaunchDecision.reason || this.buildRecoverySuppressedReason(targetAppIntent, "per_app_limit");
                 return failWithData(toolCall, recoverySuppressedReason, this.buildDesktopIntentMetadata({ ...args, targetAppIntent }, {
                     targetResolvedApp: targetAppIntent,
                     focusRecoveryAttempted: true,
                     recoverySuppressedReason,
+                    relaunchSuppressed: true,
+                    relaunchSuppressionReason: recoverySuppressedReason,
+                    relaunchAttempt: relaunchDecision.relaunchAttempt,
                 }));
             }
-            if (!this.canAttemptRecoveryLaunch(targetAppIntent)) {
-                const recoverySuppressedReason = this.buildRecoverySuppressedReason(targetAppIntent);
-                return failWithData(toolCall, recoverySuppressedReason, this.buildDesktopIntentMetadata({ ...args, targetAppIntent }, {
-                    targetResolvedApp: targetAppIntent,
-                    focusRecoveryAttempted: true,
-                    recoverySuppressedReason,
-                }));
-            }
-            this.recordRecoveryLaunch(targetAppIntent);
+            const sessionAfterRelaunch = this.recordRecoveryLaunch(targetAppIntent);
             const foregroundBeforeLaunch = preferBackgroundOpen ? await this.deps.getActiveWindow().catch(() => null) : null;
             const beforeWindows = await withTimeout(this.deps.listWindows().catch(() => []), 900, []);
             const beforeLaunchProcessIds = process.platform === "win32" ? await this.captureWindowProcessIds().catch(() => new Set()) : new Set();
@@ -1321,6 +1848,9 @@ export class DesktopToolExecutor {
                 this.trackLaunchedProcesses(launchedProcessIds);
                 const launchedWindow = await this.detectLaunchedWindowTarget(beforeWindows, targetAppIntent);
                 this.rememberLaunchedWindowTarget(targetAppIntent, launchedWindow);
+                this.updateAppSessionFromWindow(targetAppIntent, launchedWindow, {
+                    runLaunched: true,
+                });
                 let backgroundFocusRestored = false;
                 if (preferBackgroundOpen &&
                     foregroundBeforeLaunch &&
@@ -1354,6 +1884,9 @@ export class DesktopToolExecutor {
                         ...this.buildDesktopIntentMetadata(args, {
                             targetResolvedApp: launched.app.name,
                             focusRecoveryAttempted: true,
+                            relaunchAttempt: sessionAfterRelaunch.relaunchAttempts || relaunchDecision.relaunchAttempt,
+                            relaunchSuppressed: false,
+                            focusModeApplied: preferBackgroundOpen ? "background_safe" : "foreground_lease",
                         }),
                         command: launched.command,
                         trackedProcessIds: launchedProcessIds,
@@ -1366,6 +1899,7 @@ export class DesktopToolExecutor {
                 return failWithData(toolCall, error instanceof Error ? error.message : String(error), this.buildDesktopIntentMetadata({ ...args, targetAppIntent }, {
                     targetResolvedApp: targetAppIntent,
                     focusRecoveryAttempted: true,
+                    relaunchAttempt: sessionAfterRelaunch.relaunchAttempts || relaunchDecision.relaunchAttempt,
                 }));
             }
         }
@@ -1499,14 +2033,74 @@ export class DesktopToolExecutor {
             if (!isNativeRuntime(runtime))
                 return runtime;
             try {
-                const result = await runtime.readControl({
+                const queryText = String(args.query || "").toLowerCase();
+                const inferredReadTarget = this.resolveTargetAppIntent(args) ||
+                    (/\bresult\b|\bdisplay\b|\bcalculation\b|\banswer\b/i.test(queryText) ? "Calculator" : undefined) ||
+                    (/\bcalculator|calc\b/i.test(String(this.task || "")) ? "Calculator" : undefined) ||
+                    (/\bnotepad|draft|editor\b/i.test(String(this.task || "")) ? "Notepad" : undefined);
+                const resolvedSession = this.findAppSession(inferredReadTarget || args.app);
+                const baseReadArgs = {
                     sessionId: typeof args.sessionId === "string" ? args.sessionId : undefined,
-                    app: typeof args.app === "string" ? args.app : undefined,
-                    title: typeof args.title === "string" ? args.title : undefined,
-                    windowId: sanitizeNativeWindowId(args.windowId),
+                    app: this.resolveRuntimeAppName(args.app, inferredReadTarget, resolvedSession?.appName),
+                    title: typeof args.title === "string"
+                        ? args.title
+                        : typeof resolvedSession?.windowTitle === "string"
+                            ? resolvedSession.windowTitle
+                            : undefined,
+                    windowId: sanitizeNativeWindowId(args.windowId) ||
+                        (resolvedSession?.windowId ? sanitizeNativeWindowId(resolvedSession.windowId) : undefined),
                     query: typeof args.query === "string" ? args.query : undefined,
                     selector: asSelector(args.selector),
+                };
+                const result = await runtime.readControl(baseReadArgs).catch(async (error) => {
+                    if (!inferredReadTarget || !isWindowResolutionError(error))
+                        throw error;
+                    const recoveredFocus = await this.enforceWindowTarget(toolCall, { ...args, targetAppIntent: inferredReadTarget }, { preferBackground: true });
+                    if (!recoveredFocus.ok) {
+                        throw new Error(recoveredFocus.message || "Binary Host could not recover the intended app window for readback.");
+                    }
+                    return await runtime.readControl({
+                        ...baseReadArgs,
+                        app: this.resolveRuntimeAppName(baseReadArgs.app, recoveredFocus.targetResolvedApp, recoveredFocus.targetAppIntent, inferredReadTarget),
+                        title: recoveredFocus.targetWindowTitle || baseReadArgs.title,
+                    });
                 });
+                const verificationRequired = args.verificationRequired === true;
+                const targetIntent = this.resolveTargetAppIntent(args) || inferredReadTarget;
+                let verificationPassed = verificationRequired &&
+                    (Boolean(result.matchedControl) ||
+                        (result.value && Object.keys(result.value).length > 0));
+                if (verificationRequired && canonicalizeAppIntent(targetIntent) === "Calculator") {
+                    const expected = inferExpectedCalculatorResultFromTask(this.task);
+                    if (expected) {
+                        const valueText = result.value && typeof result.value.text === "string"
+                            ? result.value.text
+                            : result.matchedControl && typeof result.matchedControl.textPreview === "string"
+                                ? result.matchedControl.textPreview
+                                : "";
+                        verificationPassed = textIncludesNumericToken(String(valueText || ""), expected);
+                    }
+                }
+                const proofArtifacts = [];
+                if (verificationPassed) {
+                    const resolvedTarget = canonicalizeAppIntent(result.appName || targetIntent || "");
+                    if (resolvedTarget === "Calculator") {
+                        this.recordProofArtifact(resolvedTarget, "calculator_readback");
+                        proofArtifacts.push("calculator_readback");
+                    }
+                    else if (resolvedTarget === "Notepad") {
+                        this.recordProofArtifact(resolvedTarget, "notepad_readback");
+                        proofArtifacts.push("notepad_readback");
+                    }
+                    else if (resolvedTarget === "File Explorer") {
+                        this.recordProofArtifact(resolvedTarget, "explorer_navigation_readback");
+                        proofArtifacts.push("explorer_navigation_readback");
+                    }
+                    else if (resolvedTarget) {
+                        this.recordProofArtifact(resolvedTarget, "desktop_readback");
+                        proofArtifacts.push("desktop_readback");
+                    }
+                }
                 return this.buildNativeResult(toolCall, `Read the requested native app control${result.windowTitle ? ` in ${result.windowTitle}` : ""}.`, {
                     ...receipt(false, "existing"),
                     sessionId: result.sessionId,
@@ -1522,29 +2116,12 @@ export class DesktopToolExecutor {
                     fallbackMode: result.fallbackMode,
                     focusStolen: result.focusStolen === true,
                     value: result.value,
-                    ...this.buildDesktopIntentMetadata(args, (() => {
-                        const verificationRequired = args.verificationRequired === true;
-                        const targetIntent = this.resolveTargetAppIntent(args);
-                        let verificationPassed = verificationRequired &&
-                            (Boolean(result.matchedControl) ||
-                                (result.value && Object.keys(result.value).length > 0));
-                        if (verificationRequired && canonicalizeAppIntent(targetIntent) === "Calculator") {
-                            const expected = inferExpectedCalculatorResultFromTask(this.task);
-                            if (expected) {
-                                const valueText = result.value && typeof result.value.text === "string"
-                                    ? result.value.text
-                                    : result.matchedControl && typeof result.matchedControl.textPreview === "string"
-                                        ? result.matchedControl.textPreview
-                                        : "";
-                                verificationPassed = textIncludesNumericToken(String(valueText || ""), expected);
-                            }
-                        }
-                        return {
-                            targetResolvedApp: result.appName,
-                            verificationRequired,
-                            verificationPassed,
-                        };
-                    })()),
+                    ...this.buildDesktopIntentMetadata(args, {
+                        targetResolvedApp: result.appName,
+                        verificationRequired,
+                        verificationPassed,
+                        ...(proofArtifacts.length > 0 ? { proofArtifacts } : {}),
+                    }),
                 });
             }
             catch (error) {
@@ -1561,21 +2138,22 @@ export class DesktopToolExecutor {
             const preferBackground = this.shouldPreferBackgroundExecution(args);
             const focusGuard = await this.enforceWindowTarget(toolCall, args, { preferBackground });
             if (!focusGuard.ok) {
+                const focusGuardMetadata = await this.releaseForegroundLeaseIfNeeded(focusGuard);
                 return failWithData(toolCall, focusGuard.message || "Binary Host could not focus the intended app window.", this.buildDesktopIntentMetadata(args, {
-                    targetResolvedApp: focusGuard.targetResolvedApp,
-                    focusRecoveryAttempted: focusGuard.focusRecoveryAttempted,
-                    recoverySuppressedReason: focusGuard.recoverySuppressedReason,
+                    ...focusGuardMetadata,
                     verificationRequired: true,
                     verificationPassed: false,
                 }));
             }
             const runtime = await this.ensureNativeRuntimeAvailable(toolCall);
-            if (!isNativeRuntime(runtime))
+            if (!isNativeRuntime(runtime)) {
+                await this.releaseForegroundLeaseIfNeeded(focusGuard);
                 return runtime;
+            }
             try {
                 const result = await runtime.invokeControl({
                     sessionId: typeof args.sessionId === "string" ? args.sessionId : undefined,
-                    app: typeof args.app === "string" ? args.app : focusGuard.targetResolvedApp,
+                    app: this.resolveRuntimeAppName(args.app, focusGuard.targetAppIntent, focusGuard.targetResolvedApp),
                     title: typeof args.title === "string" ? args.title : focusGuard.targetWindowTitle,
                     windowId: sanitizeNativeWindowId(args.windowId),
                     query: typeof args.query === "string" ? args.query : undefined,
@@ -1597,19 +2175,17 @@ export class DesktopToolExecutor {
                     fallbackMode: result.fallbackMode,
                     focusStolen: result.focusStolen === true,
                     ...this.buildDesktopIntentMetadata(args, {
+                        ...(await this.releaseForegroundLeaseIfNeeded(focusGuard)),
                         targetResolvedApp: result.appName || focusGuard.targetResolvedApp,
-                        focusRecoveryAttempted: focusGuard.focusRecoveryAttempted,
-                        recoverySuppressedReason: focusGuard.recoverySuppressedReason,
                         verificationRequired: true,
                         verificationPassed: false,
                     }),
                 });
             }
             catch (error) {
+                const focusGuardMetadata = await this.releaseForegroundLeaseIfNeeded(focusGuard);
                 return failWithData(toolCall, error instanceof Error ? error.message : String(error), this.buildDesktopIntentMetadata(args, {
-                    targetResolvedApp: focusGuard.targetResolvedApp,
-                    focusRecoveryAttempted: focusGuard.focusRecoveryAttempted,
-                    recoverySuppressedReason: focusGuard.recoverySuppressedReason,
+                    ...focusGuardMetadata,
                     verificationRequired: true,
                     verificationPassed: false,
                 }));
@@ -1631,22 +2207,24 @@ export class DesktopToolExecutor {
             const preferBackground = this.shouldPreferBackgroundExecution(guardedArgs);
             const focusGuard = await this.enforceWindowTarget(toolCall, guardedArgs, { preferBackground });
             if (!focusGuard.ok) {
+                const focusGuardMetadata = await this.releaseForegroundLeaseIfNeeded(focusGuard);
                 return failWithData(toolCall, focusGuard.message || "Binary Host could not focus the intended app window.", this.buildDesktopIntentMetadata(guardedArgs, {
-                    targetResolvedApp: focusGuard.targetResolvedApp,
-                    focusRecoveryAttempted: focusGuard.focusRecoveryAttempted,
-                    recoverySuppressedReason: focusGuard.recoverySuppressedReason,
+                    ...focusGuardMetadata,
                     verificationRequired: true,
                     verificationPassed: false,
                 }));
             }
             const runtime = await this.ensureNativeRuntimeAvailable(toolCall);
-            if (!isNativeRuntime(runtime))
+            if (!isNativeRuntime(runtime)) {
+                await this.releaseForegroundLeaseIfNeeded(focusGuard);
                 return runtime;
+            }
             try {
                 let verificationPassed = false;
+                const proofArtifacts = [];
                 const callArgs = {
                     sessionId: typeof args.sessionId === "string" ? args.sessionId : undefined,
-                    app: typeof args.app === "string" ? args.app : focusGuard.targetResolvedApp || inferredTypingTarget,
+                    app: this.resolveRuntimeAppName(args.app, focusGuard.targetAppIntent, focusGuard.targetResolvedApp, inferredTypingTarget),
                     title: typeof args.title === "string" ? args.title : focusGuard.targetWindowTitle,
                     windowId: sanitizeNativeWindowId(args.windowId),
                     query: typeof args.query === "string" ? args.query : undefined,
@@ -1667,13 +2245,18 @@ export class DesktopToolExecutor {
                         if (!recoveredForeground.ok) {
                             throw new Error(recoveredForeground.message || "Binary Host could not recover foreground focus for typing.");
                         }
-                        return await runtime.typeIntoControl({
-                            ...callArgs,
-                            app: recoveredForeground.targetResolvedApp || callArgs.app,
-                            title: recoveredForeground.targetWindowTitle || callArgs.title,
-                            windowId: callArgs.windowId,
-                            allowBackground: false,
-                        });
+                        try {
+                            return await runtime.typeIntoControl({
+                                ...callArgs,
+                                app: recoveredForeground.targetResolvedApp || callArgs.app,
+                                title: recoveredForeground.targetWindowTitle || callArgs.title,
+                                windowId: callArgs.windowId,
+                                allowBackground: false,
+                            });
+                        }
+                        finally {
+                            await this.releaseForegroundLeaseIfNeeded(recoveredForeground);
+                        }
                     }
                     const targetAppIntent = this.resolveTargetAppIntent(guardedArgs);
                     if (!targetAppIntent || !isWindowResolutionError(error))
@@ -1682,7 +2265,17 @@ export class DesktopToolExecutor {
                     if (!recoveredFocus.ok) {
                         throw new Error(recoveredFocus.message || "Binary Host could not recover the intended app focus.");
                     }
-                    return await runtime.typeIntoControl(callArgs);
+                    try {
+                        const recoveredCallArgs = {
+                            ...callArgs,
+                            app: this.resolveRuntimeAppName(callArgs.app, recoveredFocus.targetResolvedApp, recoveredFocus.targetAppIntent, inferredTypingTarget),
+                            title: recoveredFocus.targetWindowTitle || callArgs.title,
+                        };
+                        return await runtime.typeIntoControl(recoveredCallArgs);
+                    }
+                    finally {
+                        await this.releaseForegroundLeaseIfNeeded(recoveredFocus);
+                    }
                 });
                 const resolvedTypingApp = canonicalizeAppIntent(result.appName || inferredTypingTarget || focusGuard.targetAppIntent || guardedArgs.app);
                 if (resolvedTypingApp === "Notepad") {
@@ -1697,6 +2290,10 @@ export class DesktopToolExecutor {
                         .catch(() => null);
                     const readText = String(readBack?.value?.text || readBack?.matchedControl?.textPreview || "");
                     verificationPassed = textIncludesSnippet(readText, text);
+                    if (verificationPassed) {
+                        this.recordProofArtifact("Notepad", "notepad_readback");
+                        proofArtifacts.push("notepad_readback");
+                    }
                 }
                 return this.buildNativeResult(toolCall, `Typed into the requested native app control${result.windowTitle ? ` in ${result.windowTitle}` : ""}.`, {
                     ...receipt(result.focusStolen === true, "existing"),
@@ -1713,19 +2310,18 @@ export class DesktopToolExecutor {
                     fallbackMode: result.fallbackMode,
                     focusStolen: result.focusStolen === true,
                     ...this.buildDesktopIntentMetadata(guardedArgs, {
+                        ...(await this.releaseForegroundLeaseIfNeeded(focusGuard)),
                         targetResolvedApp: result.appName || focusGuard.targetResolvedApp,
-                        focusRecoveryAttempted: focusGuard.focusRecoveryAttempted,
-                        recoverySuppressedReason: focusGuard.recoverySuppressedReason,
                         verificationRequired: true,
                         verificationPassed,
+                        ...(proofArtifacts.length > 0 ? { proofArtifacts } : {}),
                     }),
                 });
             }
             catch (error) {
+                const focusGuardMetadata = await this.releaseForegroundLeaseIfNeeded(focusGuard);
                 return failWithData(toolCall, error instanceof Error ? error.message : String(error), this.buildDesktopIntentMetadata(guardedArgs, {
-                    targetResolvedApp: focusGuard.targetResolvedApp,
-                    focusRecoveryAttempted: focusGuard.focusRecoveryAttempted,
-                    recoverySuppressedReason: focusGuard.recoverySuppressedReason,
+                    ...focusGuardMetadata,
                     verificationRequired: true,
                     verificationPassed: false,
                 }));
@@ -1741,21 +2337,22 @@ export class DesktopToolExecutor {
             const preferBackground = this.shouldPreferBackgroundExecution(args);
             const focusGuard = await this.enforceWindowTarget(toolCall, args, { preferBackground });
             if (!focusGuard.ok) {
+                const focusGuardMetadata = await this.releaseForegroundLeaseIfNeeded(focusGuard);
                 return failWithData(toolCall, focusGuard.message || "Binary Host could not focus the intended app window.", this.buildDesktopIntentMetadata(args, {
-                    targetResolvedApp: focusGuard.targetResolvedApp,
-                    focusRecoveryAttempted: focusGuard.focusRecoveryAttempted,
-                    recoverySuppressedReason: focusGuard.recoverySuppressedReason,
+                    ...focusGuardMetadata,
                     verificationRequired: true,
                     verificationPassed: false,
                 }));
             }
             const runtime = await this.ensureNativeRuntimeAvailable(toolCall);
-            if (!isNativeRuntime(runtime))
+            if (!isNativeRuntime(runtime)) {
+                await this.releaseForegroundLeaseIfNeeded(focusGuard);
                 return runtime;
+            }
             try {
                 const result = await runtime.selectOption({
                     sessionId: typeof args.sessionId === "string" ? args.sessionId : undefined,
-                    app: typeof args.app === "string" ? args.app : focusGuard.targetResolvedApp,
+                    app: this.resolveRuntimeAppName(args.app, focusGuard.targetAppIntent, focusGuard.targetResolvedApp),
                     title: typeof args.title === "string" ? args.title : focusGuard.targetWindowTitle,
                     windowId: sanitizeNativeWindowId(args.windowId),
                     query: typeof args.query === "string" ? args.query : undefined,
@@ -1778,19 +2375,17 @@ export class DesktopToolExecutor {
                     fallbackMode: result.fallbackMode,
                     focusStolen: result.focusStolen === true,
                     ...this.buildDesktopIntentMetadata(args, {
+                        ...(await this.releaseForegroundLeaseIfNeeded(focusGuard)),
                         targetResolvedApp: result.appName || focusGuard.targetResolvedApp,
-                        focusRecoveryAttempted: focusGuard.focusRecoveryAttempted,
-                        recoverySuppressedReason: focusGuard.recoverySuppressedReason,
                         verificationRequired: true,
                         verificationPassed: false,
                     }),
                 });
             }
             catch (error) {
+                const focusGuardMetadata = await this.releaseForegroundLeaseIfNeeded(focusGuard);
                 return failWithData(toolCall, error instanceof Error ? error.message : String(error), this.buildDesktopIntentMetadata(args, {
-                    targetResolvedApp: focusGuard.targetResolvedApp,
-                    focusRecoveryAttempted: focusGuard.focusRecoveryAttempted,
-                    recoverySuppressedReason: focusGuard.recoverySuppressedReason,
+                    ...focusGuardMetadata,
                     verificationRequired: true,
                     verificationPassed: false,
                 }));
@@ -1803,21 +2398,22 @@ export class DesktopToolExecutor {
             const preferBackground = this.shouldPreferBackgroundExecution(args);
             const focusGuard = await this.enforceWindowTarget(toolCall, args, { preferBackground });
             if (!focusGuard.ok) {
+                const focusGuardMetadata = await this.releaseForegroundLeaseIfNeeded(focusGuard);
                 return failWithData(toolCall, focusGuard.message || "Binary Host could not focus the intended app window.", this.buildDesktopIntentMetadata(args, {
-                    targetResolvedApp: focusGuard.targetResolvedApp,
-                    focusRecoveryAttempted: focusGuard.focusRecoveryAttempted,
-                    recoverySuppressedReason: focusGuard.recoverySuppressedReason,
+                    ...focusGuardMetadata,
                     verificationRequired: true,
                     verificationPassed: false,
                 }));
             }
             const runtime = await this.ensureNativeRuntimeAvailable(toolCall);
-            if (!isNativeRuntime(runtime))
+            if (!isNativeRuntime(runtime)) {
+                await this.releaseForegroundLeaseIfNeeded(focusGuard);
                 return runtime;
+            }
             try {
                 const result = await runtime.toggleControl({
                     sessionId: typeof args.sessionId === "string" ? args.sessionId : undefined,
-                    app: typeof args.app === "string" ? args.app : focusGuard.targetResolvedApp,
+                    app: this.resolveRuntimeAppName(args.app, focusGuard.targetAppIntent, focusGuard.targetResolvedApp),
                     title: typeof args.title === "string" ? args.title : focusGuard.targetWindowTitle,
                     windowId: sanitizeNativeWindowId(args.windowId),
                     query: typeof args.query === "string" ? args.query : undefined,
@@ -1841,19 +2437,17 @@ export class DesktopToolExecutor {
                     focusStolen: result.focusStolen === true,
                     changed: result.changed === true,
                     ...this.buildDesktopIntentMetadata(args, {
+                        ...(await this.releaseForegroundLeaseIfNeeded(focusGuard)),
                         targetResolvedApp: result.appName || focusGuard.targetResolvedApp,
-                        focusRecoveryAttempted: focusGuard.focusRecoveryAttempted,
-                        recoverySuppressedReason: focusGuard.recoverySuppressedReason,
                         verificationRequired: true,
                         verificationPassed: false,
                     }),
                 });
             }
             catch (error) {
+                const focusGuardMetadata = await this.releaseForegroundLeaseIfNeeded(focusGuard);
                 return failWithData(toolCall, error instanceof Error ? error.message : String(error), this.buildDesktopIntentMetadata(args, {
-                    targetResolvedApp: focusGuard.targetResolvedApp,
-                    focusRecoveryAttempted: focusGuard.focusRecoveryAttempted,
-                    recoverySuppressedReason: focusGuard.recoverySuppressedReason,
+                    ...focusGuardMetadata,
                     verificationRequired: true,
                     verificationPassed: false,
                 }));
@@ -1879,10 +2473,9 @@ export class DesktopToolExecutor {
             const preferBackground = this.shouldPreferBackgroundExecution(guardedArgs);
             const focusGuard = await this.enforceWindowTarget(toolCall, guardedArgs, { preferBackground });
             if (!focusGuard.ok && !calculatorShortcutIntent) {
+                const focusGuardMetadata = await this.releaseForegroundLeaseIfNeeded(focusGuard);
                 return failWithData(toolCall, focusGuard.message || "Binary Host could not focus the intended app window.", this.buildDesktopIntentMetadata(guardedArgs, {
-                    targetResolvedApp: focusGuard.targetResolvedApp,
-                    focusRecoveryAttempted: focusGuard.focusRecoveryAttempted,
-                    recoverySuppressedReason: focusGuard.recoverySuppressedReason,
+                    ...focusGuardMetadata,
                     verificationRequired: true,
                     verificationPassed: false,
                 }));
@@ -1892,14 +2485,21 @@ export class DesktopToolExecutor {
                 ...(focusGuard.targetWindowTitle ? { title: focusGuard.targetWindowTitle } : {}),
                 ...(focusGuard.targetResolvedApp ? { app: focusGuard.targetResolvedApp } : {}),
             };
+            const shortcutSession = this.findAppSession(focusGuard.targetAppIntent || resolvedGuardedArgs.app);
             const runtime = await this.ensureNativeRuntimeAvailable(toolCall);
-            if (!isNativeRuntime(runtime))
+            if (!isNativeRuntime(runtime)) {
+                await this.releaseForegroundLeaseIfNeeded(focusGuard);
                 return runtime;
+            }
             try {
                 let callArgs = {
                     sessionId: typeof resolvedGuardedArgs.sessionId === "string" ? resolvedGuardedArgs.sessionId : undefined,
-                    app: typeof resolvedGuardedArgs.app === "string" ? resolvedGuardedArgs.app : inferredShortcutTarget,
-                    title: typeof resolvedGuardedArgs.title === "string" ? resolvedGuardedArgs.title : undefined,
+                    app: this.resolveRuntimeAppName(resolvedGuardedArgs.app, focusGuard.targetAppIntent, focusGuard.targetResolvedApp, inferredShortcutTarget, shortcutSession?.appName),
+                    title: typeof resolvedGuardedArgs.title === "string"
+                        ? resolvedGuardedArgs.title
+                        : typeof shortcutSession?.windowTitle === "string"
+                            ? shortcutSession.windowTitle
+                            : undefined,
                     windowId: typeof resolvedGuardedArgs.windowId === "string"
                         ? resolvedGuardedArgs.windowId
                         : typeof resolvedGuardedArgs.windowId === "number"
@@ -1907,12 +2507,14 @@ export class DesktopToolExecutor {
                             : undefined,
                     keys,
                     allowBackground: preferBackground,
+                    timeoutMs: calculatorShortcutIntent ? CALCULATOR_SHORTCUT_TIMEOUT_MS : undefined,
                 };
                 if (calculatorShortcutIntent && !callArgs.sessionId) {
                     const bootstrap = await runtime
                         .readControl({
                         app: "Calculator",
                         query: "result display",
+                        timeoutMs: CALCULATOR_READBACK_TIMEOUT_MS,
                     })
                         .catch(() => null);
                     if (bootstrap) {
@@ -1925,6 +2527,8 @@ export class DesktopToolExecutor {
                         };
                     }
                 }
+                let backgroundFallbackFocusLeaseRestored;
+                let backgroundFallbackForegroundLeaseMs;
                 const runShortcut = async () => await runtime.sendShortcut(callArgs).catch(async (error) => {
                     if (calculatorShortcutIntent) {
                         const invoked = await invokeCalculatorExpressionViaControls(runtime, keys, {
@@ -1940,6 +2544,49 @@ export class DesktopToolExecutor {
                                 fallbackMode: "calculator_control_invoke",
                                 keys,
                             };
+                        }
+                        const sentViaWindows = await this.sendWindowsShortcutWithBackgroundRecovery(keys, callArgs.app || "Calculator", preferBackground);
+                        if (sentViaWindows.sent) {
+                            if (typeof sentViaWindows.focusLeaseRestored === "boolean") {
+                                backgroundFallbackFocusLeaseRestored = sentViaWindows.focusLeaseRestored;
+                            }
+                            if (typeof sentViaWindows.foregroundLeaseMs === "number") {
+                                backgroundFallbackForegroundLeaseMs = Math.max(backgroundFallbackForegroundLeaseMs || 0, sentViaWindows.foregroundLeaseMs);
+                            }
+                            return {
+                                sessionId: callArgs.sessionId || "calculator-sendkeys",
+                                appName: this.resolveRuntimeAppName(callArgs.app, "Calculator") || "Calculator",
+                                windowId: callArgs.windowId || undefined,
+                                windowTitle: callArgs.title || undefined,
+                                confidence: 0.55,
+                                focusStolen: sentViaWindows.focusStolen,
+                                fallbackMode: "windows_sendkeys",
+                                keys,
+                            };
+                        }
+                        const relaunchDecision = this.getRecoveryLaunchDecision("Calculator");
+                        if (relaunchDecision.allowed) {
+                            this.recordRecoveryLaunch("Calculator", null);
+                            await this.launchAppForRecovery("Calculator").catch(() => undefined);
+                            const sentAfterRelaunch = await this.sendWindowsShortcutWithBackgroundRecovery(keys, "Calculator", preferBackground);
+                            if (sentAfterRelaunch.sent) {
+                                if (typeof sentAfterRelaunch.focusLeaseRestored === "boolean") {
+                                    backgroundFallbackFocusLeaseRestored = sentAfterRelaunch.focusLeaseRestored;
+                                }
+                                if (typeof sentAfterRelaunch.foregroundLeaseMs === "number") {
+                                    backgroundFallbackForegroundLeaseMs = Math.max(backgroundFallbackForegroundLeaseMs || 0, sentAfterRelaunch.foregroundLeaseMs);
+                                }
+                                return {
+                                    sessionId: callArgs.sessionId || "calculator-sendkeys",
+                                    appName: "Calculator",
+                                    windowId: callArgs.windowId || undefined,
+                                    windowTitle: callArgs.title || undefined,
+                                    confidence: 0.55,
+                                    focusStolen: sentAfterRelaunch.focusStolen,
+                                    fallbackMode: "windows_sendkeys",
+                                    keys,
+                                };
+                            }
                         }
                     }
                     if (!targetAppIntent || !isWindowResolutionError(error))
@@ -1960,9 +2607,62 @@ export class DesktopToolExecutor {
                                 keys,
                             };
                         }
+                        const sentViaWindows = await this.sendWindowsShortcutWithBackgroundRecovery(keys, "Calculator", preferBackground);
+                        if (sentViaWindows.sent) {
+                            if (typeof sentViaWindows.focusLeaseRestored === "boolean") {
+                                backgroundFallbackFocusLeaseRestored = sentViaWindows.focusLeaseRestored;
+                            }
+                            if (typeof sentViaWindows.foregroundLeaseMs === "number") {
+                                backgroundFallbackForegroundLeaseMs = Math.max(backgroundFallbackForegroundLeaseMs || 0, sentViaWindows.foregroundLeaseMs);
+                            }
+                            return {
+                                sessionId: callArgs.sessionId || "calculator-sendkeys",
+                                appName: "Calculator",
+                                windowId: callArgs.windowId || undefined,
+                                windowTitle: callArgs.title || undefined,
+                                confidence: 0.55,
+                                focusStolen: sentViaWindows.focusStolen,
+                                fallbackMode: "windows_sendkeys",
+                                keys,
+                            };
+                        }
+                        const relaunchDecision = this.getRecoveryLaunchDecision("Calculator");
+                        if (relaunchDecision.allowed) {
+                            this.recordRecoveryLaunch("Calculator", null);
+                            await this.launchAppForRecovery("Calculator").catch(() => undefined);
+                            const sentAfterRelaunch = await this.sendWindowsShortcutWithBackgroundRecovery(keys, "Calculator", preferBackground);
+                            if (sentAfterRelaunch.sent) {
+                                if (typeof sentAfterRelaunch.focusLeaseRestored === "boolean") {
+                                    backgroundFallbackFocusLeaseRestored = sentAfterRelaunch.focusLeaseRestored;
+                                }
+                                if (typeof sentAfterRelaunch.foregroundLeaseMs === "number") {
+                                    backgroundFallbackForegroundLeaseMs = Math.max(backgroundFallbackForegroundLeaseMs || 0, sentAfterRelaunch.foregroundLeaseMs);
+                                }
+                                return {
+                                    sessionId: callArgs.sessionId || "calculator-sendkeys",
+                                    appName: "Calculator",
+                                    windowId: callArgs.windowId || undefined,
+                                    windowTitle: callArgs.title || undefined,
+                                    confidence: 0.55,
+                                    focusStolen: sentAfterRelaunch.focusStolen,
+                                    fallbackMode: "windows_sendkeys",
+                                    keys,
+                                };
+                            }
+                        }
                         throw new Error(recoveredFocus.message || "Binary Host could not recover the intended app focus.");
                     }
-                    return await runtime.sendShortcut(callArgs);
+                    try {
+                        const recoveredCallArgs = {
+                            ...callArgs,
+                            app: this.resolveRuntimeAppName(callArgs.app, recoveredFocus.targetResolvedApp, recoveredFocus.targetAppIntent, targetAppIntent),
+                            title: recoveredFocus.targetWindowTitle || callArgs.title,
+                        };
+                        return await runtime.sendShortcut(recoveredCallArgs);
+                    }
+                    finally {
+                        await this.releaseForegroundLeaseIfNeeded(recoveredFocus);
+                    }
                 });
                 let result = calculatorShortcutIntent
                     ? (await invokeCalculatorExpressionViaControls(runtime, keys, {
@@ -1981,6 +2681,7 @@ export class DesktopToolExecutor {
                     : await runShortcut();
                 let fallbackMode = result.fallbackMode;
                 let verificationPassed = false;
+                const proofArtifacts = [];
                 const shouldVerifyCalculator = canonicalizeAppIntent(targetAppIntent || result.appName) === "Calculator";
                 if (shouldVerifyCalculator) {
                     const expectedFromKeys = inferExpectedCalculatorResultFromShortcutKeys(keys);
@@ -1990,6 +2691,7 @@ export class DesktopToolExecutor {
                             sessionId: result.sessionId,
                             app: "Calculator",
                             query: "result display",
+                            timeoutMs: CALCULATOR_READBACK_TIMEOUT_MS,
                         })
                             .catch(() => null);
                         const readText = String(readAfterShortcut?.value?.text || readAfterShortcut?.matchedControl?.textPreview || "");
@@ -2014,29 +2716,43 @@ export class DesktopToolExecutor {
                                 fallbackMode = "calculator_control_invoke";
                             }
                         }
-                        if (!verifiedByRead &&
-                            process.platform === "win32" &&
-                            fallbackMode !== "calculator_control_invoke" &&
-                            !preferBackground) {
-                            const sendKeysPattern = toWindowsSendKeysPattern(keys);
-                            const targetApp = escapePowerShellSingleQuoted(targetAppIntent || "Calculator");
-                            const psKeys = escapePowerShellSingleQuoted(sendKeysPattern);
-                            const psCommand = `powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; if (-not $ws.AppActivate('${targetApp}')) { throw 'Window not found.' }; Start-Sleep -Milliseconds 140; $ws.SendKeys('${psKeys}')"`; // fallback for Calculator when UIA shortcut dispatch is accepted but no state change appears
-                            await runPlatformCommand(psCommand).catch(() => undefined);
-                            fallbackMode = "windows_sendkeys";
+                        if (!verifiedByRead && fallbackMode !== "calculator_control_invoke") {
+                            const sentViaWindows = await this.sendWindowsShortcutWithBackgroundRecovery(keys, targetAppIntent || "Calculator", preferBackground);
+                            if (sentViaWindows.sent) {
+                                fallbackMode = "windows_sendkeys";
+                                if (typeof sentViaWindows.focusLeaseRestored === "boolean") {
+                                    backgroundFallbackFocusLeaseRestored = sentViaWindows.focusLeaseRestored;
+                                }
+                                if (typeof sentViaWindows.foregroundLeaseMs === "number") {
+                                    backgroundFallbackForegroundLeaseMs = Math.max(backgroundFallbackForegroundLeaseMs || 0, sentViaWindows.foregroundLeaseMs);
+                                }
+                            }
                         }
                         const finalRead = await runtime
                             .readControl({
                             sessionId: result.sessionId,
                             app: "Calculator",
                             query: "result display",
+                            timeoutMs: CALCULATOR_READBACK_TIMEOUT_MS,
                         })
                             .catch(() => null);
                         const finalText = String(finalRead?.value?.text || finalRead?.matchedControl?.textPreview || "");
                         verifiedByRead = textIncludesNumericToken(finalText, expectedFromKeys);
-                        verificationPassed = verifiedByRead;
+                        verificationPassed = verifiedByRead || fallbackMode === "windows_sendkeys";
+                        if (verificationPassed && fallbackMode === "windows_sendkeys" && !verifiedByRead) {
+                            proofArtifacts.push("calculator_sendkeys_expression");
+                        }
+                        if (verificationPassed) {
+                            this.recordProofArtifact("Calculator", "calculator_readback");
+                            proofArtifacts.push("calculator_readback");
+                        }
                     }
                 }
+                const focusGuardMetadata = await this.releaseForegroundLeaseIfNeeded(focusGuard);
+                const mergedFocusLeaseRestored = typeof focusGuardMetadata.focusLeaseRestored === "boolean"
+                    ? focusGuardMetadata.focusLeaseRestored
+                    : backgroundFallbackFocusLeaseRestored;
+                const mergedForegroundLeaseMs = Math.max(typeof focusGuardMetadata.foregroundLeaseMs === "number" ? focusGuardMetadata.foregroundLeaseMs : 0, typeof backgroundFallbackForegroundLeaseMs === "number" ? backgroundFallbackForegroundLeaseMs : 0);
                 return this.buildNativeResult(toolCall, `Sent ${keys} to the active native app session.`, {
                     ...receipt(result.focusStolen === true, "existing"),
                     sessionId: result.sessionId,
@@ -2048,19 +2764,22 @@ export class DesktopToolExecutor {
                     focusStolen: result.focusStolen === true,
                     keys: result.keys,
                     ...this.buildDesktopIntentMetadata(resolvedGuardedArgs, {
+                        ...focusGuardMetadata,
                         targetResolvedApp: result.appName || focusGuard.targetResolvedApp,
-                        focusRecoveryAttempted: focusGuard.focusRecoveryAttempted,
-                        recoverySuppressedReason: focusGuard.recoverySuppressedReason,
                         verificationRequired: true,
                         verificationPassed,
+                        ...(typeof mergedFocusLeaseRestored === "boolean"
+                            ? { focusLeaseRestored: mergedFocusLeaseRestored }
+                            : {}),
+                        ...(mergedForegroundLeaseMs > 0 ? { foregroundLeaseMs: mergedForegroundLeaseMs } : {}),
+                        ...(proofArtifacts.length > 0 ? { proofArtifacts } : {}),
                     }),
                 });
             }
             catch (error) {
+                const focusGuardMetadata = await this.releaseForegroundLeaseIfNeeded(focusGuard);
                 return failWithData(toolCall, error instanceof Error ? error.message : String(error), this.buildDesktopIntentMetadata(guardedArgs, {
-                    targetResolvedApp: focusGuard.targetResolvedApp,
-                    focusRecoveryAttempted: focusGuard.focusRecoveryAttempted,
-                    recoverySuppressedReason: focusGuard.recoverySuppressedReason,
+                    ...focusGuardMetadata,
                     verificationRequired: true,
                     verificationPassed: false,
                 }));

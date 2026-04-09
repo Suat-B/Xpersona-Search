@@ -106,6 +106,131 @@ export class BrowserToolExecutor {
         this.policy = policy;
         this.executionController = executionController;
     }
+    normalizeOrigin(value) {
+        const raw = String(value || "").trim().toLowerCase();
+        if (!raw)
+            return "";
+        try {
+            return new URL(raw).origin.toLowerCase();
+        }
+        catch {
+            if (/^[a-z0-9.-]+\.[a-z]{2,}(?::\d+)?$/i.test(raw)) {
+                return `https://${raw}`;
+            }
+            return raw;
+        }
+    }
+    resolveScreenshotReason(value) {
+        const normalized = String(value || "").trim().toLowerCase();
+        if (normalized === "explicit_user_request")
+            return "explicit_user_request";
+        if (normalized === "debug_mode")
+            return "debug_mode";
+        if (normalized === "proof_fallback")
+            return "proof_fallback";
+        return null;
+    }
+    inferIntentKind(toolName) {
+        switch (String(toolName || "").trim()) {
+            case "browser_search_and_open_best_result":
+                return "search";
+            case "browser_login_and_continue":
+                return "login";
+            case "browser_complete_form":
+                return "fill_form";
+            case "browser_extract_and_decide":
+                return "extract";
+            case "browser_recover_workflow":
+                return "recover";
+            case "browser_open_page":
+            case "browser_navigate":
+                return "open_site";
+            default:
+                return "verify";
+        }
+    }
+    requiresVerification(toolName) {
+        return [
+            "browser_search_and_open_best_result",
+            "browser_login_and_continue",
+            "browser_complete_form",
+            "browser_extract_and_decide",
+            "browser_recover_workflow",
+            "browser_click",
+            "browser_type",
+            "browser_press_keys",
+            "browser_navigate",
+        ].includes(String(toolName || "").trim());
+    }
+    inferDomProofArtifacts(toolName, proof) {
+        const artifacts = new Set();
+        const name = String(toolName || "").trim();
+        if (name.startsWith("browser_"))
+            artifacts.add("dom");
+        if (name === "browser_snapshot_dom" || name === "browser_query_elements" || name === "browser_read_form_state") {
+            artifacts.add("dom_snapshot");
+        }
+        if (name === "browser_get_network_activity")
+            artifacts.add("network");
+        if (name === "browser_get_console_messages")
+            artifacts.add("console");
+        if (proof && typeof proof === "object") {
+            if (typeof proof.eventCount === "number" && name === "browser_get_network_activity")
+                artifacts.add("network");
+            if (typeof proof.eventCount === "number" && name === "browser_get_console_messages")
+                artifacts.add("console");
+            if (typeof proof.interactiveElementCount === "number")
+                artifacts.add("dom_snapshot");
+        }
+        return [...artifacts];
+    }
+    buildBrowserMetadata(input) {
+        const intentKind = this.inferIntentKind(input.toolCall.name);
+        const fallbackPageId = typeof input.args.pageId === "string" ? input.args.pageId : undefined;
+        const pageFromData = input.data && typeof input.data.page === "object" && input.data.page
+            ? input.data.page
+            : input.data && typeof input.data.finalPage === "object" && input.data.finalPage
+                ? input.data.finalPage
+                : input.data && typeof input.data.searchPage === "object" && input.data.searchPage
+                    ? input.data.searchPage
+                    : null;
+        const targetOrigin = this.normalizeOrigin(input.args.targetOrigin) ||
+            this.normalizeOrigin(pageFromData?.origin) ||
+            this.normalizeOrigin(pageFromData?.url) ||
+            "";
+        const missionLease = input.data && typeof input.data.missionLease === "object" ? input.data.missionLease : null;
+        const pageLeaseId = (typeof input.args.pageLeaseId === "string" && input.args.pageLeaseId.trim()) ||
+            (typeof missionLease?.leaseId === "string" && missionLease.leaseId.trim()) ||
+            (typeof pageFromData?.id === "string" && pageFromData.id.trim()) ||
+            fallbackPageId ||
+            undefined;
+        const verificationRequired = input.verificationRequired ?? this.requiresVerification(input.toolCall.name);
+        const proof = input.data && typeof input.data.proof === "object" ? input.data.proof : undefined;
+        const domProofArtifacts = this.inferDomProofArtifacts(input.toolCall.name, proof);
+        return {
+            intentStepId: (typeof input.args.intentStepId === "string" && input.args.intentStepId.trim()) ||
+                `browser_step_${input.toolCall.id || "1"}`,
+            intentKind,
+            ...(pageLeaseId ? { pageLeaseId } : {}),
+            ...(targetOrigin ? { targetOrigin } : {}),
+            verificationRequired,
+            verificationPassed: input.verificationPassed ?? !verificationRequired,
+            domProofArtifacts,
+            screenshotCaptured: input.screenshotCaptured === true,
+            ...(input.screenshotReason ? { screenshotReason: input.screenshotReason } : {}),
+        };
+    }
+    async assertTargetGuards(args, pageId) {
+        const targetOrigin = String(args.targetOrigin || "").trim();
+        const pageLeaseId = String(args.pageLeaseId || "").trim();
+        if (!targetOrigin && !pageLeaseId)
+            return;
+        await this.runtime.assertPageTarget(this.policy, {
+            pageId,
+            ...(targetOrigin ? { targetOrigin } : {}),
+            ...(pageLeaseId ? { pageLeaseId } : {}),
+        });
+    }
     async resolvePageId(pageRef, allowActiveFallback = false) {
         const raw = String(pageRef || "").trim();
         let pages = await this.runtime.listPages(this.policy);
@@ -182,6 +307,18 @@ export class BrowserToolExecutor {
         const receipt = (focusStolen = false, sessionKind = "none") => this.executionController && decision
             ? this.executionController.buildReceipt(decision, { focusStolen, sessionKind })
             : {};
+        const withMetadata = (data, input = {}) => ({
+            ...data,
+            ...this.buildBrowserMetadata({
+                toolCall,
+                args,
+                data,
+                verificationRequired: input.verificationRequired,
+                verificationPassed: input.verificationPassed,
+                screenshotCaptured: input.screenshotCaptured,
+                screenshotReason: input.screenshotReason,
+            }),
+        });
         if (!this.policy.enabled || !this.policy.allowBrowserNative) {
             if (String(toolCall.name || "").startsWith("browser_")) {
                 return fail(toolCall, "Binary Host blocked browser-native automation because browser autonomy is disabled. Fall back to desktop_open_url or desktop tools only if the orchestrator decides that fallback is necessary.", true);
@@ -190,32 +327,50 @@ export class BrowserToolExecutor {
         if (decision?.focusSuppressed) {
             return {
                 ...fail(toolCall, decision.summary, true),
-                data: receipt(false, "none"),
+                data: withMetadata(receipt(false, "none"), {
+                    verificationRequired: this.requiresVerification(toolCall.name),
+                    verificationPassed: false,
+                }),
             };
         }
         try {
             if (toolCall.name === "browser_list_pages") {
                 const pages = await this.runtime.listPages(this.policy);
-                return ok(toolCall, `Observed ${pages.length} browser page(s).`, { ...receipt(false, sessionKind()), pages });
+                const data = { ...receipt(false, sessionKind()), pages };
+                return ok(toolCall, `Observed ${pages.length} browser page(s).`, withMetadata(data, {
+                    verificationRequired: false,
+                    verificationPassed: true,
+                }));
             }
             if (toolCall.name === "browser_get_active_page") {
                 const page = await this.runtime.getActivePage(this.policy);
-                return ok(toolCall, page ? `Active page ${page.id}: ${summarizePage(page)}` : summarizePage(page), { ...receipt(false, sessionKind()), page });
+                const data = { ...receipt(false, sessionKind()), page };
+                return ok(toolCall, page ? `Active page ${page.id}: ${summarizePage(page)}` : summarizePage(page), withMetadata(data, {
+                    verificationRequired: false,
+                    verificationPassed: true,
+                }));
             }
             if (toolCall.name === "browser_open_page") {
                 const url = String(args.url || "").trim();
                 if (!url)
                     return fail(toolCall, "browser_open_page requires a URL.");
                 const page = await this.runtime.openPage(this.policy, url);
-                return ok(toolCall, `Opened ${summarizePage(page)}.`, {
+                const data = {
                     ...receipt(decision?.executionVisibility === "visible_required", sessionKind()),
                     page,
                     proof: { url: page.url, title: page.title },
-                });
+                };
+                return ok(toolCall, `Opened ${summarizePage(page)}.`, withMetadata(data, {
+                    verificationRequired: false,
+                    verificationPassed: true,
+                }));
             }
             if (toolCall.name === "browser_search_and_open_best_result") {
                 let url = typeof args.url === "string" ? args.url.trim() : "";
                 const pageId = args.pageId ? await this.resolvePageId(args.pageId) : undefined;
+                if (pageId) {
+                    await this.assertTargetGuards(args, pageId);
+                }
                 let query = String(args.query || "").trim();
                 if (!url && !pageId) {
                     const inferredUrl = inferBrowserMissionUrlFromQuery(query);
@@ -235,9 +390,8 @@ export class BrowserToolExecutor {
                     ...(Number.isFinite(Number(args.limit)) ? { limit: clamp(Number(args.limit), 1, 24) } : {}),
                 }));
                 const lease = missionLeasePayload(result.missionLease);
-                return ok(toolCall, withLeaseConflictNote(result.clickedResult
-                    ? `Searched for ${query} and opened ${result.clickedResult.label || result.finalPage?.title || "the best result"}.`
-                    : `Searched for ${query} but could not find a confident result to open.`, lease), {
+                const verificationPassed = Boolean(result.clickedResult && result.finalPage);
+                const data = {
                     ...receipt(decision?.executionVisibility === "visible_required", sessionKind()),
                     searchPage: result.searchPage,
                     finalPage: result.finalPage,
@@ -257,12 +411,22 @@ export class BrowserToolExecutor {
                             }
                             : {}),
                     },
-                });
+                };
+                return ok(toolCall, withLeaseConflictNote(result.clickedResult
+                    ? `Searched for ${query} and opened ${result.clickedResult.label || result.finalPage?.title || "the best result"}.`
+                    : `Searched for ${query} but could not find a confident result to open.`, lease), withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed,
+                }));
             }
             if (toolCall.name === "browser_login_and_continue") {
+                const targetPageId = args.pageId ? await this.resolvePageId(args.pageId, true) : undefined;
+                if (targetPageId) {
+                    await this.assertTargetGuards(args, targetPageId);
+                }
                 const result = await runMission(async () => await this.runtime.loginAndContinue(this.policy, {
                     ...(typeof args.url === "string" && args.url.trim() ? { url: args.url.trim() } : {}),
-                    ...(args.pageId ? { pageId: await this.resolvePageId(args.pageId, true) } : {}),
+                    ...(targetPageId ? { pageId: targetPageId } : {}),
                     ...(typeof args.username === "string" ? { username: args.username } : {}),
                     ...(typeof args.password === "string" ? { password: args.password } : {}),
                     ...(typeof args.submitQuery === "string" ? { submitQuery: args.submitQuery } : {}),
@@ -271,9 +435,7 @@ export class BrowserToolExecutor {
                     ...(typeof args.waitForUrlIncludes === "string" ? { waitForUrlIncludes: args.waitForUrlIncludes } : {}),
                 }));
                 const lease = missionLeasePayload(result.missionLease);
-                return ok(toolCall, withLeaseConflictNote(result.authenticated
-                    ? "Completed the login workflow and verified the page continued."
-                    : "Attempted the login workflow, but Binary could not fully verify the authenticated state.", lease), {
+                const data = {
                     ...receipt(decision?.executionVisibility === "visible_required", sessionKind()),
                     startPage: result.startPage,
                     finalPage: result.finalPage,
@@ -295,15 +457,25 @@ export class BrowserToolExecutor {
                             }
                             : {}),
                     },
-                });
+                };
+                return ok(toolCall, withLeaseConflictNote(result.authenticated
+                    ? "Completed the login workflow and verified the page continued."
+                    : "Attempted the login workflow, but Binary could not fully verify the authenticated state.", lease), withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed: result.authenticated,
+                }));
             }
             if (toolCall.name === "browser_complete_form") {
                 const fields = Array.isArray(args.fields)
                     ? args.fields.map((item) => (typeof item === "object" && item ? item : {}))
                     : [];
+                const targetPageId = args.pageId ? await this.resolvePageId(args.pageId, true) : undefined;
+                if (targetPageId) {
+                    await this.assertTargetGuards(args, targetPageId);
+                }
                 const result = await runMission(async () => await this.runtime.completeForm(this.policy, {
                     ...(typeof args.url === "string" && args.url.trim() ? { url: args.url.trim() } : {}),
-                    ...(args.pageId ? { pageId: await this.resolvePageId(args.pageId, true) } : {}),
+                    ...(targetPageId ? { pageId: targetPageId } : {}),
                     fields: fields.map((field) => ({
                         ...(typeof field.label === "string" ? { label: field.label } : {}),
                         ...(typeof field.name === "string" ? { name: field.name } : {}),
@@ -319,9 +491,8 @@ export class BrowserToolExecutor {
                     ...(typeof args.waitForUrlIncludes === "string" ? { waitForUrlIncludes: args.waitForUrlIncludes } : {}),
                 }));
                 const lease = missionLeasePayload(result.missionLease);
-                return ok(toolCall, withLeaseConflictNote(result.submitted
-                    ? "Completed the form workflow and submitted it."
-                    : "Filled the form fields without submitting.", lease), {
+                const verificationPassed = args.submit === true ? result.submitted : result.matchedFields.length > 0;
+                const data = {
                     ...receipt(decision?.executionVisibility === "visible_required", sessionKind()),
                     page: result.page,
                     finalPage: result.finalPage,
@@ -342,24 +513,31 @@ export class BrowserToolExecutor {
                             }
                             : {}),
                     },
-                });
+                };
+                return ok(toolCall, withLeaseConflictNote(result.submitted
+                    ? "Completed the form workflow and submitted it."
+                    : "Filled the form fields without submitting.", lease), withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed,
+                }));
             }
             if (toolCall.name === "browser_extract_and_decide") {
                 const action = typeof args.action === "string" && args.action.trim().toLowerCase() === "click_best" ? "click_best" : "none";
+                const targetPageId = args.pageId ? await this.resolvePageId(args.pageId, true) : undefined;
+                if (targetPageId) {
+                    await this.assertTargetGuards(args, targetPageId);
+                }
                 const result = await runMission(async () => await this.runtime.extractAndDecide(this.policy, {
                     ...(typeof args.url === "string" && args.url.trim() ? { url: args.url.trim() } : {}),
-                    ...(args.pageId ? { pageId: await this.resolvePageId(args.pageId, true) } : {}),
+                    ...(targetPageId ? { pageId: targetPageId } : {}),
                     query: String(args.query || "").trim(),
                     ...(Array.isArray(args.options) ? { options: args.options.map((item) => String(item)) } : {}),
                     action,
                     ...(Number.isFinite(Number(args.limit)) ? { limit: clamp(Number(args.limit), 1, 24) } : {}),
                 }));
                 const lease = missionLeasePayload(result.missionLease);
-                return ok(toolCall, withLeaseConflictNote(result.bestCandidate
-                    ? action === "click_best"
-                        ? `Extracted the likely match and opened ${result.bestCandidate.label || "the best candidate"}.`
-                        : `Extracted the likely match: ${result.bestCandidate.label || "best candidate"}.`
-                    : "Binary could not extract a confident candidate from the page.", lease), {
+                const verificationPassed = Boolean(result.bestCandidate) && (action !== "click_best" || result.clicked);
+                const data = {
                     ...receipt(decision?.executionVisibility === "visible_required", sessionKind()),
                     page: result.page,
                     finalPage: result.finalPage,
@@ -380,12 +558,24 @@ export class BrowserToolExecutor {
                             }
                             : {}),
                     },
-                });
+                };
+                return ok(toolCall, withLeaseConflictNote(result.bestCandidate
+                    ? action === "click_best"
+                        ? `Extracted the likely match and opened ${result.bestCandidate.label || "the best candidate"}.`
+                        : `Extracted the likely match: ${result.bestCandidate.label || "best candidate"}.`
+                    : "Binary could not extract a confident candidate from the page.", lease), withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed,
+                }));
             }
             if (toolCall.name === "browser_recover_workflow") {
+                const targetPageId = args.pageId ? await this.resolvePageId(args.pageId, true) : undefined;
+                if (targetPageId) {
+                    await this.assertTargetGuards(args, targetPageId);
+                }
                 const result = await runMission(async () => await this.runtime.recoverWorkflow(this.policy, {
                     ...(typeof args.url === "string" && args.url.trim() ? { url: args.url.trim() } : {}),
-                    ...(args.pageId ? { pageId: await this.resolvePageId(args.pageId, true) } : {}),
+                    ...(targetPageId ? { pageId: targetPageId } : {}),
                     ...(typeof args.goal === "string" ? { goal: args.goal } : {}),
                     ...(typeof args.preferredActionQuery === "string" ? { preferredActionQuery: args.preferredActionQuery } : {}),
                     ...(typeof args.waitForText === "string" ? { waitForText: args.waitForText } : {}),
@@ -393,9 +583,7 @@ export class BrowserToolExecutor {
                     ...(Number.isFinite(Number(args.limit)) ? { limit: clamp(Number(args.limit), 1, 24) } : {}),
                 }));
                 const lease = missionLeasePayload(result.missionLease);
-                return ok(toolCall, withLeaseConflictNote(result.recovered
-                    ? `Recovered the browser workflow${result.actionTaken ? ` by ${result.actionTaken}` : ""}.`
-                    : "Binary attempted workflow recovery but could not verify the page was unstuck.", lease), {
+                const data = {
                     ...receipt(decision?.executionVisibility === "visible_required", sessionKind()),
                     page: result.page,
                     finalPage: result.finalPage,
@@ -416,28 +604,43 @@ export class BrowserToolExecutor {
                             }
                             : {}),
                     },
-                });
+                };
+                return ok(toolCall, withLeaseConflictNote(result.recovered
+                    ? `Recovered the browser workflow${result.actionTaken ? ` by ${result.actionTaken}` : ""}.`
+                    : "Binary attempted workflow recovery but could not verify the page was unstuck.", lease), withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed: result.recovered,
+                }));
             }
             if (toolCall.name === "browser_focus_page") {
                 const pageId = await this.resolvePageId(args.pageId);
                 const page = await this.runtime.focusPage(this.policy, pageId);
-                return ok(toolCall, `Focused ${summarizePage(page)}.`, {
+                const data = {
                     ...receipt(true, sessionKind()),
                     page,
                     proof: { url: page.url, title: page.title },
-                });
+                };
+                return ok(toolCall, `Focused ${summarizePage(page)}.`, withMetadata(data, {
+                    verificationRequired: false,
+                    verificationPassed: true,
+                }));
             }
             if (toolCall.name === "browser_navigate") {
                 const pageId = await this.resolvePageId(args.pageId);
+                await this.assertTargetGuards(args, pageId);
                 const url = String(args.url || "").trim();
                 if (!url)
                     return fail(toolCall, "browser_navigate requires pageId and url.");
                 const page = await this.runtime.navigate(this.policy, { pageId, url });
-                return ok(toolCall, `Navigated to ${page.url}.`, {
+                const data = {
                     ...receipt(decision?.executionVisibility === "visible_required", sessionKind()),
                     page,
                     proof: { url: page.url, title: page.title },
-                });
+                };
+                return ok(toolCall, `Navigated to ${page.url}.`, withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed: true,
+                }));
             }
             if (toolCall.name === "browser_snapshot_dom") {
                 const pageId = await this.resolvePageId(args.pageId);
@@ -446,7 +649,7 @@ export class BrowserToolExecutor {
                     query: typeof args.query === "string" ? args.query : undefined,
                     limit: clamp(Number(args.limit || 16), 1, 40),
                 });
-                return ok(toolCall, `Captured DOM snapshot for ${snapshot.title || snapshot.url}.`, {
+                const data = {
                     ...receipt(false, sessionKind()),
                     snapshotId: snapshot.snapshotId,
                     pageId: snapshot.pageId,
@@ -466,7 +669,11 @@ export class BrowserToolExecutor {
                         title: snapshot.title,
                         interactiveElementCount: snapshot.interactiveElements.length,
                     },
-                });
+                };
+                return ok(toolCall, `Captured DOM snapshot for ${snapshot.title || snapshot.url}.`, withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed: snapshot.interactiveElements.length >= 0,
+                }));
             }
             if (toolCall.name === "browser_query_elements") {
                 const pageId = await this.resolvePageId(args.pageId);
@@ -475,29 +682,39 @@ export class BrowserToolExecutor {
                     query: typeof args.query === "string" ? args.query : undefined,
                     limit: clamp(Number(args.limit || 12), 1, 24),
                 });
-                return ok(toolCall, `Found ${result.matches.length} browser element(s) on ${summarizePage(result.page)}.`, {
+                const data = {
                     ...receipt(false, sessionKind()),
                     page: result.page,
                     matches: result.matches,
                     proof: { pageId, matchCount: result.matches.length },
-                });
+                };
+                return ok(toolCall, `Found ${result.matches.length} browser element(s) on ${summarizePage(result.page)}.`, withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed: result.matches.length >= 0,
+                }));
             }
             if (toolCall.name === "browser_click") {
                 const pageId = await this.resolvePageId(args.pageId);
+                await this.assertTargetGuards(args, pageId);
                 const result = await this.runtime.click(this.policy, {
                     pageId,
                     elementId: typeof args.elementId === "string" ? args.elementId : undefined,
                     selector: typeof args.selector === "string" ? args.selector : undefined,
                 });
-                return ok(toolCall, result.ok === false ? "Browser click did not find the requested element." : `Clicked on ${result.title || result.url || "the page"}.`, {
+                const data = {
                     ...receipt(decision?.executionVisibility === "visible_required", sessionKind()),
                     pageId,
                     ...result,
                     proof: { url: result.url, title: result.title, ok: result.ok },
-                });
+                };
+                return ok(toolCall, result.ok === false ? "Browser click did not find the requested element." : `Clicked on ${result.title || result.url || "the page"}.`, withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed: result.ok !== false,
+                }));
             }
             if (toolCall.name === "browser_type") {
                 const pageId = await this.resolvePageId(args.pageId);
+                await this.assertTargetGuards(args, pageId);
                 const text = String(args.text || "");
                 if (!text)
                     return fail(toolCall, "browser_type requires pageId and text.");
@@ -507,40 +724,54 @@ export class BrowserToolExecutor {
                     elementId: typeof args.elementId === "string" ? args.elementId : undefined,
                     selector: typeof args.selector === "string" ? args.selector : undefined,
                 });
-                return ok(toolCall, result.ok === false ? "Browser typing did not reach a typeable element." : `Typed into ${result.title || result.url || "the active page"}.`, {
+                const data = {
                     ...receipt(decision?.executionVisibility === "visible_required", sessionKind()),
                     pageId,
                     ...result,
                     proof: { url: result.url, title: result.title, typed: result.typed },
-                });
+                };
+                return ok(toolCall, result.ok === false ? "Browser typing did not reach a typeable element." : `Typed into ${result.title || result.url || "the active page"}.`, withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed: result.ok !== false,
+                }));
             }
             if (toolCall.name === "browser_press_keys") {
                 const pageId = await this.resolvePageId(args.pageId, true);
+                await this.assertTargetGuards(args, pageId);
                 const keys = Array.isArray(args.keys) ? args.keys.map((item) => String(item)) : [];
                 if (!keys.length)
                     return fail(toolCall, "browser_press_keys requires keys.");
                 const result = await this.runtime.pressKeys(this.policy, { pageId, keys });
-                return ok(toolCall, `Pressed ${keys.join(" + ")} on ${result.title || result.url || "the active page"}.`, {
+                const data = {
                     ...receipt(decision?.executionVisibility === "visible_required", sessionKind()),
                     pageId,
                     ...result,
                     proof: { url: result.url, title: result.title, keys },
-                });
+                };
+                return ok(toolCall, `Pressed ${keys.join(" + ")} on ${result.title || result.url || "the active page"}.`, withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed: result.ok !== false,
+                }));
             }
             if (toolCall.name === "browser_scroll") {
                 const pageId = await this.resolvePageId(args.pageId);
+                await this.assertTargetGuards(args, pageId);
                 const result = await this.runtime.scroll(this.policy, {
                     pageId,
                     deltaY: Number(args.deltaY || 640),
                     elementId: typeof args.elementId === "string" ? args.elementId : undefined,
                     selector: typeof args.selector === "string" ? args.selector : undefined,
                 });
-                return ok(toolCall, `Scrolled ${result.title || result.url || "the active page"}.`, {
+                const data = {
                     ...receipt(decision?.executionVisibility === "visible_required", sessionKind()),
                     pageId,
                     ...result,
                     proof: { url: result.url, title: result.title, scrollY: result.scrollY },
-                });
+                };
+                return ok(toolCall, `Scrolled ${result.title || result.url || "the active page"}.`, withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed: result.ok !== false,
+                }));
             }
             if (toolCall.name === "browser_wait_for") {
                 const pageId = await this.resolvePageId(args.pageId);
@@ -552,12 +783,16 @@ export class BrowserToolExecutor {
                     urlIncludes: typeof args.urlIncludes === "string" ? args.urlIncludes : undefined,
                     titleIncludes: typeof args.titleIncludes === "string" ? args.titleIncludes : undefined,
                 });
-                return ok(toolCall, result.ok === true ? "Observed the requested browser condition." : "Browser condition did not become true before timeout.", {
+                const data = {
                     ...receipt(false, sessionKind()),
                     pageId,
                     ...result,
                     proof: { ok: result.ok, url: result.url, title: result.title },
-                });
+                };
+                return ok(toolCall, result.ok === true ? "Observed the requested browser condition." : "Browser condition did not become true before timeout.", withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed: result.ok === true,
+                }));
             }
             if (toolCall.name === "browser_read_text") {
                 const pageId = await this.resolvePageId(args.pageId);
@@ -566,35 +801,57 @@ export class BrowserToolExecutor {
                     elementId: typeof args.elementId === "string" ? args.elementId : undefined,
                     selector: typeof args.selector === "string" ? args.selector : undefined,
                 });
-                return ok(toolCall, result.found === false ? "Browser text target was not found." : "Read text from the browser page.", {
+                const data = {
                     ...receipt(false, sessionKind()),
                     pageId,
                     ...result,
                     proof: { found: result.found, url: result.url, title: result.title },
-                });
+                };
+                return ok(toolCall, result.found === false ? "Browser text target was not found." : "Read text from the browser page.", withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed: result.found !== false,
+                }));
             }
             if (toolCall.name === "browser_read_form_state") {
                 const pageId = await this.resolvePageId(args.pageId);
                 const result = await this.runtime.readFormState(this.policy, { pageId });
                 const controls = Array.isArray(result.controls) ? result.controls : [];
-                return ok(toolCall, `Read ${controls.length} form control(s) from the browser page.`, {
+                const data = {
                     ...receipt(false, sessionKind()),
                     pageId,
                     ...result,
                     proof: { controlCount: controls.length, url: result.url, title: result.title },
-                });
+                };
+                return ok(toolCall, `Read ${controls.length} form control(s) from the browser page.`, withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed: controls.length >= 0,
+                }));
             }
             if (toolCall.name === "browser_capture_page") {
                 const pageId = await this.resolvePageId(args.pageId);
+                await this.assertTargetGuards(args, pageId);
+                const explicitVisual = args.visualProof === true || args.userRequestedVisual === true || args.explicitUserRequest === true;
+                const debugMode = args.debugMode === true || args.debug === true;
+                const providedReason = this.resolveScreenshotReason(args.screenshotReason);
+                const screenshotReason = providedReason || (explicitVisual ? "explicit_user_request" : debugMode ? "debug_mode" : null);
+                if (!screenshotReason) {
+                    return fail(toolCall, "Binary screenshot policy blocked browser_capture_page. Provide screenshotReason=explicit_user_request|debug_mode|proof_fallback.", true);
+                }
                 const result = await this.runtime.capturePage(this.policy, { pageId });
-                return ok(toolCall, "Captured a browser screenshot for verification.", {
+                const data = {
                     ...receipt(false, sessionKind()),
                     pageId,
                     snapshotId: result.snapshotId,
                     mimeType: result.mimeType,
                     byteLength: String(result.dataBase64 || "").length,
                     proof: { snapshotId: result.snapshotId, mimeType: result.mimeType },
-                });
+                };
+                return ok(toolCall, "Captured a browser screenshot for verification.", withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed: true,
+                    screenshotCaptured: true,
+                    screenshotReason,
+                }));
             }
             if (toolCall.name === "browser_get_network_activity") {
                 const pageId = await this.resolvePageId(args.pageId);
@@ -602,12 +859,16 @@ export class BrowserToolExecutor {
                     pageId,
                     limit: clamp(Number(args.limit || 20), 1, 40),
                 });
-                return ok(toolCall, `Observed ${entries.length} recent browser network event(s).`, {
+                const data = {
                     ...receipt(false, sessionKind()),
                     pageId,
                     entries,
                     proof: { eventCount: entries.length },
-                });
+                };
+                return ok(toolCall, `Observed ${entries.length} recent browser network event(s).`, withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed: entries.length >= 0,
+                }));
             }
             if (toolCall.name === "browser_get_console_messages") {
                 const pageId = await this.resolvePageId(args.pageId);
@@ -615,12 +876,16 @@ export class BrowserToolExecutor {
                     pageId,
                     limit: clamp(Number(args.limit || 20), 1, 40),
                 });
-                return ok(toolCall, `Observed ${entries.length} recent browser console message(s).`, {
+                const data = {
                     ...receipt(false, sessionKind()),
                     pageId,
                     entries,
                     proof: { eventCount: entries.length },
-                });
+                };
+                return ok(toolCall, `Observed ${entries.length} recent browser console message(s).`, withMetadata(data, {
+                    verificationRequired: true,
+                    verificationPassed: entries.length >= 0,
+                }));
             }
         }
         catch (error) {
