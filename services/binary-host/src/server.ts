@@ -1793,6 +1793,35 @@ function looksLikeWebAutomationIntent(task: string): boolean {
   return webSiteHint || webActionHint;
 }
 
+function looksLikeGenericBrowserOpenIntent(task: string): boolean {
+  const normalized = String(task || "").trim();
+  if (!normalized) return false;
+  if (taskLikelyTargetsDesktop(normalized)) return false;
+  if (taskLikelyRequiresWorkspaceAction(normalized) || taskLikelyReferencesWorkspaceArtifacts(normalized)) return false;
+  const folderQuery = extractOpenFolderQuery(normalized);
+  if (folderQuery && looksLikeFolderIntent(folderQuery)) return false;
+  const directTarget = extractDirectOpenTarget(normalized);
+  if (!directTarget) return false;
+  if (looksLikeFolderIntent(directTarget)) return false;
+  if (/^[a-z]:\\?$/i.test(directTarget) || /^[a-z]:[\\/]/i.test(directTarget) || /[\\/]/.test(directTarget)) return false;
+  if (
+    /\b(notepad|calculator|calc|file explorer|explorer|discord|slack|outlook|mail|terminal|cmd|powershell|chrome|brave|edge|firefox|spotify|steam|word|excel|powerpoint|paint)\b/i.test(
+      directTarget
+    )
+  ) {
+    return false;
+  }
+  if (
+    /^(?:please\s+)?(?:open|show|go\s+to|navigate\s+to|search(?:\s+for)?|find|look\s+up|watch|play|listen(?:\s+to)?)\b/i.test(
+      normalized
+    )
+  ) {
+    const tokenCount = normalizeMachineSearchText(directTarget).split(" ").filter(Boolean).length;
+    if (tokenCount >= 2) return true;
+  }
+  return /\b(video|videos|song|songs|music|album|artist|track|playlist|movie|movies|trailer)\b/i.test(normalized);
+}
+
 function buildBrowserMissionToolCall(task: string, step: number): PendingToolCall | null {
   const query = inferBrowserMissionQuery(task);
   if (!query) return null;
@@ -1842,7 +1871,7 @@ function taskLikelyTargetsDesktop(task: string): boolean {
 
 function taskLikelyNeedsRichSurfaceContext(task: string, taskSpeedClass: BinaryTaskSpeedClass): boolean {
   if (taskSpeedClass === "chat_only") return false;
-  if (looksLikeWebAutomationIntent(task)) return true;
+  if (taskLikelyTargetsBrowser(task)) return true;
   if (taskLikelyTargetsDesktop(task)) return true;
   if (taskLikelyRequiresDesktopVerification(task)) return true;
   // Deep code / workspace-heavy requests should not pay machine/browser context tax on first turn.
@@ -1873,7 +1902,7 @@ function taskLikelyTargetsBrowser(task: string): boolean {
   if (!normalized) return false;
   if (taskLikelyTargetsDesktop(task)) return false;
   if (taskLikelyRequiresWorkspaceAction(task) || taskLikelyReferencesWorkspaceArtifacts(task)) return false;
-  return looksLikeWebAutomationIntent(task);
+  return looksLikeWebAutomationIntent(task) || looksLikeGenericBrowserOpenIntent(task);
 }
 
 function resolvePromptLane(task: string, taskSpeedClass: BinaryTaskSpeedClass): BinaryPromptLane {
@@ -2944,7 +2973,7 @@ async function tryDirectMachineShortcut(input: {
   if (taskSpeedClass !== "simple_action") return false;
 
   const task = String(run.request.task || "").trim();
-  if (looksLikeWebAutomationIntent(task)) return false;
+  if (taskLikelyTargetsBrowser(task)) return false;
   const parsedAction = parseMachineAutonomyTask(task);
   const folderQuery = extractOpenFolderQuery(task);
   const directTargetQuery = extractDirectOpenTarget(task);
@@ -3382,7 +3411,7 @@ function hasFailedValidationCommandProof(run: StoredHostRun): boolean {
 }
 
 function taskLikelyRequiresBrowserVerification(task: string): boolean {
-  return /\b(verify|verification|confirm|proof|result|title|url|extract|login|form|submit|complete)\b/i.test(
+  return /\b(verify|verification|confirm|proof|result|title|url|extract|login|form|submit|complete|open|search|find|watch|play|listen|go to|navigate)\b/i.test(
     String(task || "")
   );
 }
@@ -3419,12 +3448,11 @@ function evaluateBrowserProofState(run: StoredHostRun): {
 } {
   const browserToolResults = run.toolResults.filter((toolResult) => String(toolResult.name || "").startsWith("browser_"));
   const required =
-    browserToolResults.length > 0 &&
-    (taskLikelyTargetsBrowser(run.request.task) ||
-      browserToolResults.some((toolResult) => {
-        const data = toolResult.data && typeof toolResult.data === "object" ? (toolResult.data as Record<string, unknown>) : null;
-        return Boolean(data && data.verificationRequired === true);
-      }));
+    taskLikelyTargetsBrowser(run.request.task) ||
+    browserToolResults.some((toolResult) => {
+      const data = toolResult.data && typeof toolResult.data === "object" ? (toolResult.data as Record<string, unknown>) : null;
+      return Boolean(data && data.verificationRequired === true);
+    });
   const requiresVerification =
     taskLikelyRequiresBrowserVerification(run.request.task) ||
     browserToolResults.some((toolResult) => {
