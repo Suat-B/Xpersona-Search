@@ -1,0 +1,5 @@
+
+> xpersona-casino@0.1.0 openhands:gateway
+> tsx services/openhands-gateway/src/server.ts
+
+OpenHands gateway listening on http://127.0.0.1:8010

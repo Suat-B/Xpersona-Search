@@ -35,6 +35,8 @@ export type BinaryAgentJob = {
   sessionId?: string;
   conversationId?: string | null;
   persistenceDir?: string | null;
+  jsonlPath?: string | null;
+  runtimeTarget?: "local_native" | "sandbox" | "remote";
   requestedExecutionLane: BinaryExecutionLane;
   executionLane: BinaryExecutionLane;
   pluginPacks: BinaryPluginPack[];
@@ -167,6 +169,7 @@ export class AgentJobManager {
     traceId?: string;
     sessionId?: string;
     finalEnvelope?: Record<string, unknown> | null;
+    lastExecutionState?: Record<string, unknown> | null;
     error?: string;
   }): Promise<void> {
     const job = await this.getJobByRunId(run.id);
@@ -187,8 +190,23 @@ export class AgentJobManager {
     if (typeof finalEnvelope.persistenceDir === "string") {
       job.persistenceDir = finalEnvelope.persistenceDir;
     }
+    if (typeof finalEnvelope.jsonlPath === "string") {
+      job.jsonlPath = finalEnvelope.jsonlPath;
+    } else if (run.lastExecutionState && typeof run.lastExecutionState.jsonlPath === "string") {
+      job.jsonlPath = String(run.lastExecutionState.jsonlPath);
+    }
     if (typeof finalEnvelope.executionLane === "string") {
       job.executionLane = finalEnvelope.executionLane as BinaryExecutionLane;
+    }
+    if (typeof finalEnvelope.runtimeTarget === "string") {
+      if (finalEnvelope.runtimeTarget === "local_native" || finalEnvelope.runtimeTarget === "sandbox" || finalEnvelope.runtimeTarget === "remote") {
+        job.runtimeTarget = finalEnvelope.runtimeTarget;
+      }
+    } else if (run.lastExecutionState && typeof run.lastExecutionState.runtimeTarget === "string") {
+      const runtimeTarget = String(run.lastExecutionState.runtimeTarget);
+      if (runtimeTarget === "local_native" || runtimeTarget === "sandbox" || runtimeTarget === "remote") {
+        job.runtimeTarget = runtimeTarget;
+      }
     }
     if (priorStatus !== nextStatus) {
       this.appendEvent(job, {

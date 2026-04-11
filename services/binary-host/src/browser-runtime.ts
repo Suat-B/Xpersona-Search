@@ -167,6 +167,17 @@ function compactTerms(value: string): string[] {
     .filter(Boolean);
 }
 
+function pageLikelyMatchesQuery(input: { url?: string; title?: string }, query: string): boolean {
+  const normalizedQuery = stripBrowserSiteHintFromQuery(query, input.url || "");
+  const terms = compactTerms(normalizedQuery).filter((term) => term.length >= 3);
+  if (!terms.length) return false;
+  const haystack = compactWhitespace(`${input.title || ""} ${input.url || ""}`).toLowerCase();
+  if (!haystack) return false;
+  const matched = terms.filter((term) => haystack.includes(term)).length;
+  if (terms.length === 1) return matched >= 1;
+  return matched >= Math.min(2, terms.length);
+}
+
 function parseEnvBool(value: string | undefined, defaultValue: boolean): boolean {
   const normalized = compactWhitespace(value || "").toLowerCase();
   if (!normalized) return defaultValue;
@@ -412,6 +423,7 @@ async function waitForVersion(endpoint: string, timeoutMs: number): Promise<Json
 
 async function discoverExistingSession(policy: MachineAutonomyPolicy): Promise<BrowserSession | null> {
   const explicitEndpoint = String(process.env.BINARY_BROWSER_CDP_URL || "").trim().replace(/\/+$/, "");
+  const allowHeadlessAttach = parseEnvBool(process.env.BINARY_BROWSER_ATTACH_HEADLESS, false);
   const candidates = explicitEndpoint
     ? [explicitEndpoint]
     : CANDIDATE_DEBUG_PORTS.map((port) => `http://127.0.0.1:${port}`);
@@ -422,6 +434,9 @@ async function discoverExistingSession(policy: MachineAutonomyPolicy): Promise<B
       const version = await fetchJson<JsonRecord>(`${endpoint}/json/version`);
       const browserLabel = String(version.Browser || version.browser || "").trim();
       const browserNameLower = browserLabel.toLowerCase();
+      if (!allowHeadlessAttach && browserNameLower.includes("headless")) {
+        continue;
+      }
       const family = allowedFamilies.find((item) => browserNameLower.includes(item));
       if (!family && allowedFamilies.length) continue;
       const browserWsUrl = String(version.webSocketDebuggerUrl || "").trim();
@@ -445,7 +460,7 @@ async function launchManagedBrowser(policy: MachineAutonomyPolicy): Promise<Brow
   if (!resolved) {
     throw new Error("Binary could not find a supported Chromium-family browser to launch.");
   }
-  const managedHeadless = parseEnvBool(process.env.BINARY_BROWSER_MANAGED_HEADLESS, true);
+  const managedHeadless = parseEnvBool(process.env.BINARY_BROWSER_MANAGED_HEADLESS, false);
   const port = await allocatePort();
   const userDataDir = path.join(os.tmpdir(), `binary-browser-profile-${port}`);
   await fs.mkdir(userDataDir, { recursive: true });
@@ -463,7 +478,7 @@ async function launchManagedBrowser(policy: MachineAutonomyPolicy): Promise<Brow
   const child = spawn(resolved.executablePath, args, {
     detached: true,
     stdio: "ignore",
-    windowsHide: true,
+    windowsHide: managedHeadless,
   });
   child.unref();
 
@@ -502,7 +517,7 @@ async function launchProfileBackedBrowser(policy: MachineAutonomyPolicy): Promis
   const child = spawn(resolved.executablePath, args, {
     detached: true,
     stdio: "ignore",
-    windowsHide: true,
+    windowsHide: false,
   });
   child.unref();
 
@@ -726,17 +741,21 @@ export function rankBrowserResultCandidates(
       }
 
       if (item.visible !== false) score += 25;
+      else score -= 90;
       if (String(item.tagName || "").toLowerCase() === "a") score += 30;
       if (String(item.role || "").toLowerCase() === "link") score += 20;
       if (href) score += 10;
       if (selector.includes("searchbox") || selector.includes("search_query") || selector.includes("input")) score -= 80;
       if (label === "search" || label.startsWith("search ")) score -= 80;
       if (selector.includes("suggest") || label.includes("search with your voice")) score -= 40;
+      if (selector.includes("#logo") || selector.includes("masthead") || selector.includes("guide-button")) score -= 220;
+      if (href === "/" || href.startsWith("/?")) score -= 180;
+      if (label === "home" || label === "guide" || label === "menu" || label === "a") score -= 120;
 
         if (domain.includes("youtube.com")) {
           if (href.includes("/watch")) score += 120;
           if (selector.includes("video-title")) score += 80;
-          if (href.includes("/shorts/") && !queryTerms.includes("shorts")) score -= 35;
+          if (href.includes("/shorts/") && !queryTerms.includes("shorts")) score -= 140;
           if (href.includes("/@")) score += 15;
           if (label.includes("channel")) score -= 10;
           if (selector.includes("channel-thumbnail")) score -= 12;
@@ -785,11 +804,27 @@ function selectViableBrowserMissionCandidates(
   pageUrl?: string
 ): BrowserElementSummary[] {
   const domain = safeDomain(pageUrl || "");
-  const viable = rankedCandidates.filter((item) => (Number(item.score || 0) || 0) > 25);
+  const viable = rankedCandidates.filter((item) => {
+    const score = Number(item.score || 0) || 0;
+    const href = String(item.href || "").toLowerCase();
+    const selector = String(item.selector || "").toLowerCase();
+    const label = compactWhitespace(item.label || "").toLowerCase();
+    if (score <= 25) return false;
+    if (item.visible === false) return false;
+    if (href === "/" || href.startsWith("/?")) return false;
+    if (selector.includes("#logo") || selector.includes("masthead") || selector.includes("guide-button")) return false;
+    if (label === "home" || label === "guide" || label === "menu" || label === "a") return false;
+    return true;
+  });
   if (!viable.length) return [];
   if (domain.includes("youtube.com")) {
     const watchLinks = viable.filter((item) => String(item.href || "").toLowerCase().includes("/watch"));
     if (watchLinks.length) return watchLinks;
+    const channelLinks = viable.filter((item) => {
+      const href = String(item.href || "").toLowerCase();
+      return href.includes("/@") || href.includes("/channel/");
+    });
+    if (channelLinks.length) return channelLinks;
     const nonShorts = viable.filter((item) => !String(item.href || "").toLowerCase().includes("/shorts/"));
     if (nonShorts.length) return nonShorts;
   }
@@ -1588,7 +1623,45 @@ export class BrowserRuntimeController {
     }
   }
 
-  async openPage(policy: MachineAutonomyPolicy, url: string): Promise<BrowserPageSummary> {
+  private shouldAutoFocusBrowser(policy: MachineAutonomyPolicy, forceForeground = false): boolean {
+    if (policy.focusPolicy === "never_steal") return false;
+    if (forceForeground) return true;
+    return parseEnvBool(process.env.BINARY_BROWSER_AUTO_FOCUS, true);
+  }
+
+  private async activateTargetIfAllowed(
+    policy: MachineAutonomyPolicy,
+    pageId: string,
+    options?: { forceForeground?: boolean }
+  ): Promise<void> {
+    if (!this.shouldAutoFocusBrowser(policy, options?.forceForeground === true)) return;
+    const session = await this.ensureSession(policy, false);
+    if (!session) return;
+    const browserConnection = await this.ensureBrowserConnection(session);
+    await browserConnection.command("Target.activateTarget", { targetId: pageId }).catch(() => null);
+    if (options?.forceForeground === true) {
+      const windowId = await browserConnection
+        .command("Browser.getWindowForTarget", { targetId: pageId })
+        .then((response) => Number((response as JsonRecord).windowId || 0))
+        .catch(() => 0);
+      if (Number.isFinite(windowId) && windowId > 0) {
+        await browserConnection
+          .command("Browser.setWindowBounds", {
+            windowId,
+            bounds: { windowState: "normal" },
+          })
+          .catch(() => null);
+      }
+    }
+    this.lastActivePageId = pageId;
+    this.ensurePageState(pageId).lastActivatedAt = nowIso();
+  }
+
+  async openPage(
+    policy: MachineAutonomyPolicy,
+    url: string,
+    options?: { forceForeground?: boolean }
+  ): Promise<BrowserPageSummary> {
     this.assertUrlAllowed(policy, url);
     const loopGuard = this.beginLoopAction("open_page", originFromUrl(url) || url, {
       maxAttempts: BROWSER_OPEN_LOOP_MAX_ATTEMPTS,
@@ -1604,6 +1677,7 @@ export class BrowserRuntimeController {
     const result = await browserConnection.command("Target.createTarget", { url });
     const targetId = String(result.targetId || "");
     if (!targetId) throw new Error("Browser runtime failed to create a target page.");
+    await this.activateTargetIfAllowed(policy, targetId, options);
     await sleep(300);
     const page = (await this.listPages(policy)).find((item) => item.id === targetId);
     if (!page) {
@@ -1627,10 +1701,15 @@ export class BrowserRuntimeController {
     return { ...page, active: true };
   }
 
-  async navigate(policy: MachineAutonomyPolicy, input: { pageId: string; url: string }): Promise<BrowserPageSummary> {
+  async navigate(
+    policy: MachineAutonomyPolicy,
+    input: { pageId: string; url: string },
+    options?: { forceForeground?: boolean }
+  ): Promise<BrowserPageSummary> {
     this.assertUrlAllowed(policy, input.url);
     const session = await this.ensurePageSession(policy, input.pageId);
     await this.sendPageCommand("Page.navigate", { url: input.url }, session.sessionId);
+    await this.activateTargetIfAllowed(policy, input.pageId, options);
     await sleep(350);
     this.lastActivePageId = input.pageId;
     this.ensurePageState(input.pageId).worldModel.recentNavigations.push(input.url);
@@ -1767,7 +1846,8 @@ export class BrowserRuntimeController {
 
   private async resolveMissionPage(
     policy: MachineAutonomyPolicy,
-    input: { url?: string; pageId?: string }
+    input: { url?: string; pageId?: string },
+    options?: { forceForeground?: boolean }
   ): Promise<BrowserPageSummary> {
     const url = String(input.url || "").trim();
     const pageId = String(input.pageId || "").trim();
@@ -1778,8 +1858,9 @@ export class BrowserRuntimeController {
         throw new Error(`Browser page ${pageId} was not found.`);
       }
       if (url && existing.url !== url) {
-        return await this.navigate(policy, { pageId: existing.id, url });
+        return await this.navigate(policy, { pageId: existing.id, url }, options);
       }
+      await this.activateTargetIfAllowed(policy, existing.id, options);
       return existing;
     }
     if (url) {
@@ -1790,12 +1871,13 @@ export class BrowserRuntimeController {
         pages.find((page) => requestedOrigin && page.origin === requestedOrigin);
       if (sameOrigin) {
         if (sameOrigin.url === url) {
+          await this.activateTargetIfAllowed(policy, sameOrigin.id, options);
           this.lastActivePageId = sameOrigin.id;
           return sameOrigin;
         }
-        return await this.navigate(policy, { pageId: sameOrigin.id, url });
+        return await this.navigate(policy, { pageId: sameOrigin.id, url }, options);
       }
-      return await this.openPage(policy, url);
+      return await this.openPage(policy, url, options);
     }
     const active = await this.getActivePage(policy);
     if (!active) {
@@ -1985,7 +2067,7 @@ export class BrowserRuntimeController {
 
   async searchAndOpenBestResult(
     policy: MachineAutonomyPolicy,
-    input: { url?: string; pageId?: string; query: string; resultQuery?: string; limit?: number }
+    input: { url?: string; pageId?: string; query: string; resultQuery?: string; limit?: number; forceForeground?: boolean }
   ): Promise<BrowserMissionResult> {
     const query = compactWhitespace(input.query);
     if (!query) {
@@ -2004,15 +2086,36 @@ export class BrowserRuntimeController {
       throw new Error(searchLoop.reason || "Binary blocked repeated browser search mission attempts.");
     }
 
+    const requestedUrl = compactWhitespace(input.url || "");
+    if (requestedUrl && safeDomain(requestedUrl).includes("youtube.com")) {
+      const activePage = await this.getActivePage(policy).catch(() => null);
+      const activeDomain = safeDomain(activePage?.url || "");
+      if (
+        activePage &&
+        activeDomain.includes("youtube.com") &&
+        /\/watch\b/i.test(String(activePage.url || "")) &&
+        pageLikelyMatchesQuery(activePage, query)
+      ) {
+        await this.activateTargetIfAllowed(policy, activePage.id, { forceForeground: input.forceForeground === true });
+        this.markLoopActionSuccess("search_mission", `${query}|${compactWhitespace(input.url || input.pageId || "active")}`);
+        return await this.runMissionWithLease("browser_search_and_open_best_result", activePage, async () => ({
+          searchPage: activePage,
+          finalPage: activePage,
+          clickedResult: null,
+          candidates: [],
+        }));
+      }
+    }
+
     let searchPage: BrowserPageSummary | null = null;
     const directSearchUrl =
       typeof input.url === "string" && input.url.trim() ? buildBrowserSiteSearchUrl(input.url, query) : null;
 
       if (directSearchUrl) {
-        searchPage = await this.openPage(policy, directSearchUrl);
+        searchPage = await this.resolveMissionPage(policy, { url: directSearchUrl }, { forceForeground: input.forceForeground === true });
         await this.waitForMissionResults(policy, searchPage.id, query, directSearchUrl);
       } else if (typeof input.url === "string" && input.url.trim()) {
-        searchPage = await this.openPage(policy, input.url.trim());
+        searchPage = await this.resolveMissionPage(policy, { url: input.url.trim() }, { forceForeground: input.forceForeground === true });
         const inputSnapshot = await this.queryElements(policy, {
           pageId: searchPage.id,
           query: "search",
@@ -2036,7 +2139,7 @@ export class BrowserRuntimeController {
         }
         const pageSearchUrl = buildBrowserSiteSearchUrl(searchPage.url, query);
         if (pageSearchUrl) {
-          searchPage = await this.navigate(policy, { pageId: searchPage.id, url: pageSearchUrl });
+          searchPage = await this.navigate(policy, { pageId: searchPage.id, url: pageSearchUrl }, { forceForeground: input.forceForeground === true });
           await this.waitForMissionResults(policy, searchPage.id, query, pageSearchUrl);
         } else {
           const inputSnapshot = await this.queryElements(policy, {
@@ -2519,10 +2622,10 @@ export class BrowserRuntimeController {
   private async ensureSession(policy: MachineAutonomyPolicy, allowManagedLaunch: boolean): Promise<BrowserSession | null> {
     if (!policy.enabled || !policy.allowBrowserNative) return null;
     const allowAttachExisting =
-      parseEnvBool(process.env.BINARY_BROWSER_ATTACH_EXISTING, false) &&
+      parseEnvBool(process.env.BINARY_BROWSER_ATTACH_EXISTING, true) &&
       this.sessionModeOverride !== "managed_only" &&
       policy.browserAttachMode !== "managed_only";
-    const allowProfileFallback = parseEnvBool(process.env.BINARY_BROWSER_ALLOW_PROFILE_FALLBACK, false);
+    const allowProfileFallback = parseEnvBool(process.env.BINARY_BROWSER_ALLOW_PROFILE_FALLBACK, true);
     if (this.session) {
       if (this.sessionModeOverride === "managed_only" && this.session.mode !== "managed") {
         this.resetPageTracking();

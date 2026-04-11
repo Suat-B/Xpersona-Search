@@ -1,0 +1,283 @@
+{
+  "version": "binary_autonomy_benchmark_v1",
+  "createdAt": "2026-04-09T04:39:22.163Z",
+  "host": {
+    "url": "http://127.0.0.1:7777",
+    "version": "0.2.0"
+  },
+  "categories": [
+    {
+      "category": "desktop_mixed_app_target_probe",
+      "gateLane": "desktop_latency_probe",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-desktop_mixed_app_target_probe-xWFo85",
+      "status": "completed",
+      "finishStatus": "completed",
+      "eventCount": 53,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 6,
+      "successfulToolCalls": 6,
+      "failedToolCalls": 0,
+      "toolCounts": {
+        "desktop_open_app": 2,
+        "desktop_type_into_control": 1,
+        "desktop_read_control": 2,
+        "desktop_send_shortcut": 1
+      },
+      "desktopOpenAppCount": 2,
+      "wrongTargetViolations": 0,
+      "desktopRecoverySuppressions": 0,
+      "timeoutDetected": false,
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [],
+      "turns": 6,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": false,
+      "elapsedMs": 45604,
+      "queueDelayMs": 7,
+      "ttfrMs": 13,
+      "firstToolMs": 3271,
+      "plannerLatencyMs": 1212,
+      "providerLatencyMs": 1212,
+      "totalRunMs": 43793,
+      "fallbackCount": 0,
+      "traceId": "37f75f3d-591c-4617-8588-a2e191855037",
+      "runId": "20e71bc4-492f-4ee6-9a8d-aae98e51ee45",
+      "hostedRunId": "3bd0001ffb5dea79a9e278ff5f40f9b3",
+      "files": [],
+      "timedOut": false
+    },
+    {
+      "category": "desktop_focus_recovery_probe",
+      "gateLane": "desktop_latency_probe",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-desktop_focus_recovery_probe-cFHLfb",
+      "status": "completed",
+      "finishStatus": "completed",
+      "eventCount": 35,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 4,
+      "successfulToolCalls": 4,
+      "failedToolCalls": 0,
+      "toolCounts": {
+        "desktop_open_app": 2,
+        "desktop_send_shortcut": 1,
+        "desktop_read_control": 1
+      },
+      "desktopOpenAppCount": 2,
+      "wrongTargetViolations": 0,
+      "desktopRecoverySuppressions": 0,
+      "timeoutDetected": false,
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [],
+      "turns": 4,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": false,
+      "elapsedMs": 56599,
+      "queueDelayMs": 4,
+      "ttfrMs": 8,
+      "firstToolMs": 2510,
+      "plannerLatencyMs": 6128,
+      "providerLatencyMs": 6128,
+      "totalRunMs": 54795,
+      "fallbackCount": 0,
+      "traceId": "f8476da1-f2d6-4a33-8825-66525b4212aa",
+      "runId": "c6473c79-4abf-4c94-9602-91a1b08d7441",
+      "hostedRunId": "182fc658e796548e7117d65f41ccb31b",
+      "files": [],
+      "timedOut": false
+    }
+  ],
+  "summary": {
+    "total": 2,
+    "passed": 2,
+    "takeoverRequired": 0,
+    "validationPassed": 0,
+    "latency": {
+      "laneMedians": {
+        "chat": {
+          "count": 0,
+          "ttfrMs": null,
+          "firstToolMs": null,
+          "firstVisibleMs": null,
+          "totalRunMs": null,
+          "elapsedMs": null
+        },
+        "browser": {
+          "count": 0,
+          "ttfrMs": null,
+          "firstToolMs": null,
+          "firstVisibleMs": null,
+          "totalRunMs": null,
+          "elapsedMs": null
+        },
+        "desktop": {
+          "count": 2,
+          "ttfrMs": 10.5,
+          "firstToolMs": 2890.5,
+          "firstVisibleMs": 2890.5,
+          "totalRunMs": 49294,
+          "elapsedMs": 51101.5
+        },
+        "coding": {
+          "count": 0,
+          "ttfrMs": null,
+          "firstToolMs": null,
+          "firstVisibleMs": null,
+          "totalRunMs": null,
+          "elapsedMs": null
+        }
+      },
+      "chatProbeCount": 0,
+      "browserProbeCount": 0,
+      "desktopProbeCount": 2,
+      "codingTargetCount": 0,
+      "medianChatTtfrMs": null,
+      "medianChatFirstToolMs": null,
+      "medianBrowserElapsedMs": null,
+      "medianCodingElapsedMs": null,
+      "medianCodingTotalRunMs": null,
+      "medianDesktopElapsedMs": 51101.5,
+      "medianFallbackCount": 0
+    },
+    "scorecard": {
+      "thresholds": {
+        "codingCompletionRate": 0.8,
+        "validationSuccessRate": 0.8,
+        "gitCloseoutSuccessRate": 1,
+        "maxAvoidableTakeoverRate": 0.2
+      },
+      "metrics": {
+        "codingCompletionRate": 1,
+        "validationSuccessRate": 1,
+        "repairSuccessRate": 0,
+        "gitCloseoutSuccessRate": 1,
+        "endToEndCompletionRate": 1,
+        "closureCompletionRate": 1,
+        "meanStepsToClosure": 0,
+        "meanRepairsToClosure": 0,
+        "avoidableTakeoverRate": 0,
+        "desktopCompletionRate": 1,
+        "desktopWrongTargetTotal": 0,
+        "desktopTimeoutCount": 0
+      },
+      "latency": {
+        "thresholds": {
+          "chatFirstToolImprovement": 0.3,
+          "codingTotalRunImprovement": 0.15,
+          "desktopElapsedImprovement": 0.2
+        },
+        "baselineAvailable": false,
+        "baseline": null,
+        "current": {
+          "laneMedians": {
+            "chat": {
+              "count": 0,
+              "ttfrMs": null,
+              "firstToolMs": null,
+              "firstVisibleMs": null,
+              "totalRunMs": null,
+              "elapsedMs": null
+            },
+            "browser": {
+              "count": 0,
+              "ttfrMs": null,
+              "firstToolMs": null,
+              "firstVisibleMs": null,
+              "totalRunMs": null,
+              "elapsedMs": null
+            },
+            "desktop": {
+              "count": 2,
+              "ttfrMs": 10.5,
+              "firstToolMs": 2890.5,
+              "firstVisibleMs": 2890.5,
+              "totalRunMs": 49294,
+              "elapsedMs": 51101.5
+            },
+            "coding": {
+              "count": 0,
+              "ttfrMs": null,
+              "firstToolMs": null,
+              "firstVisibleMs": null,
+              "totalRunMs": null,
+              "elapsedMs": null
+            }
+          },
+          "chatProbeCount": 0,
+          "browserProbeCount": 0,
+          "desktopProbeCount": 2,
+          "codingTargetCount": 0,
+          "medianChatTtfrMs": null,
+          "medianChatFirstToolMs": null,
+          "medianBrowserElapsedMs": null,
+          "medianCodingElapsedMs": null,
+          "medianCodingTotalRunMs": null,
+          "medianDesktopElapsedMs": 51101.5,
+          "medianFallbackCount": 0
+        },
+        "chatFirstToolImprovement": null,
+        "codingTotalRunImprovement": null,
+        "desktopElapsedImprovement": null,
+        "passing": true,
+        "failingReasons": []
+      },
+      "codingLaneCoverage": {
+        "repo_scaffold": {
+          "total": 0,
+          "completed": 0
+        },
+        "single_file_edit": {
+          "total": 0,
+          "completed": 0
+        },
+        "multi_file_feature_delivery": {
+          "total": 0,
+          "completed": 0
+        },
+        "validation_repair": {
+          "total": 0,
+          "completed": 0
+        },
+        "git_closeout": {
+          "total": 0,
+          "completed": 0
+        }
+      },
+      "passing": true,
+      "failingReasons": []
+    }
+  }
+}

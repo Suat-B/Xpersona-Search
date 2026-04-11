@@ -38,6 +38,7 @@ const vscode = __importStar(require("vscode"));
 const crypto_1 = require("crypto");
 const assistant_ux_1 = require("./assistant-ux");
 const api_client_1 = require("./api-client");
+const agent_jobs_client_1 = require("./agent-jobs-client");
 const binary_client_1 = require("./binary-client");
 const config_1 = require("./config");
 const draft_store_1 = require("./draft-store");
@@ -438,6 +439,99 @@ function livePhaseFromRuntimePhase(phase) {
             return "accepted";
     }
 }
+function normalizeMojibakeText(value) {
+    return String(value || "")
+        .replace(/â€™/g, "'")
+        .replace(/â€˜/g, "'")
+        .replace(/â€œ/g, '"')
+        .replace(/â€�/g, '"')
+        .replace(/â€¦/g, "...")
+        .replace(/Â·/g, "·")
+        .replace(/Â/g, " ");
+}
+function toSimpleFailureText(value) {
+    const text = normalizeMojibakeText(value).trim();
+    if (!text) {
+        return "Something went wrong. Please retry.";
+    }
+    if (/temporary provider capacity/i.test(text)) {
+        return "The model provider is busy right now. Please retry in a few seconds.";
+    }
+    if (/binary host completed the turn, but returned no assistant text/i.test(text)) {
+        return "I ran the request, but the model returned an empty reply. Please retry.";
+    }
+    if (/terminal_backend_unavailable_strict/i.test(text)) {
+        return "Terminal runtime needs repair before terminal tasks can run.";
+    }
+    if (/current working directory no longer exists/i.test(text)) {
+        return "This thread no longer has a valid working folder. Reopen the workspace and retry.";
+    }
+    if (/^request failed:\s*/i.test(text)) {
+        const stripped = text.replace(/^request failed:\s*/i, "").trim();
+        return toSimpleFailureText(stripped);
+    }
+    return text;
+}
+function toSimpleActivityText(value) {
+    const text = normalizeMojibakeText(value).replace(/\s+/g, " ").trim();
+    if (!text)
+        return "";
+    if (/^i got your request and i['’]?m starting on it\.?$/i.test(text)) {
+        return "Got it. Starting now.";
+    }
+    if (/^thinking(\..*)?$/i.test(text)) {
+        return "Thinking";
+    }
+    if (/^thinking\.\s*(preparing|checking|continuing)\b/i.test(text)) {
+        return "Thinking";
+    }
+    if (/^openhands-first default:/i.test(text)) {
+        return "";
+    }
+    if (/temporary provider capacity/i.test(text)) {
+        return "The model provider is busy right now.";
+    }
+    if (/binary host completed the turn, but returned no assistant text/i.test(text)) {
+        return "The model returned an empty reply.";
+    }
+    return text;
+}
+function parseDetachedJobEventMessage(data) {
+    if (typeof data === "string" && data.trim())
+        return toSimpleActivityText(data.trim());
+    if (!data || typeof data !== "object" || Array.isArray(data))
+        return "";
+    const record = data;
+    const directMessage = typeof record.message === "string" ? record.message.trim() : "";
+    if (directMessage)
+        return toSimpleActivityText(directMessage);
+    if (typeof record.summary === "string" && record.summary.trim())
+        return toSimpleActivityText(record.summary.trim());
+    if (typeof record.reason === "string" && record.reason.trim())
+        return toSimpleActivityText(record.reason.trim());
+    if (typeof record.status === "string" && record.status.trim()) {
+        return toSimpleActivityText(`Status: ${record.status.trim()}`);
+    }
+    return "";
+}
+function formatDetachedJobTerminalSummary(job) {
+    const statusLine = job.status === "completed"
+        ? `Detached job ${job.id} completed successfully.`
+        : job.status === "cancelled"
+            ? `Detached job ${job.id} was canceled.`
+            : job.status === "takeover_required"
+                ? `Detached job ${job.id} needs your input before it can continue.`
+                : `Detached job ${job.id} ended with status ${job.status}.`;
+    const lines = [
+        statusLine,
+        job.executionLane ? `Lane: ${job.executionLane}` : "",
+        job.runtimeTarget ? `Runtime: ${job.runtimeTarget}` : "",
+        job.jsonlPath ? `JSONL: ${job.jsonlPath}` : "",
+        job.persistenceDir ? `Artifacts: ${job.persistenceDir}` : "",
+        job.errorMessage ? `Error: ${toSimpleFailureText(job.errorMessage)}` : "",
+    ].filter(Boolean);
+    return lines.join("\n");
+}
 class PlaygroundViewProvider {
     constructor(context, auth, historyService, qwenHistoryService, qwenCodeRuntime, contextCollector, actionRunner, toolExecutor, indexManager) {
         this.context = context;
@@ -668,7 +762,7 @@ class PlaygroundViewProvider {
         }
         return current;
     }
-    async handleSlashCommand(text) {
+    async handleSlashCommand(text, clientMessageId = "") {
         const command = (0, slash_commands_1.parseSlashCommand)(text);
         if (!command)
             return false;
@@ -692,6 +786,20 @@ class PlaygroundViewProvider {
                 this.appendMessage("system", "Mode set to Auto.");
                 this.state.runtimePhase = this.getRuntimePhaseForDraft();
                 this.postState();
+                return true;
+            case "detach":
+                if (!command.task) {
+                    this.appendMessage("system", "Usage: /detach <task>");
+                    this.state.runtimePhase = this.getRuntimePhaseForDraft();
+                    this.postState();
+                    return true;
+                }
+                this.lastPrompt = {
+                    text: command.task,
+                    intent: (0, assistant_ux_1.classifyIntent)(command.task),
+                    searchDepth: "fast",
+                };
+                await this.sendPromptWithDetachedJob(command.task, clientMessageId, undefined, true);
                 return true;
             case "runtime":
                 this.appendMessage("system", "Hosted OpenHands orchestration is always on for Binary IDE chats.");
@@ -1301,12 +1409,19 @@ class PlaygroundViewProvider {
                 });
                 return;
             case "activity":
-                this.updateLiveAssistant({
-                    latestActivity: event.activity,
-                    phase: event.phase || this.state.liveChat.phase,
-                    progress: liveProgressForPhase(event.phase || this.state.liveChat.phase),
-                });
-                return;
+                {
+                    const activity = toSimpleActivityText(event.activity);
+                    if (!activity)
+                        return;
+                    if (activity === this.state.liveChat.latestActivity)
+                        return;
+                    this.updateLiveAssistant({
+                        latestActivity: activity,
+                        phase: event.phase || this.state.liveChat.phase,
+                        progress: liveProgressForPhase(event.phase || this.state.liveChat.phase),
+                    });
+                    return;
+                }
             case "partial_text":
                 this.updateLiveAssistant({
                     mode: "answer",
@@ -1338,12 +1453,17 @@ class PlaygroundViewProvider {
                 });
                 return;
             case "tool_approval":
-                this.updateLiveAssistant({
-                    phase: "awaiting_tool_approval",
-                    latestActivity: event.activity,
-                    progress: liveProgressForPhase("awaiting_tool_approval"),
-                });
-                return;
+                {
+                    const approvalMessage = toSimpleActivityText(event.activity);
+                    if (!approvalMessage)
+                        return;
+                    this.updateLiveAssistant({
+                        phase: "awaiting_tool_approval",
+                        latestActivity: approvalMessage,
+                        progress: liveProgressForPhase("awaiting_tool_approval"),
+                    });
+                    return;
+                }
             case "final":
                 this.resolveLiveAssistant({
                     content: event.text,
@@ -1354,7 +1474,7 @@ class PlaygroundViewProvider {
                 return;
             case "failed":
                 this.resolveLiveAssistant({
-                    content: event.text,
+                    content: toSimpleFailureText(event.text),
                     status: "failed",
                     mode: this.state.liveChat.mode,
                     phase: event.phase || "failed",
@@ -2474,6 +2594,40 @@ class PlaygroundViewProvider {
             this.postState();
         }
     }
+    getRecoveryFollowUpActions(taskText) {
+        const normalizedTask = String(taskText || "").trim();
+        const includeContextRetry = this.lastPrompt?.intent === "change" || this.lastPrompt?.intent === "find";
+        const actions = [
+            {
+                id: "retry-last",
+                label: "Retry",
+                kind: "rerun",
+                detail: normalizedTask ? "Run this request again" : "Try again",
+                emphasized: true,
+            },
+            ...(includeContextRetry
+                ? [
+                    {
+                        id: "retry-more-context",
+                        label: "Retry with context",
+                        kind: "rerun",
+                        detail: "Attach active file and selection",
+                    },
+                ]
+                : []),
+            {
+                id: "prompt:status",
+                label: "Check runtime",
+                kind: "prompt",
+                prompt: "/status",
+                detail: "Show runtime health",
+            },
+        ];
+        return actions.slice(0, 3);
+    }
+    setRecoveryFollowUpActions(taskText) {
+        this.state.followUpActions = this.getRecoveryFollowUpActions(taskText);
+    }
     async handleFollowUpAction(id) {
         const action = this.state.followUpActions.find((item) => item.id === id);
         if (!action || action.disabled)
@@ -2536,7 +2690,7 @@ class PlaygroundViewProvider {
                 return;
             }
         }
-        if (await this.handleSlashCommand(text)) {
+        if (await this.handleSlashCommand(text, clientMessageId)) {
             await this.clearCurrentDraft();
             return;
         }
@@ -2551,6 +2705,11 @@ class PlaygroundViewProvider {
         if (shouldContinuePreviousTask) {
             this.pendingClarification = null;
         }
+        this.lastPrompt = {
+            text: promptText,
+            intent: (0, assistant_ux_1.classifyIntent)(promptText),
+            searchDepth,
+        };
         await this.clearCurrentDraft();
         await this.sendPromptWithPlaygroundApi(text, clientMessageId, promptText, true);
     }
@@ -2776,9 +2935,10 @@ class PlaygroundViewProvider {
         catch (error) {
             this.applyChatLiveEvent({
                 type: "failed",
-                text: `Unable to prepare Qwen Code: ${error instanceof Error ? error.message : String(error)}`,
+                text: toSimpleFailureText(`Unable to prepare Qwen Code: ${error instanceof Error ? error.message : String(error)}`),
                 phase: "failed",
             });
+            this.setRecoveryFollowUpActions(taskText);
             this.pushActivity("Failed");
             this.state.runtimePhase = "failed";
             this.state.busy = false;
@@ -2788,9 +2948,10 @@ class PlaygroundViewProvider {
         if (preflightMessage) {
             this.applyChatLiveEvent({
                 type: "failed",
-                text: preflightMessage,
+                text: toSimpleFailureText(preflightMessage),
                 phase: "failed",
             });
+            this.setRecoveryFollowUpActions(taskText);
             this.pushActivity("Failed");
             this.state.runtimePhase = "failed";
             this.state.busy = false;
@@ -3063,7 +3224,7 @@ class PlaygroundViewProvider {
                     text: finalAssistantText,
                 });
             }
-            this.state.followUpActions = (0, assistant_ux_1.buildFollowUpActions)({
+            const generatedFollowUps = (0, assistant_ux_1.buildFollowUpActions)({
                 intent: fullPreview.intent,
                 lastTask: taskText,
                 preview: fullPreview,
@@ -3073,6 +3234,10 @@ class PlaygroundViewProvider {
                     didMutate: result.didMutate,
                 }),
             });
+            this.state.followUpActions = generatedFollowUps;
+            if (qwenStalled && !generatedFollowUps.length) {
+                this.setRecoveryFollowUpActions(taskText);
+            }
             for (const denial of result.permissionDenials) {
                 this.pushActivity(denial);
             }
@@ -3137,12 +3302,13 @@ class PlaygroundViewProvider {
             }
             this.applyChatLiveEvent({
                 type: "failed",
-                text: (0, qwen_ux_1.explainQwenFailure)(error, {
+                text: toSimpleFailureText((0, qwen_ux_1.explainQwenFailure)(error, {
                     qwenBaseUrl: (0, config_1.getQwenOpenAiBaseUrl)(),
                     executablePath: (0, config_1.getQwenExecutablePath)(),
-                }),
+                })),
                 phase: "failed",
             });
+            this.setRecoveryFollowUpActions(taskText);
             this.pushActivity("Failed");
             this.state.runtimePhase = "failed";
             await this.qwenHistoryService.saveConversation({
@@ -3245,6 +3411,9 @@ class PlaygroundViewProvider {
             lines.push(`Selected files: ${hosted.selectedFiles.join(", ") || "(none)"}`);
             lines.push(`Runtime phase: ${hosted.runtimePhase}`);
             lines.push(`Run ID: ${hosted.runId || "(none)"}`);
+            lines.push(`Execution lane: ${hosted.executionLane || "(none)"}`);
+            lines.push(`Runtime target: ${hosted.runtimeTarget || "(none)"}`);
+            lines.push(`JSONL path: ${hosted.jsonlPath || "(none)"}`);
             lines.push(`Adapter: ${hosted.adapter || "(none)"}`);
             lines.push(`Completion status: ${hosted.completionStatus || "(none)"}`);
             lines.push(`Progress status: ${hosted.progressState?.status || "(none)"}`);
@@ -3275,7 +3444,180 @@ class PlaygroundViewProvider {
         await vscode.env.clipboard.writeText(report);
         vscode.window.showInformationMessage("Copied Binary IDE debug report to clipboard.");
     }
+    async sendPromptWithDetachedJob(text, clientMessageId = "", promptText, appendUser = true) {
+        this.state.followUpActions = [];
+        this.state.busy = true;
+        const promptAbort = new AbortController();
+        this.promptAbort = promptAbort;
+        const taskText = String(promptText || text).trim() || text;
+        if (appendUser) {
+            this.appendMessage("user", text, undefined, clientMessageId);
+        }
+        this.applyChatLiveEvent({
+            type: "accepted",
+            transport: "cutie",
+            mode: "shell",
+            phase: "accepted",
+        });
+        this.applyChatLiveEvent({
+            type: "activity",
+            activity: "Starting detached headless job",
+            phase: "connecting_runtime",
+        });
+        this.postState();
+        const auth = await this.auth.getRequestAuth();
+        if (!auth) {
+            this.applyChatLiveEvent({
+                type: "failed",
+                text: "Authenticate with browser sign-in or an Xpersona API key before sending prompts.",
+                phase: "failed",
+            });
+            this.state.followUpActions = [];
+            this.state.busy = false;
+            this.postState();
+            return;
+        }
+        let createdJob = null;
+        let finalAssistantText = "";
+        try {
+            createdJob = await (0, agent_jobs_client_1.createAgentJob)(auth, {
+                task: taskText,
+                mode: this.state.mode,
+                model: (0, config_1.getAgentModelAlias)(),
+                ...(this.sessionId ? { historySessionId: this.sessionId } : {}),
+                client: {
+                    surface: "cutie",
+                    name: "xpersona-vscode-extension",
+                },
+            });
+            this.pushActivity(`Detached job ${createdJob.id} started (${createdJob.executionLane || "openhands_headless"}).`);
+            this.applyChatLiveEvent({
+                type: "activity",
+                activity: `Detached job ${createdJob.id} started.`,
+                phase: "connecting_runtime",
+            });
+            this.postState();
+            await (0, agent_jobs_client_1.streamAgentJobEvents)({
+                auth,
+                jobId: createdJob.id,
+                signal: promptAbort.signal,
+                onEvent: async (event) => {
+                    const message = parseDetachedJobEventMessage(event.data);
+                    if (event.event === "final" && typeof event.data === "string" && event.data.trim()) {
+                        finalAssistantText = event.data.trim();
+                    }
+                    else if (event.event === "final" && message) {
+                        finalAssistantText = message;
+                    }
+                    if (event.event === "host.heartbeat")
+                        return;
+                    if (message) {
+                        this.pushActivity(message);
+                        this.applyChatLiveEvent({
+                            type: "activity",
+                            activity: message,
+                            phase: "streaming_answer",
+                        });
+                        this.postState();
+                    }
+                },
+            });
+            const finalJob = await (0, agent_jobs_client_1.getAgentJob)(auth, createdJob.id);
+            const summary = formatDetachedJobTerminalSummary(finalJob);
+            this.lastHostedDebugSnapshot = {
+                timestamp: nowIso(),
+                task: taskText,
+                runtime: this.state.runtime,
+                mode: this.state.mode,
+                intent: (0, assistant_ux_1.classifyIntent)(taskText),
+                confidence: "medium",
+                workspaceRoot: (0, config_1.getWorkspaceRootPath)() || null,
+                activeFile: this.getActiveEditorPath() || "",
+                resolvedFiles: [],
+                selectedFiles: [],
+                runtimePhase: finalJob.status === "completed"
+                    ? "done"
+                    : finalJob.status === "cancelled"
+                        ? "canceled"
+                        : finalJob.status === "takeover_required"
+                            ? "clarify"
+                            : "failed",
+                recentActivity: [...this.state.activity].slice(-12),
+                runId: finalJob.runId,
+                executionLane: finalJob.executionLane,
+                runtimeTarget: finalJob.runtimeTarget || undefined,
+                jsonlPath: finalJob.jsonlPath || null,
+                persistenceDir: finalJob.persistenceDir || null,
+                completionStatus: finalJob.status === "completed" ? "complete" : "incomplete",
+                toolCallsUsed: [],
+                assistantPreview: finalAssistantText ? finalAssistantText.slice(0, 300) : undefined,
+                ...(finalJob.status === "completed" ? {} : { error: finalJob.errorMessage || summary }),
+            };
+            if (finalJob.status === "completed") {
+                this.applyChatLiveEvent({
+                    type: "final",
+                    text: finalAssistantText ? `${finalAssistantText}\n\n${summary}` : summary,
+                });
+                this.state.runtimePhase = "done";
+            }
+            else if (finalJob.status === "cancelled") {
+                this.applyChatLiveEvent({
+                    type: "canceled",
+                    text: summary,
+                    phase: "canceled",
+                });
+                this.state.runtimePhase = "canceled";
+            }
+            else {
+                this.applyChatLiveEvent({
+                    type: "failed",
+                    text: summary,
+                    phase: finalJob.status === "takeover_required" ? "awaiting_tool_approval" : "failed",
+                });
+                this.setRecoveryFollowUpActions(taskText);
+                this.state.runtimePhase = finalJob.status === "takeover_required" ? "clarify" : "failed";
+            }
+            await this.refreshHistory();
+        }
+        catch (error) {
+            if (this.isPromptAbortError(error)) {
+                this.pushActivity("Canceled");
+                this.state.runtimePhase = "canceled";
+                this.applyChatLiveEvent({
+                    type: "canceled",
+                    text: "Canceled current response.",
+                    phase: "canceled",
+                });
+                return;
+            }
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            const canFallbackToAssist = /\bHTTP 404\b/i.test(errorMessage) ||
+                /Unable to resolve agent jobs endpoint/i.test(errorMessage) ||
+                /Unknown route/i.test(errorMessage);
+            if (canFallbackToAssist) {
+                this.pushActivity("Detached jobs unavailable on this host. Falling back to standard chat lane.");
+                this.clearPromptAbort(promptAbort);
+                this.state.busy = false;
+                this.postState();
+                await this.sendPromptWithPlaygroundApi(text, clientMessageId, promptText, false);
+                return;
+            }
+            this.applyChatLiveEvent({
+                type: "failed",
+                text: toSimpleFailureText(`Detached run failed: ${errorMessage}`),
+                phase: "failed",
+            });
+            this.setRecoveryFollowUpActions(taskText);
+            this.state.runtimePhase = "failed";
+        }
+        finally {
+            this.clearPromptAbort(promptAbort);
+            this.state.busy = false;
+            this.postState();
+        }
+    }
     async sendPromptWithPlaygroundApi(text, clientMessageId = "", promptText, appendUser = true) {
+        this.state.followUpActions = [];
         this.state.busy = true;
         const promptAbort = new AbortController();
         this.promptAbort = promptAbort;
@@ -3301,6 +3643,7 @@ class PlaygroundViewProvider {
                 text: "Authenticate with browser sign-in or an Xpersona API key before sending prompts.",
                 phase: "failed",
             });
+            this.state.followUpActions = [];
             this.state.busy = false;
             this.postState();
             return;
@@ -3405,6 +3748,18 @@ class PlaygroundViewProvider {
             this.pushActivity(initial.orchestrationProtocol === "tool_loop_v1"
                 ? `Started run ${initial.runId || "pending"} via ${initial.adapter || "tool loop"}.`
                 : "Prepared a batch response.");
+            const initialLane = readRecordString(initial, "executionLane");
+            const initialRuntimeTarget = readRecordString(initial, "runtimeTarget");
+            const initialJsonlPath = readRecordString(initial, "jsonlPath");
+            if (initialLane || initialRuntimeTarget || initialJsonlPath) {
+                this.pushActivity([
+                    initialLane ? `lane=${initialLane}` : "",
+                    initialRuntimeTarget ? `runtime=${initialRuntimeTarget}` : "",
+                    initialJsonlPath ? `jsonl=${initialJsonlPath}` : "",
+                ]
+                    .filter(Boolean)
+                    .join(" | "));
+            }
             hostedDebugRef.runId = initial.runId;
             hostedDebugRef.adapter = initial.adapter;
             let envelope = initial;
@@ -3440,7 +3795,7 @@ class PlaygroundViewProvider {
             });
             const assistantBody = this.state.mode === "plan" && envelope.plan
                 ? [envelope.final || "Plan ready.", "", formatPlan(envelope.plan)].filter(Boolean).join("\n")
-                : envelope.final || "No final response text was returned.";
+                : envelope.final || "I ran the task, but the model returned an empty text reply.";
             const sanitizedAssistantBody = (0, qwen_ux_1.sanitizeQwenAssistantOutput)({
                 text: assistantBody,
                 task: taskText,
@@ -3481,14 +3836,16 @@ class PlaygroundViewProvider {
                     type: "final",
                     text: finalAssistantText,
                 });
+                this.state.followUpActions = [];
             }
             else {
                 this.applyChatLiveEvent({
                     type: "failed",
-                    text: finalAssistantText,
+                    text: toSimpleFailureText(finalAssistantText),
                     phase: "failed",
                 });
                 this.pushActivity("Model returned without provable completion");
+                this.setRecoveryFollowUpActions(taskText);
                 this.state.runtimePhase = "failed";
             }
             if (hostedSucceeded &&
@@ -3527,6 +3884,10 @@ class PlaygroundViewProvider {
                 runtimePhase: this.state.runtimePhase,
                 recentActivity: [...this.state.activity].slice(-12),
                 runId: envelope.runId,
+                executionLane: readRecordString(envelope, "executionLane"),
+                runtimeTarget: readRecordString(envelope, "runtimeTarget"),
+                jsonlPath: readRecordString(envelope, "jsonlPath") || null,
+                persistenceDir: readRecordString(envelope, "persistenceDir") || null,
                 adapter: envelope.adapter,
                 completionStatus: envelope.completionStatus,
                 progressState: hostedProgressState,
@@ -3562,9 +3923,10 @@ class PlaygroundViewProvider {
             }
             this.applyChatLiveEvent({
                 type: "failed",
-                text: `Request failed: ${errorMessage}`,
+                text: toSimpleFailureText(`Request failed: ${errorMessage}`),
                 phase: "failed",
             });
+            this.setRecoveryFollowUpActions(taskText);
             this.state.runtimePhase = "failed";
             this.lastHostedDebugSnapshot = {
                 timestamp: nowIso(),
@@ -3868,8 +4230,11 @@ class PlaygroundViewProvider {
         this.state.messages = [...this.state.messages, { id, role, content: nextContent, ...extras }];
     }
     pushActivity(text) {
-        const next = text.trim();
+        const next = toSimpleActivityText(text);
         if (!next)
+            return;
+        const last = this.state.activity.length ? this.state.activity[this.state.activity.length - 1] : "";
+        if (last === next)
             return;
         this.state.activity = [...this.state.activity, next].slice(-24);
     }

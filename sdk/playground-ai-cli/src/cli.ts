@@ -78,6 +78,7 @@ Core commands:
   binary jobs run "<task>"
   binary jobs show <id>
   binary jobs tail <id>
+  binary jobs stream <id>
   binary jobs pause <id>
   binary jobs resume <id>
   binary jobs cancel <id>
@@ -2175,7 +2176,7 @@ function printAgentJobSummary(job: LocalHostAgentJob): void {
     dim(
       `updated=${job.updatedAt}${job.runId ? `  run=${job.runId}` : ""}${
         job.workspaceRoot ? `  workspace=${job.workspaceRoot}` : ""
-      }`
+      }${job.runtimeTarget ? `  runtime=${job.runtimeTarget}` : ""}`
     )
   );
   if (job.pluginPacks.length) {
@@ -2187,6 +2188,9 @@ function printAgentJobSummary(job: LocalHostAgentJob): void {
   }
   if (job.persistenceDir) {
     console.log(dim(`artifacts=${job.persistenceDir}`));
+  }
+  if (job.jsonlPath) {
+    console.log(dim(`jsonl=${job.jsonlPath}`));
   }
   if (job.error) {
     console.log(dim(`error=${job.error}`));
@@ -3127,6 +3131,22 @@ async function handleJobs(parsed: ParsedArgs, config: CliConfig): Promise<void> 
       }
       await new Promise((resolve) => setTimeout(resolve, 1200));
     }
+  }
+
+  if (sub === "stream") {
+    const jobId = parsed.positionals[2];
+    if (!jobId) throw new Error("Usage: binary jobs stream <jobId>");
+    await hostClient.streamAgentJob(jobId, async (event) => {
+      const payload = asObject(event);
+      const seq = typeof payload.seq === "number" ? payload.seq : 0;
+      const capturedAt = typeof payload.capturedAt === "string" ? payload.capturedAt : new Date().toISOString();
+      printAgentJobEvent({
+        seq,
+        capturedAt,
+        event: payload,
+      });
+    });
+    return;
   }
 
   if (sub === "remote-health") {

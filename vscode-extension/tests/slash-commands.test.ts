@@ -10,6 +10,10 @@ describe("slash commands", () => {
     expect(parseSlashCommand(" /help ")).toEqual({ kind: "help" });
     expect(parseSlashCommand("/plan")).toEqual({ kind: "plan" });
     expect(parseSlashCommand("/auto")).toEqual({ kind: "auto" });
+    expect(parseSlashCommand("/detach open notepad and draft a todo")).toEqual({
+      kind: "detach",
+      task: "open notepad and draft a todo",
+    });
     expect(parseSlashCommand("/runtime qwen")).toEqual({
       kind: "runtime",
       runtime: "qwenCode",
@@ -42,9 +46,10 @@ describe("slash commands", () => {
     });
 
     expect(help).toContain("/runtime qwen");
+    expect(help).toContain("/detach <task>");
     expect(help).toContain("/status");
     expect(status).toContain("Binary IDE status:");
-    expect(status).toContain("Runtime: Qwen Code");
+    expect(status).toContain("Runtime: Local Qwen Code (legacy)");
     expect(status).toContain("Mode: Plan");
     expect(status).toContain("Phase: Awaiting tool approval");
     expect(status).toContain("Attached files: app/api/v1/playground/models/route.ts");

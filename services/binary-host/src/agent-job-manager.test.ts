@@ -36,6 +36,8 @@ describe("agent-job-manager", () => {
         executionLane: "openhands_headless",
         conversationId: "conversation-1",
         persistenceDir: "C:/tmp/run-1",
+        jsonlPath: "C:/tmp/run-1/events.jsonl",
+        runtimeTarget: "local_native",
       },
     });
 
@@ -43,6 +45,8 @@ describe("agent-job-manager", () => {
     expect(updated?.status).toBe("running");
     expect(updated?.conversationId).toBe("conversation-1");
     expect(updated?.persistenceDir).toBe("C:/tmp/run-1");
+    expect(updated?.jsonlPath).toBe("C:/tmp/run-1/events.jsonl");
+    expect(updated?.runtimeTarget).toBe("local_native");
   });
 
   it("records control actions and terminal state", async () => {

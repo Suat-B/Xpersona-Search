@@ -1,0 +1,108 @@
+{
+  "thresholds": {
+    "codingCompletionRate": 0.9,
+    "validationSuccessRate": 0.9,
+    "gitCloseoutSuccessRate": 1,
+    "maxAvoidableTakeoverRate": 0.2
+  },
+  "metrics": {
+    "codingCompletionRate": 1,
+    "validationSuccessRate": 1,
+    "repairSuccessRate": 0,
+    "gitCloseoutSuccessRate": 1,
+    "endToEndCompletionRate": 1,
+    "closureCompletionRate": 0,
+    "meanStepsToClosure": 9,
+    "meanRepairsToClosure": 0,
+    "avoidableTakeoverRate": 0,
+    "desktopCompletionRate": 1,
+    "desktopWrongTargetTotal": 0,
+    "desktopTimeoutCount": 0,
+    "qualityGateBlockedTotal": 0
+  },
+  "latency": {
+    "thresholds": {
+      "chatFirstToolImprovement": 0.3,
+      "codingTotalRunImprovement": 0.15,
+      "desktopElapsedImprovement": 0.2
+    },
+    "baselineAvailable": false,
+    "baseline": null,
+    "current": {
+      "laneMedians": {
+        "chat": {
+          "count": 1,
+          "ttfrMs": 4,
+          "firstToolMs": null,
+          "firstVisibleMs": 4,
+          "totalRunMs": 14480,
+          "elapsedMs": 14545
+        },
+        "browser": {
+          "count": 0,
+          "ttfrMs": null,
+          "firstToolMs": null,
+          "firstVisibleMs": null,
+          "totalRunMs": null,
+          "elapsedMs": null
+        },
+        "desktop": {
+          "count": 1,
+          "ttfrMs": 4,
+          "firstToolMs": 6898,
+          "firstVisibleMs": 6898,
+          "totalRunMs": 31578,
+          "elapsedMs": 32203
+        },
+        "coding": {
+          "count": 1,
+          "ttfrMs": 4,
+          "firstToolMs": 13453,
+          "firstVisibleMs": 13453,
+          "totalRunMs": 82439,
+          "elapsedMs": 83565
+        }
+      },
+      "chatProbeCount": 1,
+      "browserProbeCount": 0,
+      "desktopProbeCount": 1,
+      "codingTargetCount": 1,
+      "medianChatTtfrMs": 4,
+      "medianChatFirstToolMs": 4,
+      "medianBrowserElapsedMs": null,
+      "medianCodingElapsedMs": 83565,
+      "medianCodingTotalRunMs": 82439,
+      "medianDesktopElapsedMs": 32203,
+      "medianFallbackCount": 0
+    },
+    "chatFirstToolImprovement": null,
+    "codingTotalRunImprovement": null,
+    "desktopElapsedImprovement": null,
+    "passing": true,
+    "failingReasons": []
+  },
+  "codingLaneCoverage": {
+    "repo_scaffold": {
+      "total": 0,
+      "completed": 0
+    },
+    "single_file_edit": {
+      "total": 0,
+      "completed": 0
+    },
+    "multi_file_feature_delivery": {
+      "total": 0,
+      "completed": 0
+    },
+    "validation_repair": {
+      "total": 0,
+      "completed": 0
+    },
+    "git_closeout": {
+      "total": 1,
+      "completed": 1
+    }
+  },
+  "passing": true,
+  "failingReasons": []
+}

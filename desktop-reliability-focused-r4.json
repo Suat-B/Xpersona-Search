@@ -1,0 +1,382 @@
+{
+  "version": "binary_autonomy_benchmark_v1",
+  "createdAt": "2026-04-08T02:53:08.843Z",
+  "host": {
+    "url": "http://127.0.0.1:7777",
+    "version": "0.2.0"
+  },
+  "categories": [
+    {
+      "category": "desktop_latency_probe",
+      "gateLane": "desktop_latency_probe",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-desktop_latency_probe-J32rPp",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 28,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 2,
+      "successfulToolCalls": 1,
+      "failedToolCalls": 1,
+      "toolCounts": {
+        "desktop_open_app": 1,
+        "desktop_send_shortcut": 1
+      },
+      "desktopOpenAppCount": 1,
+      "wrongTargetViolations": 0,
+      "desktopRecoverySuppressions": 0,
+      "timeoutDetected": false,
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [],
+      "turns": 2,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": true,
+      "elapsedMs": 24418,
+      "queueDelayMs": 86,
+      "ttfrMs": 90,
+      "firstToolMs": 9164,
+      "plannerLatencyMs": 6703,
+      "providerLatencyMs": 6703,
+      "totalRunMs": null,
+      "fallbackCount": 0,
+      "traceId": "78ba78a8-eee2-47fc-94c6-4791faf52095",
+      "runId": "4742c9c7-53ba-4c25-b064-7bb421af2afb",
+      "hostedRunId": "58135b8b-4b8b-489a-9ddf-9efc8ab1c6d2",
+      "files": [],
+      "timedOut": false
+    },
+    {
+      "category": "desktop_notepad_draft_probe",
+      "gateLane": "desktop_latency_probe",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-desktop_notepad_draft_probe-p7SzFh",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 30,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 2,
+      "successfulToolCalls": 1,
+      "failedToolCalls": 1,
+      "toolCounts": {
+        "desktop_open_app": 1,
+        "desktop_type_into_control": 1
+      },
+      "desktopOpenAppCount": 1,
+      "wrongTargetViolations": 0,
+      "desktopRecoverySuppressions": 0,
+      "timeoutDetected": false,
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [],
+      "turns": 2,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": true,
+      "elapsedMs": 15782,
+      "queueDelayMs": 24,
+      "ttfrMs": 27,
+      "firstToolMs": 9385,
+      "plannerLatencyMs": 20,
+      "providerLatencyMs": 20,
+      "totalRunMs": 14904,
+      "fallbackCount": 0,
+      "traceId": "c3373f5c-ae0b-4cd3-aa1e-3d822aaccf2d",
+      "runId": "691b52d9-2848-4fb6-a262-fd34383c6b39",
+      "hostedRunId": "ff0b929149cfeee3fc880a71965eaf92",
+      "files": [],
+      "timedOut": false
+    },
+    {
+      "category": "desktop_calculator_division_probe",
+      "gateLane": "desktop_latency_probe",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-desktop_calculator_division_probe-HrWzCS",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 38,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 5,
+      "successfulToolCalls": 1,
+      "failedToolCalls": 4,
+      "toolCounts": {
+        "desktop_open_app": 1,
+        "desktop_send_shortcut": 2,
+        "desktop_read_control": 2
+      },
+      "desktopOpenAppCount": 1,
+      "wrongTargetViolations": 0,
+      "desktopRecoverySuppressions": 0,
+      "timeoutDetected": false,
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [
+        "Turn budget exceeded after 35000ms while waiting for local gateway."
+      ],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [
+        "Turn budget exceeded after 35000ms while waiting for local gateway."
+      ],
+      "turns": 5,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": true,
+      "elapsedMs": 50181,
+      "queueDelayMs": 61,
+      "ttfrMs": 64,
+      "firstToolMs": 362,
+      "plannerLatencyMs": 20,
+      "providerLatencyMs": 20,
+      "totalRunMs": 49383,
+      "fallbackCount": 0,
+      "traceId": "3fac8209-6c28-4fbb-b716-87c50d4b39f7",
+      "runId": "91962e07-273d-4928-ad4f-fac592e57514",
+      "hostedRunId": "2ae2e587b55afbcd5c5a4b698f2d7ec2",
+      "files": [],
+      "timedOut": false
+    },
+    {
+      "category": "desktop_focus_recovery_probe",
+      "gateLane": "desktop_latency_probe",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-desktop_focus_recovery_probe-FTlCy1",
+      "status": "takeover_required",
+      "finishStatus": "takeover_required",
+      "eventCount": 41,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 5,
+      "successfulToolCalls": 1,
+      "failedToolCalls": 4,
+      "toolCounts": {
+        "desktop_open_app": 1,
+        "desktop_send_shortcut": 2,
+        "desktop_read_control": 2
+      },
+      "desktopOpenAppCount": 1,
+      "wrongTargetViolations": 0,
+      "desktopRecoverySuppressions": 0,
+      "timeoutDetected": false,
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [
+        "Turn budget exceeded after 35000ms while waiting for local gateway."
+      ],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [
+        "Turn budget exceeded after 35000ms while waiting for local gateway."
+      ],
+      "turns": 5,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": true,
+      "elapsedMs": 46075,
+      "queueDelayMs": 7,
+      "ttfrMs": 10,
+      "firstToolMs": 2018,
+      "plannerLatencyMs": 26,
+      "providerLatencyMs": 26,
+      "totalRunMs": 44723,
+      "fallbackCount": 0,
+      "traceId": "8d2387e2-19c5-47ba-80d7-32e2a701a8c3",
+      "runId": "49017a0b-ca5f-4af4-a929-1b1d078407d4",
+      "hostedRunId": "e61e33205dfb08d674d24ace1f1f90b4",
+      "files": [],
+      "timedOut": false
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "passed": 0,
+    "takeoverRequired": 4,
+    "validationPassed": 0,
+    "latency": {
+      "laneMedians": {
+        "chat": {
+          "count": 0,
+          "ttfrMs": null,
+          "firstToolMs": null,
+          "firstVisibleMs": null,
+          "totalRunMs": null,
+          "elapsedMs": null
+        },
+        "desktop": {
+          "count": 4,
+          "ttfrMs": 45.5,
+          "firstToolMs": 5591,
+          "firstVisibleMs": 5591,
+          "totalRunMs": 44723,
+          "elapsedMs": 35246.5
+        },
+        "coding": {
+          "count": 0,
+          "ttfrMs": null,
+          "firstToolMs": null,
+          "firstVisibleMs": null,
+          "totalRunMs": null,
+          "elapsedMs": null
+        }
+      },
+      "chatProbeCount": 0,
+      "desktopProbeCount": 4,
+      "codingTargetCount": 0,
+      "medianChatTtfrMs": null,
+      "medianChatFirstToolMs": null,
+      "medianCodingElapsedMs": null,
+      "medianCodingTotalRunMs": null,
+      "medianDesktopElapsedMs": 35246.5,
+      "medianFallbackCount": 0
+    },
+    "scorecard": {
+      "thresholds": {
+        "codingCompletionRate": 0.8,
+        "validationSuccessRate": 0.8,
+        "gitCloseoutSuccessRate": 1,
+        "maxAvoidableTakeoverRate": 0.2
+      },
+      "metrics": {
+        "codingCompletionRate": 1,
+        "validationSuccessRate": 1,
+        "repairSuccessRate": 0,
+        "gitCloseoutSuccessRate": 1,
+        "endToEndCompletionRate": 0,
+        "closureCompletionRate": 1,
+        "meanStepsToClosure": 0,
+        "meanRepairsToClosure": 0,
+        "avoidableTakeoverRate": 0,
+        "desktopCompletionRate": 0,
+        "desktopWrongTargetTotal": 0,
+        "desktopTimeoutCount": 0
+      },
+      "latency": {
+        "thresholds": {
+          "chatFirstToolImprovement": 0.3,
+          "codingTotalRunImprovement": 0.15,
+          "desktopElapsedImprovement": 0.2
+        },
+        "baselineAvailable": false,
+        "baseline": null,
+        "current": {
+          "laneMedians": {
+            "chat": {
+              "count": 0,
+              "ttfrMs": null,
+              "firstToolMs": null,
+              "firstVisibleMs": null,
+              "totalRunMs": null,
+              "elapsedMs": null
+            },
+            "desktop": {
+              "count": 4,
+              "ttfrMs": 45.5,
+              "firstToolMs": 5591,
+              "firstVisibleMs": 5591,
+              "totalRunMs": 44723,
+              "elapsedMs": 35246.5
+            },
+            "coding": {
+              "count": 0,
+              "ttfrMs": null,
+              "firstToolMs": null,
+              "firstVisibleMs": null,
+              "totalRunMs": null,
+              "elapsedMs": null
+            }
+          },
+          "chatProbeCount": 0,
+          "desktopProbeCount": 4,
+          "codingTargetCount": 0,
+          "medianChatTtfrMs": null,
+          "medianChatFirstToolMs": null,
+          "medianCodingElapsedMs": null,
+          "medianCodingTotalRunMs": null,
+          "medianDesktopElapsedMs": 35246.5,
+          "medianFallbackCount": 0
+        },
+        "chatFirstToolImprovement": null,
+        "codingTotalRunImprovement": null,
+        "desktopElapsedImprovement": null,
+        "passing": true,
+        "failingReasons": []
+      },
+      "codingLaneCoverage": {
+        "repo_scaffold": {
+          "total": 0,
+          "completed": 0
+        },
+        "single_file_edit": {
+          "total": 0,
+          "completed": 0
+        },
+        "multi_file_feature_delivery": {
+          "total": 0,
+          "completed": 0
+        },
+        "validation_repair": {
+          "total": 0,
+          "completed": 0
+        },
+        "git_closeout": {
+          "total": 0,
+          "completed": 0
+        }
+      },
+      "passing": false,
+      "failingReasons": [
+        "desktop completion 0.00 < 1.00"
+      ]
+    }
+  }
+}

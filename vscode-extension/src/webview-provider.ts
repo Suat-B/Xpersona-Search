@@ -12,6 +12,11 @@ import { AuthManager } from "./auth";
 import { ActionRunner } from "./actions";
 import { requestJson, streamJsonEvents } from "./api-client";
 import {
+  createAgentJob,
+  getAgentJob,
+  streamAgentJobEvents,
+} from "./agent-jobs-client";
+import {
   branchBinaryBuild as requestBinaryBranch,
   cancelBinaryBuild as requestBinaryCancel,
   createBinaryBuild as requestBinaryBuild,
@@ -78,6 +83,7 @@ import type {
   BinaryBuildRecord,
   BinaryTargetEnvironment,
   BinaryAstState,
+  BinaryAgentJob,
   BinaryLiveReliabilityState,
   BinaryPanelState,
   BinaryRuntimeState,
@@ -181,6 +187,10 @@ type HostedDebugSnapshot = {
   runtimePhase: RuntimePhase;
   recentActivity: string[];
   runId?: string;
+  executionLane?: string;
+  runtimeTarget?: string;
+  jsonlPath?: string | null;
+  persistenceDir?: string | null;
   adapter?: string;
   completionStatus?: string;
   progressState?: ProgressState | null;
@@ -640,6 +650,99 @@ function livePhaseFromRuntimePhase(phase: RuntimePhase): string {
   }
 }
 
+function normalizeMojibakeText(value: string): string {
+  return String(value || "")
+    .replace(/â€™/g, "'")
+    .replace(/â€˜/g, "'")
+    .replace(/â€œ/g, '"')
+    .replace(/â€�/g, '"')
+    .replace(/â€¦/g, "...")
+    .replace(/Â·/g, "·")
+    .replace(/Â/g, " ");
+}
+
+function toSimpleFailureText(value: string): string {
+  const text = normalizeMojibakeText(value).trim();
+  if (!text) {
+    return "Something went wrong. Please retry.";
+  }
+  if (/temporary provider capacity/i.test(text)) {
+    return "The model provider is busy right now. Please retry in a few seconds.";
+  }
+  if (/binary host completed the turn, but returned no assistant text/i.test(text)) {
+    return "I ran the request, but the model returned an empty reply. Please retry.";
+  }
+  if (/terminal_backend_unavailable_strict/i.test(text)) {
+    return "Terminal runtime needs repair before terminal tasks can run.";
+  }
+  if (/current working directory no longer exists/i.test(text)) {
+    return "This thread no longer has a valid working folder. Reopen the workspace and retry.";
+  }
+  if (/^request failed:\s*/i.test(text)) {
+    const stripped = text.replace(/^request failed:\s*/i, "").trim();
+    return toSimpleFailureText(stripped);
+  }
+  return text;
+}
+
+function toSimpleActivityText(value: string): string {
+  const text = normalizeMojibakeText(value).replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  if (/^i got your request and i['’]?m starting on it\.?$/i.test(text)) {
+    return "Got it. Starting now.";
+  }
+  if (/^thinking(\..*)?$/i.test(text)) {
+    return "Thinking";
+  }
+  if (/^thinking\.\s*(preparing|checking|continuing)\b/i.test(text)) {
+    return "Thinking";
+  }
+  if (/^openhands-first default:/i.test(text)) {
+    return "";
+  }
+  if (/temporary provider capacity/i.test(text)) {
+    return "The model provider is busy right now.";
+  }
+  if (/binary host completed the turn, but returned no assistant text/i.test(text)) {
+    return "The model returned an empty reply.";
+  }
+  return text;
+}
+
+function parseDetachedJobEventMessage(data: unknown): string {
+  if (typeof data === "string" && data.trim()) return toSimpleActivityText(data.trim());
+  if (!data || typeof data !== "object" || Array.isArray(data)) return "";
+  const record = data as Record<string, unknown>;
+  const directMessage = typeof record.message === "string" ? record.message.trim() : "";
+  if (directMessage) return toSimpleActivityText(directMessage);
+  if (typeof record.summary === "string" && record.summary.trim()) return toSimpleActivityText(record.summary.trim());
+  if (typeof record.reason === "string" && record.reason.trim()) return toSimpleActivityText(record.reason.trim());
+  if (typeof record.status === "string" && record.status.trim()) {
+    return toSimpleActivityText(`Status: ${record.status.trim()}`);
+  }
+  return "";
+}
+
+function formatDetachedJobTerminalSummary(job: BinaryAgentJob): string {
+  const statusLine =
+    job.status === "completed"
+      ? `Detached job ${job.id} completed successfully.`
+      : job.status === "cancelled"
+        ? `Detached job ${job.id} was canceled.`
+        : job.status === "takeover_required"
+          ? `Detached job ${job.id} needs your input before it can continue.`
+          : `Detached job ${job.id} ended with status ${job.status}.`;
+  const lines = [
+    statusLine,
+    job.executionLane ? `Lane: ${job.executionLane}` : "",
+    job.runtimeTarget ? `Runtime: ${job.runtimeTarget}` : "",
+    job.jsonlPath ? `JSONL: ${job.jsonlPath}` : "",
+    job.persistenceDir ? `Artifacts: ${job.persistenceDir}` : "",
+    job.errorMessage ? `Error: ${toSimpleFailureText(job.errorMessage)}` : "",
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+
 export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
   private sessionId: string | null = null;
@@ -904,7 +1007,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     return current;
   }
 
-  private async handleSlashCommand(text: string): Promise<boolean> {
+  private async handleSlashCommand(text: string, clientMessageId = ""): Promise<boolean> {
     const command = parseSlashCommand(text);
     if (!command) return false;
 
@@ -929,6 +1032,20 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         this.appendMessage("system", "Mode set to Auto.");
         this.state.runtimePhase = this.getRuntimePhaseForDraft();
         this.postState();
+        return true;
+      case "detach":
+        if (!command.task) {
+          this.appendMessage("system", "Usage: /detach <task>");
+          this.state.runtimePhase = this.getRuntimePhaseForDraft();
+          this.postState();
+          return true;
+        }
+        this.lastPrompt = {
+          text: command.task,
+          intent: classifyIntent(command.task),
+          searchDepth: "fast",
+        };
+        await this.sendPromptWithDetachedJob(command.task, clientMessageId, undefined, true);
         return true;
       case "runtime":
         this.appendMessage("system", "Hosted OpenHands orchestration is always on for Binary IDE chats.");
@@ -1615,12 +1732,17 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         });
         return;
       case "activity":
-        this.updateLiveAssistant({
-          latestActivity: event.activity,
-          phase: event.phase || this.state.liveChat.phase,
-          progress: liveProgressForPhase(event.phase || this.state.liveChat.phase),
-        });
-        return;
+        {
+          const activity = toSimpleActivityText(event.activity);
+          if (!activity) return;
+          if (activity === this.state.liveChat.latestActivity) return;
+          this.updateLiveAssistant({
+            latestActivity: activity,
+            phase: event.phase || this.state.liveChat.phase,
+            progress: liveProgressForPhase(event.phase || this.state.liveChat.phase),
+          });
+          return;
+        }
       case "partial_text":
         this.updateLiveAssistant({
           mode: "answer",
@@ -1653,12 +1775,16 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         });
         return;
       case "tool_approval":
-        this.updateLiveAssistant({
-          phase: "awaiting_tool_approval",
-          latestActivity: event.activity,
-          progress: liveProgressForPhase("awaiting_tool_approval"),
-        });
-        return;
+        {
+          const approvalMessage = toSimpleActivityText(event.activity);
+          if (!approvalMessage) return;
+          this.updateLiveAssistant({
+            phase: "awaiting_tool_approval",
+            latestActivity: approvalMessage,
+            progress: liveProgressForPhase("awaiting_tool_approval"),
+          });
+          return;
+        }
       case "final":
         this.resolveLiveAssistant({
           content: event.text,
@@ -1669,7 +1795,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         return;
       case "failed":
         this.resolveLiveAssistant({
-          content: event.text,
+          content: toSimpleFailureText(event.text),
           status: "failed",
           mode: this.state.liveChat.mode,
           phase: event.phase || "failed",
@@ -2856,6 +2982,43 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private getRecoveryFollowUpActions(taskText: string): FollowUpAction[] {
+    const normalizedTask = String(taskText || "").trim();
+    const includeContextRetry =
+      this.lastPrompt?.intent === "change" || this.lastPrompt?.intent === "find";
+    const actions: FollowUpAction[] = [
+      {
+        id: "retry-last",
+        label: "Retry",
+        kind: "rerun",
+        detail: normalizedTask ? "Run this request again" : "Try again",
+        emphasized: true,
+      },
+      ...(includeContextRetry
+        ? [
+            {
+              id: "retry-more-context",
+              label: "Retry with context",
+              kind: "rerun" as const,
+              detail: "Attach active file and selection",
+            },
+          ]
+        : []),
+      {
+        id: "prompt:status",
+        label: "Check runtime",
+        kind: "prompt",
+        prompt: "/status",
+        detail: "Show runtime health",
+      },
+    ];
+    return actions.slice(0, 3);
+  }
+
+  private setRecoveryFollowUpActions(taskText: string): void {
+    this.state.followUpActions = this.getRecoveryFollowUpActions(taskText);
+  }
+
   private async handleFollowUpAction(id: string): Promise<void> {
     const action = this.state.followUpActions.find((item) => item.id === id);
     if (!action || action.disabled) return;
@@ -2925,7 +3088,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       }
     }
 
-    if (await this.handleSlashCommand(text)) {
+    if (await this.handleSlashCommand(text, clientMessageId)) {
       await this.clearCurrentDraft();
       return;
     }
@@ -2943,6 +3106,11 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     if (shouldContinuePreviousTask) {
       this.pendingClarification = null;
     }
+    this.lastPrompt = {
+      text: promptText,
+      intent: classifyIntent(promptText),
+      searchDepth,
+    };
 
     await this.clearCurrentDraft();
     await this.sendPromptWithPlaygroundApi(text, clientMessageId, promptText, true);
@@ -3226,9 +3394,10 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     } catch (error) {
       this.applyChatLiveEvent({
         type: "failed",
-        text: `Unable to prepare Qwen Code: ${error instanceof Error ? error.message : String(error)}`,
+        text: toSimpleFailureText(`Unable to prepare Qwen Code: ${error instanceof Error ? error.message : String(error)}`),
         phase: "failed",
       });
+      this.setRecoveryFollowUpActions(taskText);
       this.pushActivity("Failed");
       this.state.runtimePhase = "failed";
       this.state.busy = false;
@@ -3239,9 +3408,10 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     if (preflightMessage) {
       this.applyChatLiveEvent({
         type: "failed",
-        text: preflightMessage,
+        text: toSimpleFailureText(preflightMessage),
         phase: "failed",
       });
+      this.setRecoveryFollowUpActions(taskText);
       this.pushActivity("Failed");
       this.state.runtimePhase = "failed";
       this.state.busy = false;
@@ -3551,7 +3721,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
           text: finalAssistantText,
         });
       }
-      this.state.followUpActions = buildFollowUpActions({
+      const generatedFollowUps = buildFollowUpActions({
         intent: fullPreview.intent,
         lastTask: taskText,
         preview: fullPreview,
@@ -3561,6 +3731,10 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
           didMutate: result.didMutate,
         }),
       });
+      this.state.followUpActions = generatedFollowUps;
+      if (qwenStalled && !generatedFollowUps.length) {
+        this.setRecoveryFollowUpActions(taskText);
+      }
 
       for (const denial of result.permissionDenials) {
         this.pushActivity(denial);
@@ -3626,12 +3800,15 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       }
       this.applyChatLiveEvent({
         type: "failed",
-        text: explainQwenFailure(error, {
-          qwenBaseUrl: getQwenOpenAiBaseUrl(),
-          executablePath: getQwenExecutablePath(),
-        }),
+        text: toSimpleFailureText(
+          explainQwenFailure(error, {
+            qwenBaseUrl: getQwenOpenAiBaseUrl(),
+            executablePath: getQwenExecutablePath(),
+          })
+        ),
         phase: "failed",
       });
+      this.setRecoveryFollowUpActions(taskText);
       this.pushActivity("Failed");
       this.state.runtimePhase = "failed";
       await this.qwenHistoryService.saveConversation({
@@ -3737,6 +3914,9 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       lines.push(`Selected files: ${hosted.selectedFiles.join(", ") || "(none)"}`);
       lines.push(`Runtime phase: ${hosted.runtimePhase}`);
       lines.push(`Run ID: ${hosted.runId || "(none)"}`);
+      lines.push(`Execution lane: ${hosted.executionLane || "(none)"}`);
+      lines.push(`Runtime target: ${hosted.runtimeTarget || "(none)"}`);
+      lines.push(`JSONL path: ${hosted.jsonlPath || "(none)"}`);
       lines.push(`Adapter: ${hosted.adapter || "(none)"}`);
       lines.push(`Completion status: ${hosted.completionStatus || "(none)"}`);
       lines.push(`Progress status: ${hosted.progressState?.status || "(none)"}`);
@@ -3768,12 +3948,195 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     vscode.window.showInformationMessage("Copied Binary IDE debug report to clipboard.");
   }
 
+  private async sendPromptWithDetachedJob(
+    text: string,
+    clientMessageId = "",
+    promptText?: string,
+    appendUser = true
+  ): Promise<void> {
+    this.state.followUpActions = [];
+    this.state.busy = true;
+    const promptAbort = new AbortController();
+    this.promptAbort = promptAbort;
+    const taskText = String(promptText || text).trim() || text;
+    if (appendUser) {
+      this.appendMessage("user", text, undefined, clientMessageId);
+    }
+    this.applyChatLiveEvent({
+      type: "accepted",
+      transport: "cutie",
+      mode: "shell",
+      phase: "accepted",
+    });
+    this.applyChatLiveEvent({
+      type: "activity",
+      activity: "Starting detached headless job",
+      phase: "connecting_runtime",
+    });
+    this.postState();
+
+    const auth = await this.auth.getRequestAuth();
+    if (!auth) {
+      this.applyChatLiveEvent({
+        type: "failed",
+        text: "Authenticate with browser sign-in or an Xpersona API key before sending prompts.",
+        phase: "failed",
+      });
+      this.state.followUpActions = [];
+      this.state.busy = false;
+      this.postState();
+      return;
+    }
+
+    let createdJob: BinaryAgentJob | null = null;
+    let finalAssistantText = "";
+
+    try {
+      createdJob = await createAgentJob(auth, {
+        task: taskText,
+        mode: this.state.mode,
+        model: getAgentModelAlias(),
+        ...(this.sessionId ? { historySessionId: this.sessionId } : {}),
+        client: {
+          surface: "cutie",
+          name: "xpersona-vscode-extension",
+        },
+      });
+      this.pushActivity(
+        `Detached job ${createdJob.id} started (${createdJob.executionLane || "openhands_headless"}).`
+      );
+      this.applyChatLiveEvent({
+        type: "activity",
+        activity: `Detached job ${createdJob.id} started.`,
+        phase: "connecting_runtime",
+      });
+      this.postState();
+
+      await streamAgentJobEvents({
+        auth,
+        jobId: createdJob.id,
+        signal: promptAbort.signal,
+        onEvent: async (event) => {
+          const message = parseDetachedJobEventMessage(event.data);
+          if (event.event === "final" && typeof event.data === "string" && event.data.trim()) {
+            finalAssistantText = event.data.trim();
+          } else if (event.event === "final" && message) {
+            finalAssistantText = message;
+          }
+          if (event.event === "host.heartbeat") return;
+          if (message) {
+            this.pushActivity(message);
+            this.applyChatLiveEvent({
+              type: "activity",
+              activity: message,
+              phase: "streaming_answer",
+            });
+            this.postState();
+          }
+        },
+      });
+
+      const finalJob = await getAgentJob(auth, createdJob.id);
+      const summary = formatDetachedJobTerminalSummary(finalJob);
+      this.lastHostedDebugSnapshot = {
+        timestamp: nowIso(),
+        task: taskText,
+        runtime: this.state.runtime,
+        mode: this.state.mode,
+        intent: classifyIntent(taskText),
+        confidence: "medium",
+        workspaceRoot: getWorkspaceRootPath() || null,
+        activeFile: this.getActiveEditorPath() || "",
+        resolvedFiles: [],
+        selectedFiles: [],
+        runtimePhase:
+          finalJob.status === "completed"
+            ? "done"
+            : finalJob.status === "cancelled"
+              ? "canceled"
+              : finalJob.status === "takeover_required"
+                ? "clarify"
+                : "failed",
+        recentActivity: [...this.state.activity].slice(-12),
+        runId: finalJob.runId,
+        executionLane: finalJob.executionLane,
+        runtimeTarget: finalJob.runtimeTarget || undefined,
+        jsonlPath: finalJob.jsonlPath || null,
+        persistenceDir: finalJob.persistenceDir || null,
+        completionStatus: finalJob.status === "completed" ? "complete" : "incomplete",
+        toolCallsUsed: [],
+        assistantPreview: finalAssistantText ? finalAssistantText.slice(0, 300) : undefined,
+        ...(finalJob.status === "completed" ? {} : { error: finalJob.errorMessage || summary }),
+      };
+
+      if (finalJob.status === "completed") {
+        this.applyChatLiveEvent({
+          type: "final",
+          text: finalAssistantText ? `${finalAssistantText}\n\n${summary}` : summary,
+        });
+        this.state.runtimePhase = "done";
+      } else if (finalJob.status === "cancelled") {
+        this.applyChatLiveEvent({
+          type: "canceled",
+          text: summary,
+          phase: "canceled",
+        });
+        this.state.runtimePhase = "canceled";
+      } else {
+        this.applyChatLiveEvent({
+          type: "failed",
+          text: summary,
+          phase: finalJob.status === "takeover_required" ? "awaiting_tool_approval" : "failed",
+        });
+        this.setRecoveryFollowUpActions(taskText);
+        this.state.runtimePhase = finalJob.status === "takeover_required" ? "clarify" : "failed";
+      }
+      await this.refreshHistory();
+    } catch (error) {
+      if (this.isPromptAbortError(error)) {
+        this.pushActivity("Canceled");
+        this.state.runtimePhase = "canceled";
+        this.applyChatLiveEvent({
+          type: "canceled",
+          text: "Canceled current response.",
+          phase: "canceled",
+        });
+        return;
+      }
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const canFallbackToAssist =
+        /\bHTTP 404\b/i.test(errorMessage) ||
+        /Unable to resolve agent jobs endpoint/i.test(errorMessage) ||
+        /Unknown route/i.test(errorMessage);
+      if (canFallbackToAssist) {
+        this.pushActivity("Detached jobs unavailable on this host. Falling back to standard chat lane.");
+        this.clearPromptAbort(promptAbort);
+        this.state.busy = false;
+        this.postState();
+        await this.sendPromptWithPlaygroundApi(text, clientMessageId, promptText, false);
+        return;
+      }
+      this.applyChatLiveEvent({
+        type: "failed",
+        text: toSimpleFailureText(`Detached run failed: ${errorMessage}`),
+        phase: "failed",
+      });
+      this.setRecoveryFollowUpActions(taskText);
+      this.state.runtimePhase = "failed";
+    } finally {
+      this.clearPromptAbort(promptAbort);
+      this.state.busy = false;
+      this.postState();
+    }
+  }
+
   private async sendPromptWithPlaygroundApi(
     text: string,
     clientMessageId = "",
     promptText?: string,
     appendUser = true
   ): Promise<void> {
+    this.state.followUpActions = [];
     this.state.busy = true;
     const promptAbort = new AbortController();
     this.promptAbort = promptAbort;
@@ -3800,6 +4163,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         text: "Authenticate with browser sign-in or an Xpersona API key before sending prompts.",
         phase: "failed",
       });
+      this.state.followUpActions = [];
       this.state.busy = false;
       this.postState();
       return;
@@ -3915,6 +4279,20 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
           ? `Started run ${initial.runId || "pending"} via ${initial.adapter || "tool loop"}.`
           : "Prepared a batch response."
       );
+      const initialLane = readRecordString(initial as unknown, "executionLane");
+      const initialRuntimeTarget = readRecordString(initial as unknown, "runtimeTarget");
+      const initialJsonlPath = readRecordString(initial as unknown, "jsonlPath");
+      if (initialLane || initialRuntimeTarget || initialJsonlPath) {
+        this.pushActivity(
+          [
+            initialLane ? `lane=${initialLane}` : "",
+            initialRuntimeTarget ? `runtime=${initialRuntimeTarget}` : "",
+            initialJsonlPath ? `jsonl=${initialJsonlPath}` : "",
+          ]
+            .filter(Boolean)
+            .join(" | ")
+        );
+      }
 
       hostedDebugRef.runId = initial.runId;
       hostedDebugRef.adapter = initial.adapter;
@@ -3953,7 +4331,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       const assistantBody =
         this.state.mode === "plan" && envelope.plan
           ? [envelope.final || "Plan ready.", "", formatPlan(envelope.plan)].filter(Boolean).join("\n")
-          : envelope.final || "No final response text was returned.";
+          : envelope.final || "I ran the task, but the model returned an empty text reply.";
       const sanitizedAssistantBody = sanitizeQwenAssistantOutput({
         text: assistantBody,
         task: taskText,
@@ -3995,13 +4373,15 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
           type: "final",
           text: finalAssistantText,
         });
+        this.state.followUpActions = [];
       } else {
         this.applyChatLiveEvent({
           type: "failed",
-          text: finalAssistantText,
+          text: toSimpleFailureText(finalAssistantText),
           phase: "failed",
         });
         this.pushActivity("Model returned without provable completion");
+        this.setRecoveryFollowUpActions(taskText);
         this.state.runtimePhase = "failed";
       }
 
@@ -4045,6 +4425,10 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         runtimePhase: this.state.runtimePhase,
         recentActivity: [...this.state.activity].slice(-12),
         runId: envelope.runId,
+        executionLane: readRecordString(envelope as unknown, "executionLane"),
+        runtimeTarget: readRecordString(envelope as unknown, "runtimeTarget"),
+        jsonlPath: readRecordString(envelope as unknown, "jsonlPath") || null,
+        persistenceDir: readRecordString(envelope as unknown, "persistenceDir") || null,
         adapter: envelope.adapter,
         completionStatus: envelope.completionStatus,
         progressState: hostedProgressState,
@@ -4080,9 +4464,10 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       }
       this.applyChatLiveEvent({
         type: "failed",
-        text: `Request failed: ${errorMessage}`,
+        text: toSimpleFailureText(`Request failed: ${errorMessage}`),
         phase: "failed",
       });
+      this.setRecoveryFollowUpActions(taskText);
       this.state.runtimePhase = "failed";
       this.lastHostedDebugSnapshot = {
         timestamp: nowIso(),
@@ -4459,8 +4844,10 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   }
 
   private pushActivity(text: string): void {
-    const next = text.trim();
+    const next = toSimpleActivityText(text);
     if (!next) return;
+    const last = this.state.activity.length ? this.state.activity[this.state.activity.length - 1] : "";
+    if (last === next) return;
     this.state.activity = [...this.state.activity, next].slice(-24);
   }
 

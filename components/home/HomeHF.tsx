@@ -1,5 +1,6 @@
 import { TrendingGridHF } from "@/components/home/TrendingGridHF";
 import { RecentActivityHF } from "@/components/home/RecentActivityHF";
+import { HumanAdSection } from "@/components/ads/HumanAdSection";
 
 export default async function HomeHF() {
   return (
@@ -8,6 +9,11 @@ export default async function HomeHF() {
         <TrendingGridHF />
         <RecentActivityHF />
       </div>
+      <HumanAdSection
+        className="py-6"
+        title="Sponsored"
+        description="Relevant tools and services for AI builders and teams."
+      />
     </div>
   );
 }

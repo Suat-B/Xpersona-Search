@@ -129,11 +129,21 @@ export function resolveExecutionLane(input: ResolveExecutionLaneInput): {
   lane: BinaryExecutionLane;
   reason: string;
 } {
+  const isLongScope =
+    input.detach === true ||
+    input.probeSession === true ||
+    Boolean(input.automationId) ||
+    Boolean(input.automationTriggerKind);
+
   if (input.explicitLane) {
-    return {
-      lane: input.explicitLane,
-      reason: "Explicit execution lane requested by the caller.",
-    };
+    if (isLongScope && input.explicitLane !== "openhands_remote") {
+      // Long/autonomous lanes stay headless by default unless remote isolation is explicitly requested.
+    } else {
+      return {
+        lane: input.explicitLane,
+        reason: "Explicit execution lane requested by the caller.",
+      };
+    }
   }
 
   const nativeTask = input.nativeDesktopTask ?? taskLooksLikeNativeDesktop(input.task);
@@ -151,30 +161,12 @@ export function resolveExecutionLane(input: ResolveExecutionLaneInput): {
     };
   }
 
-  const shouldGoLong =
-    input.detach ||
-    input.probeSession ||
-    Boolean(input.automationId) ||
-    Boolean(input.automationTriggerKind) ||
-    Boolean(input.expectedLongRun) ||
-    input.taskSpeedClass === "deep_code" ||
-    input.taskSpeedClass === "tool_heavy";
+  const shouldGoLong = isLongScope || Boolean(input.expectedLongRun) || input.taskSpeedClass === "deep_code" || input.taskSpeedClass === "tool_heavy";
 
   if (input.requireIsolation && input.remoteConfigured) {
     return {
       lane: "openhands_remote",
       reason: "Isolation was requested and a remote OpenHands runtime is available.",
-    };
-  }
-
-  if (
-    shouldGoLong &&
-    input.remoteConfigured &&
-    (input.workspaceTrustMode === "untrusted" || input.workspaceTrustMode === "trusted_read_only")
-  ) {
-    return {
-      lane: "openhands_remote",
-      reason: "Long-running work prefers the remote OpenHands lane when the workspace is not fully trusted.",
     };
   }
 

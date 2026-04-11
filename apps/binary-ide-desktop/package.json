@@ -7,14 +7,20 @@
   "main": "dist/main.js",
   "files": [
     "dist",
+    "compat-plugin-overlay.js",
     "renderer",
     "README.md"
   ],
   "scripts": {
     "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json && node scripts/copy-renderer.mjs && node scripts/copy-codex-compat-renderer.mjs",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "dev": "npm run build && node -e \"console.log('Install electron in apps/binary-ide-desktop to run the desktop shell locally.')\"",
+    "launch": "node scripts/launch-electron.mjs",
+    "dev": "npm run build && npm run launch",
+    "rebuild:native": "node ./node_modules/@electron/rebuild/lib/cli.js -f -w node-pty",
     "dist": "npm run build && node -e \"console.log('Desktop packaging metadata is ready. Install electron-builder in this package to produce installers.')\""
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0"
   },
   "build": {
     "appId": "ai.binary.desktop",
@@ -25,6 +31,7 @@
     },
     "files": [
       "dist/**/*",
+      "compat-plugin-overlay.js",
       "renderer/**/*"
     ],
     "publish": [
@@ -58,6 +65,7 @@
   },
   "devDependencies": {
     "@electron/asar": "^4.2.0",
+    "@electron/rebuild": "^3.7.1",
     "electron": "^41.1.0"
   }
 }

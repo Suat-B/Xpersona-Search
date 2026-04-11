@@ -35,6 +35,8 @@ const state = {
   providerCatalog: [],
   providers: [],
   connections: [],
+  openhandsCapabilities: null,
+  selectedPluginPacks: [],
   automations: [],
   webhookSubscriptions: [],
   activeAutomationId: null,
@@ -141,8 +143,11 @@ const el = {
   binaryInspectorCard: document.getElementById("binaryInspectorCard"),
   binaryPreview: document.getElementById("binaryPreview"),
   newChatButton: document.getElementById("newChatButton"),
+  openPluginsSheet: document.getElementById("openPluginsSheet"),
+  openAutomationsSheet: document.getElementById("openAutomationsSheet"),
   openWorkspaceSheet: document.getElementById("openWorkspaceSheet"),
   openHistorySheet: document.getElementById("openHistorySheet"),
+  pluginsSheet: document.getElementById("pluginsSheet"),
   menuButtons: Array.from(document.querySelectorAll(".app-menu-button")),
   menuDropdown: document.getElementById("menuDropdown"),
   landingWorkspaceButton: document.getElementById("landingWorkspaceButton"),
@@ -154,6 +159,11 @@ const el = {
   resumeRun: document.getElementById("resumeRun"),
   takeoverRun: document.getElementById("takeoverRun"),
   cancelRun: document.getElementById("cancelRun"),
+  openhandsOfferings: document.getElementById("openhandsOfferings"),
+  pluginPackList: document.getElementById("pluginPackList"),
+  savePluginDefaults: document.getElementById("savePluginDefaults"),
+  clearPluginDefaults: document.getElementById("clearPluginDefaults"),
+  skillSourceList: document.getElementById("skillSourceList"),
   automationNameInput: document.getElementById("automationNameInput"),
   automationPromptInput: document.getElementById("automationPromptInput"),
   automationTriggerSelect: document.getElementById("automationTriggerSelect"),
@@ -172,6 +182,7 @@ const el = {
 
 const paletteActionDefinitions = [
   { id: "open-settings", label: "Open settings", description: "Workspace, host, auth, and autonomy controls." },
+  { id: "open-plugins", label: "Open plugins", description: "OpenHands packs, skill sources, and runtime offerings." },
   { id: "open-history", label: "Open history", description: "Recent runs, sessions, and artifacts." },
   { id: "new-chat", label: "Start a new chat", description: "Return to the launch canvas." },
   { id: "pause-run", label: "Pause current run", description: "Pause Binary if a run is active." },
@@ -185,6 +196,7 @@ const appMenuDefinitions = {
     label: "File",
     items: [
       { id: "new-chat", label: "New Chat" },
+      { id: "open-plugins", label: "Open Plugins" },
       { id: "open-settings", label: "Workspace and Runtime" },
       { id: "open-history", label: "Run History" },
     ],
@@ -200,6 +212,7 @@ const appMenuDefinitions = {
     label: "View",
     items: [
       { id: "open-history", label: "Run History" },
+      { id: "open-plugins", label: "Open Plugins" },
       { id: "open-palette", label: "Command Palette" },
       { id: "refresh-state", label: "Refresh State" },
     ],
@@ -501,7 +514,7 @@ function isTerminalStatus(status) {
 }
 
 function closeAllSheets() {
-  for (const sheet of [el.settingsSheet, el.historySheet, el.commandPalette]) {
+  for (const sheet of [el.pluginsSheet, el.settingsSheet, el.historySheet, el.commandPalette]) {
     sheet.dataset.open = "false";
     sheet.setAttribute("aria-hidden", "true");
   }
@@ -794,6 +807,7 @@ function renderStatusMeta() {
   const focusRootLabel = deriveFocusRootLabel();
   const activeConnections = state.connections.filter((connection) => connection.enabled).length;
   const activeProviders = state.providers.filter((provider) => provider.connected).length;
+  const activePluginPackCount = Array.isArray(state.selectedPluginPacks) ? state.selectedPluginPacks.length : 0;
   const activePage = String(state.worldModel?.activeContext?.activePage || "").trim();
   const focusedRepo = String(state.worldModel?.activeContext?.focusedRepo || "").trim();
   if (focusedRepo) {
@@ -807,18 +821,23 @@ function renderStatusMeta() {
   } else {
     el.contextStatus.textContent = "Machine home active";
   }
-  const syncBase = state.hostAvailable
-    ? activeProviders
-      ? `Model source: ${activeProviders} connected provider${activeProviders === 1 ? "" : "s"}`
-      : activeConnections
-        ? `Using ${activeConnections} connection${activeConnections === 1 ? "" : "s"}`
-        : "Synced"
-    : "Offline";
-  el.syncStatus.textContent = state.assistMode === "plan" ? `${syncBase} - Plan mode` : syncBase;
+    const syncBase = state.hostAvailable
+      ? activeProviders
+        ? `Model source: ${activeProviders} connected provider${activeProviders === 1 ? "" : "s"}`
+        : activeConnections
+          ? `Using ${activeConnections} connection${activeConnections === 1 ? "" : "s"}`
+          : "Synced"
+      : "Offline";
+    const pluginSuffix = activePluginPackCount ? ` - ${activePluginPackCount} pack${activePluginPackCount === 1 ? "" : "s"} ready` : "";
+    el.syncStatus.textContent = state.assistMode === "plan" ? `${syncBase}${pluginSuffix} - Plan mode` : `${syncBase}${pluginSuffix}`;
   if (el.sidebarWorkspaceName) el.sidebarWorkspaceName.textContent = machineHomeLabel;
   if (el.landingWorkspaceButton) el.landingWorkspaceButton.textContent = focusRoot ? focusRootLabel : machineHomeLabel;
   if (el.workspaceTitle) el.workspaceTitle.textContent = deriveWorkspaceTitle();
-  if (el.workspaceMeta) el.workspaceMeta.textContent = focusRoot ? focusRootLabel : machineHomeLabel;
+    if (el.workspaceMeta) {
+      el.workspaceMeta.textContent = activePluginPackCount
+        ? `${focusRoot ? focusRootLabel : machineHomeLabel} - ${activePluginPackCount} OpenHands pack${activePluginPackCount === 1 ? "" : "s"} active`
+        : (focusRoot ? focusRootLabel : machineHomeLabel);
+    }
   if (el.branchStatus) {
     const branch =
       String(state.currentExecution?.branch || "") ||
@@ -1749,6 +1768,141 @@ function renderArtifacts() {
   );
 }
 
+function describeSkillSourceKind(kind) {
+  if (kind === "repo_local") return "Repo-local skills";
+  if (kind === "org") return "Org skills";
+  return "User skills";
+}
+
+function togglePluginPackSelection(packId) {
+  const selected = new Set(state.selectedPluginPacks || []);
+  if (selected.has(packId)) selected.delete(packId);
+  else selected.add(packId);
+  state.selectedPluginPacks = [...selected];
+  renderOpenHandsCapabilities();
+}
+
+async function savePluginDefaults() {
+  await requestJson("/v1/preferences", {
+    method: "POST",
+    body: {
+      defaultPluginPacks: state.selectedPluginPacks,
+    },
+  });
+  await hydrate();
+}
+
+async function clearPluginDefaults() {
+  state.selectedPluginPacks = [];
+  await requestJson("/v1/preferences", {
+    method: "POST",
+    body: {
+      defaultPluginPacks: [],
+    },
+  });
+  await hydrate();
+}
+
+function renderOpenHandsCapabilities() {
+  const capabilities = state.openhandsCapabilities;
+  const offerings = Array.isArray(capabilities?.offerings) ? capabilities.offerings : [];
+  const pluginPacks = Array.isArray(capabilities?.pluginPacks) ? capabilities.pluginPacks : [];
+  const skillSources = Array.isArray(capabilities?.skillSources) ? capabilities.skillSources : [];
+  const selected = new Set(state.selectedPluginPacks || []);
+
+  if (el.openhandsOfferings) {
+    if (!offerings.length) {
+      el.openhandsOfferings.innerHTML = `
+        <article class="plugin-card plugin-card--muted">
+          <div class="plugin-card__header">
+            <strong>No OpenHands capability data yet</strong>
+          </div>
+          <p class="plugin-card__copy">Binary will show the live OpenHands runtime surface here once the host responds.</p>
+        </article>
+      `;
+    } else {
+      el.openhandsOfferings.innerHTML = offerings
+        .map(
+          (offering) => `
+            <article class="plugin-card">
+              <div class="plugin-card__header">
+                <strong>${escapeHtml(offering.title)}</strong>
+                <span class="status-pill status-pill--${offering.status === "available" ? "safe" : "warning"}">${escapeHtml(offering.status)}</span>
+              </div>
+              <p class="plugin-card__copy">${escapeHtml(offering.description)}</p>
+              ${offering.detail ? `<p class="plugin-card__copy">${escapeHtml(offering.detail)}</p>` : ""}
+            </article>
+          `
+        )
+        .join("");
+    }
+  }
+
+  if (el.pluginPackList) {
+    if (!pluginPacks.length) {
+      el.pluginPackList.innerHTML = `
+        <article class="plugin-card plugin-card--muted">
+          <div class="plugin-card__header">
+            <strong>No plugin packs available</strong>
+          </div>
+          <p class="plugin-card__copy">Binary could not resolve any OpenHands packs from the local host yet.</p>
+        </article>
+      `;
+    } else {
+      el.pluginPackList.innerHTML = pluginPacks
+        .map((pack) => {
+          const isSelected = selected.has(pack.id);
+          return `
+            <article class="plugin-card${isSelected ? " plugin-card--selected" : ""}">
+              <div class="plugin-card__header">
+                <strong>${escapeHtml(pack.title)}</strong>
+                <span class="status-pill status-pill--${pack.status === "available" ? "safe" : "warning"}">${escapeHtml(pack.status)}</span>
+              </div>
+              <p class="plugin-card__copy">${escapeHtml(pack.description)}</p>
+              <div class="plugin-card__meta">
+                <span class="status-pill status-pill--subtle">${escapeHtml(`${pack.skillCount} skills`)}</span>
+                <span class="status-pill status-pill--subtle">${escapeHtml(`${pack.mcpServerCount} MCP`)}</span>
+                <span class="status-pill status-pill--subtle">${escapeHtml(pack.loadedLazily ? "lazy load" : "eager")}</span>
+              </div>
+              <div class="plugin-card__footer">
+                <span class="plugin-card__copy">${isSelected ? "Enabled by default for new runs." : "Available for task-specific activation."}</span>
+                <button class="plugin-card__toggle" data-plugin-pack-id="${escapeHtml(pack.id)}" type="button">${isSelected ? "Selected" : "Select"}</button>
+              </div>
+            </article>
+          `;
+        })
+        .join("");
+    }
+  }
+
+  if (el.skillSourceList) {
+    if (!skillSources.length) {
+      el.skillSourceList.classList.add("empty");
+      el.skillSourceList.classList.remove("history-list--skills");
+      el.skillSourceList.textContent = "No skill sources detected yet.";
+    } else {
+      el.skillSourceList.classList.remove("empty");
+      el.skillSourceList.classList.add("history-list--skills");
+      el.skillSourceList.innerHTML = skillSources
+        .map(
+          (source) => `
+            <article>
+              <strong>${escapeHtml(source.label)}</strong>
+              <span>${escapeHtml(`${describeSkillSourceKind(source.kind)} - ${source.available ? "available" : "missing"}`)}</span>
+              <span>${escapeHtml(source.loadedLazily ? "Loaded lazily when relevant." : "Loaded eagerly.")}</span>
+              ${source.path ? `<code>${escapeHtml(source.path)}</code>` : ""}
+            </article>
+          `
+        )
+        .join("");
+    }
+  }
+
+  if (el.savePluginDefaults) {
+    el.savePluginDefaults.textContent = selected.size ? `Save defaults (${selected.size})` : "Save defaults";
+  }
+}
+
 function describeAutomationTrigger(trigger) {
   if (!trigger || typeof trigger !== "object") return "Manual";
   if (trigger.kind === "schedule_nl") return `Schedule - ${trigger.scheduleText || "every hour"}`;
@@ -2356,10 +2510,11 @@ async function hydrate() {
   const preservedWorkspace = el.workspaceInput.value.trim();
 
   try {
-    const [health, auth, preferences, providerCatalogResponse, providersResponse, connectionsResponse, autonomy, worldModel, runsResponse, automationsResponse, webhooksResponse, appearance] = await Promise.all([
+    const [health, auth, preferences, openhandsCapabilities, providerCatalogResponse, providersResponse, connectionsResponse, autonomy, worldModel, runsResponse, automationsResponse, webhooksResponse, appearance] = await Promise.all([
       requestJson("/v1/healthz"),
       requestJson("/v1/auth/status"),
       requestJson("/v1/preferences"),
+      requestJson(`/v1/openhands/capabilities${preservedWorkspace ? `?workspaceRoot=${encodeURIComponent(preservedWorkspace)}` : ""}`),
       requestJson("/v1/providers/catalog"),
       requestJson("/v1/providers"),
       requestJson("/v1/connections"),
@@ -2371,9 +2526,15 @@ async function hydrate() {
       window.binaryDesktop.getAppearance(),
     ]);
 
-    state.auth = auth;
-    state.preferences = preferences;
-    state.providerCatalog = Array.isArray(providerCatalogResponse.providers) ? providerCatalogResponse.providers : [];
+      state.auth = auth;
+      state.preferences = preferences;
+      state.openhandsCapabilities = openhandsCapabilities;
+      state.selectedPluginPacks = Array.isArray(openhandsCapabilities?.defaultPluginPacks)
+        ? openhandsCapabilities.defaultPluginPacks
+        : Array.isArray(preferences?.defaultPluginPacks)
+          ? preferences.defaultPluginPacks
+          : [];
+      state.providerCatalog = Array.isArray(providerCatalogResponse.providers) ? providerCatalogResponse.providers : [];
     state.providers = Array.isArray(providersResponse.providers) ? providersResponse.providers : [];
     state.connections = Array.isArray(connectionsResponse.connections) ? connectionsResponse.connections : [];
     state.autonomy = autonomy;
@@ -2409,10 +2570,11 @@ async function hydrate() {
     renderRuns();
     renderRecentSessions();
     renderArtifacts();
-    renderProviders();
-    renderConnections();
-    renderAutomations();
-    renderWebhookSubscriptions();
+      renderProviders();
+      renderConnections();
+      renderOpenHandsCapabilities();
+      renderAutomations();
+      renderWebhookSubscriptions();
     if (state.activeAutomationId) {
       const activeResponse = await requestJson(`/v1/automations/${encodeURIComponent(state.activeAutomationId)}/events`).catch(() => null);
       state.activeAutomationEvents = Array.isArray(activeResponse?.events) ? activeResponse.events : [];
@@ -2424,13 +2586,16 @@ async function hydrate() {
     renderLiveControls();
     renderConversation();
     renderPaletteActions(el.paletteSearch.value || "");
-  } catch (error) {
-    renderHostStatus(false, error instanceof Error ? error.message : String(error), "Build and start services/binary-host to activate the desktop shell.");
-    renderWorldModelStatus();
-    renderBinaryInspector();
-    renderConversation();
+    } catch (error) {
+      state.openhandsCapabilities = null;
+      state.selectedPluginPacks = [];
+      renderHostStatus(false, error instanceof Error ? error.message : String(error), "Build and start services/binary-host to activate the desktop shell.");
+      renderWorldModelStatus();
+      renderBinaryInspector();
+      renderOpenHandsCapabilities();
+      renderConversation();
+    }
   }
-}
 
 async function trustWorkspace() {
   const machineRootPath = getMachineHomeRoot();
@@ -2888,6 +3053,7 @@ async function startRun(task) {
       mode: state.assistMode,
       model: "Binary IDE",
       speedProfile: "fast",
+      ...(state.selectedPluginPacks.length ? { pluginPacks: state.selectedPluginPacks } : {}),
       ...(machineRootPath ? { machineRootPath } : {}),
       ...(focusWorkspaceRoot ? { workspaceRoot: focusWorkspaceRoot, focusWorkspaceRoot, focusRepoRoot: focusWorkspaceRoot } : {}),
       client: {
@@ -2971,6 +3137,7 @@ function resetChat() {
 
 function handlePaletteAction(actionId) {
   if (actionId === "open-settings") openSheet(el.settingsSheet);
+  if (actionId === "open-plugins") openSheet(el.pluginsSheet);
   if (actionId === "open-history") openSheet(el.historySheet);
   if (actionId === "new-chat") resetChat();
   if (actionId === "pause-run") void controlRun("pause", "Paused from the command palette.");
@@ -3140,6 +3307,18 @@ el.refreshState.addEventListener("click", () => {
   void hydrate();
 });
 
+if (el.savePluginDefaults) {
+  el.savePluginDefaults.addEventListener("click", () => {
+    void savePluginDefaults();
+  });
+}
+
+if (el.clearPluginDefaults) {
+  el.clearPluginDefaults.addEventListener("click", () => {
+    void clearPluginDefaults();
+  });
+}
+
 if (el.chooseBinaryFile) {
   el.chooseBinaryFile.addEventListener("click", async () => {
     const selected = await window.binaryDesktop.chooseBinaryFile();
@@ -3197,6 +3376,21 @@ el.newChatButton.addEventListener("click", () => {
 el.openWorkspaceSheet.addEventListener("click", () => {
   openSheet(el.settingsSheet);
 });
+
+if (el.openPluginsSheet) {
+  el.openPluginsSheet.addEventListener("click", () => {
+    openSheet(el.pluginsSheet);
+  });
+}
+
+if (el.openAutomationsSheet) {
+  el.openAutomationsSheet.addEventListener("click", () => {
+    openSheet(el.settingsSheet);
+    queueMicrotask(() => {
+      el.automationList?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+}
 
 if (el.landingWorkspaceButton) {
   el.landingWorkspaceButton.addEventListener("click", () => {
@@ -3315,6 +3509,15 @@ document.addEventListener("click", (event) => {
   if (inlineAction) {
     const action = inlineAction.getAttribute("data-run-action");
     if (action) void controlRun(action, "Run action triggered from the conversation surface.");
+    return;
+  }
+
+  const pluginPackAction = target.closest("[data-plugin-pack-id]");
+  if (pluginPackAction) {
+    const pluginPackId = pluginPackAction.getAttribute("data-plugin-pack-id");
+    if (pluginPackId) {
+      togglePluginPackSelection(pluginPackId);
+    }
     return;
   }
 

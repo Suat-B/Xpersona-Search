@@ -6,6 +6,7 @@ import {
   BinaryAgentProbeSession,
   BinaryAutomationDefinition,
   BinaryAutomationEventsResponse,
+  BinaryOpenHandsCapabilities,
   BinaryOrchestrationPolicy,
   BinaryRemoteRuntimeHealth,
   BinaryWebhookSubscription,
@@ -64,6 +65,17 @@ export class BinaryLocalHostClient {
   async preferences(): Promise<BinaryHostPreferences> {
     return requestJson<BinaryHostPreferences>({
       url: `${this.baseUrl}/v1/preferences`,
+      method: "GET",
+    });
+  }
+
+  async openHandsCapabilities(workspaceRoot?: string): Promise<BinaryOpenHandsCapabilities> {
+    const suffix =
+      typeof workspaceRoot === "string" && workspaceRoot.trim()
+        ? `?workspaceRoot=${encodeURIComponent(workspaceRoot.trim())}`
+        : "";
+    return requestJson<BinaryOpenHandsCapabilities>({
+      url: `${this.baseUrl}/v1/openhands/capabilities${suffix}`,
       method: "GET",
     });
   }
@@ -253,6 +265,18 @@ export class BinaryLocalHostClient {
     return requestJson<BinaryAgentJobEventsResponse>({
       url: `${this.baseUrl}/v1/agents/jobs/${encodeURIComponent(jobId)}/events?after=${encodeURIComponent(String(after))}`,
       method: "GET",
+    });
+  }
+
+  async streamAgentJob(
+    jobId: string,
+    onEvent: (event: SseEvent) => void | Promise<void>,
+    after = 0
+  ): Promise<void> {
+    await requestSse({
+      url: `${this.baseUrl}/v1/agents/jobs/${encodeURIComponent(jobId)}/stream?after=${encodeURIComponent(String(after))}`,
+      method: "GET",
+      onEvent,
     });
   }
 

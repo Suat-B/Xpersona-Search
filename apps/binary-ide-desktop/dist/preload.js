@@ -62,6 +62,9 @@ function subscribeToWorkerMessages(workerId, callback) {
 }
 electron_2.contextBridge.exposeInMainWorld("binaryDesktop", {
     runtimeInfo: () => electron_2.ipcRenderer.invoke("binary:runtime-info"),
+    openHandsCapabilities: () => electron_2.ipcRenderer.invoke("binary:host:openhands-capabilities"),
+    getHostPreferences: () => electron_2.ipcRenderer.invoke("binary:host:get-preferences"),
+    setHostPreferences: (patch) => electron_2.ipcRenderer.invoke("binary:host:set-preferences", patch),
     chooseWorkspace: () => electron_2.ipcRenderer.invoke("binary:choose-workspace"),
     chooseBinaryFile: () => electron_2.ipcRenderer.invoke("binary:choose-binary-file"),
     readTextFile: (filePath) => electron_2.ipcRenderer.invoke("binary:read-text-file", filePath),

@@ -1,0 +1,259 @@
+{
+  "version": "binary_autonomy_benchmark_v1",
+  "createdAt": "2026-04-08T20:34:41.475Z",
+  "host": {
+    "url": "http://127.0.0.1:7777",
+    "version": "0.2.0"
+  },
+  "categories": [
+    {
+      "category": "validation_repair",
+      "gateLane": "validation_repair",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-validation_repair-gaxMrj",
+      "status": "completed",
+      "finishStatus": "completed",
+      "eventCount": 44,
+      "artifactCorrect": true,
+      "validationPassed": true,
+      "totalToolCalls": 5,
+      "successfulToolCalls": 4,
+      "failedToolCalls": 1,
+      "toolCounts": {
+        "run_command": 2,
+        "read_file": 2,
+        "write_file": 1
+      },
+      "desktopOpenAppCount": 0,
+      "wrongTargetViolations": 0,
+      "desktopRecoverySuppressions": 0,
+      "timeoutDetected": false,
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [
+        "npm test"
+      ],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [],
+      "turns": 5,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": false,
+      "elapsedMs": 12504,
+      "queueDelayMs": 4,
+      "ttfrMs": 10,
+      "firstToolMs": 5687,
+      "plannerLatencyMs": 40,
+      "providerLatencyMs": 40,
+      "totalRunMs": 11330,
+      "fallbackCount": 0,
+      "traceId": "0bc3a6cb-768f-467b-b754-d88542ad9cf4",
+      "runId": "67f09f96-e975-4847-97c4-22ae5be12652",
+      "hostedRunId": "824f034d55f967ad813cf608153fd9dc",
+      "files": [
+        {
+          "path": "validation-repair",
+          "type": "dir"
+        },
+        {
+          "path": "validation-repair/package.json",
+          "type": "file",
+          "size": 122,
+          "preview": "{\n  \"name\": \"validation-repair\",\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n"
+        },
+        {
+          "path": "validation-repair/src",
+          "type": "dir"
+        },
+        {
+          "path": "validation-repair/src/index.js",
+          "type": "file",
+          "size": 133,
+          "preview": "export function sum(values) {\n  return Array.isArray(values) ? values.reduce((total, value) => total + Number(value || 0), 0) : 0;\n}\n"
+        },
+        {
+          "path": "validation-repair/test",
+          "type": "dir"
+        },
+        {
+          "path": "validation-repair/test/index.test.js",
+          "type": "file",
+          "size": 222,
+          "preview": "import test from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { sum } from \"../src/index.js\";\n\ntest(\"sum adds all numeric values\", () => {\n  assert.equal(sum([1, 2, 3]), 6);\n  assert.equal(sum([]), 0);\n});\n"
+        }
+      ],
+      "timedOut": false
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 1,
+    "takeoverRequired": 0,
+    "validationPassed": 1,
+    "latency": {
+      "laneMedians": {
+        "chat": {
+          "count": 0,
+          "ttfrMs": null,
+          "firstToolMs": null,
+          "firstVisibleMs": null,
+          "totalRunMs": null,
+          "elapsedMs": null
+        },
+        "browser": {
+          "count": 0,
+          "ttfrMs": null,
+          "firstToolMs": null,
+          "firstVisibleMs": null,
+          "totalRunMs": null,
+          "elapsedMs": null
+        },
+        "desktop": {
+          "count": 0,
+          "ttfrMs": null,
+          "firstToolMs": null,
+          "firstVisibleMs": null,
+          "totalRunMs": null,
+          "elapsedMs": null
+        },
+        "coding": {
+          "count": 1,
+          "ttfrMs": 10,
+          "firstToolMs": 5687,
+          "firstVisibleMs": 5687,
+          "totalRunMs": 11330,
+          "elapsedMs": 12504
+        }
+      },
+      "chatProbeCount": 0,
+      "browserProbeCount": 0,
+      "desktopProbeCount": 0,
+      "codingTargetCount": 0,
+      "medianChatTtfrMs": null,
+      "medianChatFirstToolMs": null,
+      "medianBrowserElapsedMs": null,
+      "medianCodingElapsedMs": 12504,
+      "medianCodingTotalRunMs": 11330,
+      "medianDesktopElapsedMs": null,
+      "medianFallbackCount": 0
+    },
+    "scorecard": {
+      "thresholds": {
+        "codingCompletionRate": 0.8,
+        "validationSuccessRate": 0.8,
+        "gitCloseoutSuccessRate": 1,
+        "maxAvoidableTakeoverRate": 0.2
+      },
+      "metrics": {
+        "codingCompletionRate": 1,
+        "validationSuccessRate": 1,
+        "repairSuccessRate": 0,
+        "gitCloseoutSuccessRate": 1,
+        "endToEndCompletionRate": 1,
+        "closureCompletionRate": 0,
+        "meanStepsToClosure": 5,
+        "meanRepairsToClosure": 0,
+        "avoidableTakeoverRate": 0,
+        "desktopCompletionRate": 1,
+        "desktopWrongTargetTotal": 0,
+        "desktopTimeoutCount": 0
+      },
+      "latency": {
+        "thresholds": {
+          "chatFirstToolImprovement": 0.3,
+          "codingTotalRunImprovement": 0.15,
+          "desktopElapsedImprovement": 0.2
+        },
+        "baselineAvailable": false,
+        "baseline": null,
+        "current": {
+          "laneMedians": {
+            "chat": {
+              "count": 0,
+              "ttfrMs": null,
+              "firstToolMs": null,
+              "firstVisibleMs": null,
+              "totalRunMs": null,
+              "elapsedMs": null
+            },
+            "browser": {
+              "count": 0,
+              "ttfrMs": null,
+              "firstToolMs": null,
+              "firstVisibleMs": null,
+              "totalRunMs": null,
+              "elapsedMs": null
+            },
+            "desktop": {
+              "count": 0,
+              "ttfrMs": null,
+              "firstToolMs": null,
+              "firstVisibleMs": null,
+              "totalRunMs": null,
+              "elapsedMs": null
+            },
+            "coding": {
+              "count": 1,
+              "ttfrMs": 10,
+              "firstToolMs": 5687,
+              "firstVisibleMs": 5687,
+              "totalRunMs": 11330,
+              "elapsedMs": 12504
+            }
+          },
+          "chatProbeCount": 0,
+          "browserProbeCount": 0,
+          "desktopProbeCount": 0,
+          "codingTargetCount": 0,
+          "medianChatTtfrMs": null,
+          "medianChatFirstToolMs": null,
+          "medianBrowserElapsedMs": null,
+          "medianCodingElapsedMs": 12504,
+          "medianCodingTotalRunMs": 11330,
+          "medianDesktopElapsedMs": null,
+          "medianFallbackCount": 0
+        },
+        "chatFirstToolImprovement": null,
+        "codingTotalRunImprovement": null,
+        "desktopElapsedImprovement": null,
+        "passing": true,
+        "failingReasons": []
+      },
+      "codingLaneCoverage": {
+        "repo_scaffold": {
+          "total": 0,
+          "completed": 0
+        },
+        "single_file_edit": {
+          "total": 0,
+          "completed": 0
+        },
+        "multi_file_feature_delivery": {
+          "total": 0,
+          "completed": 0
+        },
+        "validation_repair": {
+          "total": 1,
+          "completed": 1
+        },
+        "git_closeout": {
+          "total": 0,
+          "completed": 0
+        }
+      },
+      "passing": true,
+      "failingReasons": []
+    }
+  }
+}

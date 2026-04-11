@@ -13,6 +13,12 @@
   .ad-slot-host ins.adsbygoogle {
     background: transparent !important;
   }
+  .ad-slot-host:has(ins.adsbygoogle[data-ad-status="unfilled"]) {
+    display: none;
+  }
+  .ad-slot-host ins.adsbygoogle[data-ad-status="unfilled"] {
+    display: none !important;
+  }
   .light-mode .ad-slot-host {
     background-color: rgba(0, 0, 0, 0.04);
     border-color: rgba(0, 0, 0, 0.08);

@@ -322,6 +322,34 @@ function isExplorerQuery(value: string): boolean {
   return normalized === "explorer" || normalized === "file explorer" || normalized === "windows explorer";
 }
 
+const KNOWN_BROWSER_DESTINATIONS: Record<string, string> = {
+  youtube: "https://www.youtube.com/",
+  google: "https://www.google.com/",
+  github: "https://github.com/",
+  wikipedia: "https://www.wikipedia.org/",
+  amazon: "https://www.amazon.com/",
+  reddit: "https://www.reddit.com/",
+};
+
+function inferDefaultBrowserUrlTarget(value: string): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const normalized = raw.toLowerCase();
+  if (isExplorerQuery(raw)) return null;
+  if (/[\\]/.test(raw)) return null;
+  if (/^[a-z]:[\\/]/i.test(raw)) return null;
+  if (/\.(?:exe|msi|bat|cmd|lnk|app)$/i.test(raw)) return null;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (/^www\.[a-z0-9.-]+\.[a-z]{2,}(?:[/?#].*)?$/i.test(raw)) return `https://${raw}`;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}(?:[/?#].*)?$/i.test(raw)) return `https://${raw}`;
+  for (const [alias, target] of Object.entries(KNOWN_BROWSER_DESTINATIONS)) {
+    if (normalized === alias || normalized.startsWith(`${alias} `) || normalized.includes(` ${alias} `)) {
+      return target;
+    }
+  }
+  return null;
+}
+
 function normalizeAppToken(value: unknown): string {
   return String(value || "")
     .toLowerCase()
@@ -1984,6 +2012,35 @@ export class DesktopToolExecutor {
       const preferBackgroundOpen = args.allowBackground !== false && args.forceForeground !== true;
       const app = String(args.app || "").trim();
       if (!app) return fail(toolCall, "desktop_open_app requires an app name.");
+      const browserTargetHint =
+        inferDefaultBrowserUrlTarget(String(args.url || args.target || args.path || "").trim()) ||
+        inferDefaultBrowserUrlTarget(app);
+      if (browserTargetHint) {
+        try {
+          const command = await openUrl(browserTargetHint);
+          return {
+            toolCallId: toolCall.id,
+            name: toolCall.name,
+            ok: true,
+            summary: `Opened ${browserTargetHint} in the default browser.`,
+            data: {
+              ...receipt(true, "existing"),
+              appId: "default-browser",
+              appName: "Default Browser",
+              url: browserTargetHint,
+              command,
+              ...this.buildDesktopIntentMetadata(args, {
+                targetResolvedApp: "Default Browser",
+                verificationRequired: true,
+                verificationPassed: true,
+              }),
+            },
+            createdAt: nowIso(),
+          };
+        } catch (error) {
+          return fail(toolCall, error instanceof Error ? error.message : String(error));
+        }
+      }
       const targetPath =
         normalizeWindowsFilesystemTarget(String(args.path || args.target || args.url || "").trim()) ||
         normalizeWindowsFilesystemTarget(app);

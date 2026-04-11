@@ -1,17 +1,187 @@
 #!/usr/bin/env python
 import json
 import os
+import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
+import urllib.request
 
-from agent_turn import doctor_payload, run_turn
+import agent_turn as agent_turn_module
+from agent_turn import doctor_payload, run_turn as gateway_run_turn
 
 
 PORT = int(os.getenv("OPENHANDS_GATEWAY_PORT", "8010"))
 HOST = os.getenv("OPENHANDS_GATEWAY_HOST", "0.0.0.0")
-BODY_LIMIT = 1_500_000
+BODY_LIMIT = int(os.getenv("OPENHANDS_GATEWAY_BODY_LIMIT_BYTES", "12000000"))
 GATEWAY_API_KEY = str(os.getenv("OPENHANDS_GATEWAY_API_KEY", "")).strip()
+_ACTIVE_IMAGE_INPUTS = threading.local()
+
+
+def _compact_whitespace(value) -> str:
+    return " ".join(str(value or "").split()).strip()
+
+
+def _extract_request_image_inputs(payload: dict) -> list[dict]:
+    request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+    raw = request.get("imageInputs")
+    if not isinstance(raw, list):
+        return []
+    result = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        mime_type = _compact_whitespace(item.get("mimeType")).lower()
+        data_url = _compact_whitespace(item.get("dataUrl"))
+        base64_value = _compact_whitespace(item.get("base64"))
+        url_value = _compact_whitespace(item.get("url"))
+        if not data_url and base64_value and mime_type.startswith("image/"):
+            data_url = f"data:{mime_type};base64,{base64_value}"
+        if not data_url and url_value.startswith("data:image/"):
+            data_url = url_value
+        if not data_url and not url_value:
+            continue
+        result.append(
+            {
+                "mimeType": mime_type if mime_type.startswith("image/") else "",
+                "dataUrl": data_url,
+                "url": url_value,
+            }
+        )
+        if len(result) >= 6:
+            break
+    return result
+
+
+def _set_active_image_inputs(image_inputs: list[dict]) -> None:
+    setattr(_ACTIVE_IMAGE_INPUTS, "value", image_inputs or [])
+
+
+def _get_active_image_inputs() -> list[dict]:
+    value = getattr(_ACTIVE_IMAGE_INPUTS, "value", [])
+    return value if isinstance(value, list) else []
+
+
+def _clear_active_image_inputs() -> None:
+    if hasattr(_ACTIVE_IMAGE_INPUTS, "value"):
+        delattr(_ACTIVE_IMAGE_INPUTS, "value")
+
+
+def _build_openai_user_content(user_prompt: str, image_inputs: list[dict], base_url: str) -> object:
+    if not image_inputs:
+        return user_prompt
+    content = []
+    prompt_text = str(user_prompt or "").strip()
+    if prompt_text:
+        content.append({"type": "text", "text": prompt_text})
+    is_gemini_openai = "generativelanguage.googleapis.com" in _compact_whitespace(base_url).lower()
+    for image in image_inputs:
+        if not isinstance(image, dict):
+            continue
+        image_url = _compact_whitespace(image.get("dataUrl") or image.get("url"))
+        if not image_url:
+            continue
+        if is_gemini_openai:
+            content.append({"type": "image_url", "image_url": image_url})
+        else:
+            content.append({"type": "image_url", "image_url": {"url": image_url}})
+    return content or user_prompt
+
+
+def _install_openai_image_input_patch() -> None:
+    original = getattr(agent_turn_module, "openai_compatible_chat_completion", None)
+    if not callable(original):
+        return
+
+    def patched_openai_compatible_chat_completion(
+        base_url: str,
+        api_key: str,
+        model_id: str,
+        user_prompt: str,
+        extra_headers: dict | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+        timeout_seconds: int = 300,
+    ) -> str:
+        image_inputs = _get_active_image_inputs()
+        if not image_inputs:
+            return original(
+                base_url=base_url,
+                api_key=api_key,
+                model_id=model_id,
+                user_prompt=user_prompt,
+                extra_headers=extra_headers,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                timeout_seconds=timeout_seconds,
+            )
+
+        root = str(base_url or "").strip().rstrip("/")
+        if not root:
+            raise ValueError("model.baseUrl is empty")
+        endpoint = f"{root}/chat/completions"
+        body = json.dumps(
+            {
+                "model": model_id,
+                "messages": [{"role": "user", "content": _build_openai_user_content(user_prompt, image_inputs, root)}],
+                "temperature": float(temperature),
+                "max_tokens": int(max_tokens),
+            }
+        ).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Xpersona-OpenHands-Gateway/1.0",
+        }
+        if _compact_whitespace(api_key):
+            headers["Authorization"] = f"Bearer {api_key}"
+        if isinstance(extra_headers, dict):
+            for key, value in extra_headers.items():
+                normalized_key = _compact_whitespace(key)
+                normalized_value = _compact_whitespace(value)
+                if normalized_key and normalized_value:
+                    headers[normalized_key] = normalized_value
+        req = urllib.request.Request(endpoint, data=body, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=max(5, int(timeout_seconds))) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        choices = payload.get("choices") if isinstance(payload, dict) else None
+        if not isinstance(choices, list) or not choices:
+            raise RuntimeError(f"OpenAI-compatible endpoint returned no choices: {str(payload)[:2000]}")
+        message = choices[0].get("message") if isinstance(choices[0], dict) else None
+        if not isinstance(message, dict):
+            raise RuntimeError(f"OpenAI-compatible endpoint missing message: {str(choices[0])[:2000]}")
+        content = message.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict) and isinstance(item.get("text"), str):
+                    parts.append(item.get("text"))
+            if parts:
+                return "\n".join(parts)
+        raise RuntimeError(f"OpenAI-compatible endpoint empty content: {str(message)[:2000]}")
+
+    setattr(agent_turn_module, "openai_compatible_chat_completion", patched_openai_compatible_chat_completion)
+
+
+_install_openai_image_input_patch()
+
+
+def run_turn_with_hotfix(payload: dict, event_callback=None) -> dict:
+    _set_active_image_inputs(_extract_request_image_inputs(payload))
+    if not hasattr(agent_turn_module, "total_candidates"):
+        # Hotfix for chat-only fast path crash in agent_turn.py where total_candidates is referenced as a global.
+        setattr(agent_turn_module, "total_candidates", 1)
+    try:
+        return gateway_run_turn(payload, event_callback=event_callback)
+    except NameError as exc:
+        if "total_candidates" not in str(exc):
+            raise
+        setattr(agent_turn_module, "total_candidates", 1)
+        return gateway_run_turn(payload, event_callback=event_callback)
+    finally:
+        _clear_active_image_inputs()
 
 
 def write_json(handler: BaseHTTPRequestHandler, status: int, body: dict) -> None:
@@ -267,7 +437,7 @@ class OpenHandsGatewayHandler(BaseHTTPRequestHandler):
                         },
                     },
                 )
-                result = run_turn(body, event_callback=lambda event: write_sse_event(self, event))
+                result = run_turn_with_hotfix(body, event_callback=lambda event: write_sse_event(self, event))
             except Exception as exc:
                 traceback.print_exc()
                 write_sse_event(
@@ -312,7 +482,7 @@ class OpenHandsGatewayHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            result = run_turn(body)
+            result = run_turn_with_hotfix(body)
         except Exception as exc:
             traceback.print_exc()
             write_json(

@@ -6,6 +6,7 @@ import {
 } from "@/lib/ads/gam-config";
 import { getAgentPageGamBotItems } from "@/lib/ads/gam-bot-renderer";
 import { AgentPageGAMAds } from "@/components/ads/AgentPageGAMAds";
+import { HumanAdSection } from "@/components/ads/HumanAdSection";
 import { shouldUseInternalAds } from "@/lib/ads/adsense-config";
 
 interface AgentPageAdsProps {
@@ -108,5 +109,11 @@ export async function AgentPageAds({
     );
   }
 
-  return null;
+  return (
+    <HumanAdSection
+      className="py-6"
+      title="Sponsored"
+      description={`Ads related to ${agentName} and adjacent AI workflows.`}
+    />
+  );
 }

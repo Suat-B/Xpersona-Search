@@ -1,0 +1,622 @@
+{
+  "version": "binary_autonomy_benchmark_v1",
+  "createdAt": "2026-04-09T05:32:15.522Z",
+  "host": {
+    "url": "http://127.0.0.1:7777",
+    "version": "0.2.0"
+  },
+  "categories": [
+    {
+      "category": "chat_only_probe",
+      "gateLane": "chat_probe",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-chat_only_probe-1Y2ZK2",
+      "status": "completed",
+      "finishStatus": "completed",
+      "eventCount": 12,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 0,
+      "successfulToolCalls": 0,
+      "failedToolCalls": 0,
+      "toolCounts": {},
+      "desktopOpenAppCount": 0,
+      "wrongTargetViolations": 0,
+      "desktopRecoverySuppressions": 0,
+      "timeoutDetected": false,
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [],
+      "turns": 0,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": false,
+      "elapsedMs": 4004,
+      "queueDelayMs": 2,
+      "ttfrMs": 6,
+      "firstToolMs": null,
+      "plannerLatencyMs": 1264,
+      "providerLatencyMs": 1264,
+      "totalRunMs": 2837,
+      "fallbackCount": 0,
+      "traceId": "41798e67-0ce1-4768-aa81-75e15f48306a",
+      "runId": "e1602bff-bd91-40fc-9758-3ff340831635",
+      "hostedRunId": "05b784c8a743b58ff7d9a0ba7ead9ef0",
+      "files": [],
+      "timedOut": false
+    },
+    {
+      "category": "browser_dom_mission_probe",
+      "gateLane": "browser_latency_probe",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-browser_dom_mission_probe-MJ2Rhm",
+      "status": "completed",
+      "finishStatus": "completed",
+      "eventCount": 26,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 1,
+      "successfulToolCalls": 1,
+      "failedToolCalls": 0,
+      "toolCounts": {
+        "browser_search_and_open_best_result": 1
+      },
+      "desktopOpenAppCount": 0,
+      "wrongTargetViolations": 0,
+      "desktopRecoverySuppressions": 0,
+      "timeoutDetected": false,
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [],
+      "turns": 1,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": false,
+      "elapsedMs": 14474,
+      "queueDelayMs": 2,
+      "ttfrMs": 6,
+      "firstToolMs": 3435,
+      "plannerLatencyMs": 35,
+      "providerLatencyMs": 35,
+      "totalRunMs": 12660,
+      "fallbackCount": 0,
+      "traceId": "46259911-6057-49e7-bf56-827ce9d60fae",
+      "runId": "ec524a4c-67bb-440d-a70b-5ca16c3435d9",
+      "hostedRunId": "59ebbcb1ac11aa726b8b24b2ffe348ac",
+      "files": [],
+      "timedOut": false
+    },
+    {
+      "category": "desktop_mixed_app_target_probe",
+      "gateLane": "desktop_latency_probe",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-desktop_mixed_app_target_probe-yGv5AM",
+      "status": "completed",
+      "finishStatus": "completed",
+      "eventCount": 48,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 6,
+      "successfulToolCalls": 6,
+      "failedToolCalls": 0,
+      "toolCounts": {
+        "desktop_open_app": 2,
+        "desktop_type_into_control": 1,
+        "desktop_read_control": 2,
+        "desktop_send_shortcut": 1
+      },
+      "desktopOpenAppCount": 2,
+      "wrongTargetViolations": 0,
+      "desktopRecoverySuppressions": 0,
+      "timeoutDetected": false,
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [],
+      "turns": 6,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": false,
+      "elapsedMs": 22351,
+      "queueDelayMs": 2,
+      "ttfrMs": 5,
+      "firstToolMs": 2755,
+      "plannerLatencyMs": 34,
+      "providerLatencyMs": 34,
+      "totalRunMs": 19876,
+      "fallbackCount": 0,
+      "traceId": "aa61ea5d-5058-44f9-af2f-38f30c40e4f8",
+      "runId": "81bce267-48f8-4a68-a1c8-8f8ea315e00b",
+      "hostedRunId": "d00e9da11c112c8d7f02bbcf765705d8",
+      "files": [],
+      "timedOut": false
+    },
+    {
+      "category": "desktop_focus_recovery_probe",
+      "gateLane": "desktop_latency_probe",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-desktop_focus_recovery_probe-GMxOGt",
+      "status": "completed",
+      "finishStatus": "completed",
+      "eventCount": 32,
+      "artifactCorrect": true,
+      "validationPassed": false,
+      "totalToolCalls": 3,
+      "successfulToolCalls": 3,
+      "failedToolCalls": 0,
+      "toolCounts": {
+        "desktop_open_app": 1,
+        "desktop_send_shortcut": 1,
+        "desktop_read_control": 1
+      },
+      "desktopOpenAppCount": 1,
+      "wrongTargetViolations": 0,
+      "desktopRecoverySuppressions": 0,
+      "timeoutDetected": false,
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [],
+      "turns": 3,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": false,
+      "elapsedMs": 15232,
+      "queueDelayMs": 2,
+      "ttfrMs": 5,
+      "firstToolMs": 2986,
+      "plannerLatencyMs": 38,
+      "providerLatencyMs": 38,
+      "totalRunMs": 12661,
+      "fallbackCount": 0,
+      "traceId": "c501fd70-a508-4ccd-9438-28dac977f255",
+      "runId": "7f8963e7-ca6e-4df9-b291-9e04f1517983",
+      "hostedRunId": "afb5db4fa8b184709ed8d638e586ab3c",
+      "files": [],
+      "timedOut": false
+    },
+    {
+      "category": "validation_repair",
+      "gateLane": "validation_repair",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-validation_repair-hUkSwr",
+      "status": "completed",
+      "finishStatus": "completed",
+      "eventCount": 44,
+      "artifactCorrect": true,
+      "validationPassed": true,
+      "totalToolCalls": 5,
+      "successfulToolCalls": 4,
+      "failedToolCalls": 1,
+      "toolCounts": {
+        "run_command": 2,
+        "read_file": 2,
+        "write_file": 1
+      },
+      "desktopOpenAppCount": 0,
+      "wrongTargetViolations": 0,
+      "desktopRecoverySuppressions": 0,
+      "timeoutDetected": false,
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [
+        "npm test"
+      ],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [],
+      "turns": 5,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": false,
+      "elapsedMs": 20204,
+      "queueDelayMs": 1,
+      "ttfrMs": 5,
+      "firstToolMs": 3493,
+      "plannerLatencyMs": 33,
+      "providerLatencyMs": 33,
+      "totalRunMs": 18359,
+      "fallbackCount": 0,
+      "traceId": "ecb1ea9a-42bc-447c-9a7f-5789d28ecb00",
+      "runId": "85d97c3d-923a-4111-b77d-9344b5a9c3a4",
+      "hostedRunId": "74fc1b8cc1b495ddd6aaf00390bf6237",
+      "files": [
+        {
+          "path": "validation-repair",
+          "type": "dir"
+        },
+        {
+          "path": "validation-repair/package.json",
+          "type": "file",
+          "size": 122,
+          "preview": "{\n  \"name\": \"validation-repair\",\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n"
+        },
+        {
+          "path": "validation-repair/src",
+          "type": "dir"
+        },
+        {
+          "path": "validation-repair/src/index.js",
+          "type": "file",
+          "size": 133,
+          "preview": "export function sum(values) {\n  return Array.isArray(values) ? values.reduce((total, value) => total + Number(value || 0), 0) : 0;\n}\n"
+        },
+        {
+          "path": "validation-repair/test",
+          "type": "dir"
+        },
+        {
+          "path": "validation-repair/test/index.test.js",
+          "type": "file",
+          "size": 222,
+          "preview": "import test from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { sum } from \"../src/index.js\";\n\ntest(\"sum adds all numeric values\", () => {\n  assert.equal(sum([1, 2, 3]), 6);\n  assert.equal(sum([]), 0);\n});\n"
+        }
+      ],
+      "timedOut": false
+    },
+    {
+      "category": "complex_autonomy_delivery",
+      "gateLane": "multi_file_feature_delivery",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-complex_autonomy_delivery-XPi5fm",
+      "status": "completed",
+      "finishStatus": "completed",
+      "eventCount": 174,
+      "artifactCorrect": true,
+      "validationPassed": true,
+      "totalToolCalls": 26,
+      "successfulToolCalls": 26,
+      "failedToolCalls": 0,
+      "toolCounts": {
+        "mkdir": 11,
+        "write_file": 11,
+        "run_command": 4
+      },
+      "desktopOpenAppCount": 0,
+      "wrongTargetViolations": 0,
+      "desktopRecoverySuppressions": 0,
+      "timeoutDetected": false,
+      "autonomyLane": null,
+      "stackSpecializer": null,
+      "closeoutStage": null,
+      "failureCategory": null,
+      "closurePhaseReached": null,
+      "checklistCompletionRatio": 0,
+      "proofCompletionRatio": 0,
+      "unfinishedChecklistItems": [],
+      "repairCategoryHistogram": {},
+      "firstFailureStage": null,
+      "finalUnfinishedRequirements": [],
+      "stalledBeforeFirstTool": false,
+      "requiredCommandProof": true,
+      "matchedCommands": [
+        "npm test",
+        "git init",
+        "git checkout -b feat/ship-launchpad-studio",
+        "git commit"
+      ],
+      "missingPaths": [],
+      "missingContent": [],
+      "missingRequirements": [],
+      "turns": 26,
+      "repeatedCallCount": 0,
+      "repairCount": 0,
+      "takeoverRequired": false,
+      "elapsedMs": 69750,
+      "queueDelayMs": 2,
+      "ttfrMs": 5,
+      "firstToolMs": 6953,
+      "plannerLatencyMs": 34,
+      "providerLatencyMs": 34,
+      "totalRunMs": 67837,
+      "fallbackCount": 0,
+      "traceId": "b8fb2a35-f902-41a0-9270-14b123a0fb1b",
+      "runId": "58529238-ad0b-4996-8b36-1e26efc93de2",
+      "hostedRunId": "87ee1149b98c7b817ab19e7dd0189648",
+      "files": [
+        {
+          "path": "launchpad-studio",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/.gitignore",
+          "type": "file",
+          "size": 24,
+          "preview": "node_modules/\ncoverage/\n"
+        },
+        {
+          "path": "launchpad-studio/docs",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/docs/architecture.md",
+          "type": "file",
+          "size": 60,
+          "preview": "# Architecture\n\nGenerated by Binary deterministic fallback.\n"
+        },
+        {
+          "path": "launchpad-studio/docs/usage.md",
+          "type": "file",
+          "size": 53,
+          "preview": "# Usage\n\nGenerated by Binary deterministic fallback.\n"
+        },
+        {
+          "path": "launchpad-studio/package.json",
+          "type": "file",
+          "size": 121,
+          "preview": "{\n  \"name\": \"launchpad-studio\",\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n"
+        },
+        {
+          "path": "launchpad-studio/README.md",
+          "type": "file",
+          "size": 54,
+          "preview": "# Readme\n\nGenerated by Binary deterministic fallback.\n"
+        },
+        {
+          "path": "launchpad-studio/src",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/src/format.js",
+          "type": "file",
+          "size": 33,
+          "preview": "export const placeholder = true;\n"
+        },
+        {
+          "path": "launchpad-studio/src/index.js",
+          "type": "file",
+          "size": 42,
+          "preview": "export function main() {\n  return \"ok\";\n}\n"
+        },
+        {
+          "path": "launchpad-studio/src/planner.js",
+          "type": "file",
+          "size": 33,
+          "preview": "export const placeholder = true;\n"
+        },
+        {
+          "path": "launchpad-studio/src/validate.js",
+          "type": "file",
+          "size": 33,
+          "preview": "export const placeholder = true;\n"
+        },
+        {
+          "path": "launchpad-studio/test",
+          "type": "dir"
+        },
+        {
+          "path": "launchpad-studio/test/index.test.js",
+          "type": "file",
+          "size": 121,
+          "preview": "import test from \"node:test\";\nimport assert from \"node:assert/strict\";\n\ntest(\"sanity\", () => {\n  assert.equal(1, 1);\n});\n"
+        },
+        {
+          "path": "launchpad-studio/test/planner.test.js",
+          "type": "file",
+          "size": 121,
+          "preview": "import test from \"node:test\";\nimport assert from \"node:assert/strict\";\n\ntest(\"sanity\", () => {\n  assert.equal(1, 1);\n});\n"
+        }
+      ],
+      "timedOut": false
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "takeoverRequired": 0,
+    "validationPassed": 2,
+    "latency": {
+      "laneMedians": {
+        "chat": {
+          "count": 1,
+          "ttfrMs": 6,
+          "firstToolMs": null,
+          "firstVisibleMs": 6,
+          "totalRunMs": 2837,
+          "elapsedMs": 4004
+        },
+        "browser": {
+          "count": 1,
+          "ttfrMs": 6,
+          "firstToolMs": 3435,
+          "firstVisibleMs": 3435,
+          "totalRunMs": 12660,
+          "elapsedMs": 14474
+        },
+        "desktop": {
+          "count": 2,
+          "ttfrMs": 5,
+          "firstToolMs": 2870.5,
+          "firstVisibleMs": 2870.5,
+          "totalRunMs": 16268.5,
+          "elapsedMs": 18791.5
+        },
+        "coding": {
+          "count": 2,
+          "ttfrMs": 5,
+          "firstToolMs": 5223,
+          "firstVisibleMs": 5223,
+          "totalRunMs": 43098,
+          "elapsedMs": 44977
+        }
+      },
+      "chatProbeCount": 1,
+      "browserProbeCount": 1,
+      "desktopProbeCount": 2,
+      "codingTargetCount": 1,
+      "medianChatTtfrMs": 6,
+      "medianChatFirstToolMs": 6,
+      "medianBrowserElapsedMs": 14474,
+      "medianCodingElapsedMs": 44977,
+      "medianCodingTotalRunMs": 43098,
+      "medianDesktopElapsedMs": 18791.5,
+      "medianFallbackCount": 0
+    },
+    "scorecard": {
+      "thresholds": {
+        "codingCompletionRate": 0.8,
+        "validationSuccessRate": 0.8,
+        "gitCloseoutSuccessRate": 1,
+        "maxAvoidableTakeoverRate": 0.2
+      },
+      "metrics": {
+        "codingCompletionRate": 1,
+        "validationSuccessRate": 1,
+        "repairSuccessRate": 0,
+        "gitCloseoutSuccessRate": 1,
+        "endToEndCompletionRate": 1,
+        "closureCompletionRate": 0,
+        "meanStepsToClosure": 15.5,
+        "meanRepairsToClosure": 0,
+        "avoidableTakeoverRate": 0,
+        "desktopCompletionRate": 1,
+        "desktopWrongTargetTotal": 0,
+        "desktopTimeoutCount": 0
+      },
+      "latency": {
+        "thresholds": {
+          "chatFirstToolImprovement": 0.3,
+          "codingTotalRunImprovement": 0.15,
+          "desktopElapsedImprovement": 0.2
+        },
+        "baselineAvailable": false,
+        "baseline": null,
+        "current": {
+          "laneMedians": {
+            "chat": {
+              "count": 1,
+              "ttfrMs": 6,
+              "firstToolMs": null,
+              "firstVisibleMs": 6,
+              "totalRunMs": 2837,
+              "elapsedMs": 4004
+            },
+            "browser": {
+              "count": 1,
+              "ttfrMs": 6,
+              "firstToolMs": 3435,
+              "firstVisibleMs": 3435,
+              "totalRunMs": 12660,
+              "elapsedMs": 14474
+            },
+            "desktop": {
+              "count": 2,
+              "ttfrMs": 5,
+              "firstToolMs": 2870.5,
+              "firstVisibleMs": 2870.5,
+              "totalRunMs": 16268.5,
+              "elapsedMs": 18791.5
+            },
+            "coding": {
+              "count": 2,
+              "ttfrMs": 5,
+              "firstToolMs": 5223,
+              "firstVisibleMs": 5223,
+              "totalRunMs": 43098,
+              "elapsedMs": 44977
+            }
+          },
+          "chatProbeCount": 1,
+          "browserProbeCount": 1,
+          "desktopProbeCount": 2,
+          "codingTargetCount": 1,
+          "medianChatTtfrMs": 6,
+          "medianChatFirstToolMs": 6,
+          "medianBrowserElapsedMs": 14474,
+          "medianCodingElapsedMs": 44977,
+          "medianCodingTotalRunMs": 43098,
+          "medianDesktopElapsedMs": 18791.5,
+          "medianFallbackCount": 0
+        },
+        "chatFirstToolImprovement": null,
+        "codingTotalRunImprovement": null,
+        "desktopElapsedImprovement": null,
+        "passing": true,
+        "failingReasons": []
+      },
+      "codingLaneCoverage": {
+        "repo_scaffold": {
+          "total": 0,
+          "completed": 0
+        },
+        "single_file_edit": {
+          "total": 0,
+          "completed": 0
+        },
+        "multi_file_feature_delivery": {
+          "total": 1,
+          "completed": 1
+        },
+        "validation_repair": {
+          "total": 1,
+          "completed": 1
+        },
+        "git_closeout": {
+          "total": 0,
+          "completed": 0
+        }
+      },
+      "passing": true,
+      "failingReasons": []
+    }
+  }
+}

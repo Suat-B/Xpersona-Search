@@ -46,6 +46,52 @@ export type RequestAuth = {
   bearer?: string | null;
 };
 
+export type BinaryExecutionLane = "local_interactive" | "openhands_headless" | "openhands_remote";
+
+export type BinaryRuntimeTarget = "local_native" | "sandbox" | "remote";
+
+export type BinaryAgentJobStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "takeover_required"
+  | "paused";
+
+export type BinaryAgentJob = {
+  id: string;
+  status: BinaryAgentJobStatus;
+  createdAt: string;
+  updatedAt: string;
+  task: string;
+  model: string;
+  runId?: string;
+  traceId?: string;
+  requestedExecutionLane?: BinaryExecutionLane;
+  executionLane?: BinaryExecutionLane;
+  conversationId?: string | null;
+  persistenceDir?: string | null;
+  jsonlPath?: string | null;
+  runtimeTarget?: BinaryRuntimeTarget | null;
+  errorMessage?: string | null;
+};
+
+export type BinaryAgentJobEventEnvelope = {
+  id?: string;
+  seq?: number;
+  capturedAt?: string;
+  event?: string;
+  data?: Record<string, unknown> | string | null;
+  [key: string]: unknown;
+};
+
+export type BinaryAgentJobEventBatch = {
+  job: BinaryAgentJob | null;
+  events: Array<{ seq: number; capturedAt: string; event: BinaryAgentJobEventEnvelope }>;
+  done: boolean;
+};
+
 export type AssistAction =
   | { type: "edit"; path: string; patch?: string; diff?: string }
   | { type: "write_file"; path: string; content: string; overwrite?: boolean }

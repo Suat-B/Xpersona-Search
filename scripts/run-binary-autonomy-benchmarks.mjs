@@ -9,8 +9,8 @@ const MAX_WAIT_MS = 180000;
 const DEFAULT_MAX_TOOL_STEPS = 128;
 const DEFAULT_MAX_WORKSPACE_MUTATIONS = 64;
 const DEFAULT_RELEASE_THRESHOLDS = {
-  codingCompletionRate: 0.8,
-  validationSuccessRate: 0.8,
+  codingCompletionRate: 0.9,
+  validationSuccessRate: 0.9,
   gitCloseoutSuccessRate: 1,
   maxAvoidableTakeoverRate: 0.2,
 };
@@ -19,6 +19,7 @@ const DEFAULT_LATENCY_DELTA_THRESHOLDS = {
   codingTotalRunImprovement: 0.15,
   desktopElapsedImprovement: 0.2,
 };
+const CODING_GUARD_CATEGORY_IDS = ["single_file_edit", "validation_repair"];
 
 const CATEGORY_DEFS = [
   {
@@ -210,6 +211,44 @@ function parseArgs(argv) {
   return flags;
 }
 
+function classifyCategoryLane(categoryDef) {
+  const gateLane = String(categoryDef?.gateLane || "");
+  const id = String(categoryDef?.id || "");
+  if (gateLane === "chat_probe" || id === "chat_only_probe") return "chat";
+  if (gateLane === "browser_latency_probe" || gateLane.startsWith("browser_") || id.startsWith("browser_")) return "browser";
+  if (gateLane === "desktop_latency_probe" || gateLane.startsWith("desktop_") || id.startsWith("desktop_")) return "desktop";
+  return "coding";
+}
+
+function applyCodingGuardToRequestedIds(requestedIds, hasExplicitFilter, disableCodingGuard) {
+  if (!hasExplicitFilter || disableCodingGuard) {
+    return { requestedIds, injected: [] };
+  }
+  const requestedSet = new Set(requestedIds);
+  const selectedDefs = CATEGORY_DEFS.filter((item) => requestedSet.has(item.id));
+  if (!selectedDefs.length) {
+    return { requestedIds, injected: [] };
+  }
+  const hasDesktopOrBrowser = selectedDefs.some((item) => {
+    const lane = classifyCategoryLane(item);
+    return lane === "desktop" || lane === "browser";
+  });
+  const hasCoding = selectedDefs.some((item) => classifyCategoryLane(item) === "coding");
+  if (!hasDesktopOrBrowser || hasCoding) {
+    return { requestedIds, injected: [] };
+  }
+  const injected = [];
+  const nextRequested = [...requestedIds];
+  for (const codingId of CODING_GUARD_CATEGORY_IDS) {
+    if (!requestedSet.has(codingId) && CATEGORY_DEFS.some((item) => item.id === codingId)) {
+      requestedSet.add(codingId);
+      nextRequested.push(codingId);
+      injected.push(codingId);
+    }
+  }
+  return { requestedIds: nextRequested, injected };
+}
+
 async function requestJson(baseUrl, pathname, options = {}) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: options.method || "GET",
@@ -285,6 +324,8 @@ function listMissingContent(requiredContents, files) {
 
 function summarizeCategory(category, exportedRun, files, elapsedMs) {
   const finalEnvelope = exportedRun.finalEnvelope && typeof exportedRun.finalEnvelope === "object" ? exportedRun.finalEnvelope : {};
+  const lastExecutionState =
+    exportedRun.lastExecutionState && typeof exportedRun.lastExecutionState === "object" ? exportedRun.lastExecutionState : {};
   const loopState = finalEnvelope.loopState && typeof finalEnvelope.loopState === "object" ? finalEnvelope.loopState : {};
   const objectiveState = finalEnvelope.objectiveState && typeof finalEnvelope.objectiveState === "object" ? finalEnvelope.objectiveState : {};
   const queueDelayMs = readLatencyMetric(exportedRun, finalEnvelope, "queueDelayMs");
@@ -329,6 +370,36 @@ function summarizeCategory(category, exportedRun, files, elapsedMs) {
   const requiredProof = Array.isArray(objectiveState.requiredProof) ? objectiveState.requiredProof : [];
   const observedProof = Array.isArray(objectiveState.observedProof) ? objectiveState.observedProof : [];
   const missingRequirements = Array.isArray(finalEnvelope.missingRequirements) ? finalEnvelope.missingRequirements.map((item) => String(item)) : [];
+  const qualityGateState = typeof finalEnvelope.qualityGateState === "string" ? finalEnvelope.qualityGateState : null;
+  const qualityBlockedReason = typeof finalEnvelope.qualityBlockedReason === "string" ? finalEnvelope.qualityBlockedReason : null;
+  const qualityMissingProofs = Array.isArray(finalEnvelope.missingProofs)
+    ? finalEnvelope.missingProofs.map((item) => String(item))
+    : [];
+  const finalizationBlocked = finalEnvelope.finalizationBlocked === true;
+  const policyLane =
+    typeof finalEnvelope.policyLane === "string"
+      ? finalEnvelope.policyLane
+      : typeof lastExecutionState.policyLane === "string"
+        ? lastExecutionState.policyLane
+        : null;
+  const adapterMode =
+    typeof finalEnvelope.adapterMode === "string"
+      ? finalEnvelope.adapterMode
+      : typeof lastExecutionState.adapterMode === "string"
+        ? lastExecutionState.adapterMode
+        : null;
+  const latencyPolicy =
+    typeof finalEnvelope.latencyPolicy === "string"
+      ? finalEnvelope.latencyPolicy
+      : typeof lastExecutionState.latencyPolicy === "string"
+        ? lastExecutionState.latencyPolicy
+        : null;
+  const budgetProfile =
+    typeof finalEnvelope.budgetProfile === "string"
+      ? finalEnvelope.budgetProfile
+      : typeof lastExecutionState.budgetProfile === "string"
+        ? lastExecutionState.budgetProfile
+        : null;
   const failureCategory =
     typeof loopState.failureCategory === "string"
       ? loopState.failureCategory
@@ -366,6 +437,14 @@ function summarizeCategory(category, exportedRun, files, elapsedMs) {
       failureCategory ||
       (completionChecklist.find((item) => item?.status !== "completed")?.id ? String(completionChecklist.find((item) => item?.status !== "completed")?.id) : null),
     finalUnfinishedRequirements: missingRequirements,
+    qualityGateState,
+    qualityBlockedReason,
+    qualityMissingProofs,
+    finalizationBlocked,
+    policyLane,
+    adapterMode,
+    latencyPolicy,
+    budgetProfile,
     stalledBeforeFirstTool:
       exportedRun.status === "running" &&
       totalToolCalls === 0 &&
@@ -642,6 +721,10 @@ function buildReleaseScorecard(results, thresholds, latencyGate) {
     0
   );
   const desktopTimeoutCount = desktopResults.filter((item) => item.timeoutDetected === true).length;
+  const qualityGateBlockedTotal = results.filter(
+    (item) => item.finalizationBlocked === true || item.qualityGateState === "blocked"
+  ).length;
+  const streamOrderViolations = results.filter((item) => item.streamOutOfOrder === true).length;
   const metrics = {
     codingCompletionRate: codingResults.length ? completedCoding.length / codingResults.length : 1,
     validationSuccessRate: validationRelevant.length
@@ -659,6 +742,8 @@ function buildReleaseScorecard(results, thresholds, latencyGate) {
     desktopCompletionRate: desktopResults.length ? completedDesktop.length / desktopResults.length : 1,
     desktopWrongTargetTotal,
     desktopTimeoutCount,
+    qualityGateBlockedTotal,
+    streamOrderViolations,
   };
   const failures = [];
   if (metrics.codingCompletionRate < thresholds.codingCompletionRate) {
@@ -681,6 +766,12 @@ function buildReleaseScorecard(results, thresholds, latencyGate) {
   }
   if (desktopTimeoutCount > 0) {
     failures.push(`desktop timeouts ${desktopTimeoutCount} > 0`);
+  }
+  if (qualityGateBlockedTotal > 0) {
+    failures.push(`quality gate blocked finals ${qualityGateBlockedTotal} > 0`);
+  }
+  if (streamOrderViolations > 0) {
+    failures.push(`stream ordering violations ${streamOrderViolations} > 0`);
   }
   if (latencyGate && Array.isArray(latencyGate.failingReasons) && latencyGate.failingReasons.length) {
     failures.push(...latencyGate.failingReasons);
@@ -769,10 +860,17 @@ async function runCategory(baseUrl, category) {
 
   let done = false;
   let after = 0;
+  let streamEventCount = 0;
+  let streamOutOfOrder = false;
   while (!done && Date.now() - startedAt < MAX_WAIT_MS) {
     const events = await requestRun((runId) => `/v1/runs/${encodeURIComponent(runId)}/events?after=${after}`);
     for (const event of events.events || []) {
-      after = Math.max(after, Number(event.seq) || after);
+      const seq = Number(event.seq) || 0;
+      if (seq > 0 && seq <= after) {
+        streamOutOfOrder = true;
+      }
+      after = Math.max(after, seq || after);
+      streamEventCount += 1;
     }
     done = Boolean(events.done);
     if (!done) await sleep(POLL_INTERVAL_MS);
@@ -795,6 +893,8 @@ async function runCategory(baseUrl, category) {
   return {
     ...summary,
     timedOut: !done,
+    streamEventCount,
+    streamOutOfOrder,
   };
 }
 
@@ -875,10 +975,16 @@ async function main() {
       : path.join(process.cwd(), "binary-autonomy-latency-baseline.json");
   const enforceLatencyGates = Boolean(flags["enforce-latency-gates"]);
   const writeLatencyBaselineFlag = Boolean(flags["write-latency-baseline"]);
-  const requestedIds =
-    typeof flags.categories === "string"
-      ? flags.categories.split(",").map((value) => value.trim()).filter(Boolean)
-      : CATEGORY_DEFS.map((item) => item.id);
+  const hasExplicitCategoryFilter = typeof flags.categories === "string";
+  const baseRequestedIds = hasExplicitCategoryFilter
+    ? flags.categories.split(",").map((value) => value.trim()).filter(Boolean)
+    : CATEGORY_DEFS.map((item) => item.id);
+  const codingGuard = applyCodingGuardToRequestedIds(
+    baseRequestedIds,
+    hasExplicitCategoryFilter,
+    flags["disable-coding-guard"] === true
+  );
+  const requestedIds = codingGuard.requestedIds;
   const categories = CATEGORY_DEFS.filter((item) => requestedIds.includes(item.id));
   if (!categories.length) {
     throw new Error(`No benchmark categories matched: ${requestedIds.join(", ")}`);
@@ -913,6 +1019,7 @@ async function main() {
       validationPassed: results.filter((item) => item.validationPassed).length,
       latency: latencySummary,
       scorecard: buildReleaseScorecard(results, thresholds, latencyGate),
+      codingGuardInjected: codingGuard.injected,
     },
   };
 
@@ -938,6 +1045,9 @@ async function main() {
   console.log(`Scorecard: ${scorecardPath}`);
   console.log(`Latency baseline: ${latencyBaselinePath}${writeLatencyBaselineFlag ? " (updated)" : ""}`);
   console.log(`Benchmarks: ${results.length}`);
+  if (codingGuard.injected.length) {
+    console.log(`Coding guard categories auto-added: ${codingGuard.injected.join(", ")}`);
+  }
   console.log(
     `Release gate: ${report.summary.scorecard.passing ? "PASS" : "FAIL"}${
       report.summary.scorecard.failingReasons.length ? ` (${report.summary.scorecard.failingReasons.join("; ")})` : ""

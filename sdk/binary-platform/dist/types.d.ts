@@ -3,11 +3,29 @@ export type HostedAssistMode = "auto" | "plan" | "yolo";
 export type BinaryAdapterMode = "auto" | "force_binary_tool_adapter";
 export type BinaryLatencyPolicy = "default" | "detached_15s_cap";
 export type BinaryModelRoutingMode = "single_fixed_free";
+export type BinaryTerminalBackendMode = "strict_openhands_native" | "allow_host_fallback";
+export type BinaryPromptLane = "chat" | "coding" | "desktop" | "browser";
 export type BinaryDesktopProofMode = "adaptive" | "strict";
 export type BinaryDesktopIntentKind = "open" | "draft_text" | "compute" | "navigate_path" | "verify" | "cleanup";
 export type BinaryBrowserIntentKind = "open_site" | "search" | "login" | "fill_form" | "extract" | "recover" | "verify" | "cleanup";
 export type BinaryIntentKind = BinaryDesktopIntentKind | BinaryBrowserIntentKind;
 export type BinaryScreenshotReason = "explicit_user_request" | "debug_mode" | "proof_fallback";
+export type BinaryQualityGateState = "pending" | "satisfied" | "blocked";
+export type BinaryQualityBlockedReason = "missing_validation_proof" | "missing_artifact_proof" | "verification_failed" | "repair_exhausted" | "missing_semantic_completion_proof";
+export type BinaryProofRequirement = {
+    id: string;
+    lane: "coding" | "desktop" | "browser" | "chat_research";
+    description: string;
+};
+export type BinaryProofArtifact = {
+    id: string;
+    kind: string;
+    source: "tool_result" | "host_inference" | "gateway_contract";
+    summary: string;
+    toolName?: string;
+    status?: "passed" | "failed" | "unknown";
+    capturedAt?: string;
+};
 export type BinaryOrchestrationLatencyBudgets = {
     interactive: number;
     desktop: number;
@@ -22,6 +40,8 @@ export type BinaryOrchestrationPolicy = {
     fallbackEnabled: boolean;
     latencyBudgetsMs: BinaryOrchestrationLatencyBudgets;
     desktopProofMode: BinaryDesktopProofMode;
+    terminalBackendMode: BinaryTerminalBackendMode;
+    requireNativeTerminalTool: boolean;
 };
 export type PlaygroundToolName = "list_files" | "read_file" | "search_workspace" | "get_diagnostics" | "git_status" | "git_diff" | "create_checkpoint" | "edit" | "write_file" | "mkdir" | "run_command" | "get_workspace_memory" | (string & {});
 export type ToolCall = {
@@ -119,9 +139,19 @@ export type AssistRunEnvelope = {
     screenshotReason?: BinaryScreenshotReason;
     proofProgress?: number;
     proofArtifacts?: string[];
+    proofArtifactsDetailed?: BinaryProofArtifact[];
+    qualityGateState?: BinaryQualityGateState;
+    requiredProofs?: BinaryProofRequirement[];
+    satisfiedProofs?: string[];
+    missingProofs?: string[];
+    qualityBlockedReason?: BinaryQualityBlockedReason;
+    repairAttemptCount?: number;
+    maxRepairAttempts?: number;
+    finalizationBlocked?: boolean;
     cleanupClosedCount?: number;
     cleanupSkippedPreExistingCount?: number;
     cleanupErrors?: number;
+    policyLane?: BinaryPromptLane;
     adapterMode?: BinaryAdapterMode;
     latencyPolicy?: BinaryLatencyPolicy;
     smallModelForced?: boolean;
@@ -131,6 +161,10 @@ export type AssistRunEnvelope = {
     budgetProfile?: string;
     firstTurnBudgetMs?: number;
     timeoutPolicy?: string;
+    terminalBackend?: "openhands_native" | "blocked";
+    terminalStrictMode?: boolean;
+    terminalHealthReason?: string;
+    nativeTerminalAvailable?: boolean;
     queueDelayMs?: number;
     ttfrMs?: number;
     firstToolMs?: number;
@@ -343,9 +377,14 @@ export type BinaryHostRunTimingState = BinaryRunLatencyMetadata & {
     actionLatencyMs?: number;
 };
 export type BinaryHostExecutionState = BinaryRunLatencyMetadata & {
+    policyLane?: BinaryPromptLane;
     adapterMode?: BinaryAdapterMode;
     latencyPolicy?: BinaryLatencyPolicy;
     timeoutPolicy?: string;
+    terminalBackend?: "openhands_native" | "blocked";
+    terminalStrictMode?: boolean;
+    terminalHealthReason?: string;
+    nativeTerminalAvailable?: boolean;
     budgetProfile?: string;
     firstTurnBudgetMs?: number;
     smallModelForced?: boolean;
@@ -379,6 +418,15 @@ export type BinaryHostExecutionState = BinaryRunLatencyMetadata & {
     screenshotReason?: BinaryScreenshotReason;
     proofProgress?: number;
     proofArtifacts?: string[];
+    proofArtifactsDetailed?: BinaryProofArtifact[];
+    qualityGateState?: BinaryQualityGateState;
+    requiredProofs?: BinaryProofRequirement[];
+    satisfiedProofs?: string[];
+    missingProofs?: string[];
+    qualityBlockedReason?: BinaryQualityBlockedReason;
+    repairAttemptCount?: number;
+    maxRepairAttempts?: number;
+    finalizationBlocked?: boolean;
     cleanupClosedCount?: number;
     cleanupSkippedPreExistingCount?: number;
     cleanupErrors?: number;
@@ -406,13 +454,24 @@ export type BinaryHostPreferences = {
     }>;
     preferredTransport: "host" | "direct";
     orchestrationPolicy?: BinaryOrchestrationPolicy;
+    defaultPluginPacks?: Array<BinaryPluginPack["id"]>;
     automations?: BinaryAutomationDefinition[];
     webhookSubscriptions?: BinaryWebhookSubscription[];
+};
+export type BinaryImageInput = {
+    mimeType?: string;
+    dataUrl?: string;
+    base64?: string;
+    url?: string;
+    caption?: string;
+    name?: string;
+    source?: string;
 };
 export type BinaryHostAssistRequest = {
     task: string;
     mode: AssistMode;
     model: string;
+    imageInputs?: BinaryImageInput[];
     historySessionId?: string;
     workspaceRoot?: string;
     detach?: boolean;
@@ -451,6 +510,20 @@ export type BinarySkillSource = {
     path?: string;
     available: boolean;
     loadedLazily: boolean;
+};
+export type BinaryOpenHandsOffering = {
+    id: "conversation_orchestrator" | "terminal_tool" | "file_editor" | "browser_use" | "headless_jobs" | "probe_sessions";
+    title: string;
+    description: string;
+    status: "available" | "limited";
+    detail?: string;
+};
+export type BinaryOpenHandsCapabilities = {
+    pluginPacks: BinaryPluginPack[];
+    defaultPluginPacks: Array<BinaryPluginPack["id"]>;
+    skillSources: BinarySkillSource[];
+    offerings: BinaryOpenHandsOffering[];
+    workspaceRoot?: string;
 };
 export type BinaryHostHealth = {
     ok: true;
@@ -607,6 +680,8 @@ export type BinaryAgentJob = {
     sessionId?: string;
     conversationId?: string | null;
     persistenceDir?: string | null;
+    jsonlPath?: string | null;
+    runtimeTarget?: "local_native" | "sandbox" | "remote";
     requestedExecutionLane: BinaryExecutionLane;
     executionLane: BinaryExecutionLane;
     pluginPacks: BinaryPluginPack[];

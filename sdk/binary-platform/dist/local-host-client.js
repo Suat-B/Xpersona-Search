@@ -38,6 +38,15 @@ export class BinaryLocalHostClient {
             method: "GET",
         });
     }
+    async openHandsCapabilities(workspaceRoot) {
+        const suffix = typeof workspaceRoot === "string" && workspaceRoot.trim()
+            ? `?workspaceRoot=${encodeURIComponent(workspaceRoot.trim())}`
+            : "";
+        return requestJson({
+            url: `${this.baseUrl}/v1/openhands/capabilities${suffix}`,
+            method: "GET",
+        });
+    }
     async orchestrationPolicy() {
         return requestJson({
             url: `${this.baseUrl}/v1/orchestration/policy`,
@@ -177,6 +186,13 @@ export class BinaryLocalHostClient {
         return requestJson({
             url: `${this.baseUrl}/v1/agents/jobs/${encodeURIComponent(jobId)}/events?after=${encodeURIComponent(String(after))}`,
             method: "GET",
+        });
+    }
+    async streamAgentJob(jobId, onEvent, after = 0) {
+        await requestSse({
+            url: `${this.baseUrl}/v1/agents/jobs/${encodeURIComponent(jobId)}/stream?after=${encodeURIComponent(String(after))}`,
+            method: "GET",
+            onEvent,
         });
     }
     async controlAgentJob(jobId, action, note) {

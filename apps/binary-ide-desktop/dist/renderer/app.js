@@ -21,6 +21,12 @@ const state = {
   assistantText: "",
   assistantNarration: [],
   latestToolSummaries: [],
+  desktopRunActive: false,
+  desktopLivePhase: "Thinking",
+  desktopLiveTargetApp: "",
+  desktopLiveSummary: "",
+  desktopRecoverySuppressedReason: "",
+  desktopBlockedReason: "",
   takeoverState: null,
   closureState: null,
   currentExecution: null,
@@ -29,6 +35,8 @@ const state = {
   providerCatalog: [],
   providers: [],
   connections: [],
+  openhandsCapabilities: null,
+  selectedPluginPacks: [],
   automations: [],
   webhookSubscriptions: [],
   activeAutomationId: null,
@@ -135,8 +143,11 @@ const el = {
   binaryInspectorCard: document.getElementById("binaryInspectorCard"),
   binaryPreview: document.getElementById("binaryPreview"),
   newChatButton: document.getElementById("newChatButton"),
+  openPluginsSheet: document.getElementById("openPluginsSheet"),
+  openAutomationsSheet: document.getElementById("openAutomationsSheet"),
   openWorkspaceSheet: document.getElementById("openWorkspaceSheet"),
   openHistorySheet: document.getElementById("openHistorySheet"),
+  pluginsSheet: document.getElementById("pluginsSheet"),
   menuButtons: Array.from(document.querySelectorAll(".app-menu-button")),
   menuDropdown: document.getElementById("menuDropdown"),
   landingWorkspaceButton: document.getElementById("landingWorkspaceButton"),
@@ -148,6 +159,11 @@ const el = {
   resumeRun: document.getElementById("resumeRun"),
   takeoverRun: document.getElementById("takeoverRun"),
   cancelRun: document.getElementById("cancelRun"),
+  openhandsOfferings: document.getElementById("openhandsOfferings"),
+  pluginPackList: document.getElementById("pluginPackList"),
+  savePluginDefaults: document.getElementById("savePluginDefaults"),
+  clearPluginDefaults: document.getElementById("clearPluginDefaults"),
+  skillSourceList: document.getElementById("skillSourceList"),
   automationNameInput: document.getElementById("automationNameInput"),
   automationPromptInput: document.getElementById("automationPromptInput"),
   automationTriggerSelect: document.getElementById("automationTriggerSelect"),
@@ -166,6 +182,7 @@ const el = {
 
 const paletteActionDefinitions = [
   { id: "open-settings", label: "Open settings", description: "Workspace, host, auth, and autonomy controls." },
+  { id: "open-plugins", label: "Open plugins", description: "OpenHands packs, skill sources, and runtime offerings." },
   { id: "open-history", label: "Open history", description: "Recent runs, sessions, and artifacts." },
   { id: "new-chat", label: "Start a new chat", description: "Return to the launch canvas." },
   { id: "pause-run", label: "Pause current run", description: "Pause Binary if a run is active." },
@@ -179,6 +196,7 @@ const appMenuDefinitions = {
     label: "File",
     items: [
       { id: "new-chat", label: "New Chat" },
+      { id: "open-plugins", label: "Open Plugins" },
       { id: "open-settings", label: "Workspace and Runtime" },
       { id: "open-history", label: "Run History" },
     ],
@@ -194,6 +212,7 @@ const appMenuDefinitions = {
     label: "View",
     items: [
       { id: "open-history", label: "Run History" },
+      { id: "open-plugins", label: "Open Plugins" },
       { id: "open-palette", label: "Command Palette" },
       { id: "refresh-state", label: "Refresh State" },
     ],
@@ -495,7 +514,7 @@ function isTerminalStatus(status) {
 }
 
 function closeAllSheets() {
-  for (const sheet of [el.settingsSheet, el.historySheet, el.commandPalette]) {
+  for (const sheet of [el.pluginsSheet, el.settingsSheet, el.historySheet, el.commandPalette]) {
     sheet.dataset.open = "false";
     sheet.setAttribute("aria-hidden", "true");
   }
@@ -660,6 +679,95 @@ function buildToolNarration(kind, name, summary) {
   return cleanSummary ? `I finished ${label}. ${cleanSummary}` : `I finished ${label}.`;
 }
 
+function resetDesktopLiveState() {
+  state.desktopRunActive = false;
+  state.desktopLivePhase = "Thinking";
+  state.desktopLiveTargetApp = "";
+  state.desktopLiveSummary = "";
+  state.desktopRecoverySuppressedReason = "";
+  state.desktopBlockedReason = "";
+}
+
+function isDesktopToolName(name) {
+  return String(name || "").trim().toLowerCase().startsWith("desktop_");
+}
+
+function inferDesktopPhase(toolName, metadata = {}, fallback = "Acting") {
+  const normalized = String(toolName || "").trim().toLowerCase();
+  if (!normalized) return fallback;
+  if (normalized === "host.desktop_cleanup" || normalized.includes("cleanup")) return "Cleaning up";
+  if (
+    metadata?.relaunchSuppressed === true ||
+    typeof metadata?.relaunchAttempt === "number" ||
+    metadata?.focusRecoveryAttempted === true
+  ) {
+    return "Resolving";
+  }
+  if (
+    normalized.includes("focus") ||
+    normalized === "desktop_open_app" ||
+    normalized === "desktop_get_active_window" ||
+    normalized === "desktop_list_windows"
+  ) {
+    return "Focusing";
+  }
+  if (
+    normalized.includes("read_control") ||
+    normalized.includes("query_controls") ||
+    normalized.includes("wait_for_control") ||
+    (metadata?.verificationRequired === true && metadata?.verificationPassed !== true)
+  ) {
+    return "Verifying";
+  }
+  return fallback;
+}
+
+function phasePillKind(phase) {
+  const normalized = String(phase || "").trim().toLowerCase();
+  if (!normalized) return "subtle";
+  if (normalized === "blocked") return "danger";
+  if (normalized === "acting") return "safe";
+  if (normalized === "verifying") return "warning";
+  if (normalized === "thinking" || normalized === "cleaning up") return "subtle";
+  return "neutral";
+}
+
+function syncDesktopLiveStateFromRun(run) {
+  const execution = state.currentExecution && typeof state.currentExecution === "object" ? state.currentExecution : {};
+  const target = String(execution.targetResolvedApp || execution.targetAppIntent || "").trim();
+  const hasDesktopContext =
+    Boolean(target) ||
+    execution.verificationRequired === true ||
+    execution.verificationPassed === true ||
+    typeof execution.cleanupClosedCount === "number";
+  if (!hasDesktopContext) {
+    if (!state.activeStream) resetDesktopLiveState();
+    return;
+  }
+  state.desktopRunActive = true;
+  state.desktopLiveTargetApp = target || state.desktopLiveTargetApp;
+  if (typeof execution.recoverySuppressedReason === "string") {
+    state.desktopRecoverySuppressedReason = String(execution.recoverySuppressedReason || "").trim();
+  }
+  if (run && isTerminalStatus(run.status)) {
+    state.desktopLivePhase = "Cleaning up";
+    const closed = Number.isFinite(Number(execution.cleanupClosedCount))
+      ? Math.max(0, Number(execution.cleanupClosedCount))
+      : null;
+    const skipped = Number.isFinite(Number(execution.cleanupSkippedPreExistingCount))
+      ? Math.max(0, Number(execution.cleanupSkippedPreExistingCount))
+      : null;
+    if (closed !== null || skipped !== null) {
+      const parts = [];
+      if (closed !== null) parts.push(`Closed ${closed} run-launched app(s)`);
+      if (skipped !== null) parts.push(`left ${skipped} pre-existing app(s) open`);
+      state.desktopLiveSummary = `${parts.join(", ")}.`;
+    } else {
+      state.desktopLiveSummary = "Desktop run completed.";
+    }
+  }
+}
+
 function getMachineHomeRoot() {
   const value = el.machineRootInput?.value.trim();
   return value || state.preferences?.machineRootPath || undefined;
@@ -699,6 +807,7 @@ function renderStatusMeta() {
   const focusRootLabel = deriveFocusRootLabel();
   const activeConnections = state.connections.filter((connection) => connection.enabled).length;
   const activeProviders = state.providers.filter((provider) => provider.connected).length;
+  const activePluginPackCount = Array.isArray(state.selectedPluginPacks) ? state.selectedPluginPacks.length : 0;
   const activePage = String(state.worldModel?.activeContext?.activePage || "").trim();
   const focusedRepo = String(state.worldModel?.activeContext?.focusedRepo || "").trim();
   if (focusedRepo) {
@@ -712,18 +821,23 @@ function renderStatusMeta() {
   } else {
     el.contextStatus.textContent = "Machine home active";
   }
-  const syncBase = state.hostAvailable
-    ? activeProviders
-      ? `Model source: ${activeProviders} connected provider${activeProviders === 1 ? "" : "s"}`
-      : activeConnections
-        ? `Using ${activeConnections} connection${activeConnections === 1 ? "" : "s"}`
-        : "Synced"
-    : "Offline";
-  el.syncStatus.textContent = state.assistMode === "plan" ? `${syncBase} - Plan mode` : syncBase;
+    const syncBase = state.hostAvailable
+      ? activeProviders
+        ? `Model source: ${activeProviders} connected provider${activeProviders === 1 ? "" : "s"}`
+        : activeConnections
+          ? `Using ${activeConnections} connection${activeConnections === 1 ? "" : "s"}`
+          : "Synced"
+      : "Offline";
+    const pluginSuffix = activePluginPackCount ? ` - ${activePluginPackCount} pack${activePluginPackCount === 1 ? "" : "s"} ready` : "";
+    el.syncStatus.textContent = state.assistMode === "plan" ? `${syncBase}${pluginSuffix} - Plan mode` : `${syncBase}${pluginSuffix}`;
   if (el.sidebarWorkspaceName) el.sidebarWorkspaceName.textContent = machineHomeLabel;
   if (el.landingWorkspaceButton) el.landingWorkspaceButton.textContent = focusRoot ? focusRootLabel : machineHomeLabel;
   if (el.workspaceTitle) el.workspaceTitle.textContent = deriveWorkspaceTitle();
-  if (el.workspaceMeta) el.workspaceMeta.textContent = focusRoot ? focusRootLabel : machineHomeLabel;
+    if (el.workspaceMeta) {
+      el.workspaceMeta.textContent = activePluginPackCount
+        ? `${focusRoot ? focusRootLabel : machineHomeLabel} - ${activePluginPackCount} OpenHands pack${activePluginPackCount === 1 ? "" : "s"} active`
+        : (focusRoot ? focusRootLabel : machineHomeLabel);
+    }
   if (el.branchStatus) {
     const branch =
       String(state.currentExecution?.branch || "") ||
@@ -906,10 +1020,112 @@ function buildVisibilityWarning(execution) {
   `;
 }
 
+function isDesktopRunContext() {
+  const run = state.currentRun || currentRunSummary();
+  const execution = state.currentExecution || run?.lastExecutionState || {};
+  if (state.desktopRunActive) return true;
+  if (typeof execution?.targetAppIntent === "string" || typeof execution?.targetResolvedApp === "string") return true;
+  if (typeof run?.lastExecutionState?.targetAppIntent === "string" || typeof run?.lastExecutionState?.targetResolvedApp === "string") {
+    return true;
+  }
+  return false;
+}
+
+function buildDesktopLiveActionStrip() {
+  if (!isDesktopRunContext()) return "";
+  const execution = state.currentExecution || {};
+  const phase = String(state.desktopLivePhase || (state.activeStream ? "Thinking" : "Acting")).trim() || "Thinking";
+  const targetApp =
+    String(state.desktopLiveTargetApp || execution.targetResolvedApp || execution.targetAppIntent || "").trim();
+  const intentKind = String(execution.intentKind || "").trim();
+  const summary = String(state.desktopLiveSummary || state.streamStatusText || state.latestToolSummaries[0] || "").trim();
+  const recoverySuppressedReason = String(
+    state.desktopRecoverySuppressedReason || execution.recoverySuppressedReason || ""
+  ).trim();
+  const blockedReason = String(state.desktopBlockedReason || "").trim();
+  const recoveryAttempted = state.currentExecution?.focusRecoveryAttempted === true;
+  const relaunchAttempt = Number.isFinite(Number(state.currentExecution?.relaunchAttempt))
+    ? Math.max(0, Number(state.currentExecution.relaunchAttempt))
+    : null;
+  const foregroundLeaseMs = Number.isFinite(Number(state.currentExecution?.foregroundLeaseMs))
+    ? Math.max(0, Number(state.currentExecution.foregroundLeaseMs))
+    : null;
+  const proofProgress = Number.isFinite(Number(state.currentExecution?.proofProgress))
+    ? Math.max(0, Math.min(1, Number(state.currentExecution.proofProgress)))
+    : null;
+  const focusLeaseRestored =
+    typeof state.currentExecution?.focusLeaseRestored === "boolean" ? state.currentExecution.focusLeaseRestored : null;
+  const detailLines = [];
+  if (summary) detailLines.push(summary);
+  if (intentKind) detailLines.push(`Intent ${intentKind.replace(/_/g, " ")}.`);
+  if (proofProgress !== null) detailLines.push(`Proof progress ${Math.round(proofProgress * 100)}%.`);
+  if (recoveryAttempted) detailLines.push("Focus recovery attempted.");
+  if (focusLeaseRestored === true) detailLines.push("Restored your previous window focus.");
+  if (focusLeaseRestored === false && execution.focusModeApplied === "foreground_lease") {
+    detailLines.push("Foreground lease ended without fully restoring prior focus.");
+  }
+  if (relaunchAttempt !== null && relaunchAttempt > 0) detailLines.push(`Relaunch attempt ${relaunchAttempt}.`);
+  if (foregroundLeaseMs !== null && foregroundLeaseMs > 0) detailLines.push(`Foreground lease ${foregroundLeaseMs}ms.`);
+  if (recoverySuppressedReason) detailLines.push(recoverySuppressedReason);
+  if (blockedReason) detailLines.push(blockedReason);
+  return `
+    <div class="assistant-live-strip">
+      <div class="assistant-live-strip__chips">
+        <span class="status-pill status-pill--${phasePillKind(phase)}">${escapeHtml(phase)}</span>
+        ${targetApp ? `<span class="status-pill">${escapeHtml(targetApp)}</span>` : ""}
+      </div>
+      ${detailLines.length ? `<p class="assistant-subcopy">${escapeHtml(detailLines[0])}</p>` : ""}
+      ${detailLines.slice(1, 3).map((line) => `<p class="assistant-subcopy">${escapeHtml(line)}</p>`).join("")}
+    </div>
+  `;
+}
+
+function buildDesktopProofLine(run) {
+  if (!run || typeof run !== "object") return "";
+  const execution = run.lastExecutionState && typeof run.lastExecutionState === "object" ? run.lastExecutionState : {};
+  const target = String(execution.targetResolvedApp || execution.targetAppIntent || "").trim();
+  const hasDesktopProof =
+    Boolean(target) ||
+    execution.verificationRequired === true ||
+    execution.verificationPassed === true ||
+    typeof execution.cleanupClosedCount === "number";
+  if (!hasDesktopProof) return "";
+  const requested = String(run.request?.task || state.currentTaskDraft || "").trim();
+  const verificationText =
+    execution.verificationPassed === true
+      ? "verified"
+      : execution.verificationRequired === true
+        ? "verification not fully confirmed"
+        : "no explicit verification required";
+  const cleanupClosed = Number.isFinite(Number(execution.cleanupClosedCount))
+    ? Math.max(0, Number(execution.cleanupClosedCount))
+    : null;
+  const cleanupSkipped = Number.isFinite(Number(execution.cleanupSkippedPreExistingCount))
+    ? Math.max(0, Number(execution.cleanupSkippedPreExistingCount))
+    : null;
+  const cleanupText =
+    cleanupClosed !== null
+      ? `${cleanupClosed} run-launched app(s) closed${
+          cleanupSkipped !== null ? `, ${cleanupSkipped} pre-existing app(s) preserved` : ""
+        }`
+      : "no run-launched app cleanup needed";
+  const proofArtifacts = Array.isArray(execution.proofArtifacts)
+    ? execution.proofArtifacts.filter((item) => typeof item === "string")
+    : [];
+  const proofProgress = Number.isFinite(Number(execution.proofProgress))
+    ? Math.max(0, Math.min(1, Number(execution.proofProgress)))
+    : null;
+  return `Desktop proof: requested ${requested ? `"${requested}"` : "desktop actions"}, ${verificationText}${
+    target ? ` on ${target}` : ""
+  }, ${cleanupText}${proofArtifacts.length ? `, proofs ${proofArtifacts.join(", ")}` : ""}${
+    proofProgress !== null ? `, proof progress ${Math.round(proofProgress * 100)}%` : ""
+  }.`;
+}
+
 function buildCompletionReceipt() {
   const run = state.currentRun || currentRunSummary();
   const closurePhase = String(state.closureState?.closurePhase || "").trim();
-  if (!run || run.status !== "completed" || closurePhase !== "complete") return "";
+  if (!run || run.status !== "completed") return "";
   const checklist = Array.isArray(run.finalEnvelope?.objectiveState?.completionChecklist)
     ? run.finalEnvelope.objectiveState.completionChecklist
     : [];
@@ -927,7 +1143,8 @@ function buildCompletionReceipt() {
     )
   ).slice(0, 4);
   const lines = [
-    state.closureState?.closureSummary ? String(state.closureState.closureSummary) : "",
+    closurePhase === "complete" && state.closureState?.closureSummary ? String(state.closureState.closureSummary) : "",
+    buildDesktopProofLine(run),
     proofHighlights.length ? `Proof: ${proofHighlights.join(" • ")}` : "",
     run.lastExecutionState?.executionVisibility === "visible_required" ? "Visible interaction was used intentionally." : "",
   ].filter(Boolean);
@@ -1027,7 +1244,12 @@ function renderConversation() {
     ? `<p class="assistant-subcopy">${escapeHtml(subtleLines.join(" - "))}</p>`
     : "";
   const executionBadges = state.activeStream ? buildExecutionBadges(state.currentExecution) : "";
+  const operatorDetails = buildOperatorDetails(state.currentExecution);
   const closureBadges = buildClosureBadges();
+  const closureDetails = buildClosureDetails();
+  const liveActionStrip = buildDesktopLiveActionStrip();
+  const assistantActions = buildAssistantActions();
+  const assistantQuickActions = buildAssistantQuickActions();
   const visibilityWarning = buildVisibilityWarning(state.currentExecution);
   const completionReceipt = buildCompletionReceipt();
   const latestAssistantTurn = getLastAssistantTurn();
@@ -1059,8 +1281,25 @@ function renderConversation() {
             : "";
 
       if (!visibleAssistantCopy) return "";
+      const isLatestAssistantTurn = turn.id === latestAssistantTurnId;
+      const extras = isLatestAssistantTurn
+        ? [
+            liveActionStrip,
+            subtleStatus,
+            executionBadges,
+            closureBadges,
+            visibilityWarning,
+            operatorDetails,
+            closureDetails,
+            completionReceipt,
+            assistantActions,
+            assistantQuickActions,
+          ]
+            .filter(Boolean)
+            .join("")
+        : assistantQuickActions;
 
-      return buildAssistantMessage(visibleAssistantCopy, "");
+      return buildAssistantMessage(visibleAssistantCopy, extras);
     })
     .join("");
 
@@ -1529,6 +1768,141 @@ function renderArtifacts() {
   );
 }
 
+function describeSkillSourceKind(kind) {
+  if (kind === "repo_local") return "Repo-local skills";
+  if (kind === "org") return "Org skills";
+  return "User skills";
+}
+
+function togglePluginPackSelection(packId) {
+  const selected = new Set(state.selectedPluginPacks || []);
+  if (selected.has(packId)) selected.delete(packId);
+  else selected.add(packId);
+  state.selectedPluginPacks = [...selected];
+  renderOpenHandsCapabilities();
+}
+
+async function savePluginDefaults() {
+  await requestJson("/v1/preferences", {
+    method: "POST",
+    body: {
+      defaultPluginPacks: state.selectedPluginPacks,
+    },
+  });
+  await hydrate();
+}
+
+async function clearPluginDefaults() {
+  state.selectedPluginPacks = [];
+  await requestJson("/v1/preferences", {
+    method: "POST",
+    body: {
+      defaultPluginPacks: [],
+    },
+  });
+  await hydrate();
+}
+
+function renderOpenHandsCapabilities() {
+  const capabilities = state.openhandsCapabilities;
+  const offerings = Array.isArray(capabilities?.offerings) ? capabilities.offerings : [];
+  const pluginPacks = Array.isArray(capabilities?.pluginPacks) ? capabilities.pluginPacks : [];
+  const skillSources = Array.isArray(capabilities?.skillSources) ? capabilities.skillSources : [];
+  const selected = new Set(state.selectedPluginPacks || []);
+
+  if (el.openhandsOfferings) {
+    if (!offerings.length) {
+      el.openhandsOfferings.innerHTML = `
+        <article class="plugin-card plugin-card--muted">
+          <div class="plugin-card__header">
+            <strong>No OpenHands capability data yet</strong>
+          </div>
+          <p class="plugin-card__copy">Binary will show the live OpenHands runtime surface here once the host responds.</p>
+        </article>
+      `;
+    } else {
+      el.openhandsOfferings.innerHTML = offerings
+        .map(
+          (offering) => `
+            <article class="plugin-card">
+              <div class="plugin-card__header">
+                <strong>${escapeHtml(offering.title)}</strong>
+                <span class="status-pill status-pill--${offering.status === "available" ? "safe" : "warning"}">${escapeHtml(offering.status)}</span>
+              </div>
+              <p class="plugin-card__copy">${escapeHtml(offering.description)}</p>
+              ${offering.detail ? `<p class="plugin-card__copy">${escapeHtml(offering.detail)}</p>` : ""}
+            </article>
+          `
+        )
+        .join("");
+    }
+  }
+
+  if (el.pluginPackList) {
+    if (!pluginPacks.length) {
+      el.pluginPackList.innerHTML = `
+        <article class="plugin-card plugin-card--muted">
+          <div class="plugin-card__header">
+            <strong>No plugin packs available</strong>
+          </div>
+          <p class="plugin-card__copy">Binary could not resolve any OpenHands packs from the local host yet.</p>
+        </article>
+      `;
+    } else {
+      el.pluginPackList.innerHTML = pluginPacks
+        .map((pack) => {
+          const isSelected = selected.has(pack.id);
+          return `
+            <article class="plugin-card${isSelected ? " plugin-card--selected" : ""}">
+              <div class="plugin-card__header">
+                <strong>${escapeHtml(pack.title)}</strong>
+                <span class="status-pill status-pill--${pack.status === "available" ? "safe" : "warning"}">${escapeHtml(pack.status)}</span>
+              </div>
+              <p class="plugin-card__copy">${escapeHtml(pack.description)}</p>
+              <div class="plugin-card__meta">
+                <span class="status-pill status-pill--subtle">${escapeHtml(`${pack.skillCount} skills`)}</span>
+                <span class="status-pill status-pill--subtle">${escapeHtml(`${pack.mcpServerCount} MCP`)}</span>
+                <span class="status-pill status-pill--subtle">${escapeHtml(pack.loadedLazily ? "lazy load" : "eager")}</span>
+              </div>
+              <div class="plugin-card__footer">
+                <span class="plugin-card__copy">${isSelected ? "Enabled by default for new runs." : "Available for task-specific activation."}</span>
+                <button class="plugin-card__toggle" data-plugin-pack-id="${escapeHtml(pack.id)}" type="button">${isSelected ? "Selected" : "Select"}</button>
+              </div>
+            </article>
+          `;
+        })
+        .join("");
+    }
+  }
+
+  if (el.skillSourceList) {
+    if (!skillSources.length) {
+      el.skillSourceList.classList.add("empty");
+      el.skillSourceList.classList.remove("history-list--skills");
+      el.skillSourceList.textContent = "No skill sources detected yet.";
+    } else {
+      el.skillSourceList.classList.remove("empty");
+      el.skillSourceList.classList.add("history-list--skills");
+      el.skillSourceList.innerHTML = skillSources
+        .map(
+          (source) => `
+            <article>
+              <strong>${escapeHtml(source.label)}</strong>
+              <span>${escapeHtml(`${describeSkillSourceKind(source.kind)} - ${source.available ? "available" : "missing"}`)}</span>
+              <span>${escapeHtml(source.loadedLazily ? "Loaded lazily when relevant." : "Loaded eagerly.")}</span>
+              ${source.path ? `<code>${escapeHtml(source.path)}</code>` : ""}
+            </article>
+          `
+        )
+        .join("");
+    }
+  }
+
+  if (el.savePluginDefaults) {
+    el.savePluginDefaults.textContent = selected.size ? `Save defaults (${selected.size})` : "Save defaults";
+  }
+}
+
 function describeAutomationTrigger(trigger) {
   if (!trigger || typeof trigger !== "object") return "Manual";
   if (trigger.kind === "schedule_nl") return `Schedule - ${trigger.scheduleText || "every hour"}`;
@@ -1870,6 +2244,42 @@ function renderPaletteActions(filterText) {
 function applyEventToState(event) {
   const eventName = String(event?.event || "");
   const data = event?.data || {};
+  const desktopMetadata =
+    data && typeof data === "object"
+      ? {
+          intentStepId: typeof data.intentStepId === "string" ? data.intentStepId : undefined,
+          intentKind: typeof data.intentKind === "string" ? data.intentKind : undefined,
+          executionMode: typeof data.executionMode === "string" ? data.executionMode : undefined,
+          windowAffinityToken: typeof data.windowAffinityToken === "string" ? data.windowAffinityToken : undefined,
+          targetAppIntent: typeof data.targetAppIntent === "string" ? data.targetAppIntent : undefined,
+          targetResolvedApp: typeof data.targetResolvedApp === "string" ? data.targetResolvedApp : undefined,
+          targetConfidence: typeof data.targetConfidence === "number" ? data.targetConfidence : undefined,
+          focusRecoveryAttempted:
+            typeof data.focusRecoveryAttempted === "boolean" ? data.focusRecoveryAttempted : undefined,
+          focusModeApplied:
+            data.focusModeApplied === "background_safe" || data.focusModeApplied === "foreground_lease"
+              ? data.focusModeApplied
+              : undefined,
+          foregroundLeaseMs: typeof data.foregroundLeaseMs === "number" ? data.foregroundLeaseMs : undefined,
+          focusLeaseRestored: typeof data.focusLeaseRestored === "boolean" ? data.focusLeaseRestored : undefined,
+          recoverySuppressedReason:
+            typeof data.recoverySuppressedReason === "string" ? data.recoverySuppressedReason : undefined,
+          relaunchAttempt: typeof data.relaunchAttempt === "number" ? data.relaunchAttempt : undefined,
+          relaunchSuppressed: typeof data.relaunchSuppressed === "boolean" ? data.relaunchSuppressed : undefined,
+          relaunchSuppressionReason:
+            typeof data.relaunchSuppressionReason === "string" ? data.relaunchSuppressionReason : undefined,
+          verificationRequired: typeof data.verificationRequired === "boolean" ? data.verificationRequired : undefined,
+          verificationPassed: typeof data.verificationPassed === "boolean" ? data.verificationPassed : undefined,
+          proofProgress: typeof data.proofProgress === "number" ? data.proofProgress : undefined,
+          proofArtifacts: Array.isArray(data.proofArtifacts)
+            ? data.proofArtifacts.filter((item) => typeof item === "string")
+            : undefined,
+          cleanupClosedCount: typeof data.cleanupClosedCount === "number" ? data.cleanupClosedCount : undefined,
+          cleanupSkippedPreExistingCount:
+            typeof data.cleanupSkippedPreExistingCount === "number" ? data.cleanupSkippedPreExistingCount : undefined,
+          cleanupErrors: typeof data.cleanupErrors === "number" ? data.cleanupErrors : undefined,
+        }
+      : {};
   const execution =
     data && typeof data === "object"
       ? {
@@ -1882,6 +2292,7 @@ function applyEventToState(event) {
             typeof data.visibleFallbackReason === "string" && data.visibleFallbackReason.trim()
               ? data.visibleFallbackReason
               : undefined,
+          ...desktopMetadata,
         }
       : null;
 
@@ -1905,10 +2316,33 @@ function applyEventToState(event) {
   if (eventName === "tool_request") {
     const toolName = String(data?.toolCall?.name || "tool");
     const summary = String(data?.toolCall?.summary || "").trim() || `Binary is using ${toolName.replace(/_/g, " ")}.`;
+    const toolArgs =
+      data?.toolCall?.arguments && typeof data.toolCall.arguments === "object" ? data.toolCall.arguments : {};
     state.streamStatusText = summary;
     pushToolSummary(toolName, "requested");
     appendAssistantNarration(buildToolNarration("request", toolName, summary));
-    if (execution?.interactionMode || execution?.executionVisibility) state.currentExecution = execution;
+    if (isDesktopToolName(toolName)) {
+      state.desktopRunActive = true;
+      state.desktopLivePhase = inferDesktopPhase(toolName, desktopMetadata, "Acting");
+      state.desktopLiveSummary = summary;
+      state.desktopLiveTargetApp = String(
+        desktopMetadata.targetResolvedApp ||
+          desktopMetadata.targetAppIntent ||
+          toolArgs.targetAppIntent ||
+          toolArgs.app ||
+          ""
+      ).trim();
+      state.desktopRecoverySuppressedReason = String(desktopMetadata.recoverySuppressedReason || "").trim();
+    } else if (state.activeStream && !state.desktopRunActive) {
+      state.desktopLivePhase = "Thinking";
+    }
+    if (execution?.interactionMode || execution?.executionVisibility || state.desktopRunActive) {
+      state.currentExecution = {
+        ...(state.currentExecution || {}),
+        ...(execution || {}),
+        ...desktopMetadata,
+      };
+    }
   }
 
   if (eventName === "tool_result") {
@@ -1917,12 +2351,43 @@ function applyEventToState(event) {
     pushToolSummary(toolName, summary);
     state.streamStatusText = summary;
     appendAssistantNarration(buildToolNarration("result", toolName, summary));
-    if (execution?.interactionMode || execution?.executionVisibility) {
+    if (isDesktopToolName(toolName)) {
+      state.desktopRunActive = true;
+      state.desktopLivePhase = inferDesktopPhase(toolName, desktopMetadata, "Acting");
+      state.desktopLiveSummary = summary;
+      state.desktopLiveTargetApp = String(
+        desktopMetadata.targetResolvedApp || desktopMetadata.targetAppIntent || state.desktopLiveTargetApp || ""
+      ).trim();
+      state.desktopRecoverySuppressedReason = String(desktopMetadata.recoverySuppressedReason || "").trim();
+    }
+    if (execution?.interactionMode || execution?.executionVisibility || state.desktopRunActive) {
       state.currentExecution = {
+        ...(state.currentExecution || {}),
         ...execution,
+        ...desktopMetadata,
         executionSummary: summary,
       };
     }
+  }
+
+  if (eventName === "host.desktop_cleanup") {
+    const attempted = Number(data?.attempted || 0);
+    const closed = Number(data?.closed || 0);
+    const skipped = Number(data?.cleanupSkippedPreExistingCount || 0);
+    state.desktopRunActive = true;
+    state.desktopLivePhase = "Cleaning up";
+    state.desktopLiveSummary =
+      attempted > 0
+        ? `Closed ${closed}/${attempted} run-launched app(s), preserved ${Math.max(0, skipped)} pre-existing app(s).`
+        : "Cleanup finished.";
+    state.currentExecution = {
+      ...(state.currentExecution || {}),
+      cleanupClosedCount: Number.isFinite(closed) ? Math.max(0, closed) : undefined,
+      cleanupSkippedPreExistingCount: Number.isFinite(skipped) ? Math.max(0, skipped) : undefined,
+      cleanupErrors:
+        typeof data?.cleanupErrors === "number" ? Math.max(0, Number(data.cleanupErrors)) : undefined,
+      executionSummary: state.desktopLiveSummary,
+    };
   }
 
   if (eventName === "final" && typeof data === "string") {
@@ -1931,7 +2396,12 @@ function applyEventToState(event) {
     state.streamStatusText = "";
     state.assistantNarration = [];
     state.takeoverState = null;
-    state.currentExecution = null;
+    if (state.desktopRunActive) {
+      state.desktopLivePhase = "Verifying";
+      state.desktopLiveSummary = "Finalizing proof and wrap-up.";
+    } else {
+      state.currentExecution = null;
+    }
   }
 
   if (eventName === "partial" && typeof data === "string") {
@@ -1957,6 +2427,10 @@ function applyEventToState(event) {
     };
     state.streamStatusText = reason;
     appendAssistantNarration(`I need your help to continue safely. ${reason}`);
+    if (state.desktopRunActive) {
+      state.desktopLivePhase = "Blocked";
+      state.desktopBlockedReason = reason;
+    }
     state.closureState = extractClosureState({
       loopState: { closurePhase: data?.closurePhase || "blocked" },
       unfinishedChecklistItems: data?.unfinishedChecklistItems,
@@ -1972,6 +2446,7 @@ function applyEventToState(event) {
       appendAssistantNarration(`Next I’ll ${String(data.progressState.nextDeterministicAction).trim().replace(/\.$/, "")}.`);
     }
     state.currentExecution = deriveExecutionState(data, state.currentExecution) || state.currentExecution;
+    syncDesktopLiveStateFromRun(state.currentRun || currentRunSummary() || null);
     state.closureState = extractClosureState(data) || state.closureState;
   }
 }
@@ -1983,6 +2458,7 @@ async function syncRunSummaryFromHost() {
     state.currentRun = run;
     state.activeRunId = run.id;
     state.currentExecution = deriveExecutionState(run.finalEnvelope || run, run.lastExecutionState || state.currentExecution) || state.currentExecution;
+    syncDesktopLiveStateFromRun(run);
     state.closureState = extractClosureState(run.finalEnvelope || run) || state.closureState;
     const assistantResponse = extractAssistantResponse(run) || (run.status === "failed" ? extractRunFailureMessage(run) : "");
     if (assistantResponse) {
@@ -2034,10 +2510,11 @@ async function hydrate() {
   const preservedWorkspace = el.workspaceInput.value.trim();
 
   try {
-    const [health, auth, preferences, providerCatalogResponse, providersResponse, connectionsResponse, autonomy, worldModel, runsResponse, automationsResponse, webhooksResponse, appearance] = await Promise.all([
+    const [health, auth, preferences, openhandsCapabilities, providerCatalogResponse, providersResponse, connectionsResponse, autonomy, worldModel, runsResponse, automationsResponse, webhooksResponse, appearance] = await Promise.all([
       requestJson("/v1/healthz"),
       requestJson("/v1/auth/status"),
       requestJson("/v1/preferences"),
+      requestJson(`/v1/openhands/capabilities${preservedWorkspace ? `?workspaceRoot=${encodeURIComponent(preservedWorkspace)}` : ""}`),
       requestJson("/v1/providers/catalog"),
       requestJson("/v1/providers"),
       requestJson("/v1/connections"),
@@ -2049,9 +2526,15 @@ async function hydrate() {
       window.binaryDesktop.getAppearance(),
     ]);
 
-    state.auth = auth;
-    state.preferences = preferences;
-    state.providerCatalog = Array.isArray(providerCatalogResponse.providers) ? providerCatalogResponse.providers : [];
+      state.auth = auth;
+      state.preferences = preferences;
+      state.openhandsCapabilities = openhandsCapabilities;
+      state.selectedPluginPacks = Array.isArray(openhandsCapabilities?.defaultPluginPacks)
+        ? openhandsCapabilities.defaultPluginPacks
+        : Array.isArray(preferences?.defaultPluginPacks)
+          ? preferences.defaultPluginPacks
+          : [];
+      state.providerCatalog = Array.isArray(providerCatalogResponse.providers) ? providerCatalogResponse.providers : [];
     state.providers = Array.isArray(providersResponse.providers) ? providersResponse.providers : [];
     state.connections = Array.isArray(connectionsResponse.connections) ? connectionsResponse.connections : [];
     state.autonomy = autonomy;
@@ -2087,10 +2570,11 @@ async function hydrate() {
     renderRuns();
     renderRecentSessions();
     renderArtifacts();
-    renderProviders();
-    renderConnections();
-    renderAutomations();
-    renderWebhookSubscriptions();
+      renderProviders();
+      renderConnections();
+      renderOpenHandsCapabilities();
+      renderAutomations();
+      renderWebhookSubscriptions();
     if (state.activeAutomationId) {
       const activeResponse = await requestJson(`/v1/automations/${encodeURIComponent(state.activeAutomationId)}/events`).catch(() => null);
       state.activeAutomationEvents = Array.isArray(activeResponse?.events) ? activeResponse.events : [];
@@ -2102,13 +2586,16 @@ async function hydrate() {
     renderLiveControls();
     renderConversation();
     renderPaletteActions(el.paletteSearch.value || "");
-  } catch (error) {
-    renderHostStatus(false, error instanceof Error ? error.message : String(error), "Build and start services/binary-host to activate the desktop shell.");
-    renderWorldModelStatus();
-    renderBinaryInspector();
-    renderConversation();
+    } catch (error) {
+      state.openhandsCapabilities = null;
+      state.selectedPluginPacks = [];
+      renderHostStatus(false, error instanceof Error ? error.message : String(error), "Build and start services/binary-host to activate the desktop shell.");
+      renderWorldModelStatus();
+      renderBinaryInspector();
+      renderOpenHandsCapabilities();
+      renderConversation();
+    }
   }
-}
 
 async function trustWorkspace() {
   const machineRootPath = getMachineHomeRoot();
@@ -2539,6 +3026,7 @@ async function startRun(task) {
   state.assistantNarration = [];
   state.streamStatusText = ASSISTANT_WAITING_COPY;
   state.latestToolSummaries = [];
+  resetDesktopLiveState();
   state.takeoverState = null;
   state.currentExecution = null;
   state.currentRun = {
@@ -2565,6 +3053,7 @@ async function startRun(task) {
       mode: state.assistMode,
       model: "Binary IDE",
       speedProfile: "fast",
+      ...(state.selectedPluginPacks.length ? { pluginPacks: state.selectedPluginPacks } : {}),
       ...(machineRootPath ? { machineRootPath } : {}),
       ...(focusWorkspaceRoot ? { workspaceRoot: focusWorkspaceRoot, focusWorkspaceRoot, focusRepoRoot: focusWorkspaceRoot } : {}),
       client: {
@@ -2633,6 +3122,7 @@ function resetChat() {
   state.assistantNarration = [];
   state.streamStatusText = "";
   state.latestToolSummaries = [];
+  resetDesktopLiveState();
   state.takeoverState = null;
   state.currentExecution = null;
   state.currentRun = null;
@@ -2647,6 +3137,7 @@ function resetChat() {
 
 function handlePaletteAction(actionId) {
   if (actionId === "open-settings") openSheet(el.settingsSheet);
+  if (actionId === "open-plugins") openSheet(el.pluginsSheet);
   if (actionId === "open-history") openSheet(el.historySheet);
   if (actionId === "new-chat") resetChat();
   if (actionId === "pause-run") void controlRun("pause", "Paused from the command palette.");
@@ -2816,6 +3307,18 @@ el.refreshState.addEventListener("click", () => {
   void hydrate();
 });
 
+if (el.savePluginDefaults) {
+  el.savePluginDefaults.addEventListener("click", () => {
+    void savePluginDefaults();
+  });
+}
+
+if (el.clearPluginDefaults) {
+  el.clearPluginDefaults.addEventListener("click", () => {
+    void clearPluginDefaults();
+  });
+}
+
 if (el.chooseBinaryFile) {
   el.chooseBinaryFile.addEventListener("click", async () => {
     const selected = await window.binaryDesktop.chooseBinaryFile();
@@ -2873,6 +3376,21 @@ el.newChatButton.addEventListener("click", () => {
 el.openWorkspaceSheet.addEventListener("click", () => {
   openSheet(el.settingsSheet);
 });
+
+if (el.openPluginsSheet) {
+  el.openPluginsSheet.addEventListener("click", () => {
+    openSheet(el.pluginsSheet);
+  });
+}
+
+if (el.openAutomationsSheet) {
+  el.openAutomationsSheet.addEventListener("click", () => {
+    openSheet(el.settingsSheet);
+    queueMicrotask(() => {
+      el.automationList?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+}
 
 if (el.landingWorkspaceButton) {
   el.landingWorkspaceButton.addEventListener("click", () => {
@@ -2956,6 +3474,7 @@ document.addEventListener("click", (event) => {
           state.currentRun = run;
           state.activeRunId = run.id;
           state.currentExecution = deriveExecutionState(run.finalEnvelope || run, run.lastExecutionState || state.currentExecution) || state.currentExecution;
+          syncDesktopLiveStateFromRun(run);
           state.currentTaskDraft = run.request?.task || state.currentTaskDraft;
           state.assistantText = extractAssistantResponse(run) || state.assistantText || "";
           seedTranscriptFromRun(run, state.assistantText);
@@ -2990,6 +3509,15 @@ document.addEventListener("click", (event) => {
   if (inlineAction) {
     const action = inlineAction.getAttribute("data-run-action");
     if (action) void controlRun(action, "Run action triggered from the conversation surface.");
+    return;
+  }
+
+  const pluginPackAction = target.closest("[data-plugin-pack-id]");
+  if (pluginPackAction) {
+    const pluginPackId = pluginPackAction.getAttribute("data-plugin-pack-id");
+    if (pluginPackId) {
+      togglePluginPackSelection(pluginPackId);
+    }
     return;
   }
 
@@ -3118,6 +3646,7 @@ window.binaryDesktop.onFocusRun(async ({ runId }) => {
     state.currentRun = run;
     state.activeRunId = run.id;
     state.currentExecution = deriveExecutionState(run.finalEnvelope || run, run.lastExecutionState || state.currentExecution) || state.currentExecution;
+    syncDesktopLiveStateFromRun(run);
     state.currentTaskDraft = run.request?.task || state.currentTaskDraft;
     state.assistantText = extractAssistantResponse(run) || state.assistantText || "";
     seedTranscriptFromRun(run, state.assistantText);

@@ -98,4 +98,34 @@ describe("assistant-ux", () => {
     expect(patchConfidence).toBe("high");
     expect(actions).toEqual([]);
   });
+
+  it("builds recovery follow-up actions when edit confidence needs review", () => {
+    const preview = {
+      activeFile: "app/api/v1/playground/models/route.ts",
+      openFiles: ["app/api/v1/playground/models/route.ts"],
+      candidateFiles: ["app/api/v1/playground/models/route.ts", "lib/playground/orchestration.ts"],
+      attachedFiles: [],
+      memoryFiles: [],
+      resolvedFiles: ["app/api/v1/playground/models/route.ts"],
+      selectedFiles: [],
+      diagnostics: [],
+      intent: "change" as const,
+      confidence: "medium" as const,
+      confidenceScore: 0.58,
+      rationale: "multiple likely targets",
+      workspaceRoot: "c:/repo",
+      snippets: [],
+    };
+
+    const actions = buildFollowUpActions({
+      intent: "change",
+      lastTask: "fix route.ts",
+      preview,
+      patchConfidence: "needs_review",
+    });
+
+    expect(actions.length).toBeGreaterThan(0);
+    expect(actions.some((action) => action.id === "prompt:run-validation")).toBe(true);
+    expect(actions.some((action) => action.id === "retry-more-context")).toBe(true);
+  });
 });

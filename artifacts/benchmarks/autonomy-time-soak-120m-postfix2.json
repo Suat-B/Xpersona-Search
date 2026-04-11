@@ -1,0 +1,52 @@
+{
+  "startedAt": "2026-04-08T21:07:23.485Z",
+  "completedAt": "2026-04-08T21:10:20.845Z",
+  "targetDurationMs": 7200000,
+  "observedDurationMs": 177360,
+  "targetDurationHuman": "2h 0m 0s",
+  "observedDurationHuman": "0h 2m 57s",
+  "hostUrl": "http://127.0.0.1:7777",
+  "model": "Binary IDE",
+  "categories": [
+    "complex_autonomy_delivery",
+    "git_commit_workflow",
+    "long_run_task",
+    "validation_repair",
+    "multi_file_project_generation"
+  ],
+  "strictPass": false,
+  "requirements": {
+    "takeoverCountMustBeZero": true,
+    "repromptRequiredCountMustBeZero": true,
+    "durationMustMeetTarget": true
+  },
+  "metrics": {
+    "cycleCount": 1,
+    "categoryRunCount": 5,
+    "completedCount": 4,
+    "takeoverCount": 1,
+    "repromptRequiredCount": 1,
+    "failedCount": 0,
+    "completionRate": 0.8,
+    "medianElapsedMs": 23194,
+    "medianFirstToolMs": 5765,
+    "firstInterruptAtMs": 177359,
+    "firstInterruptCycle": 1,
+    "firstInterruptCategory": "complex_autonomy_delivery"
+  },
+  "cycleLogs": [
+    {
+      "cycle": 1,
+      "wallMs": 177355,
+      "runs": 5,
+      "completed": 4,
+      "takeover": 1,
+      "repromptRequired": 1,
+      "failed": 0,
+      "exitCode": 0,
+      "remainingMs": 7022641,
+      "releaseGate": "PASS"
+    }
+  ],
+  "tempRoot": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-time-soak-JePNrA"
+}

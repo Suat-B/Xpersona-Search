@@ -1,0 +1,134 @@
+Binary Defence Roadmap
+Operator Copilot capabilities for defense-support, cyber, sustainment, and mission-adjacent workflows
+
+Binary is being positioned as a local-first, auditable operator copilot for analysts, maintainers, cyber teams, planners, and operators. The product is meant to help people do difficult operational work with more speed, trust, and clarity. It does not target weapons, targeting, lethality, or offensive harm workflows.
+
+Safety Boundary
+
+In scope:
+- cyber defense
+- operator assistance
+- documentation
+- logistics
+- maintenance
+- readiness
+- compliance
+- training
+- secure automation
+
+Out of scope:
+- weapons control
+- targeting
+- autonomous lethality
+- guidance
+- offensive kill-chain automation
+
+High-risk actions remain approval-gated with human-in-the-loop oversight.
+
+Shared Core Capabilities
+
+- local-first execution and offline-ready mode
+- OpenHands-first orchestration with Binary guardrails
+- role-based approvals and trust policies
+- audit logs, receipts, proofs, and replay
+- secure automation and scheduled jobs
+- plugin packs and skills for SOPs and workflows
+- terminal, browser, desktop, and document workflows
+- model routing with controlled enterprise/provider policy
+- mission memory, team memory, and case context
+- evidence capture and validation before completion
+- operator-readable natural-language progress
+- exportable incident/report bundles
+- policy packs per org, role, and environment
+
+Website Capabilities
+
+- defense-focused landing pages for operator copilot, cyber workflows, maintenance, logistics, and training
+- trust center with security posture, audit model, local-first architecture, and approval boundaries
+- capability matrix comparing Website / IDE / Cutie / CLI / Host
+- downloadable workflow packs, plugin packs, and skills
+- role-based solution pages for SOC analyst, maintainer, readiness officer, operations support, and program manager
+- proof and observability demo pages
+- case-study and sandbox demo flows
+- deployment options page covering local workstation, on-prem, and air-gapped-compatible direction
+- compliance roadmap page covering auditability, retention controls, least privilege, and human approval gates
+- documentation portal for APIs, automations, and runtime policy
+
+Binary IDE Capabilities
+
+- secure local operator chat with simple natural language control
+- audited terminal operations for engineering, cyber, and maintenance workflows
+- browser automation for portals, dashboards, tickets, and internal tools
+- native desktop automation for legacy Windows apps and operator consoles
+- live action strip with phase, target app, proof status, and cleanup status
+- session recording, proof bundles, and exportable run summaries
+- SOP-guided workflows through plugin packs and skills
+- intervention and takeover for trust boundaries
+- strict validation gate before marking work complete
+- incident triage mode
+- maintenance procedure mode
+- logistics and document mode
+- multi-step report drafting from real artifacts
+- attachment and screenshot support for operator evidence
+- environment health and runtime health dashboard
+- secure job and automation control for unattended support tasks
+
+Cutie Capabilities
+
+- same orchestration contract as desktop and CLI
+- coding and copilot workflows for secure engineering teams
+- repo-aware skills and mission packs
+- issue triage, patch planning, validation, and repair loops
+- terminal and file workflows through the same host and gateway contract
+- security review and change-proof workflows
+- workspace-scoped approvals and guarded automations
+- support for documentation, incident notes, and engineering handoff
+- parity with desktop for run metadata, quality gate state, and proofs
+- lightweight operator-inside-the-editor experience for technical users
+
+Priority Workflow Packs
+
+- Cyber incident triage: collect signals, structure the case, and guide next actions across Website, Binary IDE, and Cutie.
+- Alert enrichment and evidence collection: gather console, browser, document, and terminal evidence across Binary IDE and Cutie.
+- Maintenance troubleshooting: walk technicians through procedures, evidence capture, and repair notes in Binary IDE and Website.
+- Readiness checklist execution: run repeatable checklists and verification flows across Website and Binary IDE.
+- Document and report drafting: turn evidence into clear drafts and operator summaries across Binary IDE, Cutie, and Website.
+- Ticket and portal operations: assist with structured browser workflows and updates in Binary IDE and Website.
+- Secure research and document extraction: pull facts from trusted sources and working documents across Website, Binary IDE, and Cutie.
+- Training and after-action review: support guided learning, replay, and debrief workflows across Website and Binary IDE.
+- Compliance evidence gathering: assemble proofs, receipts, and validation artifacts across Website, Binary IDE, and Cutie.
+- Program status and operations summary generation: produce leadership-ready updates from live work artifacts across all three surfaces.
+
+Phase 1: Foundation
+
+- trust center messaging
+- audit and proof-first positioning
+- role-based solution pages
+- IDE and Cutie parity language
+- operator workflow pack definitions
+
+Phase 2: Operator Workstation
+
+- desktop, browser, and terminal reliability hardening
+- proof bundles and exports
+- local-first run observability
+- plugin and skill marketplace surfacing
+- secure automation UI
+
+Phase 3: Defense Workflow Specialization
+
+- cyber pack
+- maintenance and logistics pack
+- training and after-action pack
+- role-aware dashboards
+- mission memory and case context
+
+Phase 4: Enterprise Adoption
+
+- on-prem and controlled deployment story
+- org policy packs
+- stronger audit and retention controls
+- support bundles and admin tooling
+- procurement-ready trust and documentation surfaces
+
+Binary becomes a trusted operator copilot by winning on auditability, local execution, real automation, and human trust. The product should help people work through complex operational tasks with more confidence and less friction, while keeping accountability with the humans responsible for the mission.

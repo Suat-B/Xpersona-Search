@@ -5,6 +5,7 @@ import { getAgentCookieName, verifyAgentToken } from "@/lib/auth-utils";
 import { SearchLanding } from "@/components/home/SearchLanding";
 import { GoogleStyleHomeClient as GoogleStyleHome } from "@/components/home/GoogleStyleHomeClient";
 import { ANSMinimalFooter } from "@/components/home/ANSMinimalFooter";
+import { HumanAdSection } from "@/components/ads/HumanAdSection";
 
 export default async function HomeClassic({
   searchParams,
@@ -59,6 +60,11 @@ export default async function HomeClassic({
             <SearchLanding basePath={basePath} />
           </Suspense>
         </div>
+        <HumanAdSection
+          className="pb-6"
+          title="Sponsored"
+          description="Relevant tools and services for AI search and agent discovery."
+        />
         <ANSMinimalFooter variant="dark" />
       </div>
     );
@@ -102,6 +108,13 @@ export default async function HomeClassic({
         isAuthenticated={isAuthenticated}
         privacyUrl="/privacy-policy-1"
         termsUrl="/terms-of-service"
+        bottomContent={(
+          <HumanAdSection
+            className="max-w-5xl px-0"
+            title="Sponsored"
+            description="Relevant tools and services for AI builders and agent operators."
+          />
+        )}
       />
     </>
   );

@@ -1,4 +1,5 @@
 ﻿"use strict";
+// @ts-nocheck
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -39,7 +40,11 @@ const compatMaxStartupRetries = Math.max(0, Number(node_process_1.default.env.BI
 const compatTraceProtocol = node_process_1.default.env.BINARY_IDE_COMPAT_TRACE_PROTOCOL === "1";
 const APP_PROTOCOL_SCHEME = "binaryui";
 const defaultHostUrl = node_process_1.default.env.BINARY_IDE_LOCAL_HOST_URL || "http://127.0.0.1:7777";
-const hostEntry = node_process_1.default.env.BINARY_IDE_HOST_ENTRY || node_path_1.default.join(repoRoot, "services", "binary-host", "dist", "server.js");
+const preferredLiveHostEntry = node_path_1.default.join(repoRoot, "services", "binary-host", "dist-live", "server.js");
+const defaultHostEntry = node_path_1.default.join(repoRoot, "services", "binary-host", "dist", "server.js");
+const hostEntry = node_process_1.default.env.BINARY_IDE_HOST_ENTRY ||
+    ((0, node_fs_1.existsSync)(preferredLiveHostEntry) ? preferredLiveHostEntry : defaultHostEntry);
+const compatPluginOverlayScriptPath = node_path_1.default.join(packageRoot, "compat-plugin-overlay.js");
 const ENABLE_AUXILIARY_WINDOWS = false;
 const ENABLE_INTERVENTION_WINDOW = false;
 const IMPORTABLE_TEXT_EXTENSIONS = new Set([".json", ".txt", ".md", ".yaml", ".yml", ".toml"]);
@@ -144,6 +149,27 @@ let codexCompatConfigState = node_process_1.default.platform === "win32"
     : {};
 let codexCompatConfigVersion = node_process_1.default.platform === "win32" ? 1 : 0;
 const codexTerminalSessions = new Map();
+let nodePtyModule = null;
+let nodePtyLoadAttempted = false;
+let nodePtyLoadStatus = "unknown";
+function loadNodePty() {
+    if (nodePtyModule !== null)
+        return nodePtyModule;
+    if (nodePtyLoadAttempted)
+        return null;
+    nodePtyLoadAttempted = true;
+    try {
+        nodePtyModule = require("node-pty");
+        nodePtyLoadStatus = "loaded";
+        appendCodexCompatLog("terminal-node-pty-loaded");
+    }
+    catch (error) {
+        nodePtyModule = null;
+        nodePtyLoadStatus = "failed";
+        appendCodexCompatLog(`terminal-node-pty-failed error=${error instanceof Error ? error.message : String(error)}`);
+    }
+    return nodePtyModule;
+}
 const codexCompatThreads = new Map();
 function nowIso() {
     return new Date().toISOString();
@@ -251,6 +277,30 @@ function summarizeForCompatLog(value, maxLength = 800) {
         catch {
             return "[Unserializable]";
         }
+    }
+}
+async function injectCompatPluginOverlay(targetWindow) {
+    if (activeUiRuntime !== "codex_compat")
+        return false;
+    if (!targetWindow || targetWindow.isDestroyed())
+        return false;
+    try {
+        if (!(0, node_fs_1.existsSync)(compatPluginOverlayScriptPath)) {
+            appendCodexCompatLog(`compat-plugin-overlay-missing path=${compatPluginOverlayScriptPath}`);
+            return false;
+        }
+        const script = await node_fs_1.promises.readFile(compatPluginOverlayScriptPath, "utf8");
+        if (!script.trim()) {
+            appendCodexCompatLog("compat-plugin-overlay-empty");
+            return false;
+        }
+        await targetWindow.webContents.executeJavaScript(`${script}\n//# sourceURL=binary-compat-plugin-overlay.js`, true);
+        appendCodexCompatLog("compat-plugin-overlay-injected");
+        return true;
+    }
+    catch (error) {
+        appendCodexCompatLog(`compat-plugin-overlay-error ${error instanceof Error ? error.message : String(error)}`);
+        return false;
     }
 }
 function normalizeCompatWorkspaceRoot(value) {
@@ -779,6 +829,39 @@ function resolveCodexRequestUrl(url) {
         return `${defaultHostUrl}${url}`;
     return `${defaultHostUrl}/${url}`;
 }
+async function requestHostJson(pathname, init = {}) {
+    const url = resolveCodexRequestUrl(pathname);
+    if (!url) {
+        throw new Error("Binary Desktop could not resolve the host request URL.");
+    }
+    const response = await fetch(url, {
+        ...init,
+        headers: {
+            Accept: "application/json",
+            ...(init.headers && typeof init.headers === "object" ? init.headers : {}),
+        },
+    });
+    if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(body || `Binary Host request failed with ${response.status}`);
+    }
+    return await response.json();
+}
+async function getHostPreferences() {
+    return await requestHostJson("/v1/preferences");
+}
+async function setHostPreferences(patch) {
+    return await requestHostJson("/v1/preferences", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(patch && typeof patch === "object" ? patch : {}),
+    });
+}
+async function getOpenHandsCapabilities() {
+    return await requestHostJson("/v1/openhands/capabilities");
+}
 function parseCodexVscodeEndpoint(url) {
     try {
         const parsed = new URL(url);
@@ -811,6 +894,30 @@ function normalizeCompatPathForUi(rawPath) {
 }
 function normalizeCompatPathForHost(rawPath) {
     return node_process_1.default.platform === "win32" ? rawPath.replace(/\//g, "\\") : rawPath;
+}
+function resolveCompatActiveWorkspaceRoot() {
+    return normalizeCompatWorkspaceRoot(codexCompatWorkspaceRoot || readCompatWorkspaceRootOptions()[0] || node_process_1.default.cwd())
+        || normalizeCompatWorkspaceRoot(node_process_1.default.cwd())
+        || node_process_1.default.cwd();
+}
+function normalizeCompatRequestWorkspacePath(value) {
+    const candidate = typeof value === "string" && value.trim()
+        ? normalizeCompatWorkspaceRoot(normalizeCompatPathForHost(value.trim()))
+        : null;
+    return normalizeCompatPathForUi(candidate || resolveCompatActiveWorkspaceRoot());
+}
+function sanitizeCompatRequestParams(params) {
+    if (!params || typeof params !== "object" || Array.isArray(params)) {
+        return {};
+    }
+    const sanitized = { ...params };
+    if ("cwd" in sanitized) {
+        sanitized.cwd = normalizeCompatRequestWorkspacePath(sanitized.cwd);
+    }
+    if ("workspaceRoot" in sanitized) {
+        sanitized.workspaceRoot = normalizeCompatRequestWorkspacePath(sanitized.workspaceRoot);
+    }
+    return sanitized;
 }
 function normalizeCompatSearchRoot(rawPath) {
     const hostPath = normalizeCompatPathForHost(String(rawPath || "").trim());
@@ -995,9 +1102,17 @@ function syncCompatThreadTitles() {
     codexCompatGlobalState.set("thread-titles", { titles, order });
 }
 function upsertCompatThread(thread) {
-    codexCompatThreads.set(thread.id, thread);
+    const fallbackRoot = normalizeCompatWorkspaceRoot(codexCompatWorkspaceRoot || node_process_1.default.cwd()) || node_process_1.default.cwd();
+    const normalizedCwdCandidate = typeof thread.cwd === "string" && thread.cwd.trim()
+        ? normalizeCompatWorkspaceRoot(normalizeCompatPathForHost(thread.cwd.trim()))
+        : null;
+    const normalizedThread = {
+        ...thread,
+        cwd: normalizeCompatPathForUi(normalizedCwdCandidate || fallbackRoot),
+    };
+    codexCompatThreads.set(normalizedThread.id, normalizedThread);
     syncCompatThreadTitles();
-    return thread;
+    return normalizedThread;
 }
 function ensureCompatThread(params = {}) {
     const nowUnixSeconds = Math.floor(Date.now() / 1000);
@@ -1110,6 +1225,124 @@ function extractCompatTurnText(params) {
         .join("\n")
         .trim();
 }
+function normalizeCompatImageMimeType(value) {
+    const mime = typeof value === "string" ? value.trim().toLowerCase() : "";
+    if (!mime.startsWith("image/"))
+        return "";
+    return mime;
+}
+function inferCompatImageMimeTypeFromPath(filePath) {
+    const ext = node_path_1.default.extname(String(filePath || "")).toLowerCase();
+    if (ext === ".png")
+        return "image/png";
+    if (ext === ".jpg" || ext === ".jpeg")
+        return "image/jpeg";
+    if (ext === ".webp")
+        return "image/webp";
+    if (ext === ".gif")
+        return "image/gif";
+    if (ext === ".bmp")
+        return "image/bmp";
+    return "";
+}
+function resolveCompatImageDataUrl(candidate, mimeTypeHint) {
+    const raw = typeof candidate === "string" ? candidate.trim() : "";
+    if (!raw)
+        return null;
+    if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(raw)) {
+        return { dataUrl: raw, mimeType: normalizeCompatImageMimeType(mimeTypeHint) || "" };
+    }
+    const mimeType = normalizeCompatImageMimeType(mimeTypeHint);
+    if (mimeType && /^[a-z0-9+/=\s]+$/i.test(raw) && raw.length > 64) {
+        const normalizedBase64 = raw.replace(/\s+/g, "");
+        return {
+            dataUrl: `data:${mimeType};base64,${normalizedBase64}`,
+            mimeType,
+        };
+    }
+    if (node_fs_1.existsSync(raw)) {
+        const resolvedMime = mimeType || inferCompatImageMimeTypeFromPath(raw);
+        if (!resolvedMime)
+            return null;
+        try {
+            const base64 = (0, node_fs_1.readFileSync)(raw).toString("base64");
+            return {
+                dataUrl: `data:${resolvedMime};base64,${base64}`,
+                mimeType: resolvedMime,
+            };
+        }
+        catch {
+            return null;
+        }
+    }
+    return null;
+}
+function normalizeCompatImageInputCandidate(entry, source) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry))
+        return null;
+    const imageSource = entry;
+    const candidateMimeType = normalizeCompatImageMimeType(imageSource.mimeType || imageSource.mediaType || imageSource.contentType || imageSource.mimetype);
+    const dataCandidates = [
+        imageSource.dataUrl,
+        imageSource.data_uri,
+        imageSource.dataUri,
+        imageSource.imageUrl,
+        imageSource.imageURL,
+        imageSource.image_url,
+        imageSource.url,
+        imageSource.uri,
+        imageSource.path,
+        imageSource.filePath,
+        imageSource.base64,
+        imageSource.imageBase64,
+        imageSource.data,
+    ];
+    for (const candidate of dataCandidates) {
+        const normalized = resolveCompatImageDataUrl(candidate, candidateMimeType);
+        if (!normalized)
+            continue;
+        return {
+            mimeType: normalized.mimeType || "image/png",
+            dataUrl: normalized.dataUrl,
+            source,
+            caption: typeof imageSource.caption === "string" ? imageSource.caption.trim() : "",
+            name: typeof imageSource.name === "string" ? imageSource.name.trim() : "",
+        };
+    }
+    return null;
+}
+function extractCompatTurnImageInputs(params) {
+    const output = [];
+    const seen = new Set();
+    const inputItems = readCompatTurnInputItems(params);
+    for (const entry of inputItems) {
+        const item = entry;
+        const entryType = typeof item.type === "string" ? item.type.trim().toLowerCase() : "";
+        if (entryType && !entryType.includes("image")) {
+            const hasImageField = Boolean(item.imageUrl || item.image_url || item.dataUrl || item.base64 || item.path);
+            if (!hasImageField)
+                continue;
+        }
+        const normalized = normalizeCompatImageInputCandidate(item, "composer_input");
+        if (!normalized)
+            continue;
+        if (seen.has(normalized.dataUrl))
+            continue;
+        seen.add(normalized.dataUrl);
+        output.push(normalized);
+    }
+    const attachments = Array.isArray(params.attachments) ? params.attachments : [];
+    for (const entry of attachments) {
+        const normalized = normalizeCompatImageInputCandidate(entry, "attachment");
+        if (!normalized)
+            continue;
+        if (seen.has(normalized.dataUrl))
+            continue;
+        seen.add(normalized.dataUrl);
+        output.push(normalized);
+    }
+    return output.slice(0, 6);
+}
 function extractCompatSsePayloads(buffer) {
     const parts = buffer.split(/\r?\n\r?\n/g);
     const remainder = parts.pop() ?? "";
@@ -1128,17 +1361,30 @@ function summarizeCompatHostEvent(payload) {
         const message = typeof data.message === "string" ? data.message.trim() : "";
         if (!message)
             return null;
+        const progressTick = typeof data.progressTick === "number" ? data.progressTick : null;
+        const startupPhase = typeof data.startupPhase === "string" ? data.startupPhase : "";
+        if (startupPhase === "fast_start") {
+            if (progressTick === 0 || progressTick === 1)
+                return null;
+            return null;
+        }
         if (message === "Binary Host accepted the request.")
-            return "I got your request and Iâ€™m starting on it.";
+            return null;
         if (message.includes("routing this run through OpenHands"))
-            return "Iâ€™m handing this to your local coding runtime now.";
+            return null;
+        if (message.includes("OpenHands-first default") || message.includes("local interactive OpenHands path"))
+            return null;
+        if (message.includes("Using the local runtime for this request."))
+            return null;
         if (message.includes("Coding runtime is ready"))
-            return "The coding runtime is ready.";
+            return null;
         if (message.includes("received the initial assist response"))
-            return "I have the first response from the runtime.";
+            return null;
         if (message.includes("completed the run"))
-            return "Iâ€™m wrapping this up.";
-        return message;
+            return null;
+        if (/error|failed|blocked|takeover|repair/i.test(message))
+            return message;
+        return null;
     }
     if (eventName === "tool_request") {
         const toolCall = data.toolCall && typeof data.toolCall === "object" && !Array.isArray(data.toolCall)
@@ -1150,13 +1396,13 @@ function summarizeCompatHostEvent(payload) {
                 ? data.summary.trim()
                 : "";
         if (summary)
-            return `Iâ€™m ${summary.charAt(0).toLowerCase()}${summary.slice(1)}.`;
+            return `I'm ${summary.charAt(0).toLowerCase()}${summary.slice(1)}.`;
         const toolName = typeof toolCall.name === "string" ? toolCall.name.trim() : "";
         if (toolName)
-            return `Iâ€™m using ${toolName} to work on this.`;
+            return `I'm using ${toolName} to work on this.`;
     }
     if (eventName === "host.stall") {
-        return "Iâ€™m still working through this carefully.";
+        return "Still working on this.";
     }
     if (eventName === "host.takeover_required") {
         return "I need your attention to continue.";
@@ -1199,18 +1445,30 @@ async function readCompatHostRunFinal(runId) {
         ? payload.finalEnvelope
         : {};
     const finalText = typeof finalEnvelope.final === "string" ? finalEnvelope.final.trim() : "";
+    const closureSummary = typeof finalEnvelope.closureSummary === "string" ? finalEnvelope.closureSummary.trim() : "";
+    const takeoverReason = typeof payload.takeoverReason === "string" ? payload.takeoverReason.trim() : "";
+    const status = typeof payload.status === "string" ? payload.status.trim().toLowerCase() : "";
+    const resolvedText = finalText
+        || closureSummary
+        || (status === "takeover_required"
+            ? takeoverReason
+                ? `I need your attention to continue. ${takeoverReason}`
+                : "I need your attention to continue."
+            : "");
     const conversationId = typeof payload.conversationId === "string"
         ? payload.conversationId
         : typeof finalEnvelope.conversationId === "string"
             ? finalEnvelope.conversationId
             : null;
     return {
-        text: finalText,
+        text: resolvedText,
         conversationId,
     };
 }
 async function runCompatHostAssist(thread, prompt, options) {
-    const workspaceRoot = resolveCompatHostWorkspaceRoot(thread.cwd);
+    const workspaceRoot = resolveCompatHostWorkspaceRoot(thread.cwd)
+        || normalizeCompatWorkspaceRoot(codexCompatWorkspaceRoot || node_process_1.default.cwd())
+        || node_process_1.default.cwd();
     const collaborationMode = normalizeCompatCollaborationMode(options?.collaborationMode, thread.collaborationMode);
     const requestBody = {
         task: prompt,
@@ -1225,62 +1483,90 @@ async function runCompatHostAssist(thread, prompt, options) {
             surface: "desktop",
             version: "codex_compat_bridge",
         },
+        ...(Array.isArray(options?.imageInputs) && options.imageInputs.length
+            ? { imageInputs: options.imageInputs }
+            : {}),
     };
+    const assistTimeoutMs = Math.max(10000, Number(process.env.BINARY_IDE_COMPAT_ASSIST_TIMEOUT_MS || 45000));
     for (let attempt = 0; attempt < 2; attempt += 1) {
-        const response = await fetch(`${defaultHostUrl}/v1/runs/assist`, {
-            method: "POST",
-            headers: {
-                "content-type": "application/json",
-                accept: "text/event-stream, application/json",
-            },
-            body: JSON.stringify(requestBody),
-        });
+        const controller = new AbortController();
+        const timeoutHandle = setTimeout(() => controller.abort(), assistTimeoutMs);
+        let response;
+        try {
+            response = await fetch(`${defaultHostUrl}/v1/runs/assist`, {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    accept: "text/event-stream, application/json",
+                },
+                body: JSON.stringify(requestBody),
+                signal: controller.signal,
+            });
+        }
+        catch (error) {
+            clearTimeout(timeoutHandle);
+            if (error instanceof Error && error.name === "AbortError") {
+                throw new Error("The local runtime timed out while waiting for a first response. Please retry.");
+            }
+            throw error;
+        }
         const decoder = new TextDecoder();
         let raw = "";
         let buffer = "";
         const sseEvents = [];
         const seenProgressMessages = new Set();
+        let latestProgressMessage = "";
         const pushProgressMessage = (message) => {
             const normalized = typeof message === "string" ? message.trim() : "";
             if (!normalized || seenProgressMessages.has(normalized))
                 return;
             seenProgressMessages.add(normalized);
+            latestProgressMessage = normalized;
             options?.onProgress?.(normalized);
         };
         let runId = null;
         let finalText = "";
         if (response.body) {
             const reader = response.body.getReader();
-            while (true) {
-                const next = await reader.read();
-                if (next.done)
-                    break;
-                const chunk = decoder.decode(next.value, { stream: true });
-                raw += chunk;
-                buffer += chunk;
-                const parsedBuffer = extractCompatSsePayloads(buffer);
-                buffer = parsedBuffer.remainder;
-                for (const entry of parsedBuffer.payloads) {
-                    sseEvents.push(entry);
-                    if (entry === "[DONE]")
-                        continue;
-                    const parsed = safeJsonParse(entry, entry);
-                    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-                        continue;
-                    const payload = parsed;
-                    const payloadData = payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)
-                        ? payload.data
-                        : {};
-                    if (!runId) {
-                        runId =
-                            (typeof payload.runId === "string" ? payload.runId : null) ||
-                                (typeof payloadData.runId === "string" ? payloadData.runId : null);
+            try {
+                while (true) {
+                    const next = await reader.read();
+                    if (next.done)
+                        break;
+                    const chunk = decoder.decode(next.value, { stream: true });
+                    raw += chunk;
+                    buffer += chunk;
+                    const parsedBuffer = extractCompatSsePayloads(buffer);
+                    buffer = parsedBuffer.remainder;
+                    for (const entry of parsedBuffer.payloads) {
+                        sseEvents.push(entry);
+                        if (entry === "[DONE]")
+                            continue;
+                        const parsed = safeJsonParse(entry, entry);
+                        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+                            continue;
+                        const payload = parsed;
+                        const payloadData = payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)
+                            ? payload.data
+                            : {};
+                        if (!runId) {
+                            runId =
+                                (typeof payload.runId === "string" ? payload.runId : null) ||
+                                    (typeof payloadData.runId === "string" ? payloadData.runId : null);
+                        }
+                        if (!finalText && payload.event === "final" && typeof payload.data === "string") {
+                            finalText = payload.data.trim();
+                        }
+                        pushProgressMessage(summarizeCompatHostEvent(payload));
                     }
-                    if (!finalText && payload.event === "final" && typeof payload.data === "string") {
-                        finalText = payload.data.trim();
-                    }
-                    pushProgressMessage(summarizeCompatHostEvent(payload));
                 }
+            }
+            catch (error) {
+                clearTimeout(timeoutHandle);
+                if (error instanceof Error && error.name === "AbortError") {
+                    throw new Error("The local runtime timed out while waiting for a first response. Please retry.");
+                }
+                throw error;
             }
             raw += decoder.decode();
             if (buffer.trim()) {
@@ -1312,6 +1598,7 @@ async function runCompatHostAssist(thread, prompt, options) {
             raw = await response.text();
             sseEvents.push(...parseSseDataChunks(raw));
         }
+        clearTimeout(timeoutHandle);
         appendCodexCompatLog(`host-assist status=${response.status} payload=${summarizeForCompatLog(raw, 900)}`);
         if (response.status === 403 && workspaceRoot && attempt === 0) {
             appendCodexCompatLog(`host-assist workspace-trust requested path=${workspaceRoot}`);
@@ -1329,13 +1616,16 @@ async function runCompatHostAssist(thread, prompt, options) {
         if (runId) {
             const finalizedRun = await readCompatHostRunFinal(runId);
             return {
-                text: finalizedRun.text || finalText,
+                text: finalizedRun.text
+                    || finalText
+                    || latestProgressMessage
+                    || "I finished this turn, but the final response came back empty. Please try once more.",
                 runId,
                 conversationId: finalizedRun.conversationId,
             };
         }
         return {
-            text: finalText,
+            text: finalText || latestProgressMessage || "I finished this turn, but the final response came back empty. Please try once more.",
             runId: null,
             conversationId: null,
         };
@@ -1348,7 +1638,101 @@ function readCompatPinnedThreadIds() {
         return [];
     return raw.filter((entry) => typeof entry === "string" && entry.trim().length > 0);
 }
+function readCompatConfigurationValue(rawKey) {
+    const key = typeof rawKey === "string" ? rawKey.trim() : "";
+    switch (key) {
+        case "preventSleepWhileRunning":
+            return false;
+        case "appearanceTheme":
+            return "dark";
+        case "appearanceLightChromeTheme":
+            return "light";
+        case "appearanceDarkChromeTheme":
+            return "dark";
+        case "appearanceLightCodeThemeId":
+            return "github-light";
+        case "appearanceDarkCodeThemeId":
+            return "nord";
+        case "sansFontSize":
+            return 16;
+        case "codeFontSize":
+            return 13;
+        case "usePointerCursors":
+            return true;
+        case "localeOverride":
+            return null;
+        case "runCodexInWindowsSubsystemForLinux":
+            return false;
+        case "followUpQueueMode":
+            return "auto";
+        default:
+            // Unknown keys are list-safe by default in compat mode.
+            return [];
+    }
+}
+function buildCompatListPayload(rows, includeCursor = true) {
+    const normalizedRows = Array.isArray(rows) ? rows : [];
+    const payload = {
+        data: normalizedRows,
+        rows: normalizedRows,
+    };
+    if (includeCursor) {
+        payload.nextCursor = null;
+    }
+    return payload;
+}
+function buildCompatSharedObjectFallback(key) {
+    const normalizedKey = key.trim().toLowerCase();
+    if (normalizedKey === "pending_worktrees" ||
+        normalizedKey === "remote_connections" ||
+        normalizedKey === "diff_comments" ||
+        normalizedKey === "diff_comments_from_model") {
+        return [];
+    }
+    if (normalizedKey === "host_config") {
+        return {
+            hosts: [],
+            selectedHostId: null,
+        };
+    }
+    if (normalizedKey === "skills_refresh_nonce") {
+        return 0;
+    }
+    if (normalizedKey === "statsig_default_enable_features") {
+        return false;
+    }
+    if (normalizedKey === "composer_prefill") {
+        return {
+            prompt: "",
+            imageAttachments: [],
+            fileAttachments: [],
+        };
+    }
+    if (!normalizedKey.includes("composer")) {
+        return undefined;
+    }
+    return {
+        composerMode: "ask",
+        isAutoContextOn: true,
+        imageAttachments: [],
+        fileAttachments: [],
+        addedFiles: [],
+        prompt: "",
+    };
+}
+function readCompatSharedObjectValue(key) {
+    if (codexSharedObjectState.has(key)) {
+        return codexSharedObjectState.get(key);
+    }
+    const fallback = buildCompatSharedObjectFallback(key);
+    if (fallback !== undefined) {
+        codexSharedObjectState.set(key, fallback);
+        return fallback;
+    }
+    return undefined;
+}
 function buildCompatVscodeFetchResult(endpoint, params) {
+    const activeWorkspaceRoot = normalizeCompatPathForUi(resolveCompatActiveWorkspaceRoot());
     switch (endpoint) {
         case "ipc-request":
             return null;
@@ -1399,7 +1783,7 @@ function buildCompatVscodeFetchResult(endpoint, params) {
             };
         }
         case "active-workspace-roots": {
-            const root = (codexCompatWorkspaceRoot || readCompatWorkspaceRootOptions()[0] || node_process_1.default.cwd()).replace(/\\/g, "/");
+            const root = activeWorkspaceRoot;
             return {
                 roots: [root],
             };
@@ -1419,8 +1803,12 @@ function buildCompatVscodeFetchResult(endpoint, params) {
             return {
                 codexHome: electron_1.app.getPath("home").replace(/\\/g, "/"),
             };
-        case "get-configuration":
-            return {};
+        case "get-configuration": {
+            const key = typeof params.key === "string" ? params.key : "";
+            return {
+                value: readCompatConfigurationValue(key),
+            };
+        }
         case "locale-info":
             return {
                 ideLocale: electron_1.app.getLocale(),
@@ -1433,6 +1821,10 @@ function buildCompatVscodeFetchResult(endpoint, params) {
         case "recommended-skills":
             return {
                 skills: [],
+            };
+        case "local-custom-agents":
+            return {
+                agents: [],
             };
         case "list-pending-automation-run-threads":
             return {
@@ -1470,7 +1862,7 @@ function buildCompatVscodeFetchResult(endpoint, params) {
             };
         case "ide-context":
             return {
-                cwd: (codexCompatWorkspaceRoot || node_process_1.default.cwd()).replace(/\\/g, "/"),
+                cwd: activeWorkspaceRoot,
                 selectedText: null,
                 openFiles: [],
             };
@@ -1626,6 +2018,17 @@ function sendTerminalError(sessionId, message) {
         message,
     });
 }
+function summarizeTerminalInputForLog(data) {
+    const text = typeof data === "string" ? data : "";
+    if (!text)
+        return "";
+    return text
+        .replace(/\r/g, "\\r")
+        .replace(/\n/g, "\\n")
+        .replace(/\b/g, "\\b")
+        .replace(/\u007f/g, "\\x7f")
+        .slice(0, 120);
+}
 function getTerminalShellLaunch(shell) {
     const normalizedShell = normalizeTerminalShell(shell);
     const lowerShell = normalizedShell.toLowerCase();
@@ -1638,10 +2041,50 @@ function getTerminalShellLaunch(shell) {
     return { command: normalizedShell, args: [] };
 }
 function spawnTerminalProcess(sessionState) {
+    const nodePty = loadNodePty();
+    if (nodePty) {
+        const launch = getTerminalShellLaunch(sessionState.shell);
+        try {
+            appendCodexCompatLog(`terminal-spawn mode=pty session=${sessionState.sessionId} shell=${launch.command} cwd=${sessionState.cwd}`);
+            const ptyProcess = nodePty.spawn(launch.command, launch.args, {
+                name: node_process_1.default.env.TERM || "xterm-256color",
+                cols: Math.max(40, Number(sessionState.cols || 120)),
+                rows: Math.max(12, Number(sessionState.rows || 32)),
+                cwd: sessionState.cwd,
+                env: {
+                    ...node_process_1.default.env,
+                    TERM: node_process_1.default.env.TERM || "xterm-256color",
+                },
+                ...(node_process_1.default.platform === "win32" ? { useConpty: true } : {}),
+            });
+            sessionState.pty = ptyProcess;
+            sessionState.process = null;
+            ptyProcess.onData((text) => {
+                appendTerminalSessionLog(sessionState, text);
+                sendTerminalData(sessionState.sessionId, text);
+            });
+            ptyProcess.onExit((event) => {
+                sessionState.pty = null;
+                sendCodexMessageToCompatWindows({
+                    type: "terminal-exit",
+                    sessionId: sessionState.sessionId,
+                    code: typeof event?.exitCode === "number" ? event.exitCode : 0,
+                    signal: null,
+                });
+            });
+            return;
+        }
+        catch (error) {
+            sessionState.pty = null;
+            appendCodexCompatLog(`terminal-spawn-pty-failed session=${sessionState.sessionId} error=${error instanceof Error ? error.message : String(error)}`);
+            sendTerminalError(sessionState.sessionId, error instanceof Error ? error.message : String(error));
+        }
+    }
     if (sessionState.process && sessionState.process.exitCode == null && !sessionState.process.killed)
         return;
     const launch = getTerminalShellLaunch(sessionState.shell);
     try {
+        appendCodexCompatLog(`terminal-spawn mode=fallback status=${nodePtyLoadStatus} session=${sessionState.sessionId} shell=${launch.command} cwd=${sessionState.cwd}`);
         const child = (0, node_child_process_1.spawn)(launch.command, launch.args, {
             cwd: sessionState.cwd,
             env: {
@@ -1682,6 +2125,8 @@ function spawnTerminalProcess(sessionState) {
     }
 }
 function ensureTerminalProcess(sessionState) {
+    if (sessionState.pty)
+        return;
     if (sessionState.process && sessionState.process.exitCode == null && !sessionState.process.killed)
         return;
     spawnTerminalProcess(sessionState);
@@ -1690,6 +2135,11 @@ function writeTerminalInput(sessionState, data) {
     if (typeof data !== "string" || !data.length)
         return;
     ensureTerminalProcess(sessionState);
+    appendCodexCompatLog(`terminal-write session=${sessionState.sessionId} mode=${sessionState.pty ? "pty" : "fallback"} data=${summarizeTerminalInputForLog(data)}`);
+    if (sessionState.pty) {
+        sessionState.pty.write(data);
+        return;
+    }
     if (!sessionState.process?.stdin?.writable)
         return;
     sessionState.process.stdin.write(data);
@@ -1715,6 +2165,16 @@ function runTerminalCommand(sessionState, cwd, command) {
     writeTerminalInput(sessionState, `${changeDirectoryCommand}${normalizedCommand}${commandTerminator}`);
 }
 function closeTerminalSession(sessionState) {
+    const ptyProcess = sessionState.pty;
+    sessionState.pty = null;
+    if (ptyProcess) {
+        try {
+            ptyProcess.kill();
+        }
+        catch {
+            // Ignore PTY shutdown failures.
+        }
+    }
     const child = sessionState.process;
     sessionState.process = null;
     if (!child)
@@ -1738,6 +2198,12 @@ function getOrCreateTerminalSession(message) {
         if (typeof message.shell === "string" && message.shell.trim()) {
             existing.shell = normalizeTerminalShell(message.shell);
         }
+        if (Number.isFinite(Number(message.cols))) {
+            existing.cols = Math.max(40, Math.floor(Number(message.cols)));
+        }
+        if (Number.isFinite(Number(message.rows))) {
+            existing.rows = Math.max(12, Math.floor(Number(message.rows)));
+        }
         return existing;
     }
     const created = {
@@ -1746,7 +2212,10 @@ function getOrCreateTerminalSession(message) {
         shell: normalizeTerminalShell(message.shell),
         log: "",
         warnedUnavailable: false,
+        pty: null,
         process: null,
+        cols: Number.isFinite(Number(message.cols)) ? Math.max(40, Math.floor(Number(message.cols))) : 120,
+        rows: Number.isFinite(Number(message.rows)) ? Math.max(12, Math.floor(Number(message.rows))) : 32,
     };
     codexTerminalSessions.set(requestedSessionId, created);
     return created;
@@ -1795,25 +2264,21 @@ function buildCompatMcpResult(method, params) {
                 requirements: [],
             };
         case "model/list":
-            return {
-                data: [
-                    {
-                        model: "gpt-5.4-mini",
-                        hidden: false,
-                        isDefault: true,
-                        modelProvider: "openai",
-                        displayName: "GPT-5.4 Mini",
-                        supportedReasoningEfforts: [
-                            { reasoningEffort: "medium", description: "medium effort" },
-                            { reasoningEffort: "high", description: "high effort" },
-                        ],
-                    },
-                ],
-                nextCursor: null,
-            };
+            return buildCompatListPayload([
+                {
+                    model: "gpt-5.4-mini",
+                    hidden: false,
+                    isDefault: true,
+                    modelProvider: "openai",
+                    displayName: "GPT-5.4 Mini",
+                    supportedReasoningEfforts: [
+                        { reasoningEffort: "medium", description: "medium effort" },
+                        { reasoningEffort: "high", description: "high effort" },
+                    ],
+                },
+            ]);
         case "thread/list":
-            return {
-                data: listCompatThreads().map((thread) => ({
+            return buildCompatListPayload(listCompatThreads().map((thread) => ({
                     id: thread.id,
                     name: thread.name,
                     preview: thread.preview,
@@ -1824,9 +2289,7 @@ function buildCompatMcpResult(method, params) {
                     archived: thread.archived,
                     path: thread.path,
                     collaborationMode: thread.collaborationMode,
-                })),
-                nextCursor: null,
-            };
+                })));
         case "thread/start": {
             const thread = ensureCompatThread({
                 cwd: typeof params.cwd === "string" && params.cwd.trim() ? params.cwd.trim() : workspaceRoot,
@@ -1912,29 +2375,18 @@ function buildCompatMcpResult(method, params) {
                 },
             };
         case "mcpServerStatus/list":
-            return {
-                data: [],
-                nextCursor: null,
-            };
+            return buildCompatListPayload([]);
         case "skills/list":
-            return {
-                data: [
-                    {
-                        cwd: workspaceRoot,
-                        skills: [],
-                    },
-                ],
-                nextCursor: null,
-            };
+            return buildCompatListPayload([
+                {
+                    cwd: workspaceRoot,
+                    skills: [],
+                },
+            ]);
         case "experimentalFeature/list":
-            return {
-                data: [],
-                nextCursor: null,
-            };
+            return buildCompatListPayload([]);
         case "collaborationMode/list":
-            return {
-                data: listCompatCollaborationModes(),
-            };
+            return buildCompatListPayload(listCompatCollaborationModes(), false);
         case "experimentalFeature/enablement/set":
             return {
                 ok: true,
@@ -1958,10 +2410,7 @@ function buildCompatMcpResult(method, params) {
             };
         default:
             if (method.endsWith("/list")) {
-                return {
-                    data: [],
-                    nextCursor: null,
-                };
+                return buildCompatListPayload([]);
             }
             if (method.endsWith("/read")) {
                 return {};
@@ -2029,9 +2478,11 @@ async function handleCodexFetch(sender, message) {
     try {
         const vscodeEndpoint = parseCodexVscodeEndpoint(url);
         if (vscodeEndpoint) {
+            const parsedParams = sanitizeCompatRequestParams(parseCodexFetchBodyParams(message.body));
             const responsePayload = vscodeEndpoint === "ipc-request"
                 ? await handleCodexIpcRequest(String(message.body || "{}"), sender)
-                : buildCompatVscodeFetchResult(vscodeEndpoint, parseCodexFetchBodyParams(message.body));
+                : buildCompatVscodeFetchResult(vscodeEndpoint, parsedParams);
+            appendCodexCompatLog(`vscode-fetch endpoint=${vscodeEndpoint} params=${summarizeForCompatLog(parsedParams, 500)} response=${summarizeForCompatLog(responsePayload, 500)}`);
             sendCodexMessageToWebContents(sender, {
                 type: "fetch-response",
                 requestId,
@@ -2204,6 +2655,25 @@ async function handleCodexMessageFromView(sender, payload) {
             return { ok: true };
         case "log-message": {
             appendCodexCompatLog(`renderer-log payload=${summarizeForCompatLog(message, 1000)}`);
+            try {
+                const maybeTags = message.tags && typeof message.tags === "object" ? message.tags : null;
+                const maybeSensitive = maybeTags && maybeTags.sensitive && typeof maybeTags.sensitive === "object"
+                    ? maybeTags.sensitive
+                    : null;
+                const maybeError = maybeSensitive && maybeSensitive.error && typeof maybeSensitive.error === "object"
+                    ? maybeSensitive.error
+                    : null;
+                if (maybeError) {
+                    const ownKeys = Object.getOwnPropertyNames(maybeError);
+                    const maybeStack = typeof maybeError.stack === "string" ? maybeError.stack : "";
+                    const maybeName = typeof maybeError.name === "string" ? maybeError.name : "";
+                    const maybeMessage = typeof maybeError.message === "string" ? maybeError.message : "";
+                    appendCodexCompatLog(`renderer-log-error-details keys=${ownKeys.join(",")} name=${maybeName} message=${maybeMessage} stack=${summarizeForCompatLog(maybeStack, 1200)}`);
+                }
+            }
+            catch {
+                // Ignore compat debug extraction failures.
+            }
             return { ok: true };
         }
         case "fetch":
@@ -2327,10 +2797,12 @@ async function handleCodexMessageFromView(sender, payload) {
             const key = typeof message.key === "string" ? message.key : "";
             if (!key)
                 return { ok: true };
+            const sharedValue = readCompatSharedObjectValue(key);
+            appendCodexCompatLog(`shared-object-subscribe key=${key} hasValue=${sharedValue !== undefined}`);
             sendCodexMessageToWebContents(sender, {
                 type: "shared-object-updated",
                 key,
-                value: codexSharedObjectState.get(key),
+                value: sharedValue,
             });
             return { ok: true };
         }
@@ -2339,15 +2811,17 @@ async function handleCodexMessageFromView(sender, payload) {
             if (!key)
                 return { ok: true };
             if (Object.prototype.hasOwnProperty.call(message, "value")) {
-                codexSharedObjectState.set(key, message.value);
+                const forcedValue = key === "statsig_default_enable_features" ? false : message.value;
+                codexSharedObjectState.set(key, forcedValue);
             }
             else {
                 codexSharedObjectState.delete(key);
             }
+            appendCodexCompatLog(`shared-object-set key=${key} hasValue=${Object.prototype.hasOwnProperty.call(message, "value")}`);
             sendCodexMessageToCompatWindows({
                 type: "shared-object-updated",
                 key,
-                value: codexSharedObjectState.get(key),
+                value: readCompatSharedObjectValue(key),
             });
             return { ok: true };
         }
@@ -2362,9 +2836,9 @@ async function handleCodexMessageFromView(sender, payload) {
                 ? requestPayload.id
                 : (0, node_crypto_1.randomUUID)();
             const method = typeof requestPayload.method === "string" ? requestPayload.method : "unknown";
-            const params = requestPayload.params && typeof requestPayload.params === "object"
+            const params = sanitizeCompatRequestParams(requestPayload.params && typeof requestPayload.params === "object"
                 ? requestPayload.params
-                : {};
+                : {});
             appendCodexCompatLog(`mcp-request method=${method} hostId=${hostId ?? "default"} id=${requestId}`);
             const responsePayload = {
                 id: requestId,
@@ -2427,6 +2901,7 @@ async function handleCodexMessageFromView(sender, payload) {
                 const assistantItemId = `local-assistant-item-${(0, node_crypto_1.randomUUID)()}`;
                 const userContent = readCompatTurnInputItems(params);
                 const prompt = extractCompatTurnText(params);
+                const imageInputs = extractCompatTurnImageInputs(params);
                 const initialThread = ensureCompatThread({
                     id: threadId,
                     cwd: typeof params.cwd === "string" && params.cwd.trim() ? params.cwd.trim() : undefined,
@@ -2490,13 +2965,15 @@ async function handleCodexMessageFromView(sender, payload) {
                         });
                     };
                     try {
-                        const hostResult = prompt
-                            ? await runCompatHostAssist(initialThread, prompt, {
+                        const hasAssistPayload = Boolean(prompt) || imageInputs.length > 0;
+                        const hostResult = hasAssistPayload
+                            ? await runCompatHostAssist(initialThread, prompt || "Please analyze the attached image and help with the request.", {
                                 onProgress: pushProgressLine,
                                 collaborationMode: params.collaborationMode,
+                                imageInputs,
                             })
                             : { text: "Please enter a message before sending.", runId: null, conversationId: null };
-                        assistantText = hostResult.text.trim() || "Binary Host completed the turn, but returned no assistant text.";
+                        assistantText = hostResult.text.trim() || "I finished this turn, but the final response came back empty. Please try once more.";
                         finalizedThread = upsertCompatThread({
                             ...initialThread,
                             name: initialThread.name === "New thread" && prompt ? buildCompatThreadPreview(prompt, 48) : initialThread.name,
@@ -2550,6 +3027,12 @@ async function handleCodexMessageFromView(sender, payload) {
         }
         case "terminal-attach": {
             const sessionState = getOrCreateTerminalSession(message);
+            if (Number.isFinite(Number(message.cols))) {
+                sessionState.cols = Math.max(40, Math.floor(Number(message.cols)));
+            }
+            if (Number.isFinite(Number(message.rows))) {
+                sessionState.rows = Math.max(12, Math.floor(Number(message.rows)));
+            }
             ensureTerminalProcess(sessionState);
             notifyTerminalAttached(sender, sessionState);
             return { ok: true };
@@ -2558,7 +3041,7 @@ async function handleCodexMessageFromView(sender, payload) {
             const sessionState = getOrCreateTerminalSession(message);
             const data = typeof message.data === "string" ? message.data : typeof message.input === "string" ? message.input : "";
             if (data) {
-                if (node_process_1.default.platform === "win32") {
+                if (!sessionState.pty && node_process_1.default.platform === "win32") {
                     sendTerminalData(sessionState.sessionId, data);
                 }
                 writeTerminalInput(sessionState, data);
@@ -2572,7 +3055,19 @@ async function handleCodexMessageFromView(sender, payload) {
         }
         case "terminal-resize": {
             const sessionState = getOrCreateTerminalSession(message);
+            const cols = Number.isFinite(Number(message.cols)) ? Math.max(40, Math.floor(Number(message.cols))) : sessionState.cols;
+            const rows = Number.isFinite(Number(message.rows)) ? Math.max(12, Math.floor(Number(message.rows))) : sessionState.rows;
+            sessionState.cols = cols;
+            sessionState.rows = rows;
             ensureTerminalProcess(sessionState);
+            if (sessionState.pty) {
+                try {
+                    sessionState.pty.resize(cols, rows);
+                }
+                catch {
+                    // Ignore resize failures and keep the session alive.
+                }
+            }
             return { ok: true };
         }
         case "terminal-close": {
@@ -2795,11 +3290,17 @@ function createMainWindow() {
     mainWindow.webContents.on("dom-ready", () => {
         if (activeUiRuntime === "codex_compat") {
             appendCodexCompatLog("dom-ready");
+            void mainWindow?.webContents.executeJavaScript("(() => { if (window.__binaryCompatErrorHookInstalled) return true; window.__binaryCompatErrorHookInstalled = true; window.addEventListener('error', (event) => { try { const stack = event?.error?.stack || event?.message || 'unknown-error'; console.error('[compat-window-error]', stack); } catch {} }, true); window.addEventListener('unhandledrejection', (event) => { try { const reason = event?.reason; const detail = reason?.stack || reason?.message || String(reason); console.error('[compat-unhandled-rejection]', detail); } catch {} }, true); return true; })()", true).then(() => {
+                appendCodexCompatLog("dom-ready-error-hook-installed");
+            }).catch((error) => {
+                appendCodexCompatLog(`dom-ready-error-hook-failed ${error instanceof Error ? error.message : String(error)}`);
+            });
             void mainWindow?.webContents.executeJavaScript("(() => ({ hasBridge: Boolean(window.electronBridge), hasSendMessageFromView: typeof window.electronBridge?.sendMessageFromView === 'function', codexWindowType: window.codexWindowType ?? null }))()", true).then((probe) => {
                 appendCodexCompatLog(`dom-ready-probe ${JSON.stringify(probe)}`);
             }).catch((error) => {
                 appendCodexCompatLog(`dom-ready-probe-error ${error instanceof Error ? error.message : String(error)}`);
             });
+            void injectCompatPluginOverlay(mainWindow);
         }
     });
     mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
@@ -3096,6 +3597,15 @@ electron_1.ipcMain.handle("binary:runtime-info", () => {
         activeUiRuntime,
     };
 });
+electron_1.ipcMain.handle("binary:host:openhands-capabilities", async () => {
+    return await getOpenHandsCapabilities();
+});
+electron_1.ipcMain.handle("binary:host:get-preferences", async () => {
+    return await getHostPreferences();
+});
+electron_1.ipcMain.handle("binary:host:set-preferences", async (_event, patch) => {
+    return await setHostPreferences((patch && typeof patch === "object" ? patch : {}));
+});
 electron_1.ipcMain.handle("binary:choose-workspace", async () => {
     return await chooseCompatWorkspaceRoot();
 });
@@ -3320,5 +3830,3 @@ electron_1.app.on("window-all-closed", () => {
     if (node_process_1.default.platform !== "darwin")
         electron_1.app.quit();
 });
-
-

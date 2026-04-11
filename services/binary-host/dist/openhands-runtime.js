@@ -114,6 +114,33 @@ function supportsBinaryBackfilledFullProfile(gatewayUrl, actual, degradedReasons
     }
     return degradedReasons.length > 0;
 }
+const NATIVE_TERMINAL_BLOCKING_REASONS = new Set([
+    "windows_unsupported_terminal",
+    "terminal_tool_unavailable",
+]);
+function normalizeDegradedReasons(value) {
+    return Array.isArray(value) ? value.map((item) => String(item || "").trim()).filter(Boolean) : [];
+}
+export function resolveNativeTerminalAvailability(input) {
+    const supported = new Set((input.supportedTools || []).map((tool) => String(tool || "").trim()).filter(Boolean));
+    const degraded = normalizeDegradedReasons(input.degradedReasons);
+    if (!supported.has("TerminalTool")) {
+        return {
+            nativeTerminalAvailable: false,
+            terminalHealthReason: degraded.find((reason) => NATIVE_TERMINAL_BLOCKING_REASONS.has(reason)) || "terminal_tool_unavailable",
+        };
+    }
+    const blockedReason = degraded.find((reason) => NATIVE_TERMINAL_BLOCKING_REASONS.has(reason));
+    if (blockedReason) {
+        return {
+            nativeTerminalAvailable: false,
+            terminalHealthReason: blockedReason,
+        };
+    }
+    return {
+        nativeTerminalAvailable: true,
+    };
+}
 function buildUserMessage(status) {
     if (status.readiness === "ready") {
         if (supportsBinaryBackfilledFullProfile(status.gatewayUrl, status.runtimeProfile, status.degradedReasons)) {
@@ -175,9 +202,19 @@ export function mapGatewayHealthToOpenHandsRuntimeStatus(input) {
         ...(Array.isArray(doctor.degradedReasons) ? doctor.degradedReasons.filter(Boolean) : []),
         ...(input.fallbackReasons || []),
     ];
-    const readiness = input.desiredProfile === "full" && supportsBinaryBackfilledFullProfile(input.gatewayUrl, runtimeProfile, degradedReasons)
+    const baseReadiness = input.desiredProfile === "full" && supportsBinaryBackfilledFullProfile(input.gatewayUrl, runtimeProfile, degradedReasons)
         ? "ready"
         : inferReadinessFromProfile(runtimeProfile, input.desiredProfile);
+    const terminalHealth = resolveNativeTerminalAvailability({
+        supportedTools,
+        degradedReasons,
+    });
+    const strictNativeTerminal = input.strictNativeTerminal === true && input.desiredProfile === "full";
+    const terminalStrictBlocked = strictNativeTerminal && !terminalHealth.nativeTerminalAvailable;
+    const readiness = terminalStrictBlocked ? "repair_needed" : baseReadiness;
+    const effectiveDegradedReasons = terminalStrictBlocked
+        ? [...new Set([...degradedReasons, terminalHealth.terminalHealthReason || "terminal_tool_unavailable"])]
+        : degradedReasons;
     const partial = {
         readiness,
         runtimeKind: doctor.runtimeKind || input.persisted?.selectedRuntimeKind || "unknown",
@@ -188,10 +225,10 @@ export function mapGatewayHealthToOpenHandsRuntimeStatus(input) {
         packageFamily: doctor.packageFamily || "unknown",
         packageVersion: doctor.packageVersion || null,
         supportedTools,
-        degradedReasons,
+        degradedReasons: effectiveDegradedReasons,
         availableActions: (Array.isArray(doctor.availableActions) ? doctor.availableActions.filter(Boolean) : []).length > 0
             ? doctor.availableActions
-            : defaultActions(readiness, input.gatewayUrl, degradedReasons),
+            : defaultActions(readiness, input.gatewayUrl, effectiveDegradedReasons),
         selectedAt: input.persisted?.selectedAt,
         lastHealthyAt: input.persisted?.lastHealthyAt,
         currentModelCandidate: doctor.currentModelCandidate && typeof doctor.currentModelCandidate === "object"
@@ -204,7 +241,9 @@ export function mapGatewayHealthToOpenHandsRuntimeStatus(input) {
     };
     return {
         ...partial,
-        message: buildUserMessage(partial),
+        message: terminalStrictBlocked
+            ? "Terminal runtime needs repair before terminal tasks can run."
+            : buildUserMessage(partial),
     };
 }
 export function inferOpenHandsRuntimeProfile(task) {
@@ -250,7 +289,7 @@ export class OpenHandsRuntimeSupervisor {
             this.state = {};
         }
     }
-    async getStatus(desiredProfile = "chat-only") {
+    async getStatus(desiredProfile = "chat-only", options) {
         const now = Date.now();
         const canUseCachedHealth = this.lastHealthPayload && now - this.lastHealthAt <= HEALTH_RESULT_CACHE_MS;
         const payload = canUseCachedHealth
@@ -268,10 +307,13 @@ export class OpenHandsRuntimeSupervisor {
             persisted: this.state,
             desiredProfile,
             fallbackReasons: !payload ? ["gateway_unreachable"] : [],
+            strictNativeTerminal: options?.strictNativeTerminal === true,
         });
     }
     async ensureRuntime(input) {
-        const current = await this.getStatus(input.desiredProfile);
+        const current = await this.getStatus(input.desiredProfile, {
+            strictNativeTerminal: input.strictNativeTerminal,
+        });
         // "limited" can still be fully operable for Windows code-only flows (for example, no native browser tool),
         // and repeatedly restarting the gateway on every run introduces large latency spikes.
         if (current.readiness === "ready" || current.readiness === "limited") {
@@ -290,27 +332,34 @@ export class OpenHandsRuntimeSupervisor {
         }
         for (const runtimeKind of getPreferredOpenHandsRuntimeKinds(process.platform, input.desiredProfile)) {
             const status = runtimeKind === "docker"
-                ? await this.tryStartDockerRuntime(input.desiredProfile)
-                : await this.tryStartLocalPythonRuntime(input.desiredProfile);
+                ? await this.tryStartDockerRuntime(input.desiredProfile, input.strictNativeTerminal === true)
+                : await this.tryStartLocalPythonRuntime(input.desiredProfile, input.strictNativeTerminal === true);
             if (status.readiness === "ready") {
                 await this.recordHealthy(status);
                 return status;
             }
         }
-        const finalStatus = await this.getStatus(input.desiredProfile);
+        const finalStatus = await this.getStatus(input.desiredProfile, {
+            strictNativeTerminal: input.strictNativeTerminal,
+        });
         await this.recordFailure(finalStatus);
         return finalStatus;
     }
-    async warmup(desiredProfile = "chat-only") {
+    async warmup(desiredProfile = "chat-only", options) {
         if (this.warmupPromise) {
             return await this.warmupPromise;
         }
         this.warmupPromise = (async () => {
             try {
-                return await this.ensureRuntime({ desiredProfile });
+                return await this.ensureRuntime({
+                    desiredProfile,
+                    strictNativeTerminal: options?.strictNativeTerminal === true,
+                });
             }
             catch {
-                return await this.getStatus(desiredProfile);
+                return await this.getStatus(desiredProfile, {
+                    strictNativeTerminal: options?.strictNativeTerminal === true,
+                });
             }
         })();
         try {
@@ -360,7 +409,7 @@ export class OpenHandsRuntimeSupervisor {
         await fs.mkdir(path.dirname(this.statePath), { recursive: true });
         await fs.writeFile(this.statePath, JSON.stringify(this.state, null, 2), "utf8");
     }
-    async tryStartLocalPythonRuntime(desiredProfile) {
+    async tryStartLocalPythonRuntime(desiredProfile, strictNativeTerminal = false) {
         const managedPython = await this.ensureManagedPythonEnv().catch(() => null);
         const candidates = this.getPythonCandidates(managedPython);
         for (const candidate of candidates) {
@@ -372,7 +421,7 @@ export class OpenHandsRuntimeSupervisor {
                     PYTHONUTF8: "1",
                     PYTHONIOENCODING: "utf-8",
                 });
-                const status = await this.waitForHealthyGateway(desiredProfile);
+                const status = await this.waitForHealthyGateway(desiredProfile, strictNativeTerminal);
                 if (status.readiness !== "repair_needed")
                     return status;
             }
@@ -380,12 +429,16 @@ export class OpenHandsRuntimeSupervisor {
                 continue;
             }
         }
-        return await this.getStatus(desiredProfile);
+        return await this.getStatus(desiredProfile, {
+            strictNativeTerminal,
+        });
     }
-    async tryStartDockerRuntime(desiredProfile) {
+    async tryStartDockerRuntime(desiredProfile, strictNativeTerminal = false) {
         const dockerAvailable = await this.checkCommand("docker", ["compose", "version"]);
         if (!dockerAvailable) {
-            const status = await this.getStatus(desiredProfile);
+            const status = await this.getStatus(desiredProfile, {
+                strictNativeTerminal,
+            });
             return {
                 ...status,
                 degradedReasons: [...status.degradedReasons, "docker_unavailable"],
@@ -404,13 +457,15 @@ export class OpenHandsRuntimeSupervisor {
                 PYTHONUTF8: "1",
                 PYTHONIOENCODING: "utf-8",
             });
-            const status = await this.waitForHealthyGateway(desiredProfile);
+            const status = await this.waitForHealthyGateway(desiredProfile, strictNativeTerminal);
             if (status.readiness === "ready" || status.runtimeKind === "docker")
                 return status;
             return status;
         }
         catch (error) {
-            const status = await this.getStatus(desiredProfile);
+            const status = await this.getStatus(desiredProfile, {
+                strictNativeTerminal,
+            });
             const dockerReason = error instanceof Error && error.message.trim() ? compactWhitespace(error.message) : "docker_start_failed";
             const degradedReasons = [...status.degradedReasons, "docker_start_failed", dockerReason];
             return {
@@ -424,7 +479,7 @@ export class OpenHandsRuntimeSupervisor {
             };
         }
     }
-    async waitForHealthyGateway(desiredProfile) {
+    async waitForHealthyGateway(desiredProfile, strictNativeTerminal = false) {
         const startedAt = Date.now();
         let delayMs = 1_000;
         while (Date.now() - startedAt < STARTUP_TIMEOUT_MS) {
@@ -435,6 +490,7 @@ export class OpenHandsRuntimeSupervisor {
                     payload,
                     persisted: this.state,
                     desiredProfile,
+                    strictNativeTerminal,
                 });
                 if (status.readiness !== "repair_needed") {
                     await delay(STABILIZATION_WINDOW_MS);
@@ -445,7 +501,9 @@ export class OpenHandsRuntimeSupervisor {
             await delay(delayMs + jitter);
             delayMs = Math.min(delayMs * 2, 5_000);
         }
-        return await this.getStatus(desiredProfile);
+        return await this.getStatus(desiredProfile, {
+            strictNativeTerminal,
+        });
     }
     getPythonCandidates(managedPython) {
         const candidates = [];

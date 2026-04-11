@@ -22,6 +22,8 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+/.codex-logs/
+/.tmp/
 
 # local env files
 .env*.local
@@ -39,3 +41,7 @@ drizzle/meta/
 .npm-cache-temp/
 playground_ai/__pycache__/
 next-*.tgz
+apps/binary-ide-desktop/node_modules/
+services/openhands-gateway/__pycache__/
+services/openhands-gateway/tests/__pycache__/
+services/openhands-gateway/agent_turn.py.lockbak

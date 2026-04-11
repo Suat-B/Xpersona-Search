@@ -56,6 +56,7 @@ type BrowserIntentKind =
   | "cleanup";
 
 type BrowserScreenshotReason = "explicit_user_request" | "debug_mode" | "proof_fallback";
+type BrowserExecutionMode = "background_safe" | "foreground_lease" | "takeover";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -246,6 +247,24 @@ export class BrowserToolExecutor {
     return [...artifacts];
   }
 
+  private normalizeExecutionMode(value: unknown): BrowserExecutionMode | undefined {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (normalized === "background_safe") return "background_safe";
+    if (normalized === "foreground_lease") return "foreground_lease";
+    if (normalized === "takeover") return "takeover";
+    return undefined;
+  }
+
+  private shouldForceForeground(toolName: string, args: Record<string, unknown>): boolean {
+    if (typeof args.forceForeground === "boolean") {
+      return args.forceForeground === true;
+    }
+    const executionMode = this.normalizeExecutionMode(args.executionMode);
+    if (executionMode === "foreground_lease") return true;
+    if (executionMode === "background_safe") return false;
+    return toolName === "browser_search_and_open_best_result" || toolName === "browser_open_page";
+  }
+
   private buildBrowserMetadata(input: {
     toolCall: ToolCall;
     args: Record<string, unknown>;
@@ -288,6 +307,9 @@ export class BrowserToolExecutor {
       intentKind,
       ...(pageLeaseId ? { pageLeaseId } : {}),
       ...(targetOrigin ? { targetOrigin } : {}),
+      ...(this.normalizeExecutionMode(input.args.executionMode)
+        ? { executionMode: this.normalizeExecutionMode(input.args.executionMode) }
+        : {}),
       verificationRequired,
       verificationPassed: input.verificationPassed ?? !verificationRequired,
       domProofArtifacts,
@@ -472,7 +494,9 @@ export class BrowserToolExecutor {
       if (toolCall.name === "browser_open_page") {
         const url = String(args.url || "").trim();
         if (!url) return fail(toolCall, "browser_open_page requires a URL.");
-        const page = await this.runtime.openPage(this.policy, url);
+        const page = await this.runtime.openPage(this.policy, url, {
+          forceForeground: this.shouldForceForeground(toolCall.name, args),
+        });
         const data = {
           ...receipt(decision?.executionVisibility === "visible_required", sessionKind()),
           page,
@@ -507,6 +531,7 @@ export class BrowserToolExecutor {
             query,
             ...(typeof args.resultQuery === "string" && args.resultQuery.trim() ? { resultQuery: args.resultQuery.trim() } : {}),
             ...(Number.isFinite(Number(args.limit)) ? { limit: clamp(Number(args.limit), 1, 24) } : {}),
+            forceForeground: this.shouldForceForeground(toolCall.name, args),
           }));
         const lease = missionLeasePayload(result.missionLease);
         const verificationPassed = Boolean(result.clickedResult && result.finalPage);
@@ -791,7 +816,9 @@ export class BrowserToolExecutor {
         await this.assertTargetGuards(args, pageId);
         const url = String(args.url || "").trim();
         if (!url) return fail(toolCall, "browser_navigate requires pageId and url.");
-        const page = await this.runtime.navigate(this.policy, { pageId, url });
+        const page = await this.runtime.navigate(this.policy, { pageId, url }, {
+          forceForeground: this.shouldForceForeground(toolCall.name, args),
+        });
         const data = {
           ...receipt(decision?.executionVisibility === "visible_required", sessionKind()),
           page,

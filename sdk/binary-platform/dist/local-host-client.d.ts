@@ -1,4 +1,4 @@
-import { BinaryAgentJob, BinaryAgentJobEventsResponse, BinaryAgentProbeEventsResponse, BinaryAgentProbeSession, BinaryAutomationDefinition, BinaryAutomationEventsResponse, BinaryOrchestrationPolicy, BinaryRemoteRuntimeHealth, BinaryWebhookSubscription, BinaryHostAssistRequest, BinaryHostAuthStatus, BinaryHostHealth, BinaryHostPreferences, BinaryHostRunControlAction, BinaryHostRunEventsResponse, BinaryHostRunRecord, BinaryHostRunSummary, BinaryHostTrustGrant, SseEvent } from "./types.js";
+import { BinaryAgentJob, BinaryAgentJobEventsResponse, BinaryAgentProbeEventsResponse, BinaryAgentProbeSession, BinaryAutomationDefinition, BinaryAutomationEventsResponse, BinaryOpenHandsCapabilities, BinaryOrchestrationPolicy, BinaryRemoteRuntimeHealth, BinaryWebhookSubscription, BinaryHostAssistRequest, BinaryHostAuthStatus, BinaryHostHealth, BinaryHostPreferences, BinaryHostRunControlAction, BinaryHostRunEventsResponse, BinaryHostRunRecord, BinaryHostRunSummary, BinaryHostTrustGrant, SseEvent } from "./types.js";
 export declare class BinaryLocalHostClient {
     private readonly baseUrl;
     constructor(baseUrl?: string);
@@ -8,6 +8,7 @@ export declare class BinaryLocalHostClient {
     setApiKey(apiKey: string): Promise<BinaryHostAuthStatus>;
     clearApiKey(): Promise<BinaryHostAuthStatus>;
     preferences(): Promise<BinaryHostPreferences>;
+    openHandsCapabilities(workspaceRoot?: string): Promise<BinaryOpenHandsCapabilities>;
     orchestrationPolicy(): Promise<BinaryOrchestrationPolicy>;
     updateOrchestrationPolicy(patch: Partial<BinaryOrchestrationPolicy>): Promise<BinaryOrchestrationPolicy>;
     updatePreferences(patch: Partial<BinaryHostPreferences>): Promise<BinaryHostPreferences>;
@@ -46,6 +47,7 @@ export declare class BinaryLocalHostClient {
     }>;
     getAgentJob(jobId: string): Promise<BinaryAgentJob>;
     getAgentJobEvents(jobId: string, after?: number): Promise<BinaryAgentJobEventsResponse>;
+    streamAgentJob(jobId: string, onEvent: (event: SseEvent) => void | Promise<void>, after?: number): Promise<void>;
     controlAgentJob(jobId: string, action: "pause" | "resume" | "cancel", note?: string): Promise<BinaryAgentJob>;
     remoteAgentHealth(): Promise<BinaryRemoteRuntimeHealth>;
     listAutomations(): Promise<{

@@ -31,6 +31,35 @@ describe("openhands runtime supervisor helpers", () => {
         expect(status.availableActions).toContain("Repair OpenHands runtime");
         expect(status.availableActions).toContain("Use managed runtime");
     });
+    it("accepts the OpenHands Windows terminal fallback for strict terminal lane", () => {
+        const status = runtime.mapGatewayHealthToOpenHandsRuntimeStatus({
+            gatewayUrl: "http://127.0.0.1:8010",
+            desiredProfile: "full",
+            strictNativeTerminal: true,
+            payload: {
+                status: "degraded",
+                version: "1.14.0",
+                doctor: {
+                    runtimeKind: "local-python",
+                    runtimeProfile: "code-only",
+                    supportedTools: ["Tool", "TerminalTool", "FileEditorTool"],
+                    degradedReasons: ["terminal_tool_fallback_windows"],
+                },
+            },
+        });
+        expect(status.readiness).toBe("limited");
+        expect(status.degradedReasons).toContain("terminal_tool_fallback_windows");
+    });
+    it("detects native terminal availability from supported tools and degraded reasons", () => {
+        expect(runtime.resolveNativeTerminalAvailability({
+            supportedTools: ["Tool", "TerminalTool"],
+            degradedReasons: [],
+        })).toEqual({ nativeTerminalAvailable: true });
+        expect(runtime.resolveNativeTerminalAvailability({
+            supportedTools: ["Tool", "TerminalTool"],
+            degradedReasons: ["terminal_tool_fallback_windows"],
+        })).toEqual({ nativeTerminalAvailable: true });
+    });
     it("accepts lightweight healthy gateway payloads without doctor metadata", () => {
         const status = runtime.mapGatewayHealthToOpenHandsRuntimeStatus({
             gatewayUrl: "http://127.0.0.1:8010",

@@ -1,0 +1,76 @@
+{
+  "startedAt": "2026-04-08T20:49:12.838Z",
+  "completedAt": "2026-04-08T20:55:40.001Z",
+  "targetDurationMs": 7200000,
+  "observedDurationMs": 387163,
+  "targetDurationHuman": "2h 0m 0s",
+  "observedDurationHuman": "0h 6m 27s",
+  "hostUrl": "http://127.0.0.1:7777",
+  "model": "Binary IDE",
+  "categories": [
+    "complex_autonomy_delivery",
+    "git_commit_workflow",
+    "long_run_task",
+    "validation_repair",
+    "multi_file_project_generation"
+  ],
+  "strictPass": false,
+  "requirements": {
+    "takeoverCountMustBeZero": true,
+    "repromptRequiredCountMustBeZero": true,
+    "durationMustMeetTarget": true
+  },
+  "metrics": {
+    "cycleCount": 3,
+    "categoryRunCount": 15,
+    "completedCount": 14,
+    "takeoverCount": 1,
+    "repromptRequiredCount": 1,
+    "failedCount": 0,
+    "completionRate": 0.9333,
+    "medianElapsedMs": 14667,
+    "medianFirstToolMs": 1643,
+    "firstInterruptAtMs": 387163,
+    "firstInterruptCycle": 3,
+    "firstInterruptCategory": "git_commit_workflow"
+  },
+  "cycleLogs": [
+    {
+      "cycle": 1,
+      "wallMs": 94982,
+      "runs": 5,
+      "completed": 5,
+      "takeover": 0,
+      "repromptRequired": 0,
+      "failed": 0,
+      "exitCode": 0,
+      "remainingMs": 7105014,
+      "releaseGate": "PASS"
+    },
+    {
+      "cycle": 2,
+      "wallMs": 101829,
+      "runs": 5,
+      "completed": 5,
+      "takeover": 0,
+      "repromptRequired": 0,
+      "failed": 0,
+      "exitCode": 0,
+      "remainingMs": 7002673,
+      "releaseGate": "PASS"
+    },
+    {
+      "cycle": 3,
+      "wallMs": 189325,
+      "runs": 5,
+      "completed": 4,
+      "takeover": 1,
+      "repromptRequired": 1,
+      "failed": 0,
+      "exitCode": 0,
+      "remainingMs": 6812837,
+      "releaseGate": "FAIL"
+    }
+  ],
+  "tempRoot": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-time-soak-su9pgl"
+}

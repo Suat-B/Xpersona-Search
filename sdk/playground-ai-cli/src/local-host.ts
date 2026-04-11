@@ -492,6 +492,8 @@ export type LocalHostAgentJob = {
   sessionId?: string;
   conversationId?: string | null;
   persistenceDir?: string | null;
+  jsonlPath?: string | null;
+  runtimeTarget?: "local_native" | "sandbox" | "remote";
   requestedExecutionLane: LocalHostExecutionLane;
   executionLane: LocalHostExecutionLane;
   pluginPacks: LocalHostPluginPack[];
@@ -1093,6 +1095,20 @@ export class LocalHostClient {
       auth: {},
       path: `/v1/agents/jobs/${encodeURIComponent(id)}/events?after=${encodeURIComponent(String(after))}`,
       method: "GET",
+    });
+  }
+
+  async streamAgentJob(
+    id: string,
+    onEvent: (event: SseEvent) => void | Promise<void>,
+    after = 0
+  ): Promise<void> {
+    await requestSse({
+      baseUrl: this.baseUrl,
+      auth: {},
+      path: `/v1/agents/jobs/${encodeURIComponent(id)}/stream?after=${encodeURIComponent(String(after))}`,
+      method: "GET",
+      onEvent,
     });
   }
 

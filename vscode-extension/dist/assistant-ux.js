@@ -127,7 +127,27 @@ function buildClarificationActions(input) {
     }));
 }
 function buildFollowUpActions(input) {
-    return [];
+    const actions = [];
+    if (input.intent === "change" && input.patchConfidence === "needs_review") {
+        actions.push({
+            id: "prompt:run-validation",
+            label: "Run checks",
+            kind: "prompt",
+            prompt: "Run the quickest validation checks for the latest change (lint/test/build as available) and summarize only failures.",
+            detail: "Confirm the edit is safe",
+            emphasized: true,
+        });
+    }
+    if (input.intent === "change" && input.preview.confidence !== "high") {
+        actions.push({
+            id: "retry-more-context",
+            label: "Retry with context",
+            kind: "rerun",
+            detail: "Attach active file and selection",
+            emphasized: actions.length === 0,
+        });
+    }
+    return actions.slice(0, 3);
 }
 function buildPatchConfidence(input) {
     if (input.intent !== "change" || !input.didMutate)

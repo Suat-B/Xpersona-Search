@@ -33,11 +33,11 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14" /></svg>
             <span>New thread</span>
           </button>
-          <button class="sidebar-link" type="button">
+          <button id="openPluginsSheet" class="sidebar-link" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v3m0 6v3m6-6h-3M9 12H6m9.24-4.24l-2.12 2.12m0 4.24l2.12 2.12m-6.48 0l2.12-2.12m0-4.24L8.76 7.76" /></svg>
             <span>Plugins</span>
           </button>
-          <button class="sidebar-link" type="button">
+          <button id="openAutomationsSheet" class="sidebar-link" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v6l4 2M4 12a8 8 0 1 0 8-8" /></svg>
             <span>Automations</span>
           </button>
@@ -208,6 +208,60 @@
         </footer>
       </section>
     </div>
+
+    <section id="pluginsSheet" class="sheet-shell" aria-hidden="true">
+      <div class="sheet-backdrop" data-close-sheet="plugins"></div>
+      <aside class="sheet sheet--wide">
+        <div class="sheet__header">
+          <div>
+            <p class="sheet__eyebrow">OpenHands</p>
+            <h2>Plugins and Skills</h2>
+          </div>
+          <button class="sheet__close" data-close-sheet="plugins" type="button" aria-label="Close plugins">Ã—</button>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">What Binary Offers</p>
+          <div id="openhandsOfferings" class="plugin-grid plugin-grid--compact">
+            <article class="plugin-card plugin-card--muted">
+              <div class="plugin-card__header">
+                <strong>Loading OpenHands capabilities</strong>
+              </div>
+              <p class="plugin-card__copy">Binary is checking the local runtime, plugin packs, and skill sources.</p>
+            </article>
+          </div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Plugin Packs</p>
+          <div class="sheet-card">
+            <strong>Capability packs with low latency overhead</strong>
+            <span>These packs bias OpenHands toward specific workflows. Binary can still auto-pick packs from task intent, but your selected defaults stay active across new runs.</span>
+          </div>
+          <div class="button-row">
+            <button id="savePluginDefaults" type="button">Save defaults</button>
+            <button id="clearPluginDefaults" class="button-secondary" type="button">Clear defaults</button>
+          </div>
+          <div id="pluginPackList" class="plugin-grid">
+            <article class="plugin-card plugin-card--muted">
+              <div class="plugin-card__header">
+                <strong>No plugin packs loaded yet</strong>
+              </div>
+              <p class="plugin-card__copy">Binary will list the OpenHands packs that are available on this machine.</p>
+            </article>
+          </div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Skill Sources</p>
+          <div class="sheet-card">
+            <strong>Lazy-loaded repo, user, and org skills</strong>
+            <span>OpenHands skills are the lightest way to make Binary feel smarter without slowing every turn.</span>
+          </div>
+          <div id="skillSourceList" class="history-list empty">No skill sources detected yet.</div>
+        </div>
+      </aside>
+    </section>
 
     <section id="settingsSheet" class="sheet-shell" aria-hidden="true">
       <div class="sheet-backdrop" data-close-sheet="settings"></div>

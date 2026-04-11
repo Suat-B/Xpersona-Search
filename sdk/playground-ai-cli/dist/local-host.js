@@ -394,6 +394,15 @@ export class LocalHostClient {
             method: "GET",
         });
     }
+    async streamAgentJob(id, onEvent, after = 0) {
+        await requestSse({
+            baseUrl: this.baseUrl,
+            auth: {},
+            path: `/v1/agents/jobs/${encodeURIComponent(id)}/stream?after=${encodeURIComponent(String(after))}`,
+            method: "GET",
+            onEvent,
+        });
+    }
     async controlAgentJob(id, action, note) {
         return requestJson({
             baseUrl: this.baseUrl,

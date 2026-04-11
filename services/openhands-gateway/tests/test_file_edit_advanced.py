@@ -668,6 +668,14 @@ class TestChatOnlyFastPath:
         assert agent_turn.should_use_chat_only_fast_response(desktop_payload, []) is False
         assert agent_turn.should_use_chat_only_fast_response(browser_payload, []) is False
 
+    def test_gate_blocks_chat_only_fast_path_for_headless_lane(self) -> None:
+        payload = {
+            "request": {"task": "hello can you help me?"},
+            "taskSpeedClass": "chat_only",
+            "execution": {"lane": "openhands_headless"},
+        }
+        assert agent_turn.should_use_chat_only_fast_response(payload, ["read_file"]) is False
+
     def test_binary_tool_adapter_short_circuits_to_fast_chat_completion(self) -> None:
         payload = {
             "request": {"task": "Say READY in one word."},
@@ -1323,6 +1331,36 @@ class TestBrowserReliabilityDeterminism:
 
 
 class TestWindowsBrowserRecovery:
+    def test_terminal_strict_mode_disables_windows_fcntl_adapter_recovery(self) -> None:
+        payload = {
+            "protocol": "xpersona_openhands_gateway_v1",
+            "runId": "run_terminal_strict_no_adapter_recovery",
+            "request": {"task": "Run npm test and fix failures"},
+            "executionHints": {
+                "adapterMode": "auto",
+                "terminalBackendMode": "strict_openhands_native",
+                "requireNativeTerminalTool": True,
+            },
+            "model": {"candidates": [{"alias": "user:openrouter", "model": "stepfun/step-3.5-flash:free"}]},
+        }
+        sdk_module = types.ModuleType("openhands.sdk")
+        openhands_module = types.ModuleType("openhands")
+        with patch.dict(sys.modules, {"openhands": openhands_module, "openhands.sdk": sdk_module}):
+            with patch.object(
+                agent_turn,
+                "_run_turn_with_candidate",
+                side_effect=[RuntimeError("ModuleNotFoundError: No module named 'fcntl'")],
+            ) as run_with_candidate:
+                with patch.object(agent_turn, "is_windows_fcntl_runtime_failure", return_value=True):
+                    result = agent_turn.run_turn(payload)
+
+        assert result.get("ok") is False
+        assert result.get("failureReason") == "terminal_backend_unavailable_strict"
+        assert result.get("terminalBackend") == "blocked"
+        assert result.get("terminalStrictMode") is True
+        assert result.get("nativeTerminalAvailable") is False
+        assert run_with_candidate.call_count == 1
+
     def test_run_turn_recovers_from_windows_fcntl_error_with_forced_adapter(self) -> None:
         payload = {
             "protocol": "xpersona_openhands_gateway_v1",

@@ -5,6 +5,15 @@ export type HostedAssistRequest = {
   task: string;
   mode: AssistMode;
   model: string;
+  imageInputs?: Array<{
+    mimeType?: string;
+    dataUrl?: string;
+    base64?: string;
+    url?: string;
+    caption?: string;
+    name?: string;
+    source?: string;
+  }>;
   speedProfile?: "fast" | "balanced" | "thorough";
   startupPhase?: "fast_start" | "context_enrichment" | "full_run";
   routePolicy?: {
@@ -280,6 +289,7 @@ export async function streamHostedAssist(
         task: input.request.task,
         mode: toHostedMode(input.request.mode),
         model: input.request.model || "Binary IDE",
+        ...(input.request.imageInputs ? { imageInputs: input.request.imageInputs } : {}),
         ...(input.request.chatModelSource ? { chatModelSource: input.request.chatModelSource } : {}),
         ...(input.request.fallbackToPlatformModel !== undefined
           ? { fallbackToPlatformModel: input.request.fallbackToPlatformModel }

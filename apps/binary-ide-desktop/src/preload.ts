@@ -66,6 +66,10 @@ function subscribeToWorkerMessages(workerId: string, callback: WorkerSubscriber)
 
 contextBridge.exposeInMainWorld("binaryDesktop", {
   runtimeInfo: () => ipcRenderer.invoke("binary:runtime-info"),
+  openHandsCapabilities: () => ipcRenderer.invoke("binary:host:openhands-capabilities"),
+  getHostPreferences: () => ipcRenderer.invoke("binary:host:get-preferences"),
+  setHostPreferences: (patch: Record<string, unknown>) =>
+    ipcRenderer.invoke("binary:host:set-preferences", patch),
   chooseWorkspace: () => ipcRenderer.invoke("binary:choose-workspace"),
   chooseBinaryFile: () => ipcRenderer.invoke("binary:choose-binary-file"),
   readTextFile: (filePath: string) => ipcRenderer.invoke("binary:read-text-file", filePath),

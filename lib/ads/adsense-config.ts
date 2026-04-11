@@ -1,4 +1,5 @@
 export const ADSENSE_CLIENT_ID = "ca-pub-6090164906593135";
+export const ADSENSE_DEFAULT_SLOT = "1601285143";
 
 export function getAdSenseClientId(): string {
   return ADSENSE_CLIENT_ID;

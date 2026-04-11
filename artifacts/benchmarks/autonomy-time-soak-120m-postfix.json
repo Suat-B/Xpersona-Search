@@ -1,0 +1,64 @@
+{
+  "startedAt": "2026-04-08T20:59:50.614Z",
+  "completedAt": "2026-04-08T21:04:26.689Z",
+  "targetDurationMs": 7200000,
+  "observedDurationMs": 276075,
+  "targetDurationHuman": "2h 0m 0s",
+  "observedDurationHuman": "0h 4m 36s",
+  "hostUrl": "http://127.0.0.1:7777",
+  "model": "Binary IDE",
+  "categories": [
+    "complex_autonomy_delivery",
+    "git_commit_workflow",
+    "long_run_task",
+    "validation_repair",
+    "multi_file_project_generation"
+  ],
+  "strictPass": false,
+  "requirements": {
+    "takeoverCountMustBeZero": true,
+    "repromptRequiredCountMustBeZero": true,
+    "durationMustMeetTarget": true
+  },
+  "metrics": {
+    "cycleCount": 2,
+    "categoryRunCount": 10,
+    "completedCount": 9,
+    "takeoverCount": 1,
+    "repromptRequiredCount": 1,
+    "failedCount": 0,
+    "completionRate": 0.9,
+    "medianElapsedMs": 17573,
+    "medianFirstToolMs": 1843,
+    "firstInterruptAtMs": 276075,
+    "firstInterruptCycle": 2,
+    "firstInterruptCategory": "complex_autonomy_delivery"
+  },
+  "cycleLogs": [
+    {
+      "cycle": 1,
+      "wallMs": 144284,
+      "runs": 5,
+      "completed": 5,
+      "takeover": 0,
+      "repromptRequired": 0,
+      "failed": 0,
+      "exitCode": 0,
+      "remainingMs": 7055713,
+      "releaseGate": "PASS"
+    },
+    {
+      "cycle": 2,
+      "wallMs": 131276,
+      "runs": 5,
+      "completed": 4,
+      "takeover": 1,
+      "repromptRequired": 1,
+      "failed": 0,
+      "exitCode": 0,
+      "remainingMs": 6923925,
+      "releaseGate": "PASS"
+    }
+  ],
+  "tempRoot": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-time-soak-gfsRvu"
+}

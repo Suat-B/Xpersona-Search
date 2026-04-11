@@ -1,0 +1,48 @@
+{
+  "version": "binary_hardmode_semantic_suite_v1",
+  "createdAt": "2026-04-09T02:57:14.805Z",
+  "host": "http://127.0.0.1:7777",
+  "model": "Binary IDE",
+  "results": [
+    {
+      "caseId": "semantic_window_max",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-hardmode-semantic_window_max-c04Qf2",
+      "runId": "5f6524ea-c048-4aab-b3b3-08cf22180e9c",
+      "status": "cancelled",
+      "completed": false,
+      "takeoverRequired": false,
+      "repromptRequired": true,
+      "independentValidationPassed": false,
+      "testsUntouched": true,
+      "sourceChanged": true,
+      "pass": false,
+      "elapsedMs": 245565,
+      "toolCallCount": 100,
+      "npmTest": {
+        "ok": false,
+        "code": 1,
+        "stdout": "✔ maxSubarraySum handles positive numbers (0.9152ms)\n✔ maxSubarraySum handles mixed values (0.1564ms)\n✖ maxSubarraySum handles all negatives (0.8612ms)\nℹ tests 3\nℹ suites 0\nℹ pass 2\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 102.8754\n\n✖ failing tests:\n\ntest at test\\index.test.js:13:1\n✖ maxSubarraySum handles all negatives (0.8612ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  -8 !== -5\n  \n      at TestContext.<anonymous> (file:///C:/Users/suatb/AppData/Local/Temp/binary-hardmode-semantic_window_max-c04Qf2/semantic-window-max/test/index.test.js:14:10)\n      at Test.runInAsyncScope (node:async_hooks:228:14)\n      at Test.run (node:internal/test_runner/test:1118:25)\n      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)\n      at Test.postRun (node:internal/test_runner/test:1247:19)\n      at Test.run (node:internal/test_runner/test:1175:12)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: -8,\n    expected: -5,\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n",
+        "stderr": ""
+      },
+      "testIntegrity": {
+        "before": {
+          "semantic-window-max/test/index.test.js": "6b92f3e889abf364b11d567e08350b5596dca7797ab11c7e960e8423bc1d75c6"
+        },
+        "after": {
+          "semantic-window-max/test/index.test.js": "6b92f3e889abf364b11d567e08350b5596dca7797ab11c7e960e8423bc1d75c6"
+        }
+      }
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "takeoverRequired": 0,
+    "repromptRequired": 1,
+    "independentValidationPassed": 0,
+    "testsUntouched": 1,
+    "sourceChanged": 1,
+    "elapsedMs": 245584
+  },
+  "pass": false
+}

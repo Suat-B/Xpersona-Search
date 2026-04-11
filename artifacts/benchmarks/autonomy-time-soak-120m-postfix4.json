@@ -1,0 +1,55 @@
+{
+  "startedAt": "2026-04-08T23:19:39.365Z",
+  "completedAt": "2026-04-08T23:19:39.586Z",
+  "targetDurationMs": 7200000,
+  "observedDurationMs": 221,
+  "targetDurationHuman": "2h 0m 0s",
+  "observedDurationHuman": "0h 0m 0s",
+  "hostUrl": "http://127.0.0.1:7777",
+  "model": "Binary IDE",
+  "categories": [
+    "complex_autonomy_delivery",
+    "git_commit_workflow",
+    "long_run_task",
+    "validation_repair",
+    "multi_file_project_generation"
+  ],
+  "strictPass": false,
+  "requirements": {
+    "takeoverCountMustBeZero": true,
+    "repromptRequiredCountMustBeZero": true,
+    "durationMustMeetTarget": true
+  },
+  "metrics": {
+    "cycleCount": 1,
+    "categoryRunCount": 0,
+    "completedCount": 0,
+    "takeoverCount": 0,
+    "repromptRequiredCount": 1,
+    "failedCount": 0,
+    "infraFailureCount": 1,
+    "completionRate": 0,
+    "medianElapsedMs": null,
+    "medianFirstToolMs": null,
+    "firstInterruptAtMs": 220,
+    "firstInterruptCycle": 1,
+    "firstInterruptCategory": "infra_failure"
+  },
+  "cycleLogs": [
+    {
+      "cycle": 1,
+      "wallMs": 214,
+      "runs": 0,
+      "completed": 0,
+      "takeover": 0,
+      "repromptRequired": 1,
+      "failed": 0,
+      "exitCode": 1,
+      "infraCycleFailure": true,
+      "stderrSnippet": "fetch failed",
+      "remainingMs": 7199780,
+      "releaseGate": "ERROR"
+    }
+  ],
+  "tempRoot": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-autonomy-time-soak-FVUCLl"
+}

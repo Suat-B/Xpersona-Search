@@ -22,6 +22,10 @@ function parseSlashCommand(text) {
         return { kind: "plan" };
     if (lower === "/auto")
         return { kind: "auto" };
+    const detachMatch = /^\/detach(?:\s+([\s\S]+))?$/i.exec(normalized);
+    if (detachMatch) {
+        return { kind: "detach", task: String(detachMatch[1] || "").trim() };
+    }
     if (lower === "/key")
         return { kind: "key" };
     if (lower === "/signin")
@@ -36,6 +40,8 @@ function parseSlashCommand(text) {
         return { kind: "runtime", runtime: "playgroundApi" };
     if (lower === "/runtime cloud")
         return { kind: "runtime", runtime: "playgroundApi" };
+    if (lower === "/runtime qwen")
+        return { kind: "runtime", runtime: "qwenCode" };
     return { kind: "unknown", raw: normalized };
 }
 function buildSlashCommandHelpMessage(prefix) {
@@ -45,8 +51,10 @@ function buildSlashCommandHelpMessage(prefix) {
         "- /new",
         "- /plan",
         "- /auto",
+        "- /detach <task>",
         "- /runtime hosted",
         "- /runtime cloud (alias for hosted)",
+        "- /runtime qwen",
         "- /key",
         "- /signin",
         "- /signout",

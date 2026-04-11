@@ -178,6 +178,37 @@ describe("BrowserRuntimeController selector inference", () => {
     expect(ranked[0]?.id).toBe("watch_1");
   });
 
+  it("does not rank YouTube logo/home navigation ahead of real watch results", () => {
+    const ranked = rankBrowserResultCandidates(
+      [
+        {
+          id: "logo",
+          selector: "#logo",
+          label: "a",
+          tagName: "a",
+          role: "link",
+          href: "/",
+          visible: true,
+          score: 120,
+        },
+        {
+          id: "watch_1",
+          selector: "a#video-title",
+          label: "Outdoor Boys mountain camp",
+          tagName: "a",
+          role: "link",
+          href: "/watch?v=xyz987",
+          visible: true,
+          score: 80,
+        },
+      ],
+      "Open YouTube in the browser, search for Outdoor Boys, open the best matching result",
+      "https://www.youtube.com/results?search_query=outdoor+boys"
+    );
+
+    expect(ranked[0]?.id).toBe("watch_1");
+  });
+
   it("keeps mission final page pinned even if active-page state drifts elsewhere", async () => {
     const controller = new BrowserRuntimeController() as any;
     const policy = {
@@ -244,6 +275,52 @@ describe("BrowserRuntimeController selector inference", () => {
         missionKind: "browser_search_and_open_best_result",
         state: "completed",
         conflictDetected: false,
+      })
+    );
+  });
+
+  it("reuses a matching active YouTube watch page without re-clicking search results", async () => {
+    const controller = new BrowserRuntimeController() as any;
+    const policy = {
+      enabled: true,
+      allowBrowserNative: true,
+      focusPolicy: "avoid_if_possible",
+    };
+    const activeWatchPage = {
+      id: "page_watch",
+      title: "Outdoor Boys winter camping",
+      url: "https://www.youtube.com/watch?v=abc123",
+      origin: "https://www.youtube.com",
+      browserName: "Google Chrome",
+      lane: "browser_native" as const,
+      active: true,
+    };
+
+    controller.getActivePage = async () => activeWatchPage;
+    controller.openPage = async () => {
+      throw new Error("search flow should not open a new page when watch proof is already present");
+    };
+    controller.navigate = async () => {
+      throw new Error("search flow should not navigate away from a matching watch page");
+    };
+    controller.click = async () => {
+      throw new Error("search flow should not click a result when watch proof is already present");
+    };
+
+    const result = await controller.searchAndOpenBestResult(policy, {
+      url: "https://www.youtube.com/",
+      query: "outdoor boys youtube",
+    });
+
+    expect(result.searchPage.id).toBe("page_watch");
+    expect(result.finalPage?.id).toBe("page_watch");
+    expect(result.clickedResult).toBeNull();
+    expect(result.candidates).toEqual([]);
+    expect(result.missionLease).toEqual(
+      expect.objectContaining({
+        pageId: "page_watch",
+        missionKind: "browser_search_and_open_best_result",
+        state: "completed",
       })
     );
   });

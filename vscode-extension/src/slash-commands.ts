@@ -5,6 +5,7 @@ export type SlashCommand =
   | { kind: "new" }
   | { kind: "plan" }
   | { kind: "auto" }
+  | { kind: "detach"; task: string }
   | { kind: "runtime"; runtime: RuntimeBackend }
   | { kind: "key" }
   | { kind: "signin" }
@@ -28,6 +29,10 @@ export function parseSlashCommand(text: string): SlashCommand | null {
   if (lower === "/new") return { kind: "new" };
   if (lower === "/plan") return { kind: "plan" };
   if (lower === "/auto") return { kind: "auto" };
+  const detachMatch = /^\/detach(?:\s+([\s\S]+))?$/i.exec(normalized);
+  if (detachMatch) {
+    return { kind: "detach", task: String(detachMatch[1] || "").trim() };
+  }
   if (lower === "/key") return { kind: "key" };
   if (lower === "/signin") return { kind: "signin" };
   if (lower === "/signout") return { kind: "signout" };
@@ -46,6 +51,7 @@ export function buildSlashCommandHelpMessage(prefix?: string): string {
     "- /new",
     "- /plan",
     "- /auto",
+    "- /detach <task>",
     "- /runtime hosted",
     "- /runtime cloud (alias for hosted)",
     "- /runtime qwen",

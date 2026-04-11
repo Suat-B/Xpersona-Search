@@ -34,6 +34,41 @@ describe("openhands-capabilities", () => {
     expect(decision.lane).toBe("openhands_remote");
   });
 
+  it("keeps detached runs headless even if local_interactive is explicitly requested", () => {
+    const decision = resolveExecutionLane({
+      task: "Scan the workspace and summarize findings",
+      workspaceTrustMode: "trusted_full_access",
+      taskSpeedClass: "tool_heavy",
+      detach: true,
+      explicitLane: "local_interactive",
+      remoteConfigured: true,
+    });
+
+    expect(decision.lane).toBe("openhands_headless");
+  });
+
+  it("keeps probe sessions headless unless explicit remote isolation is requested", () => {
+    const headlessDecision = resolveExecutionLane({
+      task: "Probe the agent behavior over multiple turns",
+      workspaceTrustMode: "trusted_read_only",
+      taskSpeedClass: "tool_heavy",
+      probeSession: true,
+      explicitLane: "local_interactive",
+      remoteConfigured: true,
+    });
+    const remoteDecision = resolveExecutionLane({
+      task: "Probe the agent behavior over multiple turns",
+      workspaceTrustMode: "trusted_read_only",
+      taskSpeedClass: "tool_heavy",
+      probeSession: true,
+      explicitLane: "openhands_remote",
+      remoteConfigured: true,
+    });
+
+    expect(headlessDecision.lane).toBe("openhands_headless");
+    expect(remoteDecision.lane).toBe("openhands_remote");
+  });
+
   it("keeps native desktop tasks on the local interactive lane", () => {
     const decision = resolveExecutionLane({
       task: "Open Notepad and draft a grocery list",

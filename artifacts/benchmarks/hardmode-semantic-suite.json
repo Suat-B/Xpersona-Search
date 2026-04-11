@@ -1,0 +1,106 @@
+{
+  "version": "binary_hardmode_semantic_suite_v1",
+  "createdAt": "2026-04-09T02:08:33.871Z",
+  "host": "http://127.0.0.1:7777",
+  "model": "Binary IDE",
+  "results": [
+    {
+      "caseId": "semantic_window_max",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-hardmode-semantic_window_max-DN7zRY",
+      "runId": "2ce2ec0b-cba5-4419-a4e6-67c38a287ae5",
+      "status": "running",
+      "completed": false,
+      "takeoverRequired": false,
+      "repromptRequired": true,
+      "independentValidationPassed": false,
+      "testsUntouched": true,
+      "sourceChanged": false,
+      "pass": false,
+      "elapsedMs": 242221,
+      "toolCallCount": 105,
+      "npmTest": {
+        "ok": false,
+        "code": 1,
+        "stdout": "✖ maxSubarraySum handles positive numbers (1.6424ms)\n✖ maxSubarraySum handles mixed values (0.2428ms)\n✖ maxSubarraySum handles all negatives (0.2176ms)\nℹ tests 3\nℹ suites 0\nℹ pass 0\nℹ fail 3\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 109.8674\n\n✖ failing tests:\n\ntest at test\\index.test.js:5:1\n✖ maxSubarraySum handles positive numbers (1.6424ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  0 !== 7\n  \n      at TestContext.<anonymous> (file:///C:/Users/suatb/AppData/Local/Temp/binary-hardmode-semantic_window_max-DN7zRY/semantic-window-max/test/index.test.js:6:10)\n      at Test.runInAsyncScope (node:async_hooks:228:14)\n      at Test.run (node:internal/test_runner/test:1118:25)\n      at Test.start (node:internal/test_runner/test:1015:17)\n      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: 0,\n    expected: 7,\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n\ntest at test\\index.test.js:9:1\n✖ maxSubarraySum handles mixed values (0.2428ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  0 !== 8\n  \n      at TestContext.<anonymous> (file:///C:/Users/suatb/AppData/Local/Temp/binary-hardmode-semantic_window_max-DN7zRY/semantic-window-max/test/index.test.js:10:10)\n      at Test.runInAsyncScope (node:async_hooks:228:14)\n      at Test.run (node:internal/test_runner/test:1118:25)\n      at Test.processPendingSubtests (node:internal",
+        "stderr": ""
+      },
+      "testIntegrity": {
+        "before": {
+          "semantic-window-max/test/index.test.js": "6b92f3e889abf364b11d567e08350b5596dca7797ab11c7e960e8423bc1d75c6"
+        },
+        "after": {
+          "semantic-window-max/test/index.test.js": "6b92f3e889abf364b11d567e08350b5596dca7797ab11c7e960e8423bc1d75c6"
+        }
+      }
+    },
+    {
+      "caseId": "semantic_merge_intervals",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-hardmode-semantic_merge_intervals-uxE8Xx",
+      "runId": "788a2bce-b7da-41d4-8713-099e53c04fd6",
+      "status": "running",
+      "completed": false,
+      "takeoverRequired": false,
+      "repromptRequired": true,
+      "independentValidationPassed": false,
+      "testsUntouched": true,
+      "sourceChanged": false,
+      "pass": false,
+      "elapsedMs": 242364,
+      "toolCallCount": 102,
+      "npmTest": {
+        "ok": false,
+        "code": 1,
+        "stdout": "✖ merges overlapping ranges (2.8314ms)\n✖ merges touching ranges (0.3863ms)\n✖ sorts unsorted input before merge (1.2939ms)\nℹ tests 3\nℹ suites 0\nℹ pass 0\nℹ fail 3\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 121.6173\n\n✖ failing tests:\n\ntest at test\\index.test.js:5:1\n✖ merges overlapping ranges (2.8314ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n  + actual - expected\n  \n    [\n      [\n        1,\n  +     3\n  +   ],\n  +   [\n  +     2,\n        6\n      ],\n      [\n        8,\n        10\n  \n      at TestContext.<anonymous> (file:///C:/Users/suatb/AppData/Local/Temp/binary-hardmode-semantic_merge_intervals-uxE8Xx/semantic-merge-intervals/test/index.test.js:6:10)\n      at Test.runInAsyncScope (node:async_hooks:228:14)\n      at Test.run (node:internal/test_runner/test:1118:25)\n      at Test.start (node:internal/test_runner/test:1015:17)\n      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: [ [ 1, 3 ], [ 2, 6 ], [ 8, 10 ], [ 15, 18 ] ],\n    expected: [ [ 1, 6 ], [ 8, 10 ], [ 15, 18 ] ],\n    operator: 'deepStrictEqual',\n    diff: 'simple'\n  }\n\ntest at test\\index.test.js:9:1\n✖ merges touching ranges (0.3863ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n  + actual - expected\n  \n    [\n      [\n        1,\n  +     4\n  +   ],\n  +   [\n  +     4,\n        5\n      ]\n    ]\n  \n      at TestContext.<anonymous> (file:///C:/Users/suatb/AppDat",
+        "stderr": ""
+      },
+      "testIntegrity": {
+        "before": {
+          "semantic-merge-intervals/test/index.test.js": "2ece74be873f9d597d20ffd888358c3e4fb896ae09eb648a204c2199bf8acd35"
+        },
+        "after": {
+          "semantic-merge-intervals/test/index.test.js": "2ece74be873f9d597d20ffd888358c3e4fb896ae09eb648a204c2199bf8acd35"
+        }
+      }
+    },
+    {
+      "caseId": "semantic_toposort",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-hardmode-semantic_toposort-xbBkSH",
+      "runId": "a848f1a5-260e-4a72-9b78-06120d2b2395",
+      "status": "running",
+      "completed": false,
+      "takeoverRequired": false,
+      "repromptRequired": true,
+      "independentValidationPassed": false,
+      "testsUntouched": true,
+      "sourceChanged": false,
+      "pass": false,
+      "elapsedMs": 241736,
+      "toolCallCount": 102,
+      "npmTest": {
+        "ok": false,
+        "code": 1,
+        "stdout": "✖ returns a valid topological order for DAG (1.7088ms)\n✖ returns null for cycle (0.2842ms)\nℹ tests 2\nℹ suites 0\nℹ pass 0\nℹ fail 2\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 107.703\n\n✖ failing tests:\n\ntest at test\\index.test.js:10:1\n✖ returns a valid topological order for DAG (1.7088ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  0 !== 4\n  \n      at TestContext.<anonymous> (file:///C:/Users/suatb/AppData/Local/Temp/binary-hardmode-semantic_toposort-xbBkSH/semantic-toposort/test/index.test.js:19:10)\n      at Test.runInAsyncScope (node:async_hooks:228:14)\n      at Test.run (node:internal/test_runner/test:1118:25)\n      at Test.start (node:internal/test_runner/test:1015:17)\n      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: 0,\n    expected: 4,\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n\ntest at test\\index.test.js:23:1\n✖ returns null for cycle (0.2842ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  [] !== null\n  \n      at TestContext.<anonymous> (file:///C:/Users/suatb/AppData/Local/Temp/binary-hardmode-semantic_toposort-xbBkSH/semantic-toposort/test/index.test.js:25:10)\n      at Test.runInAsyncScope (node:async_hooks:228:14)\n      at Test.run (node:internal/test_runner/test:1118:25)\n      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)\n      at Test.postRun (node:internal/test_runner",
+        "stderr": ""
+      },
+      "testIntegrity": {
+        "before": {
+          "semantic-toposort/test/index.test.js": "4830ed139fe2f51c3bf4a754b332ab7dd16ae61f3f3394154e0b4d2e4242d826"
+        },
+        "after": {
+          "semantic-toposort/test/index.test.js": "4830ed139fe2f51c3bf4a754b332ab7dd16ae61f3f3394154e0b4d2e4242d826"
+        }
+      }
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "passed": 0,
+    "takeoverRequired": 0,
+    "repromptRequired": 3,
+    "independentValidationPassed": 0,
+    "testsUntouched": 3,
+    "sourceChanged": 0,
+    "elapsedMs": 726494
+  },
+  "pass": false
+}

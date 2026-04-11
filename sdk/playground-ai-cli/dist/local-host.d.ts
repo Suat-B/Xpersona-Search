@@ -424,6 +424,8 @@ export type LocalHostAgentJob = {
     sessionId?: string;
     conversationId?: string | null;
     persistenceDir?: string | null;
+    jsonlPath?: string | null;
+    runtimeTarget?: "local_native" | "sandbox" | "remote";
     requestedExecutionLane: LocalHostExecutionLane;
     executionLane: LocalHostExecutionLane;
     pluginPacks: LocalHostPluginPack[];
@@ -643,6 +645,7 @@ export declare class LocalHostClient {
     }>;
     getAgentJob(id: string): Promise<LocalHostAgentJob>;
     getAgentJobEvents(id: string, after?: number): Promise<LocalHostAgentJobEventsResponse>;
+    streamAgentJob(id: string, onEvent: (event: SseEvent) => void | Promise<void>, after?: number): Promise<void>;
     controlAgentJob(id: string, action: "pause" | "resume" | "cancel", note?: string): Promise<LocalHostAgentJob>;
     getRemoteAgentHealth(): Promise<LocalHostRemoteRuntimeHealth>;
     listAutomations(): Promise<{

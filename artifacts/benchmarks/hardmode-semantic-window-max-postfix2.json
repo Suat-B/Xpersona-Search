@@ -1,0 +1,48 @@
+{
+  "version": "binary_hardmode_semantic_suite_v1",
+  "createdAt": "2026-04-09T02:33:51.494Z",
+  "host": "http://127.0.0.1:7777",
+  "model": "Binary IDE",
+  "results": [
+    {
+      "caseId": "semantic_window_max",
+      "workspace": "C:\\Users\\suatb\\AppData\\Local\\Temp\\binary-hardmode-semantic_window_max-GhZAVf",
+      "runId": "0017cf0c-3f5c-4856-b44f-c9ca442972c7",
+      "status": "cancelled",
+      "completed": false,
+      "takeoverRequired": false,
+      "repromptRequired": true,
+      "independentValidationPassed": false,
+      "testsUntouched": true,
+      "sourceChanged": false,
+      "pass": false,
+      "elapsedMs": 245715,
+      "toolCallCount": 98,
+      "npmTest": {
+        "ok": false,
+        "code": 1,
+        "stdout": "✖ maxSubarraySum handles positive numbers (1.8545ms)\n✖ maxSubarraySum handles mixed values (0.2628ms)\n✖ maxSubarraySum handles all negatives (0.2011ms)\nℹ tests 3\nℹ suites 0\nℹ pass 0\nℹ fail 3\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 106.1722\n\n✖ failing tests:\n\ntest at test\\index.test.js:5:1\n✖ maxSubarraySum handles positive numbers (1.8545ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  0 !== 7\n  \n      at TestContext.<anonymous> (file:///C:/Users/suatb/AppData/Local/Temp/binary-hardmode-semantic_window_max-GhZAVf/semantic-window-max/test/index.test.js:6:10)\n      at Test.runInAsyncScope (node:async_hooks:228:14)\n      at Test.run (node:internal/test_runner/test:1118:25)\n      at Test.start (node:internal/test_runner/test:1015:17)\n      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: 0,\n    expected: 7,\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n\ntest at test\\index.test.js:9:1\n✖ maxSubarraySum handles mixed values (0.2628ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  0 !== 8\n  \n      at TestContext.<anonymous> (file:///C:/Users/suatb/AppData/Local/Temp/binary-hardmode-semantic_window_max-GhZAVf/semantic-window-max/test/index.test.js:10:10)\n      at Test.runInAsyncScope (node:async_hooks:228:14)\n      at Test.run (node:internal/test_runner/test:1118:25)\n      at Test.processPendingSubtests (node:internal",
+        "stderr": ""
+      },
+      "testIntegrity": {
+        "before": {
+          "semantic-window-max/test/index.test.js": "6b92f3e889abf364b11d567e08350b5596dca7797ab11c7e960e8423bc1d75c6"
+        },
+        "after": {
+          "semantic-window-max/test/index.test.js": "6b92f3e889abf364b11d567e08350b5596dca7797ab11c7e960e8423bc1d75c6"
+        }
+      }
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "takeoverRequired": 0,
+    "repromptRequired": 1,
+    "independentValidationPassed": 0,
+    "testsUntouched": 1,
+    "sourceChanged": 0,
+    "elapsedMs": 245732
+  },
+  "pass": false
+}
