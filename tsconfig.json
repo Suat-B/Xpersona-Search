@@ -20,6 +20,8 @@
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
   "exclude": [
     "node_modules",
+    "apps/binary-ide-desktop",
+    "apps/binary-ide-desktop/**",
     "vscode-extension",
     "artifacts",
     "cutie-product.cutie-product-1.0.1",

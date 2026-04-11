@@ -5729,7 +5729,7 @@ async function executeHostedAgentProbeTurn(input: {
     const gatewayBaseUrl = resolveGatewayBaseUrl({
       executionLane: executionDecision.lane,
       remoteGatewayUrl: remoteHealth?.available ? remoteHealth.gatewayUrl : null,
-      localGatewayUrl: openhandsRuntime?.gatewayUrl || null,
+      localGatewayUrl: getLocalGatewayUrl(),
     });
     const initialTurn = !input.gatewayRunId;
     const body = {
