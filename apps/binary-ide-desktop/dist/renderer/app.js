@@ -36,6 +36,8 @@ const state = {
   providers: [],
   connections: [],
   openhandsCapabilities: null,
+  remoteRuntimeHealth: null,
+  selectedExecutionLane: "auto",
   selectedPluginPacks: [],
   automations: [],
   webhookSubscriptions: [],
@@ -67,10 +69,15 @@ const ASSISTANT_IDLE_COPY = STARTER_ASSISTANT_COPY;
 const ASSISTANT_WAITING_COPY = "Thinking";
 const FOCUS_LEASE_DEBOUNCE_MS = 350;
 const PLAN_MODE_COMMAND = "/plan";
+const relativeTimeFormatter = typeof Intl !== "undefined" && typeof Intl.RelativeTimeFormat === "function"
+  ? new Intl.RelativeTimeFormat(undefined, { numeric: "auto" })
+  : null;
 
 const el = {
   body: document.body,
   landingView: document.getElementById("landingView"),
+  landingStatusCards: document.getElementById("landingStatusCards"),
+  landingStarterPrompts: document.getElementById("landingStarterPrompts"),
   chatView: document.getElementById("chatView"),
   conversation: document.getElementById("conversation"),
   conversationScroller: document.getElementById("conversationScroller"),
@@ -160,6 +167,10 @@ const el = {
   takeoverRun: document.getElementById("takeoverRun"),
   cancelRun: document.getElementById("cancelRun"),
   openhandsOfferings: document.getElementById("openhandsOfferings"),
+  executionLaneSelect: document.getElementById("executionLaneSelect"),
+  saveExecutionLane: document.getElementById("saveExecutionLane"),
+  clearExecutionLane: document.getElementById("clearExecutionLane"),
+  remoteRuntimeStatus: document.getElementById("remoteRuntimeStatus"),
   pluginPackList: document.getElementById("pluginPackList"),
   savePluginDefaults: document.getElementById("savePluginDefaults"),
   clearPluginDefaults: document.getElementById("clearPluginDefaults"),
@@ -243,6 +254,147 @@ function escapeHtml(value) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function formatCountLabel(count, singular, plural = `${singular}s`) {
+  const safeCount = Math.max(0, Number(count) || 0);
+  return `${safeCount} ${safeCount === 1 ? singular : plural}`;
+}
+
+function formatRunStatusLabel(status) {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (!normalized) return "Queued";
+  const words = normalized.replace(/_/g, " ").split(/\s+/).filter(Boolean);
+  return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+}
+
+function formatRelativeTime(value) {
+  if (!value) return "Just now";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+
+  const diffMs = parsed.getTime() - Date.now();
+  const absSeconds = Math.abs(diffMs) / 1000;
+  const units = [
+    ["day", 86400],
+    ["hour", 3600],
+    ["minute", 60],
+  ];
+
+  for (const [unit, seconds] of units) {
+    if (absSeconds >= seconds) {
+      const amount = Math.round(diffMs / 1000 / seconds);
+      if (relativeTimeFormatter) return relativeTimeFormatter.format(amount, unit);
+      return `${Math.abs(amount)}${unit.charAt(0)} ${amount < 0 ? "ago" : "from now"}`;
+    }
+  }
+
+  return "Just now";
+}
+
+function summarizeRunTime(value) {
+  const parsed = new Date(value || "");
+  if (Number.isNaN(parsed.getTime())) return formatRelativeTime(value);
+  return `${formatRelativeTime(value)} at ${parsed.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+}
+
+function normalizeDelegationChildSummary(value) {
+  if (!value || typeof value !== "object") return null;
+  const childId =
+    typeof value.childId === "string" && value.childId.trim()
+      ? value.childId.trim()
+      : typeof value.id === "string" && value.id.trim()
+        ? value.id.trim()
+        : "";
+  if (!childId) return null;
+  return {
+    childId,
+    ...(typeof value.status === "string" && value.status.trim() ? { status: value.status.trim() } : {}),
+    ...(typeof value.summary === "string" && value.summary.trim() ? { summary: value.summary.trim() } : {}),
+    ...(typeof value.agentType === "string" && value.agentType.trim() ? { agentType: value.agentType.trim() } : {}),
+    ...(typeof value.traceId === "string" && value.traceId.trim() ? { traceId: value.traceId.trim() } : {}),
+    ...(typeof value.completedAt === "string" && value.completedAt.trim() ? { completedAt: value.completedAt.trim() } : {}),
+  };
+}
+
+function mergeDelegationChildSummaries(existing, incoming) {
+  const merged = new Map();
+  for (const item of Array.isArray(existing) ? existing : []) {
+    if (item?.childId) merged.set(item.childId, item);
+  }
+  for (const item of Array.isArray(incoming) ? incoming : []) {
+    if (!item?.childId) continue;
+    merged.set(item.childId, {
+      ...(merged.get(item.childId) || {}),
+      ...item,
+    });
+  }
+  return [...merged.values()];
+}
+
+function countDelegationChildren(childSummaries, statuses) {
+  if (!Array.isArray(childSummaries) || !childSummaries.length) return 0;
+  const wanted = new Set(statuses);
+  return childSummaries.filter((item) => wanted.has(String(item?.status || "").trim())).length;
+}
+
+function buildDelegationBadgeLabel(execution) {
+  if (!execution?.delegationUsed) return "";
+  const childCount = Number.isFinite(Number(execution.childCount))
+    ? Math.max(0, Number(execution.childCount))
+    : Array.isArray(execution.childSummaries)
+      ? execution.childSummaries.length
+      : 0;
+  return childCount > 0 ? `${formatCountLabel(childCount, "sub-agent")}` : "Delegated";
+}
+
+function summarizeDelegationExecution(execution) {
+  if (!execution?.delegationUsed) return "";
+  const childCount = Number.isFinite(Number(execution.childCount))
+    ? Math.max(0, Number(execution.childCount))
+    : Array.isArray(execution.childSummaries)
+      ? execution.childSummaries.length
+      : 0;
+  const completedChildren = Number.isFinite(Number(execution.completedChildren))
+    ? Math.max(0, Number(execution.completedChildren))
+    : countDelegationChildren(execution.childSummaries, ["completed"]);
+  const failedChildren = Number.isFinite(Number(execution.failedChildren))
+    ? Math.max(0, Number(execution.failedChildren))
+    : countDelegationChildren(execution.childSummaries, ["failed", "cancelled"]);
+  const base = childCount > 0 ? `Delegated ${formatCountLabel(childCount, "subtask")}` : "Delegated";
+  const details = [
+    completedChildren > 0 ? `${completedChildren} done` : "",
+    failedChildren > 0 ? `${failedChildren} failed` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+  return details ? `${base} (${details})` : base;
+}
+
+function buildDelegationCompletionLines(execution) {
+  if (!execution?.delegationUsed) return [];
+  const childSummaries = Array.isArray(execution.childSummaries) ? execution.childSummaries : [];
+  const completedChildren = Number.isFinite(Number(execution.completedChildren))
+    ? Math.max(0, Number(execution.completedChildren))
+    : countDelegationChildren(childSummaries, ["completed"]);
+  const failedChildren = Number.isFinite(Number(execution.failedChildren))
+    ? Math.max(0, Number(execution.failedChildren))
+    : countDelegationChildren(childSummaries, ["failed", "cancelled"]);
+  const lines = [
+    summarizeDelegationExecution(execution),
+    execution.delegationReason ? `Delegation focus: ${execution.delegationReason}` : "",
+    failedChildren > 0 ? `${failedChildren} delegated subtask(s) needed parent fallback or partial handling.` : "",
+  ].filter(Boolean);
+  for (const child of childSummaries.slice(0, 3)) {
+    const status = String(child.status || "").trim();
+    const summary = String(child.summary || "").trim();
+    if (!status && !summary) continue;
+    lines.push(`Child ${child.childId}: ${[status, summary].filter(Boolean).join(" - ")}`);
+  }
+  if (!lines.length && completedChildren > 0) {
+    lines.push(`${completedChildren} delegated subtask(s) completed successfully.`);
+  }
+  return lines;
 }
 
 function createTranscriptTurn(role, text = "") {
@@ -332,21 +484,31 @@ function seedTranscriptFromRun(run, fallbackAssistantText = "") {
 
 function summarizeExecutionState(execution) {
   if (!execution || typeof execution !== "object") return "";
+  const lane = formatExecutionLaneLabel(execution.executionLane);
   const mode = String(execution.interactionMode || "").replace(/_/g, " ");
   const visibility = String(execution.executionVisibility || "").replace(/_/g, " ");
+  const delegation = summarizeDelegationExecution(execution);
   const summary = String(execution.executionSummary || execution.visibleFallbackReason || "").trim();
-  return [mode, visibility, summary].filter(Boolean).join(" • ");
+  return [lane, mode, visibility, delegation, summary].filter(Boolean).join(" • ");
 }
 
 function buildExecutionBadges(execution) {
   if (!execution || typeof execution !== "object") return "";
   const badges = [];
+  const executionLane = formatExecutionLaneLabel(execution.executionLane);
   const mode = String(execution.interactionMode || "").trim();
   const visibility = String(execution.executionVisibility || "").trim();
   const speedProfile = String(execution.selectedSpeedProfile || execution.speedProfile || "").trim();
   const latencyTier = String(execution.selectedLatencyTier || execution.latencyTier || "").trim();
   const startupPhase = String(execution.startupPhase || "").trim();
   const escalationStage = String(execution.escalationStage || "").trim();
+  const delegationLabel = buildDelegationBadgeLabel(execution);
+  if (executionLane) {
+    badges.push(`<span class="status-pill status-pill--subtle">${escapeHtml(executionLane)}</span>`);
+  }
+  if (delegationLabel) {
+    badges.push(`<span class="status-pill status-pill--safe">${escapeHtml(delegationLabel)}</span>`);
+  }
   if (mode) badges.push(`<span class="status-pill">${escapeHtml(mode.replace(/_/g, " "))}</span>`);
   if (visibility) {
     const kind = visibility === "visible_required" ? "warning" : visibility === "background" ? "safe" : "neutral";
@@ -398,9 +560,27 @@ function deriveExecutionState(source, fallback = null) {
   const execution = source?.lastExecutionState && typeof source.lastExecutionState === "object" ? source.lastExecutionState : {};
   const progress = source?.progressState && typeof source.progressState === "object" ? source.progressState : {};
   const objective = source?.objectiveState && typeof source.objectiveState === "object" ? source.objectiveState : {};
+  const fallbackChildSummaries = Array.isArray(fallback?.childSummaries)
+    ? fallback.childSummaries.map((item) => normalizeDelegationChildSummary(item)).filter(Boolean)
+    : [];
+  const executionChildSummaries = Array.isArray(execution.childSummaries)
+    ? execution.childSummaries.map((item) => normalizeDelegationChildSummary(item)).filter(Boolean)
+    : [];
+  const directChildSummaries = Array.isArray(source?.childSummaries)
+    ? source.childSummaries.map((item) => normalizeDelegationChildSummary(item)).filter(Boolean)
+    : [];
+  const childSummaries = mergeDelegationChildSummaries(
+    mergeDelegationChildSummaries(fallbackChildSummaries, executionChildSummaries),
+    directChildSummaries
+  );
   const merged = {
     ...(fallback && typeof fallback === "object" ? fallback : {}),
     ...execution,
+    ...(typeof source?.delegationUsed === "boolean" ? { delegationUsed: source.delegationUsed } : {}),
+    ...(typeof source?.delegationReason === "string" ? { delegationReason: source.delegationReason } : {}),
+    ...(typeof source?.childCount === "number" ? { childCount: source.childCount } : {}),
+    ...(typeof source?.completedChildren === "number" ? { completedChildren: source.completedChildren } : {}),
+    ...(typeof source?.failedChildren === "number" ? { failedChildren: source.failedChildren } : {}),
     ...(objective.chosenRoute ? { chosenRoute: objective.chosenRoute } : {}),
     ...(objective.routeReason ? { routeReason: objective.routeReason } : {}),
     ...(objective.verificationStatus ? { verificationStatus: objective.verificationStatus } : {}),
@@ -417,7 +597,15 @@ function deriveExecutionState(source, fallback = null) {
     ...(progress.selectedSpeedProfile ? { selectedSpeedProfile: progress.selectedSpeedProfile } : {}),
     ...(progress.selectedLatencyTier ? { selectedLatencyTier: progress.selectedLatencyTier } : {}),
     ...(progress.taskSpeedClass ? { taskSpeedClass: progress.taskSpeedClass } : {}),
+    ...(childSummaries.length ? { childSummaries } : {}),
   };
+  if (typeof merged.childCount !== "number" && childSummaries.length) merged.childCount = childSummaries.length;
+  if (typeof merged.completedChildren !== "number" && childSummaries.length) {
+    merged.completedChildren = countDelegationChildren(childSummaries, ["completed"]);
+  }
+  if (typeof merged.failedChildren !== "number" && childSummaries.length) {
+    merged.failedChildren = countDelegationChildren(childSummaries, ["failed", "cancelled"]);
+  }
   return Object.keys(merged).length ? merged : null;
 }
 
@@ -477,6 +665,31 @@ function parseComposerCommand(input) {
   const normalized = String(input || "").trim();
   if (normalized === PLAN_MODE_COMMAND) return "toggle_plan_mode";
   return null;
+}
+
+function runStarterPrompt(prompt) {
+  const task = String(prompt || "").trim();
+  if (!task || state.activeStream) return;
+  el.landingTaskInput.value = "";
+  el.taskInput.value = "";
+  updateComposerSubmitState();
+  void startRun(task);
+}
+
+function handleThreadEmptyStateAction(actionId) {
+  if (actionId === "starter-audit") {
+    const [starter] = buildLandingStarterPrompts();
+    runStarterPrompt(starter?.prompt || "Audit the Binary desktop app and suggest the next UX polish pass.");
+    return;
+  }
+  if (actionId === "open-settings") {
+    openSheet(el.settingsSheet);
+    return;
+  }
+  if (actionId === "new-chat") {
+    resetChat();
+    queueMicrotask(() => el.landingTaskInput.focus());
+  }
 }
 
 function toggleAssistMode() {
@@ -800,6 +1013,104 @@ function deriveWorkspaceTitle() {
   return STARTER_USER_PROMPT;
 }
 
+function buildLandingStarterPrompts() {
+  const focusRoot = getSelectedWorkspaceRoot() || state.preferences?.focusWorkspaceRoot || "";
+  const focusLabel = focusRoot ? deriveFocusRootLabel() : "this machine";
+  return [
+    {
+      label: "Audit the desktop app",
+      detail: "Find the next UX polish pass and surface the rough edges worth fixing.",
+      prompt: "Audit the Binary desktop app and suggest the highest-impact UX polish pass we should tackle next.",
+    },
+    {
+      label: "Map the workspace",
+      detail: "Summarize structure, risks, and the best place to start.",
+      prompt: `Summarize the ${focusLabel} workspace and tell me where Binary should start contributing first.`,
+    },
+    {
+      label: "Find quick wins",
+      detail: "Look for reliability, DX, and UI improvements.",
+      prompt: `Find quick wins in reliability, UX, and developer experience for ${focusLabel}.`,
+    },
+    {
+      label: "Check missing context",
+      detail: "See what Binary should gather before editing.",
+      prompt: `Check what context is still missing for ${focusLabel} before editing, and tell me what Binary should gather next.`,
+    },
+  ];
+}
+
+function renderLandingSupport() {
+  if (!el.landingStatusCards || !el.landingStarterPrompts) return;
+
+  const focusRoot = getSelectedWorkspaceRoot() || state.preferences?.focusWorkspaceRoot || "";
+  const machineHomeLabel = deriveMachineHomeLabel();
+  const focusLabel = focusRoot ? deriveFocusRootLabel() : machineHomeLabel;
+  const connectedProviders = state.providers.filter((provider) => provider.connected).length;
+  const enabledConnections = state.connections.filter((connection) => connection.enabled).length;
+  const selectedPacks = Array.isArray(state.selectedPluginPacks) ? state.selectedPluginPacks.length : 0;
+  const latestRun = state.runs[0] || null;
+  const latestRunTask = String(latestRun?.request?.task || "Start with a focused repo question.").trim();
+
+  const cards = [
+    {
+      label: "Focus",
+      value: focusLabel,
+      detail: focusRoot ? "Focused folder is ready for coding and checks." : "Using machine home context across the desktop.",
+    },
+    {
+      label: "Runtime",
+      value: state.hostAvailable ? "Connected" : "Offline",
+      detail: state.hostAvailable ? "Binary Host is reachable for local runs." : "Start Binary Host to run desktop tasks.",
+    },
+    {
+      label: "Connected",
+      value: connectedProviders
+        ? formatCountLabel(connectedProviders, "provider")
+        : enabledConnections
+          ? formatCountLabel(enabledConnections, "service")
+          : selectedPacks
+            ? formatCountLabel(selectedPacks, "pack")
+            : "No extras yet",
+      detail: connectedProviders
+        ? "Bring-your-own-model accounts are ready."
+        : enabledConnections
+          ? "Approved external services are available."
+          : selectedPacks
+            ? "Default OpenHands packs will shape new runs."
+            : "Plugins, providers, and services can be added in settings.",
+    },
+    {
+      label: "Latest",
+      value: latestRun ? formatRunStatusLabel(latestRun.status) : "No runs yet",
+      detail: latestRun ? `${summarizeRunTime(latestRun.updatedAt || latestRun.createdAt)} - ${latestRunTask}` : latestRunTask,
+    },
+  ];
+
+  el.landingStatusCards.innerHTML = cards
+    .map(
+      (card) => `
+        <article class="landing-status-card">
+          <span class="landing-status-card__label">${escapeHtml(card.label)}</span>
+          <strong class="landing-status-card__value">${escapeHtml(card.value)}</strong>
+          <span class="landing-status-card__detail">${escapeHtml(card.detail)}</span>
+        </article>
+      `
+    )
+    .join("");
+
+  el.landingStarterPrompts.innerHTML = buildLandingStarterPrompts()
+    .map(
+      (prompt) => `
+        <button class="landing-starter" data-starter-prompt="${escapeHtml(prompt.prompt)}" type="button">
+          <strong>${escapeHtml(prompt.label)}</strong>
+          <span>${escapeHtml(prompt.detail)}</span>
+        </button>
+      `
+    )
+    .join("");
+}
+
 function renderStatusMeta() {
   const machineHome = getMachineHomeRoot();
   const focusRoot = getSelectedWorkspaceRoot() || state.preferences?.focusWorkspaceRoot || "";
@@ -845,6 +1156,7 @@ function renderStatusMeta() {
       "main";
     el.branchStatus.textContent = branch;
   }
+  renderLandingSupport();
   return;
   if (workspace) {
     el.contextStatus.textContent = `Context: ${workspace}`;
@@ -1126,6 +1438,7 @@ function buildCompletionReceipt() {
   const run = state.currentRun || currentRunSummary();
   const closurePhase = String(state.closureState?.closurePhase || "").trim();
   if (!run || run.status !== "completed") return "";
+  const execution = deriveExecutionState(run.finalEnvelope || run, run.lastExecutionState || null) || run.lastExecutionState || {};
   const checklist = Array.isArray(run.finalEnvelope?.objectiveState?.completionChecklist)
     ? run.finalEnvelope.objectiveState.completionChecklist
     : [];
@@ -1147,6 +1460,7 @@ function buildCompletionReceipt() {
     buildDesktopProofLine(run),
     proofHighlights.length ? `Proof: ${proofHighlights.join(" • ")}` : "",
     run.lastExecutionState?.executionVisibility === "visible_required" ? "Visible interaction was used intentionally." : "",
+    ...buildDelegationCompletionLines(execution),
   ].filter(Boolean);
   if (!completed.length && !lines.length) return "";
   return `
@@ -1702,7 +2016,7 @@ function renderRuns() {
     (run) => `
       <article>
         <strong>${escapeHtml(run.request?.task || run.id)}</strong>
-        <span>${escapeHtml(run.status)} • ${escapeHtml(run.updatedAt || run.createdAt || "")}</span>
+        <span>${escapeHtml(run.status)}${run.delegationUsed ? " • delegated" : ""} • ${escapeHtml(run.updatedAt || run.createdAt || "")}</span>
         <button class="history-item__button" data-run-id="${escapeHtml(run.id)}" type="button">Open</button>
       </article>
     `
@@ -1710,8 +2024,18 @@ function renderRuns() {
 
   if (!el.threadList) return;
   if (!state.runs.length) {
-    el.threadList.classList.add("empty");
-    el.threadList.textContent = "No threads yet.";
+    el.threadList.classList.remove("empty");
+    el.threadList.innerHTML = `
+      <div class="thread-empty-state">
+        <strong class="thread-empty-state__title">No threads yet</strong>
+        <p class="thread-empty-state__copy">Start with a repo audit, open your runtime settings, or ask Binary to map the current workspace.</p>
+        <div class="thread-empty-state__actions">
+          <button class="thread-empty-state__button" data-thread-empty-action="starter-audit" type="button">Run a quick audit</button>
+          <button class="thread-empty-state__button thread-empty-state__button--secondary" data-thread-empty-action="open-settings" type="button">Open runtime</button>
+        </div>
+      </div>
+    `;
+    renderLandingSupport();
     return;
   }
   const activeId = currentRunSummary()?.id || state.activeRunId || "";
@@ -1730,13 +2054,14 @@ function renderRuns() {
         <button class="thread-item${run.id === activeId ? " thread-item--active" : ""}" data-run-id="${escapeHtml(run.id)}" type="button">
           <span class="thread-item__title">${escapeHtml(task)}</span>
           <span class="thread-item__meta">
-            <span class="thread-item__status ${tone}">${escapeHtml(run.status || "queued")}</span>
-            <span class="thread-item__time">${escapeHtml(run.updatedAt || run.createdAt || "")}</span>
+            <span class="thread-item__status ${tone}">${escapeHtml(formatRunStatusLabel(run.status || "queued"))}</span>
+            <span class="thread-item__time">${escapeHtml(`${formatRelativeTime(run.updatedAt || run.createdAt || "")}${run.delegationUsed ? " • delegated" : ""}`)}</span>
           </span>
         </button>
       `;
     })
     .join("");
+  renderLandingSupport();
 }
 
 function renderRecentSessions() {
@@ -1774,12 +2099,55 @@ function describeSkillSourceKind(kind) {
   return "User skills";
 }
 
+function normalizeExecutionLaneSelection(value) {
+  if (value === "local_interactive" || value === "openhands_headless" || value === "openhands_remote") {
+    return value;
+  }
+  return "auto";
+}
+
+function formatExecutionLaneLabel(value) {
+  if (value === "local_interactive") return "Local interactive";
+  if (value === "openhands_headless") return "Headless OpenHands";
+  if (value === "openhands_remote") return "Remote OpenHands";
+  if (value === "auto") return "Auto (adaptive)";
+  return "";
+}
+
 function togglePluginPackSelection(packId) {
   const selected = new Set(state.selectedPluginPacks || []);
   if (selected.has(packId)) selected.delete(packId);
   else selected.add(packId);
   state.selectedPluginPacks = [...selected];
   renderOpenHandsCapabilities();
+}
+
+async function saveExecutionLanePreference() {
+  const preferredExecutionLane = normalizeExecutionLaneSelection(
+    el.executionLaneSelect?.value || state.selectedExecutionLane
+  );
+  state.selectedExecutionLane = preferredExecutionLane;
+  await requestJson("/v1/preferences", {
+    method: "POST",
+    body: {
+      preferredExecutionLane: preferredExecutionLane === "auto" ? null : preferredExecutionLane,
+    },
+  });
+  await hydrate();
+}
+
+async function clearExecutionLanePreference() {
+  state.selectedExecutionLane = "auto";
+  if (el.executionLaneSelect) {
+    el.executionLaneSelect.value = "auto";
+  }
+  await requestJson("/v1/preferences", {
+    method: "POST",
+    body: {
+      preferredExecutionLane: null,
+    },
+  });
+  await hydrate();
 }
 
 async function savePluginDefaults() {
@@ -1809,6 +2177,18 @@ function renderOpenHandsCapabilities() {
   const pluginPacks = Array.isArray(capabilities?.pluginPacks) ? capabilities.pluginPacks : [];
   const skillSources = Array.isArray(capabilities?.skillSources) ? capabilities.skillSources : [];
   const selected = new Set(state.selectedPluginPacks || []);
+  const selectedExecutionLane = normalizeExecutionLaneSelection(state.selectedExecutionLane);
+  const preferredExecutionLane = normalizeExecutionLaneSelection(
+    capabilities?.preferredExecutionLane || state.preferences?.preferredExecutionLane
+  );
+  const remoteHealth = state.remoteRuntimeHealth;
+  const remoteStatus = String(remoteHealth?.status || "").trim() || "unavailable";
+  const remotePillKind =
+    remoteStatus === "ready"
+      ? "safe"
+      : remoteStatus === "degraded"
+        ? "warning"
+        : "danger";
 
   if (el.openhandsOfferings) {
     if (!offerings.length) {
@@ -1836,6 +2216,37 @@ function renderOpenHandsCapabilities() {
         )
         .join("");
     }
+  }
+
+  if (el.executionLaneSelect) {
+    el.executionLaneSelect.value = selectedExecutionLane;
+  }
+
+  if (el.remoteRuntimeStatus) {
+    const remoteStatusLabel = remoteHealth?.configured ? remoteStatus.replace(/_/g, " ") : "not configured";
+    const remoteGatewayLabel = String(remoteHealth?.gatewayUrl || "").trim();
+    const remoteDetail = String(remoteHealth?.details || "").trim();
+    el.remoteRuntimeStatus.innerHTML = `
+      <div class="plugin-card__header">
+        <strong>Remote OpenHands runtime</strong>
+        <span class="status-pill status-pill--${remotePillKind}">${escapeHtml(remoteStatusLabel)}</span>
+      </div>
+      <p class="plugin-card__copy">${escapeHtml(
+        remoteHealth?.message || "Binary has not received remote runtime health from the host yet."
+      )}</p>
+      <div class="plugin-card__meta">
+        <span class="status-pill status-pill--subtle">${escapeHtml(
+          remoteHealth?.compatibility || "unknown"
+        )}</span>
+        <span class="status-pill status-pill--subtle">${escapeHtml(
+          preferredExecutionLane === "auto"
+            ? "Adaptive default active"
+            : `Saved preference: ${formatExecutionLaneLabel(preferredExecutionLane)}`
+        )}</span>
+      </div>
+      ${remoteGatewayLabel ? `<code>${escapeHtml(remoteGatewayLabel)}</code>` : ""}
+      ${remoteDetail ? `<p class="plugin-card__copy">${escapeHtml(remoteDetail)}</p>` : ""}
+    `;
   }
 
   if (el.pluginPackList) {
@@ -1900,6 +2311,13 @@ function renderOpenHandsCapabilities() {
 
   if (el.savePluginDefaults) {
     el.savePluginDefaults.textContent = selected.size ? `Save defaults (${selected.size})` : "Save defaults";
+  }
+
+  if (el.saveExecutionLane) {
+    el.saveExecutionLane.textContent =
+      selectedExecutionLane === "auto"
+        ? "Save lane preference"
+        : `Save ${formatExecutionLaneLabel(selectedExecutionLane)}`;
   }
 }
 
@@ -2390,6 +2808,66 @@ function applyEventToState(event) {
     };
   }
 
+  if (eventName === "delegation.started" || eventName === "delegation.child_status" || eventName === "delegation.completed") {
+    const incomingChildSummaries = Array.isArray(data?.childSummaries)
+      ? data.childSummaries.map((item) => normalizeDelegationChildSummary(item)).filter(Boolean)
+      : Array.isArray(data?.children)
+        ? data.children.map((item) => normalizeDelegationChildSummary(item)).filter(Boolean)
+        : [];
+    const directChildSummary = normalizeDelegationChildSummary(data?.childSummary || data);
+    const childSummaries = mergeDelegationChildSummaries(
+      state.currentExecution?.childSummaries || [],
+      incomingChildSummaries.length ? incomingChildSummaries : directChildSummary ? [directChildSummary] : []
+    );
+    const childCount = Number.isFinite(Number(data?.childCount))
+      ? Math.max(0, Number(data.childCount))
+      : childSummaries.length || state.currentExecution?.childCount || 0;
+    const completedChildren = Number.isFinite(Number(data?.completedChildren))
+      ? Math.max(0, Number(data.completedChildren))
+      : countDelegationChildren(childSummaries, ["completed"]);
+    const failedChildren = Number.isFinite(Number(data?.failedChildren))
+      ? Math.max(0, Number(data.failedChildren))
+      : countDelegationChildren(childSummaries, ["failed", "cancelled"]);
+    state.currentExecution = {
+      ...(state.currentExecution || {}),
+      delegationUsed: typeof data?.delegationUsed === "boolean" ? data.delegationUsed : true,
+      ...(typeof data?.delegationReason === "string" && data.delegationReason.trim()
+        ? { delegationReason: data.delegationReason.trim() }
+        : {}),
+      ...(childSummaries.length ? { childSummaries } : {}),
+      childCount,
+      completedChildren,
+      failedChildren,
+    };
+
+    if (eventName === "delegation.started") {
+      const message =
+        childCount > 0
+          ? `I’m splitting this into ${formatCountLabel(childCount, "subtask")} so we can work in parallel.`
+          : "I’m delegating a few independent subtasks so we can move faster.";
+      state.streamStatusText = "Delegating parallel subtasks.";
+      appendAssistantNarration(message);
+    }
+
+    if (eventName === "delegation.child_status" && directChildSummary) {
+      const status = String(directChildSummary.status || "updated").trim().replace(/_/g, " ");
+      const summary = String(directChildSummary.summary || "").trim();
+      state.streamStatusText = summary || `Delegated child ${directChildSummary.childId} ${status}.`;
+      appendAssistantNarration(
+        `Delegated child ${directChildSummary.childId} ${status}${summary ? `: ${summary}` : "."}`
+      );
+    }
+
+    if (eventName === "delegation.completed") {
+      state.streamStatusText = failedChildren > 0 ? "Delegation finished with partial failures." : "Delegation complete.";
+      appendAssistantNarration(
+        failedChildren > 0
+          ? `Delegation finished with ${failedChildren} child failure${failedChildren === 1 ? "" : "s"}, and the parent is merging partial results.`
+          : `Delegation finished and the parent is merging ${formatCountLabel(completedChildren || childCount, "result")}.`
+      );
+    }
+  }
+
   if (eventName === "final" && typeof data === "string") {
     state.assistantText = data;
     updateActiveAssistantTurn(data);
@@ -2400,7 +2878,7 @@ function applyEventToState(event) {
       state.desktopLivePhase = "Verifying";
       state.desktopLiveSummary = "Finalizing proof and wrap-up.";
     } else {
-      state.currentExecution = null;
+      state.currentExecution = state.currentExecution?.delegationUsed ? state.currentExecution : null;
     }
   }
 
@@ -2508,13 +2986,15 @@ async function hydrate() {
   host.baseUrl = runtimeInfo.hostUrl || host.baseUrl;
   const preservedMachineHome = el.machineRootInput?.value.trim() || "";
   const preservedWorkspace = el.workspaceInput.value.trim();
+  const preservedExecutionLane = normalizeExecutionLaneSelection(state.selectedExecutionLane);
 
   try {
-    const [health, auth, preferences, openhandsCapabilities, providerCatalogResponse, providersResponse, connectionsResponse, autonomy, worldModel, runsResponse, automationsResponse, webhooksResponse, appearance] = await Promise.all([
+    const [health, auth, preferences, openhandsCapabilities, remoteRuntimeHealth, providerCatalogResponse, providersResponse, connectionsResponse, autonomy, worldModel, runsResponse, automationsResponse, webhooksResponse, appearance] = await Promise.all([
       requestJson("/v1/healthz"),
       requestJson("/v1/auth/status"),
       requestJson("/v1/preferences"),
       requestJson(`/v1/openhands/capabilities${preservedWorkspace ? `?workspaceRoot=${encodeURIComponent(preservedWorkspace)}` : ""}`),
+      requestJson("/v1/agents/remote/health").catch(() => null),
       requestJson("/v1/providers/catalog"),
       requestJson("/v1/providers"),
       requestJson("/v1/connections"),
@@ -2529,6 +3009,11 @@ async function hydrate() {
       state.auth = auth;
       state.preferences = preferences;
       state.openhandsCapabilities = openhandsCapabilities;
+      state.remoteRuntimeHealth = remoteRuntimeHealth;
+      const preferredExecutionLane = normalizeExecutionLaneSelection(
+        openhandsCapabilities?.preferredExecutionLane || preferences?.preferredExecutionLane
+      );
+      state.selectedExecutionLane = preferredExecutionLane !== "auto" ? preferredExecutionLane : preservedExecutionLane;
       state.selectedPluginPacks = Array.isArray(openhandsCapabilities?.defaultPluginPacks)
         ? openhandsCapabilities.defaultPluginPacks
         : Array.isArray(preferences?.defaultPluginPacks)
@@ -2588,6 +3073,8 @@ async function hydrate() {
     renderPaletteActions(el.paletteSearch.value || "");
     } catch (error) {
       state.openhandsCapabilities = null;
+      state.remoteRuntimeHealth = null;
+      state.selectedExecutionLane = preservedExecutionLane;
       state.selectedPluginPacks = [];
       renderHostStatus(false, error instanceof Error ? error.message : String(error), "Build and start services/binary-host to activate the desktop shell.");
       renderWorldModelStatus();
@@ -3053,6 +3540,7 @@ async function startRun(task) {
       mode: state.assistMode,
       model: "Binary IDE",
       speedProfile: "fast",
+      ...(state.selectedExecutionLane !== "auto" ? { executionLane: state.selectedExecutionLane } : {}),
       ...(state.selectedPluginPacks.length ? { pluginPacks: state.selectedPluginPacks } : {}),
       ...(machineRootPath ? { machineRootPath } : {}),
       ...(focusWorkspaceRoot ? { workspaceRoot: focusWorkspaceRoot, focusWorkspaceRoot, focusRepoRoot: focusWorkspaceRoot } : {}),
@@ -3313,6 +3801,25 @@ if (el.savePluginDefaults) {
   });
 }
 
+if (el.saveExecutionLane) {
+  el.saveExecutionLane.addEventListener("click", () => {
+    void saveExecutionLanePreference();
+  });
+}
+
+if (el.clearExecutionLane) {
+  el.clearExecutionLane.addEventListener("click", () => {
+    void clearExecutionLanePreference();
+  });
+}
+
+if (el.executionLaneSelect) {
+  el.executionLaneSelect.addEventListener("change", () => {
+    state.selectedExecutionLane = normalizeExecutionLaneSelection(el.executionLaneSelect.value);
+    renderOpenHandsCapabilities();
+  });
+}
+
 if (el.clearPluginDefaults) {
   el.clearPluginDefaults.addEventListener("click", () => {
     void clearPluginDefaults();
@@ -3462,6 +3969,19 @@ document.addEventListener("click", (event) => {
   const closeTarget = target.closest("[data-close-sheet]");
   if (closeTarget) {
     closeAllSheets();
+    return;
+  }
+
+  const starterPromptButton = target.closest("[data-starter-prompt]");
+  if (starterPromptButton) {
+    const prompt = starterPromptButton.getAttribute("data-starter-prompt") || "";
+    runStarterPrompt(prompt);
+    return;
+  }
+
+  const emptyStateAction = target.closest("[data-thread-empty-action]");
+  if (emptyStateAction) {
+    handleThreadEmptyStateAction(emptyStateAction.getAttribute("data-thread-empty-action") || "");
     return;
   }
 

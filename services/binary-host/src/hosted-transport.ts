@@ -1,5 +1,26 @@
 type AssistMode = "auto" | "plan" | "yolo" | "generate" | "debug";
 type HostedAssistMode = "auto" | "plan" | "yolo";
+export type HostedDelegationMode = "auto";
+export type HostedDelegationVisibility = "summary_only";
+export type HostedDelegationAgentType = "default";
+export type HostedDelegationStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+
+export type HostedDelegationConfig = {
+  enabled: boolean;
+  mode: HostedDelegationMode;
+  maxChildren: number;
+  visibility: HostedDelegationVisibility;
+  supportedAgentTypes: HostedDelegationAgentType[];
+};
+
+export type HostedDelegationChildSummary = {
+  childId: string;
+  status?: HostedDelegationStatus | string;
+  summary?: string;
+  agentType?: HostedDelegationAgentType | string;
+  traceId?: string;
+  completedAt?: string;
+};
 
 export type HostedAssistRequest = {
   task: string;
@@ -52,6 +73,7 @@ export type HostedAssistRequest = {
     autoExecute?: boolean;
     supportsNativeToolResults?: boolean;
   };
+  delegation?: HostedDelegationConfig;
   userConnectedModels?: Array<{
     alias: string;
     provider: string;
@@ -96,6 +118,25 @@ export type HostedToolResult = {
   createdAt?: string;
 };
 
+export type HostedUserInputOption = {
+  label: string;
+  description?: string;
+};
+
+export type HostedUserInputQuestion = {
+  header?: string;
+  id: string;
+  question: string;
+  options?: HostedUserInputOption[];
+  isOther?: boolean;
+  placeholder?: string;
+};
+
+export type HostedUserInputRequest = {
+  requestId: string;
+  questions: HostedUserInputQuestion[];
+};
+
 export type HostedAssistRunEnvelope = {
   sessionId?: string;
   traceId?: string;
@@ -105,10 +146,17 @@ export type HostedAssistRunEnvelope = {
   conversationId?: string | null;
   persistenceDir?: string | null;
   jsonlPath?: string | null;
+  delegationUsed?: boolean;
+  delegationReason?: string;
+  childCount?: number;
+  completedChildren?: number;
+  failedChildren?: number;
+  childSummaries?: HostedDelegationChildSummary[];
   final?: string;
   completionStatus?: "complete" | "incomplete";
   runId?: string;
   adapter?: string;
+  userInputRequest?: HostedUserInputRequest | null;
   pendingToolCall?: HostedPendingToolCall | null;
   receipt?: Record<string, unknown> | null;
   reviewState?: Record<string, unknown> | null;
@@ -221,6 +269,108 @@ async function parseHostedError(response: Response): Promise<{ message: string; 
   }
 }
 
+function normalizeDelegationChildSummary(value: unknown): HostedDelegationChildSummary | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const childId =
+    typeof record.childId === "string" && record.childId.trim()
+      ? record.childId.trim()
+      : typeof record.id === "string" && record.id.trim()
+        ? record.id.trim()
+        : "";
+  if (!childId) return null;
+  return {
+    childId,
+    ...(typeof record.status === "string" && record.status.trim() ? { status: record.status.trim() } : {}),
+    ...(typeof record.summary === "string" && record.summary.trim() ? { summary: record.summary.trim() } : {}),
+    ...(typeof record.agentType === "string" && record.agentType.trim() ? { agentType: record.agentType.trim() } : {}),
+    ...(typeof record.traceId === "string" && record.traceId.trim() ? { traceId: record.traceId.trim() } : {}),
+    ...(typeof record.completedAt === "string" && record.completedAt.trim()
+      ? { completedAt: record.completedAt.trim() }
+      : {}),
+  };
+}
+
+function normalizeDelegationChildSummaries(value: unknown): HostedDelegationChildSummary[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const childSummaries = value
+    .map((item) => normalizeDelegationChildSummary(item))
+    .filter((item): item is HostedDelegationChildSummary => Boolean(item));
+  return childSummaries.length ? childSummaries : undefined;
+}
+
+function mergeDelegationChildSummaries(
+  existing: HostedDelegationChildSummary[] | undefined,
+  incoming: HostedDelegationChildSummary[] | undefined
+): HostedDelegationChildSummary[] | undefined {
+  if (!incoming?.length) return existing;
+  const merged = new Map<string, HostedDelegationChildSummary>();
+  for (const item of existing || []) {
+    merged.set(item.childId, item);
+  }
+  for (const item of incoming) {
+    merged.set(item.childId, {
+      ...(merged.get(item.childId) || {}),
+      ...item,
+    });
+  }
+  return [...merged.values()];
+}
+
+function countDelegationChildren(
+  childSummaries: HostedDelegationChildSummary[] | undefined,
+  statuses: readonly string[]
+): number | undefined {
+  if (!childSummaries?.length) return undefined;
+  const wanted = new Set(statuses);
+  return childSummaries.filter((item) => wanted.has(String(item.status || "").trim())).length;
+}
+
+function applyDelegationData(
+  envelope: HostedAssistRunEnvelope,
+  data: Record<string, unknown>,
+  options: { markDelegationUsed?: boolean } = {}
+): void {
+  const hasExplicitChildCount = typeof data.childCount === "number" && Number.isFinite(data.childCount);
+  const hasExplicitCompletedChildren =
+    typeof data.completedChildren === "number" && Number.isFinite(data.completedChildren);
+  const hasExplicitFailedChildren = typeof data.failedChildren === "number" && Number.isFinite(data.failedChildren);
+  if (typeof data.delegationUsed === "boolean") {
+    envelope.delegationUsed = data.delegationUsed;
+  } else if (options.markDelegationUsed) {
+    envelope.delegationUsed = true;
+  }
+  if (typeof data.delegationReason === "string" && data.delegationReason.trim()) {
+    envelope.delegationReason = data.delegationReason.trim();
+  }
+  if (hasExplicitChildCount) {
+    envelope.childCount = Math.max(0, Math.round(Number(data.childCount)));
+  }
+  if (hasExplicitCompletedChildren) {
+    envelope.completedChildren = Math.max(0, Math.round(Number(data.completedChildren)));
+  }
+  if (hasExplicitFailedChildren) {
+    envelope.failedChildren = Math.max(0, Math.round(Number(data.failedChildren)));
+  }
+  const directChildSummary = normalizeDelegationChildSummary(data.childSummary || data);
+  const childSummaries = mergeDelegationChildSummaries(
+    envelope.childSummaries,
+    normalizeDelegationChildSummaries(data.childSummaries) ||
+      normalizeDelegationChildSummaries(data.children) ||
+      (directChildSummary ? [directChildSummary] : undefined)
+  );
+  if (childSummaries?.length) {
+    envelope.childSummaries = childSummaries;
+    if (!hasExplicitChildCount) envelope.childCount = childSummaries.length;
+    if (!hasExplicitCompletedChildren) {
+      envelope.completedChildren = countDelegationChildren(childSummaries, ["completed"]);
+    }
+    if (!hasExplicitFailedChildren) {
+      envelope.failedChildren = countDelegationChildren(childSummaries, ["failed", "cancelled"]);
+    }
+  }
+}
+
 async function fetchWithTimeout(
   fetchImpl: FetchLike,
   url: string,
@@ -302,6 +452,7 @@ export async function streamHostedAssist(
         ...(input.request.mcp ? { mcp: input.request.mcp } : {}),
         ...(input.request.context ? { context: input.request.context } : {}),
         ...(input.request.clientCapabilities ? { clientCapabilities: input.request.clientCapabilities } : {}),
+        ...(input.request.delegation ? { delegation: input.request.delegation } : {}),
         ...(input.request.userConnectedModels ? { userConnectedModels: input.request.userConnectedModels } : {}),
         contextBudget: {
           strategy: "hybrid",
@@ -361,8 +512,20 @@ export async function streamHostedAssist(
       if (eventName === "tool_request" && parsed.data && typeof parsed.data === "object") {
         envelope.pendingToolCall = parsed.data as unknown as HostedPendingToolCall;
       }
+      if (eventName === "request_user_input" && parsed.data && typeof parsed.data === "object") {
+        envelope.userInputRequest = parsed.data as HostedUserInputRequest;
+      }
       if (eventName === "meta" && parsed.data && typeof parsed.data === "object") {
         Object.assign(envelope, parsed.data as Record<string, unknown>);
+      }
+      if (
+        (eventName === "delegation.started" ||
+          eventName === "delegation.child_status" ||
+          eventName === "delegation.completed") &&
+        parsed.data &&
+        typeof parsed.data === "object"
+      ) {
+        applyDelegationData(envelope, parsed.data as Record<string, unknown>, { markDelegationUsed: true });
       }
       if (eventName === "final") {
         envelope.final = String(parsed.data ?? "");
@@ -401,6 +564,47 @@ export async function continueHostedRun(
     },
     fetchTimeoutMs,
     `Timed out waiting for hosted continue after ${fetchTimeoutMs}ms.`
+  );
+
+  if (!response.ok) {
+    const failure = await parseHostedError(response);
+    throw new Error(failure.message);
+  }
+  const parsed = (await response.json().catch(() => ({}))) as { data?: HostedAssistRunEnvelope } | HostedAssistRunEnvelope;
+  const envelope = ("data" in parsed ? parsed.data : parsed) || {};
+  return envelope as HostedAssistRunEnvelope;
+}
+
+export async function submitHostedUserInput(
+  input: {
+    baseUrl: string;
+    apiKey: string;
+    runId: string;
+    requestId: string;
+    answers: Record<string, string[]>;
+    sessionId?: string;
+  },
+  options: {
+    fetchImpl?: FetchLike;
+    fetchTimeoutMs?: number;
+  } = {}
+): Promise<HostedAssistRunEnvelope> {
+  const fetchImpl = options.fetchImpl || fetch;
+  const fetchTimeoutMs = options.fetchTimeoutMs ?? getHostedContinueFetchTimeoutMs();
+  const response = await fetchWithTimeout(
+    fetchImpl,
+    `${input.baseUrl}/api/v1/playground/runs/${encodeURIComponent(input.runId)}/user-input`,
+    {
+      method: "POST",
+      headers: buildHostedHeaders(input.apiKey),
+      body: JSON.stringify({
+        requestId: input.requestId,
+        answers: input.answers,
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      }),
+    },
+    fetchTimeoutMs,
+    `Timed out waiting for hosted user-input resume after ${fetchTimeoutMs}ms.`
   );
 
   if (!response.ok) {

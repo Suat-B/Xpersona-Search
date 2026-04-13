@@ -5,13 +5,16 @@ import {
   guardPlaygroundAccess,
   runAssist,
   type AssistResult,
+  type AssistRuntimeInput,
 } from "@/lib/playground/orchestration";
 import { startAssistToolLoop } from "@/lib/playground/tool-loop";
 import {
   appendSessionMessage,
+  createAgentRun,
   createSession,
   getSessionById,
   listSessionMessages,
+  updateAgentRun,
 } from "@/lib/playground/store";
 import { zAssistRequest } from "@/lib/playground/contracts";
 import { ok, parseBody, serverError, unauthorized } from "@/lib/playground/http";
@@ -46,6 +49,37 @@ function deriveSessionTitle(task: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 80) || "Playground Chat";
+}
+
+function buildUserInputQuestionsHistory(request: NonNullable<AssistResult["userInputRequest"]>): string {
+  return request.questions
+    .map((question, index) => {
+      const options = Array.isArray(question.options)
+        ? question.options
+            .map((option) => option.label?.trim())
+            .filter((label): label is string => Boolean(label))
+            .slice(0, 4)
+        : [];
+      return [
+        `${index + 1}. ${question.question}`,
+        ...(options.length ? [`Options: ${options.join(" | ")}`] : []),
+      ].join("\n");
+    })
+    .join("\n\n");
+}
+
+function buildUserInputAnswerHistory(input: {
+  request: NonNullable<AssistResult["userInputRequest"]>;
+  answers: Record<string, string[]>;
+}): string {
+  return input.request.questions
+    .map((question) => {
+      const answers = Array.isArray(input.answers[question.id]) ? input.answers[question.id] : [];
+      if (!answers.length) return null;
+      return `${question.question}\nAnswer: ${answers.join(" | ")}`;
+    })
+    .filter((entry): entry is string => Boolean(entry))
+    .join("\n\n");
 }
 
 async function resolveSession(input: {
@@ -182,6 +216,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       ...body,
       tom: { enabled: resolvedTomEnabled },
     } as typeof body;
+    const assistRuntimeRequest: AssistRuntimeInput = {
+      ...requestWithTom,
+      mode,
+      conversationHistory: persistedHistory,
+      maxTokens: maxOut,
+    };
 
     let result: AssistResult;
 
@@ -247,13 +287,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       }).catch(() => null);
     } else if (!planMode && chatInteraction) {
       result = await runAssist(
-        {
-          ...requestWithTom,
-          mode,
-          orchestrationProtocol: "batch_v1",
-          conversationHistory: persistedHistory,
-          maxTokens: maxOut,
-        },
+        { ...assistRuntimeRequest, orchestrationProtocol: "batch_v1" },
         {
           userId: auth.userId,
         }
@@ -270,17 +304,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       result = planMode
         ? isPlaygroundAssistPlanViaGateway() && gatewayOk
           ? await startHostedToolLoop({ mode: "plan" })
-          : await runAssist({
-              ...requestWithTom,
-              mode,
-              conversationHistory: persistedHistory,
-              maxTokens: maxOut,
-            }, {
+          : await runAssist(assistRuntimeRequest, {
               userId: auth.userId,
             })
         : await startHostedToolLoop({ mode });
 
-      if (planMode) {
+      if (planMode && !result.userInputRequest) {
         const outputTokens = estimateOutputTokens(result.final);
         await appendSessionMessage({
           userId: auth.userId,
@@ -291,6 +320,36 @@ export async function POST(request: NextRequest): Promise<Response> {
           tokenCount: outputTokens,
         }).catch(() => null);
       }
+    }
+
+    if (result.userInputRequest && !result.runId) {
+      const pendingRun = await createAgentRun({
+        userId: auth.userId,
+        sessionId: session.id,
+        role: "planner",
+        status: "running",
+        input: {
+          request: assistRuntimeRequest,
+        },
+        confidence: result.confidence,
+        riskLevel: result.risk.blastRadius,
+      });
+      result = {
+        ...result,
+        runId: pendingRun.id,
+      };
+      await updateAgentRun({
+        userId: auth.userId,
+        runId: pendingRun.id,
+        status: "running",
+        output: {
+          ...result,
+          sessionId: session.id,
+          traceId,
+        },
+        confidence: result.confidence,
+        riskLevel: result.risk.blastRadius,
+      }).catch(() => null);
     }
 
     const shouldBillHostedUsage =
@@ -395,6 +454,9 @@ export async function POST(request: NextRequest): Promise<Response> {
       if (result.plan) await emit("plan", result.plan);
       await emit("actions", result.actions);
       if (result.runId) await emit("run", { runId: result.runId, adapter: result.adapter, loopState: result.loopState });
+      if (result.userInputRequest) {
+        await emit("request_user_input", result.userInputRequest);
+      }
       if (result.pendingToolCall) {
         await emit("activity", `Awaiting tool request: ${result.pendingToolCall.toolCall.name}`);
         await emit("tool_request", result.pendingToolCall);
@@ -420,6 +482,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         sessionId: session.id,
         traceId,
         runId: result.runId,
+        userInputRequest: result.userInputRequest ?? null,
         modelCandidate: result.modelCandidate ?? null,
         fallbackAttempt: typeof result.fallbackAttempt === "number" ? result.fallbackAttempt : 0,
         failureReason: result.failureReason ?? null,
@@ -440,7 +503,9 @@ export async function POST(request: NextRequest): Promise<Response> {
           await emit("partial", partial);
         }
       }
-      await emit("final", result.final);
+      if (!result.userInputRequest) {
+        await emit("final", result.final);
+      }
       await writer.write(encoder.encode("data: [DONE]\n\n"));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -115,6 +115,7 @@ declare let protocolInflightRequests: number;
 declare const protocolPendingRequests: Map<any, any>;
 declare const codexFetchAbortControllers: Map<any, any>;
 declare const codexFetchStreamAbortControllers: Map<any, any>;
+declare const codexCompatPendingMcpRequests: Map<any, any>;
 declare const codexWorkerSubscriptions: Map<any, any>;
 declare const seenUnsupportedCodexIpcMethods: Set<unknown>;
 declare const seenUnsupportedCodexMessageTypes: Set<unknown>;
@@ -125,6 +126,10 @@ declare let codexCompatWorkspaceRoot: null;
 declare let codexCompatWorkspaceRootOptions: any[];
 declare const codexCompatFuzzyFileSearchSessions: Map<any, any>;
 declare const codexCompatFuzzyFileSearchCache: Map<any, any>;
+declare let codexCompatFixedDriveRootsCache: {
+    createdAtMs: number;
+    roots: never[];
+};
 declare let codexCompatWindowMode: string;
 declare const codexAppSessionId: any;
 declare const codexPersistedAtomState: {
@@ -180,6 +185,8 @@ declare function defaultDesktopState(): {
         theme: string;
         explicit: boolean;
     };
+    workspaceRoots: never[];
+    activeWorkspaceRoot: null;
 };
 declare function readDesktopState(): Promise<{
     overlay: any;
@@ -188,6 +195,8 @@ declare function readDesktopState(): Promise<{
         theme: string;
         explicit: boolean;
     };
+    workspaceRoots: any[];
+    activeWorkspaceRoot: any;
 }>;
 declare function saveDesktopState(): Promise<void>;
 declare function uiDebugDir(): any;
@@ -197,12 +206,29 @@ declare function summarizeForCompatLog(value: any, maxLength?: number): string;
 declare function injectCompatPluginOverlay(targetWindow: any): Promise<boolean>;
 declare function normalizeCompatWorkspaceRoot(value: any): any;
 declare function normalizeCompatWorkspaceRoots(values: any): any[];
+declare function readCompatProjectOrderRoots(): any[];
+declare function readCompatWorkspaceRootsFromHintValue(value: any): any[];
+declare function syncCompatWorkspaceRootsFromGlobalHints(): void;
+declare function readCompatThreadWorkspaceRoots(): any[];
+declare function readCompatExplicitWorkspaceRootOptions(): any[];
 declare function readCompatWorkspaceRootOptions(): any[];
+declare function readCompatActiveWorkspaceRoot(): any;
+declare function chooseCompatPrimaryWorkspaceRoot(roots: any): any;
+declare function resolveCompatWholePcStartupRoots(): any[];
+declare function areWholePcWorkspaceRoots(roots: any): boolean;
+declare function hasWholePcWorkspaceSurface(roots: any): boolean;
+declare function ensureCompatInitialWorkspaceRoot(): any;
+declare function clearCompatFuzzyFileSearchState(): void;
 declare function setCompatWorkspaceRoots(nextRoots: any, activeRoot: any): {
     roots: any[];
     activeRoot: any;
 };
+declare function ensureCompatWorkspaceRootOption(root: any, activeRootOverride: any): {
+    roots: any[];
+    activeRoot: any;
+};
 declare function compatWorkspaceRootLabels(roots: any): {};
+declare function readCompatWorkspaceRootOptionsForUi(): any[];
 declare function notifyCompatWorkspaceRootsUpdated(sender: any, navigateHome?: boolean): void;
 declare function chooseCompatWorkspaceRoot(): Promise<any>;
 declare function addCompatWorkspaceRootOption(rootCandidate: any, sender: any): Promise<{
@@ -223,6 +249,48 @@ declare function addCompatWorkspaceRootOption(rootCandidate: any, sender: any): 
 declare function startBinaryHost(): void;
 declare function restartBinaryHost(): void;
 declare function currentRendererThemeVariant(): "dark" | "light";
+declare function resolveCompatBrowserWindow(sender: any): any;
+declare function sanitizeMenuCoordinate(value: any): number | undefined;
+declare function normalizeCompatApplicationMenuId(menuId: any): string;
+declare function popupElectronMenu(menu: any, options: any): Promise<unknown>;
+declare function buildCompatContextMenuTemplate(rawItems: any, onSelect: any): any;
+declare function showCompatAboutDialog(targetWindow: any): any;
+declare function openCompatWorkspaceFromMenu(sender: any): Promise<any>;
+declare function buildCompatApplicationMenuTemplate(menuId: any, sender: any, targetWindow: any): ({
+    label: string;
+    accelerator: string;
+    click: () => void;
+    type?: undefined;
+    role?: undefined;
+} | {
+    type: string;
+    label?: undefined;
+    accelerator?: undefined;
+    click?: undefined;
+    role?: undefined;
+} | {
+    role: string;
+    label?: undefined;
+    accelerator?: undefined;
+    click?: undefined;
+    type?: undefined;
+} | {
+    role: string;
+    label: string;
+    accelerator?: undefined;
+    click?: undefined;
+    type?: undefined;
+})[] | ({
+    role: string;
+    label?: undefined;
+    click?: undefined;
+} | {
+    label: string;
+    click: () => void;
+    role?: undefined;
+})[];
+declare function showCompatApplicationMenu(sender: any, payload: any): Promise<unknown>;
+declare function showCompatContextMenu(sender: any, payload: any): Promise<unknown>;
 declare function escapeHtml(value: any): any;
 declare function runtimeRendererRoot(runtime: any): any;
 declare function compatSurfaceRelativePath(surface: any): "index.html" | "player.html" | "intervention.html";
@@ -239,9 +307,11 @@ declare function runProtocolSelfTest(): Promise<void>;
 declare function showCompatFatalError(reason: any): Promise<void>;
 declare function handleCompatStartupIssue(reason: any): void;
 declare function clearCompatWatchdog(): void;
+declare function isCompatAbortLikeError(errorCode: any, errorDescription: any): any;
 declare function sendCodexMessageToWebContents(target: any, payload: any): void;
 declare function sendCodexMessageToWindow(window: any, payload: any): void;
 declare function sendCodexMessageToCompatWindows(payload: any): void;
+declare function requestCompatMcpFromWebContents(target: any, hostId: any, method: any, params: any): Promise<unknown>;
 declare function startCompatWatchdog(window: any): void;
 declare function codexResponseSuccess(requestId: any, result: any): {
     requestId: any;
@@ -272,11 +342,26 @@ declare function normalizeCompatRequestWorkspacePath(value: any): any;
 declare function sanitizeCompatRequestParams(params: any): any;
 declare function normalizeCompatSearchRoot(rawPath: any): any;
 declare function normalizeCompatRelativePath(rawPath: any): any;
-declare function shouldIgnoreCompatSearchDirectory(name: any): boolean;
-declare function readCompatSearchEntriesForRoot(root: any): any;
+declare function normalizeCompatPathForComparison(rawPath: any): any;
+declare function isCompatPathInside(parentPath: any, targetPath: any): any;
+declare function shouldIgnoreCompatSearchDirectory(name: any, wholeMachineSearch?: boolean): boolean;
+declare function shouldIgnoreCompatSearchAbsolutePath(absolutePath: any, wholeMachineSearch?: boolean): any;
+declare function readCompatFixedDriveRoots(): never[];
+declare function resolveCompatFuzzySearchRoots(): {
+    roots: any[];
+    wholeMachineSearch: boolean;
+};
+declare function readCompatSearchEntriesForRoot(root: any, wholeMachineSearch?: boolean): any;
 declare function scoreCompatSearchEntry(entry: any, rawQuery: any): number;
 declare function runCompatFuzzyFileSearch(rawRoots: any, rawQuery: any): any[];
 declare function buildCompatThreadPreview(text: any, maxLength?: number): any;
+declare function extractCompatSlashMode(text: any): {
+    prompt: string;
+    modeOverride: null;
+} | {
+    prompt: string;
+    modeOverride: string;
+};
 declare function createCompatCollaborationMode(mode?: string, settings?: {}): {
     mode: string;
     settings: {
@@ -302,6 +387,22 @@ declare function listCompatCollaborationModes(): {
     };
 }[];
 declare function resolveCompatHostAssistMode(collaborationMode: any): "plan" | "auto";
+declare function resolveCompatTurnPrompt(rawPrompt: any, rawCollaborationMode: any, fallbackCollaborationMode?: null): {
+    prompt: string;
+    collaborationMode: {
+        mode: string;
+        settings: {
+            model: any;
+            reasoning_effort: any;
+            developer_instructions: any;
+        };
+    };
+};
+declare function normalizeCompatHostUserInputRequest(value: any): {
+    requestId: any;
+    questions: any;
+} | null;
+declare function normalizeCompatUserInputAnswers(value: any): {};
 declare function syncCompatThreadTitles(): void;
 declare function upsertCompatThread(thread: any): any;
 declare function ensureCompatThread(params?: {}): any;
@@ -337,19 +438,45 @@ declare function extractCompatSsePayloads(buffer: any): {
     payloads: any;
     remainder: any;
 };
-declare function summarizeCompatHostEvent(payload: any): any;
+declare function humanizeCompatHostMessage(rawMessage: any): string;
+declare function compatEmptyFinalFallback(): string;
+declare function summarizeCompatHostEvent(payload: any): string | null;
 declare function trustCompatHostWorkspace(workspaceRoot: any): Promise<void>;
+declare function trustCompatHostWorkspaceRoots(workspaceRoots: any): Promise<void>;
 declare function readCompatHostRunFinal(runId: any): Promise<{
-    text: any;
+    text: string;
     conversationId: any;
 }>;
 declare function runCompatHostAssist(thread: any, prompt: any, options: any): Promise<{
-    text: any;
+    text: string;
     runId: any;
     conversationId: any;
+    userInputRequest: null;
+} | {
+    text: string;
+    runId: any;
+    conversationId: null;
+    userInputRequest: {
+        requestId: any;
+        questions: any;
+    } | null;
+}>;
+declare function continueCompatHostAssistWithUserInput(runId: any, requestId: any, answers: any, options: any): Promise<{
+    text: string;
+    runId: any;
+    conversationId: any;
+    userInputRequest: null;
+} | {
+    text: string;
+    runId: any;
+    conversationId: null;
+    userInputRequest: {
+        requestId: any;
+        questions: any;
+    } | null;
 }>;
 declare function readCompatPinnedThreadIds(): never[];
-declare function readCompatConfigurationValue(rawKey: any): boolean | "dark" | never[] | "auto" | "light" | "github-light" | "nord" | 16 | 13 | null;
+declare function readCompatConfigurationValue(rawKey: any): boolean | never[] | "dark" | "auto" | "light" | "github-light" | "nord" | 16 | 13 | null;
 declare function buildCompatListPayload(rows: any, includeCursor?: boolean): {
     data: any[];
     rows: any[];
@@ -414,6 +541,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -450,6 +578,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -486,6 +615,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -522,6 +652,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -558,6 +689,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -594,6 +726,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -630,6 +763,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -666,6 +800,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -702,6 +837,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -738,6 +874,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -774,6 +911,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -810,6 +948,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -846,6 +985,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -882,6 +1022,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -918,6 +1059,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -954,6 +1096,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -990,6 +1133,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -1026,6 +1170,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -1062,6 +1207,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -1098,6 +1244,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     installed?: undefined;
     authenticated?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
@@ -1105,6 +1252,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     method?: undefined;
 } | {
     results: any;
+    existingPaths: any;
     version?: undefined;
     buildFlavor?: undefined;
     available?: undefined;
@@ -1171,6 +1319,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;
     unsupported?: undefined;
@@ -1207,6 +1356,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     instructions?: undefined;
     unsupported?: undefined;
@@ -1243,6 +1393,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     unsupported?: undefined;
@@ -1280,6 +1431,7 @@ declare function buildCompatVscodeFetchResult(endpoint: any, params: any): {
     selectedText?: undefined;
     openFiles?: undefined;
     results?: undefined;
+    existingPaths?: undefined;
     config?: undefined;
     shellEnvironment?: undefined;
     instructions?: undefined;

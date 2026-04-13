@@ -35,6 +35,7 @@ export async function GET(request: NextRequest, ctx: Ctx): Promise<Response> {
     progressState: output.progressState ?? null,
     objectiveState: output.objectiveState ?? null,
     pendingToolCall: output.pendingToolCall ?? null,
+    userInputRequest: output.userInputRequest ?? null,
     toolTrace: output.toolTrace ?? [],
     receipt: output.receipt ?? null,
     checkpoint: output.checkpoint ?? null,

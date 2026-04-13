@@ -350,6 +350,44 @@ describe("playground orchestration", () => {
     expect(parsed.final).toContain("Prepared");
   });
 
+  it("parses plan-mode clarification questions into a structured user input request", () => {
+    const parsed = parseStructuredAssistResponse({
+      raw: JSON.stringify({
+        final: "I need a bit more context before I can finish the plan.",
+        plan: null,
+        userInputRequest: {
+          requestId: "plan_req_1",
+          questions: [
+            {
+              header: "Scope",
+              id: "scope",
+              question: "Which area should we prioritize first?",
+              options: [
+                { label: "Desktop bridge", description: "Land the desktop compat plumbing first." },
+                { label: "Host API", description: "Start with the persisted resume endpoint." },
+              ],
+            },
+          ],
+        },
+        actions: [],
+      }),
+      mode: "plan",
+      targetPath: "apps/binary-ide-desktop/src/main.ts",
+      fallbackPlan: {
+        objective: "align desktop compat plan mode",
+        files: ["apps/binary-ide-desktop/src/main.ts"],
+        steps: ["inspect the desktop bridge"],
+        acceptanceTests: ["pnpm test"],
+        risks: [],
+      },
+    });
+
+    expect(parsed.userInputRequest?.requestId).toBe("plan_req_1");
+    expect(parsed.userInputRequest?.questions).toHaveLength(1);
+    expect(parsed.plan).toBeNull();
+    expect(parsed.actions).toEqual([]);
+  });
+
   it("falls back to deterministic mkdir actions for simple folder requests", () => {
     const actions = synthesizeDeterministicActions({
       task: "create a folder called vscode_extension_backup",
@@ -409,5 +447,51 @@ describe("playground orchestration", () => {
     expect(result.actions).toHaveLength(1);
     expect(result.validationPlan.scope).toBe("targeted");
     expect(result.completionStatus).toBe("complete");
+  });
+
+  it("marks plan runs with user-input requests as incomplete", async () => {
+    process.env.HF_TOKEN = "test-token";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  final: "I need a bit more context before I can finish the plan.",
+                  plan: null,
+                  userInputRequest: {
+                    requestId: "plan_req_2",
+                    questions: [
+                      {
+                        header: "Entry",
+                        id: "entry",
+                        question: "How should the user enter plan mode?",
+                        options: [
+                          { label: "/plan only", description: "Trigger plan mode only from the slash command." },
+                          { label: "UI and /plan", description: "Honor both the UI mode and the slash command." },
+                        ],
+                      },
+                    ],
+                  },
+                  actions: [],
+                }),
+              },
+            },
+          ],
+        }),
+      }))
+    );
+
+    const result = await runAssist({
+      mode: "plan",
+      task: "make desktop plan mode work",
+    });
+
+    expect(result.userInputRequest?.requestId).toBe("plan_req_2");
+    expect(result.missingRequirements).toContain("user_input_required");
+    expect(result.completionStatus).toBe("incomplete");
   });
 });

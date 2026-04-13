@@ -530,6 +530,25 @@ export const zPendingToolCall = z.object({
   worldModelSliceId: z.string().max(240).optional(),
 });
 
+export const zUserInputOption = z.object({
+  label: z.string().min(1).max(1000),
+  description: z.string().max(4000).optional(),
+});
+
+export const zUserInputQuestion = z.object({
+  id: z.string().min(1).max(240),
+  header: z.string().max(1000).optional(),
+  question: z.string().min(1).max(4000),
+  options: z.array(zUserInputOption).max(8).optional(),
+  isOther: z.boolean().optional(),
+  placeholder: z.string().max(1000).optional(),
+});
+
+export const zUserInputRequest = z.object({
+  requestId: z.string().min(1).max(240),
+  questions: z.array(zUserInputQuestion).min(1).max(3),
+});
+
 export const zProgressState = z.object({
   status: z.enum(["running", "stalled", "repairing", "completed", "failed"]),
   lastMeaningfulProgressAtStep: z.number().int().min(0).max(1000),
@@ -604,6 +623,13 @@ export const zObjectiveState = z.object({
 
 export const zRunContinueRequest = z.object({
   toolResult: zToolResult,
+  /** Playground session UUID from assist; used to resume if URL runId is stale or mismatched. */
+  sessionId: z.string().uuid().optional(),
+});
+
+export const zRunUserInputRequest = z.object({
+  requestId: z.string().min(1).max(240),
+  answers: z.record(z.string().min(1).max(240), z.array(z.string().min(1).max(4000)).max(8)),
   /** Playground session UUID from assist; used to resume if URL runId is stale or mismatched. */
   sessionId: z.string().uuid().optional(),
 });
@@ -825,6 +851,9 @@ export type ToolResultContract = z.infer<typeof zToolResult>;
 export type ToolTraceEntryContract = z.infer<typeof zToolTraceEntry>;
 export type LoopStateContract = z.infer<typeof zLoopState>;
 export type PendingToolCallContract = z.infer<typeof zPendingToolCall>;
+export type UserInputOptionContract = z.infer<typeof zUserInputOption>;
+export type UserInputQuestionContract = z.infer<typeof zUserInputQuestion>;
+export type UserInputRequestContract = z.infer<typeof zUserInputRequest>;
 export type ProgressStateContract = z.infer<typeof zProgressState>;
 export type ObjectiveStateContract = z.infer<typeof zObjectiveState>;
 export type ExecuteRequestContract = z.infer<typeof zExecuteRequest>;

@@ -263,6 +263,11 @@ function parseSortFromUrl(value: string | null): string {
   return "popularity";
 }
 
+function areStringArraysEqual(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
+}
+
 export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -629,8 +634,6 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     const urlCapabilities = parseCapabilitiesFromUrl(searchParams.get("capabilities"));
     const urlPage = Number(searchParams.get("page") ?? "1");
     setQuery(urlQ);
-    setSelectedProtocols(urlProtocols);
-    setSelectedCapabilities(urlCapabilities);
     setIntent(searchParams.get("intent") === "execute" ? "execute" : "discover");
     setSort(parseSortFromUrl(searchParams.get("sort")));
     const urlVertical = searchParams.get("vertical");
@@ -655,12 +658,17 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     setBundle(parseBoolFromUrl(searchParams.get("bundle")));
     setExplain(parseBoolFromUrl(searchParams.get("explain")));
     setRecall(searchParams.get("recall") === "high" ? "high" : "normal");
-    setIncludeSources(
-      (searchParams.get("includeSources") ?? "")
-        .split(",")
-        .map((s) => s.trim().toUpperCase())
-        .filter(Boolean)
-    );
+    const urlIncludeSources = (searchParams.get("includeSources") ?? "")
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+    setSelectedProtocols((current) => (areStringArraysEqual(current, urlProtocols) ? current : urlProtocols));
+    setSelectedCapabilities((current) => (
+      areStringArraysEqual(current, urlCapabilities) ? current : urlCapabilities
+    ));
+    setIncludeSources((current) => (
+      areStringArraysEqual(current, urlIncludeSources) ? current : urlIncludeSources
+    ));
     if (Number.isFinite(urlPage) && urlPage > 0) setPage(urlPage);
   }, [searchParams]);
 

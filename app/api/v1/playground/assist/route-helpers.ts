@@ -81,6 +81,7 @@ export function buildAssistResponsePayload(input: {
     contextSelection: result.contextSelection,
     completionStatus: result.completionStatus,
     missingRequirements: result.missingRequirements,
+    ...(result.userInputRequest ? { userInputRequest: result.userInputRequest } : {}),
     ...(result.modelMetadata?.modelResolvedAlias ? { modelAlias: result.modelMetadata.modelResolvedAlias } : {}),
     ...(result.modelMetadata?.chatModelSource ? { chatModelSource: result.modelMetadata.chatModelSource } : {}),
     ...(result.modelMetadata?.chatModelAlias ? { chatModelAlias: result.modelMetadata.chatModelAlias } : {}),

@@ -1,4 +1,23 @@
 type AssistMode = "auto" | "plan" | "yolo" | "generate" | "debug";
+export type HostedDelegationMode = "auto";
+export type HostedDelegationVisibility = "summary_only";
+export type HostedDelegationAgentType = "default";
+export type HostedDelegationStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type HostedDelegationConfig = {
+    enabled: boolean;
+    mode: HostedDelegationMode;
+    maxChildren: number;
+    visibility: HostedDelegationVisibility;
+    supportedAgentTypes: HostedDelegationAgentType[];
+};
+export type HostedDelegationChildSummary = {
+    childId: string;
+    status?: HostedDelegationStatus | string;
+    summary?: string;
+    agentType?: HostedDelegationAgentType | string;
+    traceId?: string;
+    completedAt?: string;
+};
 export type HostedAssistRequest = {
     task: string;
     mode: AssistMode;
@@ -50,6 +69,7 @@ export type HostedAssistRequest = {
         autoExecute?: boolean;
         supportsNativeToolResults?: boolean;
     };
+    delegation?: HostedDelegationConfig;
     userConnectedModels?: Array<{
         alias: string;
         provider: string;
@@ -90,6 +110,22 @@ export type HostedToolResult = {
     error?: string;
     createdAt?: string;
 };
+export type HostedUserInputOption = {
+    label: string;
+    description?: string;
+};
+export type HostedUserInputQuestion = {
+    header?: string;
+    id: string;
+    question: string;
+    options?: HostedUserInputOption[];
+    isOther?: boolean;
+    placeholder?: string;
+};
+export type HostedUserInputRequest = {
+    requestId: string;
+    questions: HostedUserInputQuestion[];
+};
 export type HostedAssistRunEnvelope = {
     sessionId?: string;
     traceId?: string;
@@ -99,10 +135,17 @@ export type HostedAssistRunEnvelope = {
     conversationId?: string | null;
     persistenceDir?: string | null;
     jsonlPath?: string | null;
+    delegationUsed?: boolean;
+    delegationReason?: string;
+    childCount?: number;
+    completedChildren?: number;
+    failedChildren?: number;
+    childSummaries?: HostedDelegationChildSummary[];
     final?: string;
     completionStatus?: "complete" | "incomplete";
     runId?: string;
     adapter?: string;
+    userInputRequest?: HostedUserInputRequest | null;
     pendingToolCall?: HostedPendingToolCall | null;
     receipt?: Record<string, unknown> | null;
     reviewState?: Record<string, unknown> | null;
@@ -170,6 +213,17 @@ export declare function continueHostedRun(input: {
     apiKey: string;
     runId: string;
     toolResult: HostedToolResult;
+    sessionId?: string;
+}, options?: {
+    fetchImpl?: FetchLike;
+    fetchTimeoutMs?: number;
+}): Promise<HostedAssistRunEnvelope>;
+export declare function submitHostedUserInput(input: {
+    baseUrl: string;
+    apiKey: string;
+    runId: string;
+    requestId: string;
+    answers: Record<string, string[]>;
     sessionId?: string;
 }, options?: {
     fetchImpl?: FetchLike;

@@ -21,6 +21,19 @@ export type BinaryAgentJob = {
     conversationId?: string | null;
     persistenceDir?: string | null;
     jsonlPath?: string | null;
+    delegationUsed?: boolean;
+    delegationReason?: string;
+    childCount?: number;
+    completedChildren?: number;
+    failedChildren?: number;
+    childSummaries?: Array<{
+        childId: string;
+        status?: string;
+        summary?: string;
+        agentType?: string;
+        traceId?: string;
+        completedAt?: string;
+    }>;
     runtimeTarget?: "local_native" | "sandbox" | "remote";
     requestedExecutionLane: BinaryExecutionLane;
     executionLane: BinaryExecutionLane;

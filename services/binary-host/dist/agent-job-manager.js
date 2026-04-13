@@ -126,6 +126,66 @@ export class AgentJobManager {
         else if (run.lastExecutionState && typeof run.lastExecutionState.jsonlPath === "string") {
             job.jsonlPath = String(run.lastExecutionState.jsonlPath);
         }
+        if (typeof finalEnvelope.delegationUsed === "boolean") {
+            job.delegationUsed = finalEnvelope.delegationUsed;
+        }
+        else if (run.lastExecutionState && typeof run.lastExecutionState.delegationUsed === "boolean") {
+            job.delegationUsed = Boolean(run.lastExecutionState.delegationUsed);
+        }
+        if (typeof finalEnvelope.delegationReason === "string") {
+            job.delegationReason = finalEnvelope.delegationReason;
+        }
+        else if (run.lastExecutionState && typeof run.lastExecutionState.delegationReason === "string") {
+            job.delegationReason = String(run.lastExecutionState.delegationReason);
+        }
+        if (typeof finalEnvelope.childCount === "number") {
+            job.childCount = Math.max(0, Math.round(finalEnvelope.childCount));
+        }
+        else if (run.lastExecutionState && typeof run.lastExecutionState.childCount === "number") {
+            job.childCount = Math.max(0, Math.round(Number(run.lastExecutionState.childCount)));
+        }
+        if (typeof finalEnvelope.completedChildren === "number") {
+            job.completedChildren = Math.max(0, Math.round(finalEnvelope.completedChildren));
+        }
+        else if (run.lastExecutionState && typeof run.lastExecutionState.completedChildren === "number") {
+            job.completedChildren = Math.max(0, Math.round(Number(run.lastExecutionState.completedChildren)));
+        }
+        if (typeof finalEnvelope.failedChildren === "number") {
+            job.failedChildren = Math.max(0, Math.round(finalEnvelope.failedChildren));
+        }
+        else if (run.lastExecutionState && typeof run.lastExecutionState.failedChildren === "number") {
+            job.failedChildren = Math.max(0, Math.round(Number(run.lastExecutionState.failedChildren)));
+        }
+        if (Array.isArray(finalEnvelope.childSummaries)) {
+            job.childSummaries = finalEnvelope.childSummaries
+                .filter((item) => item && typeof item === "object" && typeof item.childId === "string")
+                .map((item) => {
+                const child = item;
+                return {
+                    childId: String(child.childId),
+                    ...(typeof child.status === "string" ? { status: child.status } : {}),
+                    ...(typeof child.summary === "string" ? { summary: child.summary } : {}),
+                    ...(typeof child.agentType === "string" ? { agentType: child.agentType } : {}),
+                    ...(typeof child.traceId === "string" ? { traceId: child.traceId } : {}),
+                    ...(typeof child.completedAt === "string" ? { completedAt: child.completedAt } : {}),
+                };
+            });
+        }
+        else if (run.lastExecutionState && Array.isArray(run.lastExecutionState.childSummaries)) {
+            job.childSummaries = run.lastExecutionState.childSummaries
+                .filter((item) => item && typeof item === "object" && typeof item.childId === "string")
+                .map((item) => {
+                const child = item;
+                return {
+                    childId: String(child.childId),
+                    ...(typeof child.status === "string" ? { status: child.status } : {}),
+                    ...(typeof child.summary === "string" ? { summary: child.summary } : {}),
+                    ...(typeof child.agentType === "string" ? { agentType: child.agentType } : {}),
+                    ...(typeof child.traceId === "string" ? { traceId: child.traceId } : {}),
+                    ...(typeof child.completedAt === "string" ? { completedAt: child.completedAt } : {}),
+                };
+            });
+        }
         if (typeof finalEnvelope.executionLane === "string") {
             job.executionLane = finalEnvelope.executionLane;
         }

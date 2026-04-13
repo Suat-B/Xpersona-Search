@@ -120,6 +120,7 @@ let protocolInflightRequests = 0;
 const protocolPendingRequests = new Map();
 const codexFetchAbortControllers = new Map();
 const codexFetchStreamAbortControllers = new Map();
+const codexCompatPendingMcpRequests = new Map();
 const codexWorkerSubscriptions = new Map();
 const seenUnsupportedCodexIpcMethods = new Set();
 const seenUnsupportedCodexMessageTypes = new Set();
@@ -130,6 +131,7 @@ let codexCompatWorkspaceRoot = null;
 let codexCompatWorkspaceRootOptions = [];
 const codexCompatFuzzyFileSearchSessions = new Map();
 const codexCompatFuzzyFileSearchCache = new Map();
+let codexCompatFixedDriveRootsCache = { createdAtMs: 0, roots: [] };
 let codexCompatWindowMode = "app";
 const codexAppSessionId = (0, node_crypto_1.randomUUID)();
 const codexPersistedAtomState = {
@@ -202,12 +204,16 @@ function defaultDesktopState() {
         overlay: { ...defaultOverlayState },
         runSurfaceState: {},
         appearance: { theme: "dark", explicit: false },
+        workspaceRoots: [],
+        activeWorkspaceRoot: null,
     };
 }
 async function readDesktopState() {
     try {
         const raw = await node_fs_1.promises.readFile(desktopStatePath(), "utf8");
         const parsed = JSON.parse(raw);
+        const workspaceRoots = normalizeCompatWorkspaceRoots(Array.isArray(parsed.workspaceRoots) ? parsed.workspaceRoots : []);
+        const activeWorkspaceRoot = normalizeCompatWorkspaceRoot(parsed.activeWorkspaceRoot) || null;
         return {
             overlay: {
                 ...defaultOverlayState,
@@ -222,6 +228,10 @@ async function readDesktopState() {
                         : "dark",
                 explicit: Boolean(parsed.appearance?.explicit),
             },
+            workspaceRoots,
+            activeWorkspaceRoot: activeWorkspaceRoot && workspaceRoots.includes(activeWorkspaceRoot)
+                ? activeWorkspaceRoot
+                : workspaceRoots[0] || null,
         };
     }
     catch {
@@ -233,6 +243,8 @@ async function saveDesktopState() {
         overlay: overlayState,
         runSurfaceState,
         appearance: desktopAppearance,
+        workspaceRoots: readCompatWorkspaceRootOptions(),
+        activeWorkspaceRoot: readCompatActiveWorkspaceRoot(),
     };
     await node_fs_1.promises.mkdir(node_path_1.default.dirname(desktopStatePath()), { recursive: true });
     await node_fs_1.promises.writeFile(desktopStatePath(), JSON.stringify(nextState, null, 2), "utf8");
@@ -329,43 +341,274 @@ function normalizeCompatWorkspaceRoots(values) {
     }
     return uniqueRoots;
 }
-function readCompatWorkspaceRootOptions() {
-    const fallbackRoot = normalizeCompatWorkspaceRoot(codexCompatWorkspaceRoot || node_process_1.default.cwd()) || node_process_1.default.cwd();
-    const roots = normalizeCompatWorkspaceRoots([
+function readCompatProjectOrderRoots() {
+    const raw = codexCompatGlobalState.get("project-order");
+    if (!Array.isArray(raw)) {
+        return [];
+    }
+    return normalizeCompatWorkspaceRoots(raw.filter((entry) => typeof entry === "string"));
+}
+function readCompatWorkspaceRootsFromHintValue(value) {
+    if (Array.isArray(value)) {
+        return normalizeCompatWorkspaceRoots(value.filter((entry) => typeof entry === "string"));
+    }
+    if (!value || typeof value !== "object") {
+        return [];
+    }
+    const candidates = [];
+    for (const entry of Object.values(value)) {
+        if (typeof entry === "string") {
+            candidates.push(entry);
+            continue;
+        }
+        if (Array.isArray(entry)) {
+            for (const nested of entry) {
+                if (typeof nested === "string") {
+                    candidates.push(nested);
+                }
+            }
+        }
+        if (entry && typeof entry === "object") {
+            for (const nested of Object.values(entry)) {
+                if (typeof nested === "string") {
+                    candidates.push(nested);
+                }
+            }
+        }
+    }
+    return normalizeCompatWorkspaceRoots(candidates);
+}
+function syncCompatWorkspaceRootsFromGlobalHints() {
+    const hintedRoots = normalizeCompatWorkspaceRoots([
+        ...readCompatWorkspaceRootsFromHintValue(codexCompatGlobalState.get("project-order")),
+        ...readCompatWorkspaceRootsFromHintValue(codexCompatGlobalState.get("thread-workspace-root-hints")),
+    ]);
+    if (hintedRoots.length === 0) {
+        return;
+    }
+    const currentRoots = readCompatWorkspaceRootOptions();
+    const currentRootSet = new Set(currentRoots.map((root) => root.toLowerCase()));
+    const missingRoots = hintedRoots.filter((root) => !currentRootSet.has(root.toLowerCase()));
+    if (missingRoots.length === 0) {
+        return;
+    }
+    setCompatWorkspaceRoots([
+        ...currentRoots,
+        ...missingRoots,
+    ], readCompatActiveWorkspaceRoot() || currentRoots[0] || missingRoots[0] || null);
+    appendCodexCompatLog(`workspace-roots-synced-from-global-hints roots=${missingRoots.join(",")}`);
+    void trustCompatHostWorkspaceRoots(missingRoots);
+}
+function readCompatThreadWorkspaceRoots() {
+    return normalizeCompatWorkspaceRoots([...codexCompatThreads.values()]
+        .map((thread) => thread.cwd)
+        .filter((entry) => typeof entry === "string"));
+}
+function readCompatExplicitWorkspaceRootOptions() {
+    return normalizeCompatWorkspaceRoots([
         ...codexCompatWorkspaceRootOptions,
         codexCompatWorkspaceRoot,
-        fallbackRoot,
+        ...readCompatProjectOrderRoots(),
+        ...readCompatThreadWorkspaceRoots(),
     ]);
-    if (roots.length === 0) {
-        return [fallbackRoot];
+}
+function readCompatWorkspaceRootOptions() {
+    return readCompatExplicitWorkspaceRootOptions();
+}
+function readCompatActiveWorkspaceRoot() {
+    const activeRoot = normalizeCompatWorkspaceRoot(codexCompatWorkspaceRoot);
+    if (!activeRoot)
+        return null;
+    const roots = readCompatExplicitWorkspaceRootOptions();
+    return roots.includes(activeRoot) ? activeRoot : null;
+}
+function chooseCompatPrimaryWorkspaceRoot(roots) {
+    const normalizedRoots = normalizeCompatWorkspaceRoots(Array.isArray(roots) ? roots : []);
+    if (normalizedRoots.length === 0) {
+        return null;
     }
-    return roots;
+    const findContainingRoot = (candidateValue) => {
+        const candidateRoot = normalizeCompatWorkspaceRoot(candidateValue);
+        if (!candidateRoot) {
+            return null;
+        }
+        if (normalizedRoots.includes(candidateRoot)) {
+            return candidateRoot;
+        }
+        return normalizedRoots.find((root) => {
+            try {
+                const relative = node_path_1.default.relative(root, candidateRoot);
+                return relative === "" || (!relative.startsWith("..") && !node_path_1.default.isAbsolute(relative));
+            }
+            catch {
+                return false;
+            }
+        }) || null;
+    };
+    const preferredDefault = findContainingRoot(node_process_1.default.env.BINARY_IDE_DEFAULT_WORKSPACE);
+    if (preferredDefault) {
+        return preferredDefault;
+    }
+    const preferredRepoRoot = findContainingRoot(repoRoot);
+    if (preferredRepoRoot) {
+        return preferredRepoRoot;
+    }
+    const preferredPackageRoot = findContainingRoot(packageRoot);
+    if (preferredPackageRoot) {
+        return preferredPackageRoot;
+    }
+    return normalizedRoots[0] || null;
+}
+function resolveCompatWholePcStartupRoots() {
+    if (node_process_1.default.platform !== "win32") {
+        return [];
+    }
+    return normalizeCompatWorkspaceRoots(readCompatFixedDriveRoots());
+}
+function areWholePcWorkspaceRoots(roots) {
+    if (node_process_1.default.platform !== "win32") {
+        return false;
+    }
+    const normalizedRoots = normalizeCompatWorkspaceRoots(Array.isArray(roots) ? roots : []);
+    const fixedDriveRoots = normalizeCompatWorkspaceRoots(readCompatFixedDriveRoots());
+    if (normalizedRoots.length === 0 || fixedDriveRoots.length === 0) {
+        return false;
+    }
+    return normalizedRoots.length === fixedDriveRoots.length
+        && normalizedRoots.every((root, index) => root === fixedDriveRoots[index]);
+}
+function hasWholePcWorkspaceSurface(roots) {
+    if (node_process_1.default.platform !== "win32") {
+        return false;
+    }
+    const normalizedRoots = normalizeCompatWorkspaceRoots(Array.isArray(roots) ? roots : []);
+    const fixedDriveRoots = normalizeCompatWorkspaceRoots(readCompatFixedDriveRoots());
+    if (normalizedRoots.length === 0 || fixedDriveRoots.length === 0) {
+        return false;
+    }
+    const rootSet = new Set(normalizedRoots.map((root) => root.toLowerCase()));
+    return fixedDriveRoots.every((root) => rootSet.has(root.toLowerCase()));
+}
+function ensureCompatInitialWorkspaceRoot() {
+    const currentActiveRoot = readCompatActiveWorkspaceRoot();
+    const currentRoots = readCompatWorkspaceRootOptions();
+    if (currentActiveRoot && currentRoots.length > 0) {
+        return currentActiveRoot;
+    }
+    const startupRoots = node_process_1.default.platform === "win32"
+        ? resolveCompatWholePcStartupRoots()
+        : normalizeCompatWorkspaceRoots([
+            node_process_1.default.env.BINARY_IDE_DEFAULT_WORKSPACE,
+            repoRoot,
+            packageRoot,
+            node_process_1.default.cwd(),
+            electron_1.app.getPath("documents"),
+            electron_1.app.getPath("home"),
+        ]);
+    const initialRoot = chooseCompatPrimaryWorkspaceRoot(startupRoots);
+    if (!initialRoot) {
+        appendCodexCompatLog("workspace-root-initialization-skipped reason=no_candidate");
+        return null;
+    }
+    const nextState = setCompatWorkspaceRoots(startupRoots, initialRoot);
+    appendCodexCompatLog(`workspace-root-initialized root=${initialRoot} roots=${nextState.roots.join(",")}`);
+    return initialRoot;
+}
+function clearCompatFuzzyFileSearchState() {
+    codexCompatFuzzyFileSearchSessions.clear();
+    codexCompatFuzzyFileSearchCache.clear();
 }
 function setCompatWorkspaceRoots(nextRoots, activeRoot) {
+    const previousActiveRoot = readCompatActiveWorkspaceRoot();
+    const previousRootsKey = readCompatExplicitWorkspaceRootOptions().map((root) => root.toLowerCase()).join("|");
     const normalizedRoots = normalizeCompatWorkspaceRoots(nextRoots);
-    const fallbackRoot = normalizeCompatWorkspaceRoot(codexCompatWorkspaceRoot || node_process_1.default.cwd()) || node_process_1.default.cwd();
-    if (normalizedRoots.length === 0) {
-        normalizedRoots.push(fallbackRoot);
-    }
     const normalizedActiveRoot = normalizeCompatWorkspaceRoot(activeRoot);
     const resolvedActiveRoot = normalizedActiveRoot && normalizedRoots.includes(normalizedActiveRoot)
         ? normalizedActiveRoot
-        : normalizedRoots[0] || fallbackRoot;
+        : normalizedRoots[0] || null;
     codexCompatWorkspaceRootOptions = normalizedRoots;
     codexCompatWorkspaceRoot = resolvedActiveRoot;
+    const nextRootsKey = normalizedRoots.map((root) => root.toLowerCase()).join("|");
+    if ((previousActiveRoot || null) !== (resolvedActiveRoot || null) || previousRootsKey !== nextRootsKey) {
+        clearCompatFuzzyFileSearchState();
+        void saveDesktopState();
+    }
     return {
         roots: [...normalizedRoots],
         activeRoot: resolvedActiveRoot,
     };
 }
+function ensureCompatWorkspaceRootOption(root, activeRootOverride) {
+    const normalizedRoot = normalizeCompatWorkspaceRoot(root);
+    if (!normalizedRoot) {
+        return {
+            roots: readCompatWorkspaceRootOptions(),
+            activeRoot: readCompatActiveWorkspaceRoot(),
+        };
+    }
+    const currentRoots = readCompatWorkspaceRootOptions();
+    if (currentRoots.includes(normalizedRoot)) {
+        return {
+            roots: currentRoots,
+            activeRoot: readCompatActiveWorkspaceRoot(),
+        };
+    }
+    const nextState = setCompatWorkspaceRoots([
+        ...currentRoots,
+        normalizedRoot,
+    ], activeRootOverride || readCompatActiveWorkspaceRoot() || normalizedRoot);
+    appendCodexCompatLog(`workspace-root-auto-added root=${normalizedRoot}`);
+    void trustCompatHostWorkspaceRoots([normalizedRoot]);
+    return nextState;
+}
 function compatWorkspaceRootLabels(roots) {
     const labels = {};
+    if (hasWholePcWorkspaceSurface(roots)) {
+        const activeRoot = readCompatActiveWorkspaceRoot() || roots[0] || null;
+        if (activeRoot) {
+            labels[activeRoot.replace(/\\/g, "/")] = "Home";
+        }
+        const fixedDriveRoots = new Set(normalizeCompatWorkspaceRoots(readCompatFixedDriveRoots()).map((root) => root.toLowerCase()));
+        for (const root of roots) {
+            if (activeRoot && root === activeRoot) {
+                continue;
+            }
+            if (fixedDriveRoots.has(root.toLowerCase())) {
+                continue;
+            }
+            const normalizedRoot = root.replace(/\\/g, "/");
+            labels[normalizedRoot] = node_path_1.default.basename(root) || normalizedRoot;
+        }
+        return labels;
+    }
     for (const root of roots) {
         const normalizedRoot = root.replace(/\\/g, "/");
         const label = node_path_1.default.basename(root) || normalizedRoot;
         labels[normalizedRoot] = label;
     }
     return labels;
+}
+function readCompatWorkspaceRootOptionsForUi() {
+    const roots = readCompatWorkspaceRootOptions();
+    if (hasWholePcWorkspaceSurface(roots)) {
+        const activeRoot = readCompatActiveWorkspaceRoot() || roots[0] || null;
+        const fixedDriveRoots = new Set(normalizeCompatWorkspaceRoots(readCompatFixedDriveRoots()).map((root) => root.toLowerCase()));
+        const visibleRoots = [];
+        if (activeRoot) {
+            visibleRoots.push(activeRoot);
+        }
+        for (const root of roots) {
+            if (activeRoot && root === activeRoot) {
+                continue;
+            }
+            if (fixedDriveRoots.has(root.toLowerCase())) {
+                continue;
+            }
+            visibleRoots.push(root);
+        }
+        return visibleRoots;
+    }
+    return roots;
 }
 function notifyCompatWorkspaceRootsUpdated(sender, navigateHome = false) {
     sendCodexMessageToWebContents(sender, { type: "workspace-root-options-updated" });
@@ -381,7 +624,7 @@ function notifyCompatWorkspaceRootsUpdated(sender, navigateHome = false) {
 async function chooseCompatWorkspaceRoot() {
     if (!mainWindow)
         return null;
-    const defaultPath = normalizeCompatWorkspaceRoot(codexCompatWorkspaceRoot) || normalizeCompatWorkspaceRoot(node_process_1.default.cwd()) || undefined;
+    const defaultPath = readCompatActiveWorkspaceRoot() || normalizeCompatWorkspaceRoot(electron_1.app.getPath("home")) || undefined;
     const result = await electron_1.dialog.showOpenDialog(mainWindow, {
         title: "Choose a workspace for Binary IDE",
         defaultPath,
@@ -392,22 +635,25 @@ async function chooseCompatWorkspaceRoot() {
 async function addCompatWorkspaceRootOption(rootCandidate, sender) {
     const selectedRoot = normalizeCompatWorkspaceRoot(rootCandidate) || await chooseCompatWorkspaceRoot();
     if (!selectedRoot) {
+        const activeRoot = readCompatActiveWorkspaceRoot();
+        const uiRoots = readCompatWorkspaceRootOptionsForUi();
         return {
             ok: false,
             cancelled: true,
-            roots: readCompatWorkspaceRootOptions().map((root) => root.replace(/\\/g, "/")),
-            activeRoot: (codexCompatWorkspaceRoot || node_process_1.default.cwd()).replace(/\\/g, "/"),
+            roots: uiRoots.map((root) => root.replace(/\\/g, "/")),
+            activeRoot: activeRoot ? activeRoot.replace(/\\/g, "/") : null,
         };
     }
     const currentRoots = readCompatWorkspaceRootOptions();
     const nextState = setCompatWorkspaceRoots([...currentRoots, selectedRoot], selectedRoot);
     notifyCompatWorkspaceRootsUpdated(sender, true);
+    const uiRoots = readCompatWorkspaceRootOptionsForUi();
     return {
         ok: true,
         cancelled: false,
         root: nextState.activeRoot.replace(/\\/g, "/"),
-        roots: nextState.roots.map((root) => root.replace(/\\/g, "/")),
-        labels: compatWorkspaceRootLabels(nextState.roots),
+        roots: uiRoots.map((root) => root.replace(/\\/g, "/")),
+        labels: compatWorkspaceRootLabels(uiRoots),
     };
 }
 function startBinaryHost() {
@@ -440,6 +686,243 @@ function restartBinaryHost() {
 }
 function currentRendererThemeVariant() {
     return desktopAppearance.theme === "light" ? "light" : "dark";
+}
+function resolveCompatBrowserWindow(sender) {
+    return electron_1.BrowserWindow.fromWebContents(sender) || mainWindow || null;
+}
+function sanitizeMenuCoordinate(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric))
+        return undefined;
+    return Math.max(0, Math.round(numeric));
+}
+function normalizeCompatApplicationMenuId(menuId) {
+    const raw = typeof menuId === "string" ? menuId.trim().toLowerCase() : "";
+    if (!raw)
+        return "";
+    const normalized = raw.replace(/^windowsmenubar\./, "");
+    if (normalized.includes("file"))
+        return "file";
+    if (normalized.includes("edit"))
+        return "edit";
+    if (normalized.includes("view"))
+        return "view";
+    if (normalized.includes("window"))
+        return "window";
+    if (normalized.includes("help"))
+        return "help";
+    return normalized;
+}
+function popupElectronMenu(menu, options) {
+    return new Promise((resolve) => {
+        let resolved = false;
+        const finalize = (value) => {
+            if (resolved)
+                return;
+            resolved = true;
+            resolve(value);
+        };
+        try {
+            menu.popup({
+                window: options.window || undefined,
+                x: sanitizeMenuCoordinate(options.x),
+                y: sanitizeMenuCoordinate(options.y),
+                callback: () => finalize(options.onClose ? options.onClose() : true),
+            });
+        }
+        catch (error) {
+            appendCodexCompatLog(`menu-popup-error ${error instanceof Error ? error.message : String(error)}`);
+            finalize(options.onError ? options.onError(error) : false);
+        }
+    });
+}
+function buildCompatContextMenuTemplate(rawItems, onSelect) {
+    if (!Array.isArray(rawItems))
+        return [];
+    return rawItems.flatMap((rawItem, index) => {
+        const item = rawItem && typeof rawItem === "object" ? rawItem : {};
+        if (item.type === "separator") {
+            return [{ type: "separator" }];
+        }
+        const submenu = Array.isArray(item.submenu)
+            ? buildCompatContextMenuTemplate(item.submenu, onSelect)
+            : undefined;
+        const label = typeof item.label === "string" && item.label.trim()
+            ? item.label.trim()
+            : typeof item.nativeLabel === "string" && item.nativeLabel.trim()
+                ? item.nativeLabel.trim()
+                : typeof item.id === "string" && item.id.trim()
+                    ? item.id.trim()
+                    : `item-${index + 1}`;
+        const type = item.type === "checkbox" || item.type === "radio" ? item.type : "normal";
+        return [{
+                id: typeof item.id === "string" ? item.id : undefined,
+                label,
+                type,
+                checked: type === "checkbox" || type === "radio" ? Boolean(item.checked) : undefined,
+                enabled: item.enabled !== false,
+                submenu: submenu && submenu.length > 0 ? submenu : undefined,
+                click: submenu && submenu.length > 0
+                    ? undefined
+                    : () => {
+                        if (typeof item.id === "string" && item.id.trim()) {
+                            onSelect(item.id);
+                        }
+                    },
+            }];
+    });
+}
+function showCompatAboutDialog(targetWindow) {
+    return electron_1.dialog.showMessageBox(targetWindow || undefined, {
+        type: "info",
+        title: "About Binary IDE",
+        message: "Binary IDE",
+        detail: `Version ${electron_1.app.getVersion()}\nDesktop shell for the Codex compat UI.`,
+        buttons: ["OK"],
+    });
+}
+async function openCompatWorkspaceFromMenu(sender) {
+    const selectedRoot = await chooseCompatWorkspaceRoot();
+    if (!selectedRoot)
+        return false;
+    const currentRoots = readCompatWorkspaceRootOptions();
+    const nextState = setCompatWorkspaceRoots([...currentRoots, selectedRoot], selectedRoot);
+    appendCodexCompatLog(`workspace-selected-via-menu root=${selectedRoot}`);
+    notifyCompatWorkspaceRootsUpdated(sender, true);
+    return nextState.activeRoot;
+}
+function buildCompatApplicationMenuTemplate(menuId, sender, targetWindow) {
+    switch (normalizeCompatApplicationMenuId(menuId)) {
+        case "file":
+            return [
+                {
+                    label: "New Chat",
+                    accelerator: "CommandOrControl+N",
+                    click: () => {
+                        sendCodexMessageToWebContents(sender, {
+                            type: "navigate-to-route",
+                            path: "/",
+                            state: { focusComposerNonce: Date.now() },
+                        });
+                    },
+                },
+                {
+                    label: "Open Workspace...",
+                    accelerator: "CommandOrControl+Shift+O",
+                    click: () => {
+                        void openCompatWorkspaceFromMenu(sender);
+                    },
+                },
+                { type: "separator" },
+                { role: "close" },
+                { role: "quit", label: "Exit" },
+            ];
+        case "edit":
+            return [
+                { role: "undo" },
+                { role: "redo" },
+                { type: "separator" },
+                { role: "cut" },
+                { role: "copy" },
+                { role: "paste" },
+                { role: "selectAll" },
+            ];
+        case "view":
+            return [
+                { role: "reload" },
+                { role: "forceReload" },
+                {
+                    label: "Toggle Developer Tools",
+                    accelerator: node_process_1.default.platform === "darwin" ? "Alt+Command+I" : "Ctrl+Shift+I",
+                    click: () => {
+                        targetWindow?.webContents.toggleDevTools();
+                    },
+                },
+                { type: "separator" },
+                { role: "resetZoom" },
+                { role: "zoomIn" },
+                { role: "zoomOut" },
+                { type: "separator" },
+                { role: "togglefullscreen" },
+            ];
+        case "window":
+            return [
+                { role: "minimize" },
+                { role: "zoom" },
+                {
+                    label: targetWindow?.isAlwaysOnTop() ? "Disable Always on Top" : "Enable Always on Top",
+                    click: () => {
+                        if (!targetWindow)
+                            return;
+                        targetWindow.setAlwaysOnTop(!targetWindow.isAlwaysOnTop());
+                    },
+                },
+            ];
+        case "help":
+            return [
+                {
+                    label: "About Binary IDE",
+                    click: () => {
+                        void showCompatAboutDialog(targetWindow);
+                    },
+                },
+                {
+                    label: "Open User Data Folder",
+                    click: () => {
+                        void electron_1.shell.openPath(electron_1.app.getPath("userData"));
+                    },
+                },
+                {
+                    label: "Reveal Compat Log",
+                    click: () => {
+                        void electron_1.shell.showItemInFolder(codexCompatLogPath());
+                    },
+                },
+            ];
+        default:
+            return [];
+    }
+}
+async function showCompatApplicationMenu(sender, payload) {
+    const data = payload && typeof payload === "object" ? payload : {};
+    const menuId = typeof data.menuId === "string" ? data.menuId : "";
+    const targetWindow = resolveCompatBrowserWindow(sender);
+    const template = buildCompatApplicationMenuTemplate(menuId, sender, targetWindow);
+    if (template.length === 0) {
+        appendCodexCompatLog(`unsupported-application-menu menuId=${menuId || "<missing>"}`);
+        return false;
+    }
+    const menu = electron_1.Menu.buildFromTemplate(template);
+    return await popupElectronMenu(menu, {
+        window: targetWindow,
+        x: data.x,
+        y: data.y,
+        onClose: () => true,
+        onError: () => false,
+    });
+}
+async function showCompatContextMenu(sender, payload) {
+    const items = Array.isArray(payload)
+        ? payload
+        : payload && typeof payload === "object" && Array.isArray(payload.items)
+            ? payload.items
+            : [];
+    let selectedId = null;
+    const template = buildCompatContextMenuTemplate(items, (itemId) => {
+        selectedId = itemId;
+    });
+    if (template.length === 0) {
+        return { id: null };
+    }
+    const menu = electron_1.Menu.buildFromTemplate(template);
+    const targetWindow = resolveCompatBrowserWindow(sender);
+    return await popupElectronMenu(menu, {
+        window: targetWindow,
+        x: payload && typeof payload === "object" ? payload.x : undefined,
+        y: payload && typeof payload === "object" ? payload.y : undefined,
+        onClose: () => ({ id: selectedId }),
+        onError: () => ({ id: null }),
+    });
 }
 function escapeHtml(value) {
     return value
@@ -653,6 +1136,15 @@ async function runProtocolSelfTest() {
 async function showCompatFatalError(reason) {
     if (compatFatalErrorShown)
         return;
+    if (codexCompatReady) {
+        appendCodexCompatLog(`compat-fatal-skipped reason=${reason} ready=true`);
+        return;
+    }
+    const currentUrl = mainWindow && !mainWindow.isDestroyed() ? compact_whitespace(mainWindow.webContents.getURL()) : "";
+    if (currentUrl && !currentUrl.startsWith("data:text/html")) {
+        appendCodexCompatLog(`compat-fatal-skipped reason=${reason} url=${currentUrl}`);
+        return;
+    }
     compatFatalErrorShown = true;
     const detail = [
         "Binary IDE stayed in codex_compat mode (strict parity) but renderer readiness did not complete.",
@@ -699,6 +1191,10 @@ async function showCompatFatalError(reason) {
 function handleCompatStartupIssue(reason) {
     if (activeUiRuntime !== "codex_compat")
         return;
+    if (codexCompatReady) {
+        appendCodexCompatLog(`compat-startup-issue-ignored reason=${reason} ready=true`);
+        return;
+    }
     codexCompatReady = false;
     clearCompatWatchdog();
     appendCodexCompatLog(`compat-startup-issue reason=${reason} retry=${compatStartupRetryCount}/${compatMaxStartupRetries}`);
@@ -725,6 +1221,11 @@ function clearCompatWatchdog() {
     clearTimeout(codexCompatWatchdogTimer);
     codexCompatWatchdogTimer = null;
 }
+function isCompatAbortLikeError(errorCode, errorDescription) {
+    const numericCode = typeof errorCode === "number" ? errorCode : Number.NaN;
+    const description = compact_whitespace(errorDescription).toUpperCase();
+    return numericCode === -3 || description.includes("ERR_ABORTED");
+}
 function sendCodexMessageToWebContents(target, payload) {
     target.send(CODEX_IPC.messageForView, payload);
 }
@@ -744,6 +1245,31 @@ function sendCodexMessageToCompatWindows(payload) {
         seenWebContentsIds.add(webContentsId);
         sendCodexMessageToWebContents(window.webContents, payload);
     }
+}
+async function requestCompatMcpFromWebContents(target, hostId, method, params) {
+    const requestId = (0, node_crypto_1.randomUUID)();
+    return await new Promise((resolve, reject) => {
+        const timeoutHandle = setTimeout(() => {
+            codexCompatPendingMcpRequests.delete(requestId);
+            reject(new Error(`Timed out waiting for ${method} response.`));
+        }, 300000);
+        codexCompatPendingMcpRequests.set(requestId, {
+            resolve,
+            reject,
+            timeoutHandle,
+            method,
+        });
+        sendCodexMessageToWebContents(target, {
+            type: "mcp-request",
+            hostId,
+            request: {
+                id: requestId,
+                method,
+                params,
+            },
+        });
+        appendCodexCompatLog(`mcp-request->view method=${method} hostId=${hostId ?? "default"} id=${requestId} payload=${summarizeForCompatLog(params, 420)}`);
+    });
 }
 function startCompatWatchdog(window) {
     if (activeUiRuntime !== "codex_compat")
@@ -896,15 +1422,14 @@ function normalizeCompatPathForHost(rawPath) {
     return node_process_1.default.platform === "win32" ? rawPath.replace(/\//g, "\\") : rawPath;
 }
 function resolveCompatActiveWorkspaceRoot() {
-    return normalizeCompatWorkspaceRoot(codexCompatWorkspaceRoot || readCompatWorkspaceRootOptions()[0] || node_process_1.default.cwd())
-        || normalizeCompatWorkspaceRoot(node_process_1.default.cwd())
-        || node_process_1.default.cwd();
+    return readCompatActiveWorkspaceRoot();
 }
 function normalizeCompatRequestWorkspacePath(value) {
     const candidate = typeof value === "string" && value.trim()
         ? normalizeCompatWorkspaceRoot(normalizeCompatPathForHost(value.trim()))
         : null;
-    return normalizeCompatPathForUi(candidate || resolveCompatActiveWorkspaceRoot());
+    const fallback = candidate || resolveCompatActiveWorkspaceRoot() || normalizeCompatWorkspaceRoot(electron_1.app.getPath("home"));
+    return normalizeCompatPathForUi(fallback || electron_1.app.getPath("home"));
 }
 function sanitizeCompatRequestParams(params) {
     if (!params || typeof params !== "object" || Array.isArray(params)) {
@@ -926,7 +1451,15 @@ function normalizeCompatSearchRoot(rawPath) {
 function normalizeCompatRelativePath(rawPath) {
     return rawPath.replace(/\\/g, "/").replace(/^\/+/, "");
 }
-function shouldIgnoreCompatSearchDirectory(name) {
+function normalizeCompatPathForComparison(rawPath) {
+    return normalizeCompatPathForHost(String(rawPath || "")).replace(/[\\\/]+$/, "").toLowerCase();
+}
+function isCompatPathInside(parentPath, targetPath) {
+    const normalizedParent = normalizeCompatPathForComparison(parentPath);
+    const normalizedTarget = normalizeCompatPathForComparison(targetPath);
+    return normalizedTarget === normalizedParent || normalizedTarget.startsWith(`${normalizedParent}\\`);
+}
+function shouldIgnoreCompatSearchDirectory(name, wholeMachineSearch = false) {
     const normalized = String(name || "").toLowerCase();
     return normalized === ".git"
         || normalized === "node_modules"
@@ -937,13 +1470,92 @@ function shouldIgnoreCompatSearchDirectory(name) {
         || normalized === "coverage"
         || normalized === ".venv"
         || normalized === "venv"
-        || normalized === "__pycache__";
+        || normalized === "__pycache__"
+        || (wholeMachineSearch && (normalized === "windows"
+            || normalized === "program files"
+            || normalized === "program files (x86)"
+            || normalized === "$recycle.bin"
+            || normalized === "system volume information"));
 }
-function readCompatSearchEntriesForRoot(root) {
+function shouldIgnoreCompatSearchAbsolutePath(absolutePath, wholeMachineSearch = false) {
+    if (!wholeMachineSearch)
+        return false;
+    return isCompatPathInside(packageRoot, absolutePath)
+        || isCompatPathInside(binaryDesktopUserDataPath, absolutePath);
+}
+function readCompatFixedDriveRoots() {
+    if (node_process_1.default.platform !== "win32") {
+        return [];
+    }
+    if (Date.now() - codexCompatFixedDriveRootsCache.createdAtMs < 60_000 && codexCompatFixedDriveRootsCache.roots.length > 0) {
+        return [...codexCompatFixedDriveRootsCache.roots];
+    }
+    const roots = [];
+    try {
+        const stdout = (0, node_child_process_1.execFileSync)("powershell.exe", [
+            "-NoProfile",
+            "-Command",
+            "Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 } | Select-Object -ExpandProperty DeviceID",
+        ], {
+            encoding: "utf8",
+            windowsHide: true,
+        });
+        for (const line of stdout.split(/\r?\n/)) {
+            const trimmed = line.trim();
+            if (!/^[A-Za-z]:$/.test(trimmed))
+                continue;
+            const normalized = normalizeCompatWorkspaceRoot(`${trimmed}\\`);
+            if (normalized) {
+                roots.push(normalized);
+            }
+        }
+    }
+    catch (error) {
+        appendCodexCompatLog(`fixed-drive-discovery-failed error=${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (roots.length === 0) {
+        for (const letter of "CDEFGHIJKLMNOPQRSTUVWXYZ") {
+            const normalized = normalizeCompatWorkspaceRoot(`${letter}:\\`);
+            if (normalized) {
+                roots.push(normalized);
+            }
+        }
+    }
+    codexCompatFixedDriveRootsCache = {
+        createdAtMs: Date.now(),
+        roots: normalizeCompatWorkspaceRoots(roots),
+    };
+    return [...codexCompatFixedDriveRootsCache.roots];
+}
+function resolveCompatFuzzySearchRoots() {
+    const activeRoot = readCompatActiveWorkspaceRoot();
+    const workspaceRoots = readCompatWorkspaceRootOptions();
+    if (node_process_1.default.platform === "win32" && areWholePcWorkspaceRoots(workspaceRoots)) {
+        return {
+            roots: workspaceRoots,
+            wholeMachineSearch: true,
+        };
+    }
+    if (activeRoot) {
+        return { roots: [activeRoot], wholeMachineSearch: false };
+    }
+    if (node_process_1.default.platform === "win32") {
+        return {
+            roots: readCompatFixedDriveRoots(),
+            wholeMachineSearch: true,
+        };
+    }
+    const homeRoot = normalizeCompatWorkspaceRoot(electron_1.app.getPath("home"));
+    return {
+        roots: homeRoot ? [homeRoot] : [],
+        wholeMachineSearch: false,
+    };
+}
+function readCompatSearchEntriesForRoot(root, wholeMachineSearch = false) {
     const normalizedRoot = normalizeCompatWorkspaceRoot(root);
     if (!normalizedRoot)
         return [];
-    const cacheKey = normalizedRoot.toLowerCase();
+    const cacheKey = `${normalizedRoot.toLowerCase()}|${wholeMachineSearch ? "machine" : "workspace"}`;
     const cached = codexCompatFuzzyFileSearchCache.get(cacheKey);
     if (cached && Date.now() - cached.createdAtMs < 30_000) {
         return cached.entries;
@@ -964,12 +1576,15 @@ function readCompatSearchEntriesForRoot(root) {
         for (const entry of dirEntries) {
             const absolutePath = node_path_1.default.join(currentDir, entry.name);
             if (entry.isDirectory()) {
-                if (!shouldIgnoreCompatSearchDirectory(entry.name)) {
+                if (!shouldIgnoreCompatSearchDirectory(entry.name, wholeMachineSearch)
+                    && !shouldIgnoreCompatSearchAbsolutePath(absolutePath, wholeMachineSearch)) {
                     stack.push(absolutePath);
                 }
                 continue;
             }
             if (!entry.isFile())
+                continue;
+            if (shouldIgnoreCompatSearchAbsolutePath(absolutePath, wholeMachineSearch))
                 continue;
             const relativePath = normalizeCompatRelativePath(node_path_1.default.relative(normalizedRoot, absolutePath));
             if (!relativePath)
@@ -1012,15 +1627,14 @@ function scoreCompatSearchEntry(entry, rawQuery) {
     return -1;
 }
 function runCompatFuzzyFileSearch(rawRoots, rawQuery) {
-    const roots = normalizeCompatWorkspaceRoots((Array.isArray(rawRoots) ? rawRoots : []).map((entry) => normalizeCompatSearchRoot(entry))).map((root) => root.replace(/\\/g, "/"));
+    const { roots, wholeMachineSearch } = resolveCompatFuzzySearchRoots();
     const query = typeof rawQuery === "string" ? rawQuery : "";
     if (!query.trim() || roots.length === 0) {
         return [];
     }
     const scoredEntries = [];
     for (const root of roots) {
-        const hostRoot = normalizeCompatPathForHost(root);
-        for (const entry of readCompatSearchEntriesForRoot(hostRoot)) {
+        for (const entry of readCompatSearchEntriesForRoot(root, wholeMachineSearch)) {
             const score = scoreCompatSearchEntry(entry, query);
             if (score < 0)
                 continue;
@@ -1049,6 +1663,17 @@ function buildCompatThreadPreview(text, maxLength = 80) {
     if (!normalized)
         return "";
     return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1)}...`;
+}
+function extractCompatSlashMode(text) {
+    const raw = typeof text === "string" ? text : "";
+    const match = /^\s*\/(plan|auto)\b\s*/i.exec(raw);
+    if (!match)
+        return { prompt: raw, modeOverride: null };
+    const nextPrompt = raw.slice(match[0].length).trim();
+    return {
+        prompt: nextPrompt,
+        modeOverride: match[1].toLowerCase() === "plan" ? "plan" : "default",
+    };
 }
 function createCompatCollaborationMode(mode = "default", settings = {}) {
     const normalizedSettings = settings && typeof settings === "object" && !Array.isArray(settings) ? settings : {};
@@ -1091,6 +1716,121 @@ function listCompatCollaborationModes() {
 function resolveCompatHostAssistMode(collaborationMode) {
     return collaborationMode?.mode === "plan" ? "plan" : "auto";
 }
+function resolveCompatTurnPrompt(rawPrompt, rawCollaborationMode, fallbackCollaborationMode = null) {
+    const originalPrompt = typeof rawPrompt === "string" ? rawPrompt : "";
+    const normalizedPrompt = originalPrompt.trim();
+    const fallbackMode = normalizeCompatCollaborationMode(rawCollaborationMode, fallbackCollaborationMode);
+    if (/^\/plan(?:\s|$)/i.test(normalizedPrompt)) {
+        return {
+            prompt: normalizedPrompt.replace(/^\/plan(?:\s+|$)/i, "").trim(),
+            collaborationMode: createCompatCollaborationMode("plan", fallbackMode?.settings),
+        };
+    }
+    if (/^\/auto(?:\s|$)/i.test(normalizedPrompt)) {
+        return {
+            prompt: normalizedPrompt.replace(/^\/auto(?:\s+|$)/i, "").trim(),
+            collaborationMode: createCompatCollaborationMode("default", fallbackMode?.settings),
+        };
+    }
+    return {
+        prompt: originalPrompt.trim(),
+        collaborationMode: fallbackMode,
+    };
+}
+function normalizeCompatHostUserInputRequest(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return null;
+    }
+    const record = value;
+    const requestId = typeof record.requestId === "string" && record.requestId.trim()
+        ? record.requestId.trim()
+        : "";
+    const rawQuestions = Array.isArray(record.questions) ? record.questions : [];
+    const questions = rawQuestions
+        .map((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+            return null;
+        }
+        const question = entry;
+        const id = typeof question.id === "string" && question.id.trim() ? question.id.trim() : "";
+        const text = typeof question.question === "string" && question.question.trim() ? question.question.trim() : "";
+        const header = typeof question.header === "string" && question.header.trim()
+            ? question.header.trim()
+            : undefined;
+        const options = Array.isArray(question.options)
+            ? question.options
+                .map((option) => {
+                if (!option || typeof option !== "object" || Array.isArray(option)) {
+                    return null;
+                }
+                const typedOption = option;
+                const label = typeof typedOption.label === "string" && typedOption.label.trim()
+                    ? typedOption.label.trim()
+                    : "";
+                const description = typeof typedOption.description === "string" && typedOption.description.trim()
+                    ? typedOption.description.trim()
+                    : undefined;
+                if (!label) {
+                    return null;
+                }
+                return {
+                    label,
+                    ...(description ? { description } : {}),
+                };
+            })
+                .filter((option) => Boolean(option))
+            : [];
+        if (!id || !text) {
+            return null;
+        }
+        return {
+            id,
+            ...(header ? { header } : {}),
+            question: text,
+            ...(options.length ? { options } : {}),
+            ...(question.isOther === true ? { isOther: true } : {}),
+        };
+    })
+        .filter((question) => Boolean(question))
+        .slice(0, 3);
+    if (!requestId || questions.length === 0) {
+        return null;
+    }
+    return {
+        requestId,
+        questions,
+    };
+}
+function normalizeCompatUserInputAnswers(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return {};
+    }
+    const record = value;
+    const rawAnswers = record.answers && typeof record.answers === "object" && !Array.isArray(record.answers)
+        ? record.answers
+        : {};
+    const normalized = {};
+    for (const [questionId, answerValue] of Object.entries(rawAnswers)) {
+        const normalizedQuestionId = typeof questionId === "string" ? questionId.trim() : "";
+        if (!normalizedQuestionId) {
+            continue;
+        }
+        const rawList = Array.isArray(answerValue)
+            ? answerValue
+            : answerValue && typeof answerValue === "object" && Array.isArray(answerValue.answers)
+                ? answerValue.answers
+                : typeof answerValue === "string"
+                    ? [answerValue]
+                    : [];
+        const answers = rawList
+            .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+            .filter((entry) => entry.length > 0);
+        if (answers.length > 0) {
+            normalized[normalizedQuestionId] = answers;
+        }
+    }
+    return normalized;
+}
 function syncCompatThreadTitles() {
     const orderedThreads = [...codexCompatThreads.values()].sort((left, right) => right.updatedAt - left.updatedAt);
     const titles = {};
@@ -1102,10 +1842,16 @@ function syncCompatThreadTitles() {
     codexCompatGlobalState.set("thread-titles", { titles, order });
 }
 function upsertCompatThread(thread) {
-    const fallbackRoot = normalizeCompatWorkspaceRoot(codexCompatWorkspaceRoot || node_process_1.default.cwd()) || node_process_1.default.cwd();
+    const fallbackRoot = readCompatActiveWorkspaceRoot()
+        || normalizeCompatWorkspaceRoot(electron_1.app.getPath("home"))
+        || normalizeCompatWorkspaceRoot(node_process_1.default.cwd())
+        || node_process_1.default.cwd();
     const normalizedCwdCandidate = typeof thread.cwd === "string" && thread.cwd.trim()
         ? normalizeCompatWorkspaceRoot(normalizeCompatPathForHost(thread.cwd.trim()))
         : null;
+    if (normalizedCwdCandidate) {
+        ensureCompatWorkspaceRootOption(normalizedCwdCandidate);
+    }
     const normalizedThread = {
         ...thread,
         cwd: normalizeCompatPathForUi(normalizedCwdCandidate || fallbackRoot),
@@ -1115,10 +1861,14 @@ function upsertCompatThread(thread) {
     return normalizedThread;
 }
 function ensureCompatThread(params = {}) {
+    const fallbackRoot = readCompatActiveWorkspaceRoot()
+        || normalizeCompatWorkspaceRoot(electron_1.app.getPath("home"))
+        || normalizeCompatWorkspaceRoot(node_process_1.default.cwd())
+        || node_process_1.default.cwd();
     const nowUnixSeconds = Math.floor(Date.now() / 1000);
     const cwd = normalizeCompatPathForUi(typeof params.cwd === "string" && params.cwd.trim()
         ? params.cwd.trim()
-        : (codexCompatWorkspaceRoot || node_process_1.default.cwd()));
+        : fallbackRoot);
     const threadId = typeof params.id === "string" && params.id.trim() ? params.id.trim() : `local-thread-${(0, node_crypto_1.randomUUID)()}`;
     const existing = codexCompatThreads.get(threadId);
     if (existing) {
@@ -1352,13 +2102,158 @@ function extractCompatSsePayloads(buffer) {
         .filter((payload) => payload.length > 0);
     return { payloads, remainder };
 }
+function normalizeCompatNaturalText(value) {
+    return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+}
+function formatCompatNaturalLabel(value) {
+    const normalized = normalizeCompatNaturalText(value);
+    if (!normalized)
+        return "";
+    if (/^https?:\/\//i.test(normalized)) {
+        try {
+            const parsed = new URL(normalized);
+            const host = parsed.hostname.replace(/^www\./i, "");
+            const path = parsed.pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean).join(" ");
+            const combined = normalizeCompatNaturalText(`${host} ${path}`.replace(/[-_]+/g, " "));
+            if (combined)
+                return combined;
+        }
+        catch (_error) {
+        }
+    }
+    return normalized
+        .replace(/[-_]+/g, " ")
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((part) => part.length <= 3
+        ? part.toUpperCase()
+        : `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+        .join(" ");
+}
+function summarizeCompatStructuredToolCall(value) {
+    const record = value && typeof value === "object" && !Array.isArray(value) ? value : null;
+    if (!record)
+        return null;
+    const nestedData = record.data && typeof record.data === "object" && !Array.isArray(record.data) ? record.data : null;
+    const toolCall = record.toolCall && typeof record.toolCall === "object" && !Array.isArray(record.toolCall)
+        ? record.toolCall
+        : nestedData && nestedData.toolCall && typeof nestedData.toolCall === "object" && !Array.isArray(nestedData.toolCall)
+            ? nestedData.toolCall
+            : null;
+    if (!toolCall)
+        return null;
+    const summary = normalizeCompatNaturalText(typeof toolCall.summary === "string" ? toolCall.summary : typeof record.summary === "string" ? record.summary : "");
+    if (summary) {
+        if (/^i('m| am)\b/i.test(summary))
+            return summary;
+        return `I'm ${summary.charAt(0).toLowerCase()}${summary.slice(1)}`;
+    }
+    const toolName = normalizeCompatNaturalText(typeof toolCall.name === "string" ? toolCall.name : "");
+    const args = toolCall.arguments && typeof toolCall.arguments === "object" && !Array.isArray(toolCall.arguments)
+        ? toolCall.arguments
+        : {};
+    const target = formatCompatNaturalLabel(typeof args.resultQuery === "string"
+        ? args.resultQuery
+        : typeof args.query === "string"
+            ? args.query
+            : typeof args.url === "string"
+                ? args.url
+                : "");
+    if (toolName === "open_browser" || toolName === "browser_open_page" || toolName === "browser_search_and_open_best_result") {
+        return target ? `I'm opening ${target} in the browser.` : "I'm opening that in the browser.";
+    }
+    if (toolName === "read_file") {
+        return "I'm reading the relevant files now.";
+    }
+    if (toolName === "run_command") {
+        return "I'm running the needed command now.";
+    }
+    if (toolName === "list_files") {
+        return "I'm checking the relevant files now.";
+    }
+    if (toolName === "create_file" || toolName === "write_file") {
+        const targetPath = formatCompatNaturalLabel(typeof args.path === "string" ? args.path : "");
+        return targetPath ? `I'm creating ${targetPath} now.` : "I'm creating that file now.";
+    }
+    if (toolName) {
+        return `I'm using ${toolName.replace(/_/g, " ")} to work on this.`;
+    }
+    return null;
+}
+function humanizeCompatHostMessage(rawMessage) {
+    return humanizeCompatHostMessageInternal(rawMessage, new Set(), 0);
+}
+function humanizeCompatHostMessageInternal(rawMessage, seenMessages, depth) {
+    const message = typeof rawMessage === "string" ? rawMessage.trim() : "";
+    if (!message)
+        return "";
+    if (depth > 6 || seenMessages.has(message))
+        return message;
+    seenMessages.add(message);
+    if (/^[\[{]/.test(message)) {
+        const structured = safeJsonParse(message, null);
+        const structuredSummary = summarizeCompatStructuredToolCall(structured);
+        if (structuredSummary)
+            return structuredSummary;
+        if (structured && typeof structured === "object" && !Array.isArray(structured)) {
+            const nestedMessage = typeof structured.message === "string"
+                ? structured.message
+                : structured.data && typeof structured.data === "object" && !Array.isArray(structured.data) && typeof structured.data.message === "string"
+                    ? structured.data.message
+                    : typeof structured.final === "string"
+                        ? structured.final
+                        : "";
+            if (nestedMessage && nestedMessage.trim() !== message)
+                return humanizeCompatHostMessageInternal(nestedMessage, seenMessages, depth + 1);
+        }
+    }
+    const causeMatch = message.match(/Cause:\s*(.+)$/i);
+    const cause = causeMatch ? causeMatch[1].trim() : message;
+    if (/final response came back empty/i.test(message)) {
+        return "I didn't get a usable reply back that time. Please try once more.";
+    }
+    if (/openrouter free is busy right now/i.test(message)) {
+        return message;
+    }
+    if (/http error 429|too many requests|rate.?limit|quota exceeded|resource_exhausted/i.test(cause)) {
+        return "The AI provider is busy right now. Please try again in a moment.";
+    }
+    if (/http error 502|bad gateway|gateway timeout|service unavailable|temporarily unavailable/i.test(cause)) {
+        return "The AI service is temporarily unavailable right now. Please try again in a moment.";
+    }
+    if (/http error 401|unauthorized|authentication token|signing in again|portal bridge authentication failed/i.test(cause)) {
+        return "The Codex connection needs to be signed in again. Binary will use a backup model when it can.";
+    }
+    if (/provider capacity/i.test(cause)) {
+        return "The AI provider is temporarily at capacity. Please try again in a moment.";
+    }
+    if (/binary host failed on the local openhands path/i.test(message)) {
+        return cause !== message ? humanizeCompatHostMessageInternal(cause, seenMessages, depth + 1) : message;
+    }
+    if (/i hit temporary provider capacity/i.test(message)) {
+        return "The AI provider is busy right now. Please try again in a moment.";
+    }
+    if (/strict openhands terminal mode is enabled/i.test(cause)) {
+        return "The coding terminal isn't ready yet. Please retry in a moment.";
+    }
+    if (/turn budget exceeded/i.test(cause)) {
+        return "The response took too long this time. Please try again.";
+    }
+    if (/llm provider not provided|no endpoints found|deprecated/i.test(cause)) {
+        return "The selected AI model isn't available right now. Please try again shortly.";
+    }
+    return message;
+}
+function compatEmptyFinalFallback() {
+    return "I didn't get a usable reply back that time. Please try once more.";
+}
 function summarizeCompatHostEvent(payload) {
     const eventName = typeof payload.event === "string" ? payload.event : "";
     const data = payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)
         ? payload.data
         : {};
     if (eventName === "host.status") {
-        const message = typeof data.message === "string" ? data.message.trim() : "";
+        const message = humanizeCompatHostMessage(typeof data.message === "string" ? data.message.trim() : "");
         if (!message)
             return null;
         const progressTick = typeof data.progressTick === "number" ? data.progressTick : null;
@@ -1382,7 +2277,9 @@ function summarizeCompatHostEvent(payload) {
             return null;
         if (message.includes("completed the run"))
             return null;
-        if (/error|failed|blocked|takeover|repair/i.test(message))
+        if (/busy right now|temporarily unavailable|provider is temporarily at capacity/i.test(message))
+            return null;
+        if (/error|failed|blocked|takeover|repair|busy right now|temporarily unavailable|too long this time|isn't ready yet|isn't available right now/i.test(message))
             return message;
         return null;
     }
@@ -1429,6 +2326,18 @@ async function trustCompatHostWorkspace(workspaceRoot) {
         throw new Error(raw || `Unable to trust workspace ${workspaceRoot}`);
     }
 }
+async function trustCompatHostWorkspaceRoots(workspaceRoots) {
+    const roots = normalizeCompatWorkspaceRoots(Array.isArray(workspaceRoots) ? workspaceRoots : []);
+    for (const root of roots) {
+        try {
+            await trustCompatHostWorkspace(root);
+            appendCodexCompatLog(`workspace-auto-trusted root=${root}`);
+        }
+        catch (error) {
+            appendCodexCompatLog(`workspace-auto-trust-failed root=${root} error=${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+}
 async function readCompatHostRunFinal(runId) {
     const response = await fetch(`${defaultHostUrl}/v1/runs/${encodeURIComponent(runId)}`, {
         method: "GET",
@@ -1448,13 +2357,13 @@ async function readCompatHostRunFinal(runId) {
     const closureSummary = typeof finalEnvelope.closureSummary === "string" ? finalEnvelope.closureSummary.trim() : "";
     const takeoverReason = typeof payload.takeoverReason === "string" ? payload.takeoverReason.trim() : "";
     const status = typeof payload.status === "string" ? payload.status.trim().toLowerCase() : "";
-    const resolvedText = finalText
+    const resolvedText = humanizeCompatHostMessage(finalText
         || closureSummary
         || (status === "takeover_required"
             ? takeoverReason
                 ? `I need your attention to continue. ${takeoverReason}`
                 : "I need your attention to continue."
-            : "");
+            : ""));
     const conversationId = typeof payload.conversationId === "string"
         ? payload.conversationId
         : typeof finalEnvelope.conversationId === "string"
@@ -1467,16 +2376,26 @@ async function readCompatHostRunFinal(runId) {
 }
 async function runCompatHostAssist(thread, prompt, options) {
     const workspaceRoot = resolveCompatHostWorkspaceRoot(thread.cwd)
-        || normalizeCompatWorkspaceRoot(codexCompatWorkspaceRoot || node_process_1.default.cwd())
+        || readCompatActiveWorkspaceRoot()
+        || normalizeCompatWorkspaceRoot(electron_1.app.getPath("home"))
+        || normalizeCompatWorkspaceRoot(node_process_1.default.cwd())
         || node_process_1.default.cwd();
+    const sessionModelOverride = typeof node_process_1.default.env.BINARY_IDE_SESSION_MODEL_OVERRIDE === "string"
+        && node_process_1.default.env.BINARY_IDE_SESSION_MODEL_OVERRIDE.trim()
+        ? node_process_1.default.env.BINARY_IDE_SESSION_MODEL_OVERRIDE.trim()
+        : null;
+    const machineRootPath = node_process_1.default.platform === "win32"
+        ? readCompatActiveWorkspaceRoot() || workspaceRoot
+        : workspaceRoot;
     const collaborationMode = normalizeCompatCollaborationMode(options?.collaborationMode, thread.collaborationMode);
     const requestBody = {
         task: prompt,
         mode: resolveCompatHostAssistMode(collaborationMode),
-        model: "Binary IDE",
+        model: sessionModelOverride || "Binary IDE",
         speedProfile: "fast",
         historySessionId: thread.historySessionId || undefined,
         workspaceRoot: workspaceRoot || undefined,
+        machineRootPath: machineRootPath || undefined,
         focusWorkspaceRoot: workspaceRoot || undefined,
         focusRepoRoot: workspaceRoot || undefined,
         client: {
@@ -1526,6 +2445,7 @@ async function runCompatHostAssist(thread, prompt, options) {
         };
         let runId = null;
         let finalText = "";
+        let userInputRequest = null;
         if (response.body) {
             const reader = response.body.getReader();
             try {
@@ -1553,6 +2473,10 @@ async function runCompatHostAssist(thread, prompt, options) {
                             runId =
                                 (typeof payload.runId === "string" ? payload.runId : null) ||
                                     (typeof payloadData.runId === "string" ? payloadData.runId : null);
+                        }
+                        if (!userInputRequest && payload.event === "request_user_input" && payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)) {
+                            userInputRequest = normalizeCompatHostUserInputRequest(payload.data);
+                            continue;
                         }
                         if (!finalText && payload.event === "final" && typeof payload.data === "string") {
                             finalText = payload.data.trim();
@@ -1587,6 +2511,10 @@ async function runCompatHostAssist(thread, prompt, options) {
                             (typeof payload.runId === "string" ? payload.runId : null) ||
                                 (typeof payloadData.runId === "string" ? payloadData.runId : null);
                     }
+                    if (!userInputRequest && payload.event === "request_user_input" && payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)) {
+                        userInputRequest = normalizeCompatHostUserInputRequest(payload.data);
+                        continue;
+                    }
                     if (!finalText && payload.event === "final" && typeof payload.data === "string") {
                         finalText = payload.data.trim();
                     }
@@ -1611,26 +2539,186 @@ async function runCompatHostAssist(thread, prompt, options) {
                 .find((entry) => entry && entry !== "[DONE]")
                 || raw.trim()
                 || `Binary Host assist failed with status ${response.status}`;
-            throw new Error(detail);
+            throw new Error(humanizeCompatHostMessage(detail));
         }
-        if (runId) {
+        if (runId && !userInputRequest) {
             const finalizedRun = await readCompatHostRunFinal(runId);
             return {
                 text: finalizedRun.text
                     || finalText
-                    || latestProgressMessage
-                    || "I finished this turn, but the final response came back empty. Please try once more.",
+                    || humanizeCompatHostMessage(latestProgressMessage)
+                    || compatEmptyFinalFallback(),
                 runId,
                 conversationId: finalizedRun.conversationId,
+                userInputRequest: null,
             };
         }
         return {
-            text: finalText || latestProgressMessage || "I finished this turn, but the final response came back empty. Please try once more.",
-            runId: null,
+            text: userInputRequest
+                ? humanizeCompatHostMessage(finalText || latestProgressMessage)
+                : humanizeCompatHostMessage(finalText || latestProgressMessage) || compatEmptyFinalFallback(),
+            runId,
             conversationId: null,
+            userInputRequest,
         };
     }
     throw new Error("Binary Host assist could not be started.");
+}
+async function continueCompatHostAssistWithUserInput(runId, requestId, answers, options) {
+    const assistTimeoutMs = Math.max(10000, Number(process.env.BINARY_IDE_COMPAT_ASSIST_TIMEOUT_MS || 45000));
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), assistTimeoutMs);
+    let response;
+    try {
+        response = await fetch(`${defaultHostUrl}/v1/runs/${encodeURIComponent(runId)}/user-input`, {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                accept: "text/event-stream, application/json",
+            },
+            body: JSON.stringify({
+                requestId,
+                answers,
+            }),
+            signal: controller.signal,
+        });
+    }
+    catch (error) {
+        clearTimeout(timeoutHandle);
+        if (error instanceof Error && error.name === "AbortError") {
+            throw new Error("The local runtime timed out while waiting for a planning follow-up response. Please retry.");
+        }
+        throw error;
+    }
+    const decoder = new TextDecoder();
+    let raw = "";
+    let buffer = "";
+    const sseEvents = [];
+    const seenProgressMessages = new Set();
+    let latestProgressMessage = "";
+    const pushProgressMessage = (message) => {
+        const normalized = typeof message === "string" ? message.trim() : "";
+        if (!normalized || seenProgressMessages.has(normalized))
+            return;
+        seenProgressMessages.add(normalized);
+        latestProgressMessage = normalized;
+        options?.onProgress?.(normalized);
+    };
+    let continuedRunId = runId;
+    let finalText = "";
+    let userInputRequest = null;
+    if (response.body) {
+        const reader = response.body.getReader();
+        try {
+            while (true) {
+                const next = await reader.read();
+                if (next.done)
+                    break;
+                const chunk = decoder.decode(next.value, { stream: true });
+                raw += chunk;
+                buffer += chunk;
+                const parsedBuffer = extractCompatSsePayloads(buffer);
+                buffer = parsedBuffer.remainder;
+                for (const entry of parsedBuffer.payloads) {
+                    sseEvents.push(entry);
+                    if (entry === "[DONE]")
+                        continue;
+                    const parsed = safeJsonParse(entry, entry);
+                    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+                        continue;
+                    const payload = parsed;
+                    const payloadData = payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)
+                        ? payload.data
+                        : {};
+                    if (typeof payload.runId === "string" && payload.runId.trim()) {
+                        continuedRunId = payload.runId.trim();
+                    }
+                    else if (typeof payloadData.runId === "string" && payloadData.runId.trim()) {
+                        continuedRunId = payloadData.runId.trim();
+                    }
+                    if (!userInputRequest && payload.event === "request_user_input" && payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)) {
+                        userInputRequest = normalizeCompatHostUserInputRequest(payload.data);
+                        continue;
+                    }
+                    if (!finalText && payload.event === "final" && typeof payload.data === "string") {
+                        finalText = payload.data.trim();
+                    }
+                    pushProgressMessage(summarizeCompatHostEvent(payload));
+                }
+            }
+        }
+        catch (error) {
+            clearTimeout(timeoutHandle);
+            if (error instanceof Error && error.name === "AbortError") {
+                throw new Error("The local runtime timed out while waiting for a planning follow-up response. Please retry.");
+            }
+            throw error;
+        }
+        raw += decoder.decode();
+        if (buffer.trim()) {
+            const parsedBuffer = extractCompatSsePayloads(`${buffer}\n\n`);
+            for (const entry of parsedBuffer.payloads) {
+                sseEvents.push(entry);
+                if (entry === "[DONE]")
+                    continue;
+                const parsed = safeJsonParse(entry, entry);
+                if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+                    continue;
+                const payload = parsed;
+                const payloadData = payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)
+                    ? payload.data
+                    : {};
+                if (typeof payload.runId === "string" && payload.runId.trim()) {
+                    continuedRunId = payload.runId.trim();
+                }
+                else if (typeof payloadData.runId === "string" && payloadData.runId.trim()) {
+                    continuedRunId = payloadData.runId.trim();
+                }
+                if (!userInputRequest && payload.event === "request_user_input" && payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)) {
+                    userInputRequest = normalizeCompatHostUserInputRequest(payload.data);
+                    continue;
+                }
+                if (!finalText && payload.event === "final" && typeof payload.data === "string") {
+                    finalText = payload.data.trim();
+                }
+                pushProgressMessage(summarizeCompatHostEvent(payload));
+            }
+        }
+    }
+    else {
+        raw = await response.text();
+        sseEvents.push(...parseSseDataChunks(raw));
+    }
+    clearTimeout(timeoutHandle);
+    appendCodexCompatLog(`host-user-input status=${response.status} payload=${summarizeForCompatLog(raw, 900)}`);
+    if (!response.ok) {
+        const detail = sseEvents
+            .map((entry) => entry.trim())
+            .find((entry) => entry && entry !== "[DONE]")
+            || raw.trim()
+            || `Binary Host user-input resume failed with status ${response.status}`;
+        throw new Error(humanizeCompatHostMessage(detail));
+    }
+    if (continuedRunId && !userInputRequest) {
+        const finalizedRun = await readCompatHostRunFinal(continuedRunId);
+        return {
+            text: finalizedRun.text
+                || finalText
+                || humanizeCompatHostMessage(latestProgressMessage)
+                || compatEmptyFinalFallback(),
+            runId: continuedRunId,
+            conversationId: finalizedRun.conversationId,
+            userInputRequest: null,
+        };
+    }
+    return {
+        text: userInputRequest
+            ? humanizeCompatHostMessage(finalText || latestProgressMessage)
+            : humanizeCompatHostMessage(finalText || latestProgressMessage) || compatEmptyFinalFallback(),
+        runId: continuedRunId,
+        conversationId: null,
+        userInputRequest,
+    };
 }
 function readCompatPinnedThreadIds() {
     const raw = codexCompatGlobalState.get("pinned-thread-ids");
@@ -1732,7 +2820,8 @@ function readCompatSharedObjectValue(key) {
     return undefined;
 }
 function buildCompatVscodeFetchResult(endpoint, params) {
-    const activeWorkspaceRoot = normalizeCompatPathForUi(resolveCompatActiveWorkspaceRoot());
+    const activeWorkspaceRoot = resolveCompatActiveWorkspaceRoot();
+    const activeWorkspaceRootUi = activeWorkspaceRoot ? normalizeCompatPathForUi(activeWorkspaceRoot) : null;
     switch (endpoint) {
         case "ipc-request":
             return null;
@@ -1777,19 +2866,21 @@ function buildCompatVscodeFetchResult(endpoint, params) {
             const key = typeof params.key === "string" ? params.key : "";
             if (key) {
                 codexCompatGlobalState.set(key, cloneCompatJson(params.value));
+                if (key === "project-order" || key === "thread-workspace-root-hints") {
+                    syncCompatWorkspaceRootsFromGlobalHints();
+                }
             }
             return {
                 ok: true,
             };
         }
         case "active-workspace-roots": {
-            const root = activeWorkspaceRoot;
             return {
-                roots: [root],
+                roots: activeWorkspaceRootUi ? [activeWorkspaceRootUi] : [],
             };
         }
         case "workspace-root-options": {
-            const roots = readCompatWorkspaceRootOptions();
+            const roots = readCompatWorkspaceRootOptionsForUi();
             return {
                 roots: roots.map((root) => root.replace(/\\/g, "/")),
                 labels: compatWorkspaceRootLabels(roots),
@@ -1862,25 +2953,29 @@ function buildCompatVscodeFetchResult(endpoint, params) {
             };
         case "ide-context":
             return {
-                cwd: activeWorkspaceRoot,
+                cwd: activeWorkspaceRootUi,
                 selectedText: null,
                 openFiles: [],
             };
         case "paths-exist": {
             const paths = Array.isArray(params.paths) ? params.paths : [];
+            const results = paths.map((entry) => {
+                const rawPath = String(entry);
+                const resolvedPath = normalizeCompatPathForHost(rawPath);
+                let exists = false;
+                try {
+                    exists = (0, node_fs_1.existsSync)(resolvedPath);
+                }
+                catch {
+                    exists = false;
+                }
+                return { path: rawPath, exists };
+            });
             return {
-                results: paths.map((entry) => {
-                    const rawPath = String(entry);
-                    const resolvedPath = normalizeCompatPathForHost(rawPath);
-                    let exists = false;
-                    try {
-                        exists = (0, node_fs_1.existsSync)(resolvedPath);
-                    }
-                    catch {
-                        exists = false;
-                    }
-                    return { path: rawPath, exists };
-                }),
+                results,
+                existingPaths: results
+                    .filter((entry) => entry.exists)
+                    .map((entry) => normalizeCompatPathForUi(entry.path).replace(/\/+$/, "")),
             };
         }
         case "get-copilot-api-proxy-info":
@@ -1955,10 +3050,21 @@ async function sendCompatOnboardingWorkspaceResult(sender, payload) {
     let source = "existing";
     let root = null;
     try {
-        const resolved = await resolveCompatOnboardingWorkspaceRoot(payload.defaultProjectName);
-        source = resolved.source;
-        root = resolved.root;
-        setCompatWorkspaceRoots([root], root);
+        if (node_process_1.default.platform === "win32") {
+            const startupRoots = resolveCompatWholePcStartupRoots();
+            root = chooseCompatPrimaryWorkspaceRoot(startupRoots);
+            source = "whole_pc";
+            if (!root) {
+                throw new Error("Unable to resolve a fixed-drive startup root.");
+            }
+            setCompatWorkspaceRoots(startupRoots, root);
+        }
+        else {
+            const resolved = await resolveCompatOnboardingWorkspaceRoot(payload.defaultProjectName);
+            source = resolved.source;
+            root = resolved.root;
+            setCompatWorkspaceRoots([root], root);
+        }
         notifyCompatWorkspaceRootsUpdated(sender, true);
         sendCodexMessageToWebContents(sender, {
             type: "electron-onboarding-pick-workspace-or-create-default-result",
@@ -2235,7 +3341,10 @@ function notifyTerminalAttached(sender, sessionState) {
 }
 function buildCompatMcpResult(method, params) {
     const nowUnixSeconds = Math.floor(Date.now() / 1000);
-    const workspaceRoot = (codexCompatWorkspaceRoot || node_process_1.default.cwd()).replace(/\\/g, "/");
+    const workspaceRoot = normalizeCompatPathForUi(readCompatActiveWorkspaceRoot()
+        || normalizeCompatWorkspaceRoot(electron_1.app.getPath("home"))
+        || normalizeCompatWorkspaceRoot(node_process_1.default.cwd())
+        || node_process_1.default.cwd());
     switch (method) {
         case "account/read":
             return {
@@ -2326,7 +3435,7 @@ function buildCompatMcpResult(method, params) {
             const sessionId = typeof params.sessionId === "string" && params.sessionId.trim()
                 ? params.sessionId.trim()
                 : (0, node_crypto_1.randomUUID)();
-            const roots = normalizeCompatWorkspaceRoots(Array.isArray(params.roots) ? params.roots.map((entry) => normalizeCompatSearchRoot(entry)) : []);
+            const roots = resolveCompatFuzzySearchRoots().roots;
             codexCompatFuzzyFileSearchSessions.set(sessionId, {
                 sessionId,
                 roots,
@@ -2341,15 +3450,17 @@ function buildCompatMcpResult(method, params) {
             const sessionId = typeof params.sessionId === "string" && params.sessionId.trim() ? params.sessionId.trim() : "";
             let session = sessionId ? codexCompatFuzzyFileSearchSessions.get(sessionId) : null;
             if (!session) {
+                const resolvedSearch = resolveCompatFuzzySearchRoots();
                 session = {
                     sessionId,
-                    roots: normalizeCompatWorkspaceRoots([codexCompatWorkspaceRoot || node_process_1.default.cwd()]),
+                    roots: resolvedSearch.roots,
                     query: "",
                 };
                 if (sessionId) {
                     codexCompatFuzzyFileSearchSessions.set(sessionId, session);
                 }
             }
+            session.roots = resolveCompatFuzzySearchRoots().roots;
             session.query = typeof params.query === "string" ? params.query : "";
             return {
                 sessionId,
@@ -2723,23 +3834,28 @@ async function handleCodexMessageFromView(sender, payload) {
             return await addCompatWorkspaceRootOption(typeof message.root === "string" ? message.root : null, sender);
         case "electron-set-active-workspace-root": {
             const selectedRoot = normalizeCompatWorkspaceRoot(typeof message.root === "string" ? message.root : null);
+            if (selectedRoot) {
+                ensureCompatWorkspaceRootOption(selectedRoot, selectedRoot);
+            }
             const nextState = setCompatWorkspaceRoots(readCompatWorkspaceRootOptions(), selectedRoot || undefined);
             notifyCompatWorkspaceRootsUpdated(sender, !selectedRoot || nextState.activeRoot === selectedRoot);
+            const uiRoots = readCompatWorkspaceRootOptionsForUi();
             return {
-                ok: Boolean(selectedRoot),
-                root: nextState.activeRoot.replace(/\\/g, "/"),
-                roots: nextState.roots.map((root) => root.replace(/\\/g, "/")),
+                ok: Boolean(selectedRoot) && nextState.activeRoot === selectedRoot,
+                root: nextState.activeRoot ? nextState.activeRoot.replace(/\\/g, "/") : null,
+                roots: uiRoots.map((root) => root.replace(/\\/g, "/")),
             };
         }
         case "electron-update-workspace-root-options": {
             const nextRoots = Array.isArray(message.roots) ? message.roots : [];
             const nextState = setCompatWorkspaceRoots(nextRoots, codexCompatWorkspaceRoot || undefined);
             notifyCompatWorkspaceRootsUpdated(sender);
+            const uiRoots = readCompatWorkspaceRootOptionsForUi();
             return {
                 ok: true,
-                root: nextState.activeRoot.replace(/\\/g, "/"),
-                roots: nextState.roots.map((root) => root.replace(/\\/g, "/")),
-                labels: compatWorkspaceRootLabels(nextState.roots),
+                root: nextState.activeRoot ? nextState.activeRoot.replace(/\\/g, "/") : null,
+                roots: uiRoots.map((root) => root.replace(/\\/g, "/")),
+                labels: compatWorkspaceRootLabels(uiRoots),
             };
         }
         case "codex-app-server-restart":
@@ -2901,7 +4017,10 @@ async function handleCodexMessageFromView(sender, payload) {
                 const assistantItemId = `local-assistant-item-${(0, node_crypto_1.randomUUID)()}`;
                 const userContent = readCompatTurnInputItems(params);
                 const prompt = extractCompatTurnText(params);
+                const existingThread = codexCompatThreads.get(threadId) || null;
+                const resolvedTurnPrompt = resolveCompatTurnPrompt(prompt, params.collaborationMode, existingThread?.collaborationMode || null);
                 const imageInputs = extractCompatTurnImageInputs(params);
+                const effectiveCollaborationMode = resolvedTurnPrompt.collaborationMode;
                 const initialThread = ensureCompatThread({
                     id: threadId,
                     cwd: typeof params.cwd === "string" && params.cwd.trim() ? params.cwd.trim() : undefined,
@@ -2909,7 +4028,7 @@ async function handleCodexMessageFromView(sender, payload) {
                     reasoningEffort: typeof params.reasoningEffort === "string" && params.reasoningEffort.trim()
                         ? params.reasoningEffort.trim()
                         : null,
-                    collaborationMode: params.collaborationMode,
+                    collaborationMode: effectiveCollaborationMode,
                 });
                 const sendCompatNotification = (notificationMethod, notificationParams) => {
                     sendCodexMessageToWebContents(sender, {
@@ -2951,6 +4070,7 @@ async function handleCodexMessageFromView(sender, payload) {
                 void (async () => {
                     let assistantText = "";
                     let finalizedThread = initialThread;
+                    const normalizedPrompt = resolvedTurnPrompt.prompt.trim();
                     const progressLines = [];
                     const pushProgressLine = (message) => {
                         const normalized = message.trim();
@@ -2965,28 +4085,59 @@ async function handleCodexMessageFromView(sender, payload) {
                         });
                     };
                     try {
-                        const hasAssistPayload = Boolean(prompt) || imageInputs.length > 0;
-                        const hostResult = hasAssistPayload
-                            ? await runCompatHostAssist(initialThread, prompt || "Please analyze the attached image and help with the request.", {
+                        const hasAssistPayload = Boolean(normalizedPrompt) || imageInputs.length > 0;
+                        let hostResult = hasAssistPayload
+                            ? await runCompatHostAssist(initialThread, normalizedPrompt || "Please analyze the attached image and help with the request.", {
                                 onProgress: pushProgressLine,
-                                collaborationMode: params.collaborationMode,
+                                collaborationMode: effectiveCollaborationMode,
                                 imageInputs,
                             })
-                            : { text: "Please enter a message before sending.", runId: null, conversationId: null };
-                        assistantText = hostResult.text.trim() || "I finished this turn, but the final response came back empty. Please try once more.";
+                            : { text: "Please enter a message before sending.", runId: null, conversationId: null, userInputRequest: null };
+                        let activeRunId = hostResult.runId;
+                        let activeConversationId = hostResult.conversationId || initialThread.historySessionId;
+                        while (hostResult.userInputRequest && activeRunId) {
+                            const userInputResponse = await requestCompatMcpFromWebContents(sender, hostId, "item/tool/requestUserInput", {
+                                itemId: assistantItemId,
+                                turnId,
+                                questions: cloneCompatJson(hostResult.userInputRequest.questions),
+                            });
+                            const normalizedAnswers = normalizeCompatUserInputAnswers(userInputResponse);
+                            if (Object.keys(normalizedAnswers).length === 0) {
+                                throw new Error("I still need at least one planning answer to continue.");
+                            }
+                            sendCompatNotification("item/completed", {
+                                threadId: initialThread.id,
+                                turnId,
+                                item: {
+                                    id: `local-user-input-response-${(0, node_crypto_1.randomUUID)()}`,
+                                    type: "userInputResponse",
+                                    requestId: hostResult.userInputRequest.requestId,
+                                    turnId,
+                                    questions: cloneCompatJson(hostResult.userInputRequest.questions),
+                                    answers: cloneCompatJson(normalizedAnswers),
+                                    completed: true,
+                                },
+                            });
+                            hostResult = await continueCompatHostAssistWithUserInput(activeRunId, hostResult.userInputRequest.requestId, normalizedAnswers, {
+                                onProgress: pushProgressLine,
+                            });
+                            activeRunId = hostResult.runId || activeRunId;
+                            activeConversationId = hostResult.conversationId || activeConversationId;
+                        }
+                        assistantText = humanizeCompatHostMessage(hostResult.text).trim() || compatEmptyFinalFallback();
                         finalizedThread = upsertCompatThread({
                             ...initialThread,
-                            name: initialThread.name === "New thread" && prompt ? buildCompatThreadPreview(prompt, 48) : initialThread.name,
+                            name: initialThread.name === "New thread" && normalizedPrompt ? buildCompatThreadPreview(normalizedPrompt, 48) : initialThread.name,
                             preview: buildCompatThreadPreview(assistantText),
                             updatedAt: Math.floor(Date.now() / 1000),
-                            historySessionId: hostResult.conversationId || initialThread.historySessionId,
-                            lastRunId: hostResult.runId,
-                            conversationId: hostResult.conversationId || initialThread.conversationId,
+                            historySessionId: activeConversationId || initialThread.historySessionId,
+                            lastRunId: activeRunId,
+                            conversationId: activeConversationId || initialThread.conversationId,
                         });
                     }
                     catch (error) {
                         const errorText = error instanceof Error ? error.message : String(error);
-                        assistantText = `Binary Host couldn't complete this turn.\n\n${errorText}`;
+                        assistantText = humanizeCompatHostMessage(errorText) || "Binary couldn't complete this turn.";
                         finalizedThread = upsertCompatThread({
                             ...initialThread,
                             preview: buildCompatThreadPreview(assistantText),
@@ -3017,8 +4168,24 @@ async function handleCodexMessageFromView(sender, payload) {
             appendCodexCompatLog(`mcp-response method=${method} hostId=${hostId ?? "default"} id=${requestId} payload=${summarizeForCompatLog(responsePayload, 420)}`);
             return { ok: true };
         }
-        case "mcp-response":
+        case "mcp-response": {
+            const responsePayload = message.response && typeof message.response === "object"
+                ? message.response
+                : {};
+            const responseId = typeof responsePayload.id === "string" && responsePayload.id.trim()
+                ? responsePayload.id.trim()
+                : "";
+            if (responseId) {
+                const pending = codexCompatPendingMcpRequests.get(responseId);
+                if (pending) {
+                    clearTimeout(pending.timeoutHandle);
+                    codexCompatPendingMcpRequests.delete(responseId);
+                    pending.resolve(responsePayload.result);
+                    appendCodexCompatLog(`mcp-response<-view id=${responseId} payload=${summarizeForCompatLog(responsePayload.result, 420)}`);
+                }
+            }
             return { ok: true };
+        }
         case "terminal-create": {
             const sessionState = getOrCreateTerminalSession(message);
             ensureTerminalProcess(sessionState);
@@ -3323,9 +4490,13 @@ function createMainWindow() {
             appendCodexCompatLog(`window-unresponsive inflight=${protocolInflightRequests} pending=${protocolPendingSummary()}`);
         }
     });
-    mainWindow.webContents.on("did-fail-load", () => {
+    mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription) => {
         if (activeUiRuntime === "codex_compat") {
-            appendCodexCompatLog("did-fail-load");
+            appendCodexCompatLog(`did-fail-load code=${String(errorCode)} description=${String(errorDescription || "")}`);
+            if (isCompatAbortLikeError(errorCode, errorDescription)) {
+                appendCodexCompatLog("did-fail-load ignored-abort");
+                return;
+            }
             handleCompatStartupIssue("compat-did-fail-load");
             return;
         }
@@ -3348,7 +4519,12 @@ function createMainWindow() {
     }).catch((error) => {
         clearTimeout(compatLoadGuard);
         if (activeUiRuntime === "codex_compat") {
-            appendCodexCompatLog(`load-surface-error error=${error instanceof Error ? error.message : String(error)}`);
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            appendCodexCompatLog(`load-surface-error error=${errorMessage}`);
+            if (isCompatAbortLikeError(undefined, errorMessage)) {
+                appendCodexCompatLog("load-surface-error ignored-abort");
+                return;
+            }
             handleCompatStartupIssue("compat-load-surface-error");
             return;
         }
@@ -3749,11 +4925,11 @@ electron_1.ipcMain.on(CODEX_IPC.getSystemThemeVariant, (event) => {
     appendCodexCompatLog("ipc-sync getSystemThemeVariant");
     event.returnValue = currentRendererThemeVariant();
 });
-electron_1.ipcMain.handle(CODEX_IPC.showContextMenu, async () => {
-    return true;
+electron_1.ipcMain.handle(CODEX_IPC.showContextMenu, async (event, payload) => {
+    return await showCompatContextMenu(event.sender, payload);
 });
-electron_1.ipcMain.handle(CODEX_IPC.showApplicationMenu, async () => {
-    return true;
+electron_1.ipcMain.handle(CODEX_IPC.showApplicationMenu, async (event, payload) => {
+    return await showCompatApplicationMenu(event.sender, payload);
 });
 electron_1.ipcMain.handle(CODEX_IPC.getFastModeRolloutMetrics, async () => {
     return {
@@ -3784,6 +4960,7 @@ electron_1.app.whenReady().then(async () => {
     overlayState = loadedState.overlay;
     runSurfaceState = loadedState.runSurfaceState;
     desktopAppearance = loadedState.appearance;
+    setCompatWorkspaceRoots(loadedState.workspaceRoots || [], loadedState.activeWorkspaceRoot || undefined);
     activeUiRuntime = requestedUiRuntime;
     appendCodexCompatLog(`startup-config runtime=${activeUiRuntime} traceProtocol=${compatTraceProtocol}`);
     try {
@@ -3797,6 +4974,10 @@ electron_1.app.whenReady().then(async () => {
         appendCodexCompatLog(`compat-main-missing path=${compatMainRendererPath}`);
     }
     startBinaryHost();
+    ensureCompatInitialWorkspaceRoot();
+    if (node_process_1.default.platform === "win32") {
+        void trustCompatHostWorkspaceRoots(readCompatWorkspaceRootOptions());
+    }
     createMainWindow();
     if (ENABLE_AUXILIARY_WINDOWS) {
         syncPlayerWindow();

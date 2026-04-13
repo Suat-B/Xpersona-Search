@@ -14,6 +14,8 @@
     flash: "",
     selected: new Set(),
   };
+  let renderScheduled = false;
+  let renderInFlight = false;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -40,56 +42,54 @@
     style.id = STYLE_ID;
     style.textContent = `
       #${ROOT_ID} {
-        margin: 0 0 24px;
-        border-radius: 20px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        background:
-          radial-gradient(circle at top right, rgba(58, 108, 255, 0.18), transparent 36%),
-          linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02));
+        margin: 0 0 20px;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        background: rgba(255,255,255,0.02);
         color: var(--token-foreground, #f4f4f5);
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
         overflow: hidden;
-        backdrop-filter: blur(18px);
+        backdrop-filter: blur(10px);
       }
       #${ROOT_ID} * {
         box-sizing: border-box;
       }
       #${ROOT_ID} .binary-head {
         display: flex;
-        gap: 16px;
+        gap: 12px;
         flex-wrap: wrap;
         align-items: flex-start;
         justify-content: space-between;
-        padding: 20px 22px 16px;
+        padding: 16px 18px 14px;
         border-bottom: 1px solid rgba(255,255,255,0.06);
       }
       #${ROOT_ID} .binary-kicker {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
-        margin-bottom: 10px;
-        padding: 6px 10px;
+        gap: 6px;
+        margin-bottom: 8px;
+        padding: 4px 8px;
         border-radius: 999px;
-        border: 1px solid rgba(116, 161, 255, 0.22);
-        background: rgba(65, 117, 255, 0.12);
-        color: #d6e4ff;
-        font-size: 11px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255,255,255,0.04);
+        color: var(--token-description-foreground, rgba(255,255,255,0.8));
+        font-size: 10px;
         font-weight: 600;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.03em;
         text-transform: uppercase;
       }
       #${ROOT_ID} .binary-title {
-        font-size: 18px;
-        font-weight: 700;
+        font-size: 16px;
+        font-weight: 650;
         line-height: 1.2;
         letter-spacing: -0.01em;
       }
       #${ROOT_ID} .binary-subtitle {
-        margin-top: 6px;
-        max-width: 780px;
+        margin-top: 4px;
+        max-width: 720px;
         color: var(--token-description-foreground, rgba(255,255,255,0.74));
-        font-size: 13px;
-        line-height: 1.6;
+        font-size: 12px;
+        line-height: 1.55;
       }
       #${ROOT_ID} .binary-actions {
         display: flex;
@@ -102,7 +102,7 @@
         background: rgba(255,255,255,0.04);
         color: inherit;
         border-radius: 999px;
-        padding: 9px 14px;
+        padding: 8px 12px;
         font-size: 12px;
         line-height: 1;
         cursor: pointer;
@@ -113,77 +113,73 @@
         border-color: rgba(255,255,255,0.18);
       }
       #${ROOT_ID} .binary-btn[data-variant="primary"] {
-        background: linear-gradient(180deg, rgba(82, 132, 255, 0.9), rgba(55, 96, 221, 0.92));
-        border-color: rgba(101, 143, 255, 0.86);
+        background: rgba(76, 120, 255, 0.16);
+        border-color: rgba(101, 143, 255, 0.32);
         color: #ffffff;
-        box-shadow: 0 12px 24px rgba(50, 96, 210, 0.26);
-      }
-      #${ROOT_ID} .binary-btn[data-variant="primary"]:hover {
-        background: linear-gradient(180deg, rgba(93, 141, 255, 0.95), rgba(59, 100, 226, 0.96));
       }
       #${ROOT_ID} .binary-summary {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 10px;
-        padding: 16px 22px 0;
+        gap: 8px;
+        padding: 12px 18px 0;
       }
       #${ROOT_ID} .binary-stat {
         border: 1px solid rgba(255,255,255,0.06);
-        border-radius: 16px;
+        border-radius: 12px;
         background: rgba(255,255,255,0.03);
-        padding: 14px 14px 13px;
+        padding: 10px 12px;
       }
       #${ROOT_ID} .binary-stat-value {
-        font-size: 18px;
-        font-weight: 700;
+        font-size: 16px;
+        font-weight: 650;
         letter-spacing: -0.02em;
       }
       #${ROOT_ID} .binary-stat-label {
-        margin-top: 4px;
+        margin-top: 3px;
         color: var(--token-description-foreground, rgba(255,255,255,0.7));
-        font-size: 12px;
-        line-height: 1.5;
+        font-size: 11px;
+        line-height: 1.45;
       }
       #${ROOT_ID} .binary-body {
         display: grid;
         grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
-        gap: 18px;
-        padding: 18px 22px 22px;
+        gap: 14px;
+        padding: 14px 18px 18px;
       }
       #${ROOT_ID} .binary-column {
         display: grid;
-        gap: 14px;
+        gap: 12px;
         align-content: start;
       }
       #${ROOT_ID} .binary-card {
         border: 1px solid rgba(255,255,255,0.06);
-        border-radius: 16px;
-        padding: 16px;
+        border-radius: 12px;
+        padding: 14px;
         background: rgba(255,255,255,0.025);
       }
       #${ROOT_ID} .binary-card-title {
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 650;
         letter-spacing: 0.01em;
       }
       #${ROOT_ID} .binary-card-copy {
-        margin-top: 6px;
+        margin-top: 4px;
         color: var(--token-description-foreground, rgba(255,255,255,0.72));
-        font-size: 12px;
-        line-height: 1.55;
+        font-size: 11px;
+        line-height: 1.5;
       }
       #${ROOT_ID} .binary-list {
         display: grid;
-        gap: 10px;
-        margin-top: 12px;
+        gap: 8px;
+        margin-top: 10px;
       }
       #${ROOT_ID} .binary-offering,
       #${ROOT_ID} .binary-source,
       #${ROOT_ID} .binary-pack {
         border: 1px solid rgba(255,255,255,0.05);
-        border-radius: 14px;
-        padding: 13px;
-        background: rgba(0,0,0,0.16);
+        border-radius: 10px;
+        padding: 11px 12px;
+        background: rgba(255,255,255,0.015);
       }
       #${ROOT_ID} .binary-offering-head,
       #${ROOT_ID} .binary-pack-head {
@@ -195,20 +191,20 @@
       #${ROOT_ID} .binary-offering-title,
       #${ROOT_ID} .binary-source-title,
       #${ROOT_ID} .binary-pack-title {
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 650;
         line-height: 1.4;
       }
       #${ROOT_ID} .binary-offering-copy,
       #${ROOT_ID} .binary-source-copy,
       #${ROOT_ID} .binary-pack-copy {
-        margin-top: 5px;
+        margin-top: 4px;
         color: var(--token-description-foreground, rgba(255,255,255,0.72));
-        font-size: 12px;
-        line-height: 1.55;
+        font-size: 11px;
+        line-height: 1.5;
       }
       #${ROOT_ID} .binary-meta {
-        margin-top: 10px;
+        margin-top: 8px;
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
@@ -244,8 +240,8 @@
         border: 1px solid rgba(255,255,255,0.12);
         background: rgba(255,255,255,0.05);
         color: inherit;
-        padding: 8px 12px;
-        font-size: 12px;
+        padding: 7px 11px;
+        font-size: 11px;
         font-weight: 600;
         cursor: pointer;
       }
@@ -266,7 +262,20 @@
         gap: 10px;
         flex-wrap: wrap;
         align-items: center;
-        margin-top: 12px;
+        margin-top: 10px;
+      }
+      #${ROOT_ID}[data-route="skills"] .binary-summary {
+        display: none;
+      }
+      #${ROOT_ID}[data-route="skills"] .binary-body {
+        grid-template-columns: 1fr;
+      }
+      #${ROOT_ID}[data-route="skills"] .binary-head {
+        border-bottom: none;
+        padding-bottom: 10px;
+      }
+      #${ROOT_ID}[data-route="skills"] .binary-column:last-child {
+        display: none;
       }
       #${ROOT_ID} .binary-flash {
         color: #d5e3ff;
@@ -461,6 +470,9 @@
   }
 
   function render() {
+    if (renderInFlight) return;
+    renderInFlight = true;
+    try {
     ensureStyle();
     const route = detectRoute();
     let root = document.getElementById(ROOT_ID);
@@ -485,14 +497,15 @@
     const workspaceRoot = typeof capabilities.workspaceRoot === "string" ? capabilities.workspaceRoot : "";
     const subtitle =
       route === "skills"
-        ? "Binary is surfacing the real OpenHands skill sources that can shape behavior across desktop, CLI, and long-running jobs."
+        ? "Simple view of the skill sources that can shape agent behavior."
         : "Binary is surfacing the real OpenHands capabilities and plugin packs that are wired into the current host and runtime.";
+    root.dataset.route = route;
 
     root.innerHTML = `
       <div class="binary-head">
         <div>
           <div class="binary-kicker">Binary x OpenHands</div>
-          <div class="binary-title">${route === "skills" ? "Skills that shape the agent" : "Capabilities wired into Binary"}</div>
+          <div class="binary-title">${route === "skills" ? "Skills" : "Capabilities wired into Binary"}</div>
           <div class="binary-subtitle">${escapeHtml(subtitle)}</div>
         </div>
         <div class="binary-actions">
@@ -513,7 +526,7 @@
       <div class="binary-body">
         <div class="binary-column">
           <div class="binary-card">
-            <div class="binary-card-title">${route === "skills" ? "Skill Sources" : "What Binary Offers Today"}</div>
+            <div class="binary-card-title">${route === "skills" ? "Available Skill Sources" : "What Binary Offers Today"}</div>
             <div class="binary-card-copy">
               ${
                 route === "skills"
@@ -570,7 +583,7 @@
                     ${renderPluginPacks(pluginPacks)}
                   </div>
                   <div class="binary-status-row">
-                    <div class="binary-status">${pluralize(state.selected.size, "default pack")} selected in host preferences</div>
+                  <div class="binary-status">${pluralize(state.selected.size, "default pack")} selected in host preferences</div>
                     ${state.error ? `<div class="binary-status binary-error">${escapeHtml(state.error)}</div>` : ""}
                   </div>
                 </div>
@@ -579,6 +592,23 @@
         </div>
       </div>
     `;
+    } finally {
+      renderInFlight = false;
+    }
+  }
+
+  function scheduleRender() {
+    if (renderScheduled) return;
+    renderScheduled = true;
+    const callback = () => {
+      renderScheduled = false;
+      render();
+    };
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(callback);
+      return;
+    }
+    window.setTimeout(callback, 0);
   }
 
   async function saveDefaults() {
@@ -588,7 +618,7 @@
     });
     await loadData(true);
     state.flash = "Saved to Binary host defaults.";
-    render();
+    scheduleRender();
   }
 
   async function clearDefaults() {
@@ -604,14 +634,14 @@
       state.flash = "";
       if (state.selected.has(packId)) state.selected.delete(packId);
       else state.selected.add(packId);
-      render();
+      scheduleRender();
       return;
     }
     const action = target instanceof HTMLElement ? target.dataset.binaryAction : "";
     if (action === "refresh") {
       state.flash = "";
       await loadData(true);
-      render();
+      scheduleRender();
       return;
     }
     if (action === "save") {
@@ -623,7 +653,7 @@
     }
   });
 
-  const rerender = () => render();
+  const rerender = () => scheduleRender();
   const originalPushState = history.pushState.bind(history);
   const originalReplaceState = history.replaceState.bind(history);
 
@@ -641,13 +671,20 @@
 
   window.addEventListener("popstate", rerender);
 
-  const observer = new MutationObserver(() => {
-    render();
+  const observer = new MutationObserver((mutations) => {
+    const root = document.getElementById(ROOT_ID);
+    const touchedOutsideOverlay = mutations.some((mutation) => {
+      if (!root) return true;
+      const target = mutation.target;
+      return !(target instanceof Node) || (!root.contains(target) && target !== root);
+    });
+    if (!touchedOutsideOverlay) return;
+    scheduleRender();
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
   await loadData();
-  render();
+  scheduleRender();
   return true;
 })()
   .catch((error) => {

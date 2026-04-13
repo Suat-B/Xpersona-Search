@@ -68,6 +68,14 @@ export async function GET(req: NextRequest) {
 
   const tasks: CrawlTask[] = [];
 
+  if (runSource("CLAWHUB")) {
+    tasks.push({
+      source: "CLAWHUB",
+      bucket: "registry",
+      fn: () => crawlClawHub(Math.min(maxResults * 10, 5000)),
+    });
+  }
+
   if (hasGitHubAuth && enableGithubInCron) {
     if (runSource("GITHUB_OPENCLEW")) {
       tasks.push({
@@ -81,13 +89,6 @@ export async function GET(req: NextRequest) {
         source: "GITHUB_MCP",
         bucket: "github",
         fn: () => crawlGitHubMCP(since, Math.min(maxResults, 300), runtimeOptions),
-      });
-    }
-    if (runSource("CLAWHUB")) {
-      tasks.push({
-        source: "CLAWHUB",
-        bucket: "github",
-        fn: () => crawlClawHub(Math.min(maxResults * 10, 5000)),
       });
     }
     if (runSource("GITHUB_REPOS")) {

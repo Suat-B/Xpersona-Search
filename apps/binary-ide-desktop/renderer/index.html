@@ -106,6 +106,15 @@
               <div class="hero-state__copy">
                 <h1>Binary</h1>
                 <button id="landingWorkspaceButton" class="hero-state__project" type="button">Xpersona</button>
+                <p class="hero-state__lede">A desktop teammate for repo work, runtime checks, and machine-native tasks.</p>
+                <div id="landingStatusCards" class="landing-status-grid" aria-live="polite"></div>
+                <div class="landing-starters-shell">
+                  <div class="landing-starters-shell__header">
+                    <span>Start with a focused ask</span>
+                    <span class="landing-starters-shell__hint">Tip: type <code>/plan</code> to switch modes.</span>
+                  </div>
+                  <div id="landingStarterPrompts" class="landing-starters" aria-live="polite"></div>
+                </div>
               </div>
             </div>
             <form id="landingForm" class="landing-composer">
@@ -124,40 +133,7 @@
 
           <section id="chatView" class="chat-view">
             <div id="conversationScroller" class="conversation-scroller">
-              <div id="conversation" class="conversation-container">
-                <article class="message message--user">
-                  <div class="message__meta">User</div>
-                  <h1 class="message__title">Hi\</h1>
-                </article>
-                <article class="message message--assistant">
-                  <div class="assistant-shell">
-                    <div class="assistant-avatar" aria-hidden="true">
-                      <span class="assistant-avatar__eye"></span>
-                      <span class="assistant-avatar__eye"></span>
-                    </div>
-                    <div class="assistant-body">
-                      <p class="assistant-copy">Hi there! How can I help you today?</p>
-                      <div class="assistant-quick-actions">
-                        <button class="assistant-quick-action" type="button" aria-label="Copy response">
-                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h9v9H9zM6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" /></svg>
-                        </button>
-                        <button class="assistant-quick-action" type="button" aria-label="Regenerate response">
-                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2 5.3M20 11V5M20 11h-6" /></svg>
-                        </button>
-                        <button class="assistant-quick-action" type="button" aria-label="Share response">
-                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 12.5l4-4l4 4M11 8.5v8" /></svg>
-                        </button>
-                        <button class="assistant-quick-action" type="button" aria-label="Thumbs up">
-                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11v9M11 20h6a2 2 0 0 0 2-1.6l1-5a2 2 0 0 0-2-2.4h-4V6.5A1.5 1.5 0 0 0 12.5 5L9 11v9" /></svg>
-                        </button>
-                        <button class="assistant-quick-action" type="button" aria-label="Thumbs down">
-                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 13V4M13 4H7a2 2 0 0 0-2 1.6l-1 5A2 2 0 0 0 6 13h4v4.5A1.5 1.5 0 0 0 11.5 19L15 13V4" /></svg>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </article>
-              </div>
+              <div id="conversation" class="conversation-container"></div>
             </div>
           </section>
         </main>
@@ -169,7 +145,7 @@
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
               </button>
               <div class="composer-stack">
-                <input id="taskInput" class="composer-input" type="text" placeholder="Ask away. Pics work too." autocomplete="off" />
+                <input id="taskInput" class="composer-input" type="text" placeholder="Ask Binary anything. Attach files too." autocomplete="off" />
                 <div class="composer-toolbar">
                   <div class="composer-prefs">
                     <button class="composer-inline-select" type="button">K2.5 Instant</button>
@@ -229,6 +205,31 @@
               </div>
               <p class="plugin-card__copy">Binary is checking the local runtime, plugin packs, and skill sources.</p>
             </article>
+          </div>
+        </div>
+
+        <div class="sheet__section">
+          <p class="sheet__label">Execution Lane</p>
+          <div class="sheet-card">
+            <strong>Choose how OpenHands should execute new runs</strong>
+            <span>Use the adaptive default for fast local work, or force headless and remote lanes when you want longer-running or isolated execution.</span>
+          </div>
+          <label class="field-stack">
+            <span>Preferred execution lane</span>
+            <select id="executionLaneSelect">
+              <option value="auto">Auto (adaptive)</option>
+              <option value="local_interactive">Local interactive</option>
+              <option value="openhands_headless">Headless OpenHands</option>
+              <option value="openhands_remote">Remote OpenHands</option>
+            </select>
+          </label>
+          <div class="button-row">
+            <button id="saveExecutionLane" type="button">Save lane preference</button>
+            <button id="clearExecutionLane" class="button-secondary" type="button">Use adaptive default</button>
+          </div>
+          <div id="remoteRuntimeStatus" class="sheet-card">
+            <strong>Remote runtime status unavailable</strong>
+            <span>Binary will show whether a remote OpenHands Agent Server or gateway is reachable.</span>
           </div>
         </div>
 

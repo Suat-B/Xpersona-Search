@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { continueHostedRun, streamHostedAssist } from "./hosted-transport.js";
+import { continueHostedRun, streamHostedAssist, submitHostedUserInput } from "./hosted-transport.js";
 function createAssistRequest() {
     return {
         task: "Ship a tiny project",
@@ -101,6 +101,99 @@ describe("hosted-transport", () => {
         expect(envelope.pendingToolCall?.toolCall.name).toBe("read_file");
         expect(envelope.final).toBe("complete");
         expect(seenEvents).toHaveLength(4);
+    });
+    it("captures streamed user-input requests in the envelope", async () => {
+        const fetchImpl = async () => createSseResponse([
+            'data: {"event":"run","data":{"runId":"run-plan-1","adapter":"binary"}}\n\n',
+            'data: {"event":"request_user_input","data":{"requestId":"req-plan-1","questions":[{"id":"scope","header":"Scope","question":"Which surface should we prioritize?","options":[{"label":"Desktop compat","description":"Keep the work scoped to the Electron compat shell."},{"label":"Desktop and web","description":"Update both surfaces together."}]}]}}\n\n',
+            "data: [DONE]\n\n",
+        ]);
+        const envelope = await streamHostedAssist({
+            baseUrl: "http://localhost:3000",
+            apiKey: "test-key",
+            request: createAssistRequest(),
+            onEvent: () => { },
+        }, {
+            fetchImpl: fetchImpl,
+            fetchTimeoutMs: 50,
+            streamIdleTimeoutMs: 50,
+        });
+        expect(envelope.runId).toBe("run-plan-1");
+        expect(envelope.userInputRequest).toEqual({
+            requestId: "req-plan-1",
+            questions: [
+                {
+                    id: "scope",
+                    header: "Scope",
+                    question: "Which surface should we prioritize?",
+                    options: [
+                        {
+                            label: "Desktop compat",
+                            description: "Keep the work scoped to the Electron compat shell.",
+                        },
+                        {
+                            label: "Desktop and web",
+                            description: "Update both surfaces together.",
+                        },
+                    ],
+                },
+            ],
+        });
+    });
+    it("forwards delegation config and folds delegation events into the envelope", async () => {
+        const fetchImpl = async (_url, init) => {
+            const body = JSON.parse(String(init?.body || "{}"));
+            expect(body.delegation).toEqual({
+                enabled: true,
+                mode: "auto",
+                maxChildren: 3,
+                visibility: "summary_only",
+                supportedAgentTypes: ["default"],
+            });
+            return createSseResponse([
+                'data: {"event":"delegation.started","data":{"delegationReason":"Parallel repo scan","childCount":2,"childSummaries":[{"childId":"child-1","status":"running","summary":"Scanning app shell."}]}}\n\n',
+                'data: {"event":"delegation.child_status","data":{"childId":"child-2","status":"completed","summary":"Checked host transport.","traceId":"trace-child-2"}}\n\n',
+                'data: {"event":"delegation.completed","data":{"completedChildren":2,"failedChildren":0,"childSummaries":[{"childId":"child-1","status":"completed","summary":"Scanning app shell complete."},{"childId":"child-2","status":"completed","summary":"Checked host transport.","traceId":"trace-child-2"}]}}\n\n',
+                "data: [DONE]\n\n",
+            ]);
+        };
+        const envelope = await streamHostedAssist({
+            baseUrl: "http://localhost:3000",
+            apiKey: "test-key",
+            request: {
+                ...createAssistRequest(),
+                delegation: {
+                    enabled: true,
+                    mode: "auto",
+                    maxChildren: 3,
+                    visibility: "summary_only",
+                    supportedAgentTypes: ["default"],
+                },
+            },
+            onEvent: () => { },
+        }, {
+            fetchImpl: fetchImpl,
+            fetchTimeoutMs: 50,
+            streamIdleTimeoutMs: 50,
+        });
+        expect(envelope.delegationUsed).toBe(true);
+        expect(envelope.delegationReason).toBe("Parallel repo scan");
+        expect(envelope.childCount).toBe(2);
+        expect(envelope.completedChildren).toBe(2);
+        expect(envelope.failedChildren).toBe(0);
+        expect(envelope.childSummaries).toEqual([
+            {
+                childId: "child-1",
+                status: "completed",
+                summary: "Scanning app shell complete.",
+            },
+            {
+                childId: "child-2",
+                status: "completed",
+                summary: "Checked host transport.",
+                traceId: "trace-child-2",
+            },
+        ]);
     });
     it("forwards TOM config to hosted assist", async () => {
         const fetchImpl = async (_url, init) => {
@@ -219,5 +312,44 @@ describe("hosted-transport", () => {
         }, {
             fetchImpl: createAbortAwareHungFetch(),
         })).rejects.toThrow("Timed out waiting for hosted continue after 25ms.");
+    });
+    it("submits hosted user-input answers to the dedicated resume endpoint", async () => {
+        const fetchImpl = async (url, init) => {
+            expect(url).toContain("/api/v1/playground/runs/run-clarify-1/user-input");
+            const body = JSON.parse(String(init?.body || "{}"));
+            expect(body).toEqual({
+                requestId: "req-clarify-1",
+                sessionId: "session-1",
+                answers: {
+                    scope: ["Desktop compat only"],
+                },
+            });
+            return new Response(JSON.stringify({
+                data: {
+                    runId: "run-clarify-1",
+                    final: "Plan is ready.",
+                },
+            }), {
+                status: 200,
+                headers: {
+                    "Content-Type": "application/json",
+                },
+            });
+        };
+        const envelope = await submitHostedUserInput({
+            baseUrl: "http://localhost:3000",
+            apiKey: "test-key",
+            runId: "run-clarify-1",
+            requestId: "req-clarify-1",
+            sessionId: "session-1",
+            answers: {
+                scope: ["Desktop compat only"],
+            },
+        }, {
+            fetchImpl: fetchImpl,
+            fetchTimeoutMs: 50,
+        });
+        expect(envelope.runId).toBe("run-clarify-1");
+        expect(envelope.final).toBe("Plan is ready.");
     });
 });

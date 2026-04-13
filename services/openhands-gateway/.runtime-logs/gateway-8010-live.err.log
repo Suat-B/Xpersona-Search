@@ -1,0 +1,1398 @@
+[04/12/26 14:28:06] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/12/26 14:28:21] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/12/26 14:28:21] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openai/gpt-5.2-codex': Portal bridge authentication failed during chat-only fast path: HTTPError: HTTP Error 401: Unauthorized
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6909, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: Portal bridge authentication failed during chat-only fast path: HTTPError: HTTP Error 401: Unauthorized
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 49605)
+Traceback (most recent call last):
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\socketserver.py", line 692, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\socketserver.py", line 761, in __init__
+    self.handle()
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\http\server.py", line 438, in handle
+    self.handle_one_request()
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\http\server.py", line 404, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host
+----------------------------------------
+[04/12/26 14:30:04] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/12/26 14:30:05] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openai/gpt-5.2-codex': Portal bridge authentication failed during chat-only fast path: HTTPError: HTTP Error 401: Unauthorized
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6909, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: Portal bridge authentication failed during chat-only fast path: HTTPError: HTTP Error 401: Unauthorized
+[04/12/26 14:30:06] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/google/gemma-4-26b-a4b-it:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:06] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/google/gemma-4-26b-a4b-it:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:07] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/liquid/lfm-2.5-1.2b-instruct:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:07] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/liquid/lfm-2.5-1.2b-instruct:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:08] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 502: Bad Gateway
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 502: Bad Gateway
+[04/12/26 14:30:09] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 502: Bad Gateway
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 502: Bad Gateway
+[04/12/26 14:30:09] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/arcee-ai/trinity-large-preview:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:10] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/arcee-ai/trinity-large-preview:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:10] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/nvidia/nemotron-3-nano-30b-a3b:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:11] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/nvidia/nemotron-3-nano-30b-a3b:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:11] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/nvidia/nemotron-nano-12b-v2-vl:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:12] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/nvidia/nemotron-nano-12b-v2-vl:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:13] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/google/gemma-4-31b-it:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:13] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/google/gemma-4-31b-it:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:14] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/minimax/minimax-m2.5:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:15] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/minimax/minimax-m2.5:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:16] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/liquid/lfm-2.5-1.2b-thinking:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:16] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/liquid/lfm-2.5-1.2b-thinking:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:17] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/nvidia/nemotron-3-super-120b-a12b:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 14:30:17] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/nvidia/nemotron-3-super-120b-a12b:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 23:59:10] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/12/26 23:59:10] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openai/gpt-5.2-codex': Portal bridge authentication failed during chat-only fast path: HTTPError: HTTP Error 401: Unauthorized
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6909, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: Portal bridge authentication failed during chat-only fast path: HTTPError: HTTP Error 401: Unauthorized
+[04/12/26 23:59:11] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/google/gemma-4-26b-a4b-it:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 23:59:11] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/google/gemma-4-26b-a4b-it:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 23:59:12] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/12/26 23:59:16] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openai/gpt-5.2-codex': Portal bridge authentication failed during chat-only fast path: HTTPError: HTTP Error 401: Unauthorized
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6909, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: Portal bridge authentication failed during chat-only fast path: HTTPError: HTTP Error 401: Unauthorized
+[04/12/26 23:59:17] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/google/gemma-4-26b-a4b-it:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 23:59:17] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/google/gemma-4-26b-a4b-it:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/12/26 23:59:18] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/12/26 23:59:30] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/12/26 23:59:30] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/12/26 23:59:30] INFO     Created new conversation              state.py:359
+                             6bb0cda6-804b-48cc-b833-3d3ba4317f10              
+                             State: {'id':                                     
+                             UUID('6bb0cda6-804b-48cc-b833-3d3ba43             
+                             17f10'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona\\services\\openhands-gateway             
+                             ', 'kind': 'LocalWorkspace'},                     
+                             'persistence_dir': None,                          
+                             'max_iterations': 500,                            
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.IDLE:                
+                             'idle'>, 'confirmation_policy':                   
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id': None,                     
+                             'stats': {'usage_to_metrics': {}},                
+                             'secret_registry': {'secret_sources':             
+                             {}}, 'agent_state': {}}                           
+                             Agent: {'llm': {'model':                          
+                             'openai/gpt-5.2-codex', 'api_key':                
+                             SecretStr('**********'), 'base_url':              
+                             'http://127.0.0.1:8000/codex/v1',                 
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 1.0,                 
+                             'max_input_tokens': 272000,                       
+                             'max_output_tokens': 128000,                      
+                             'model_canonical_name':                           
+                             'openai/gpt-5.1-codex-max', 'stream':             
+                             False, 'drop_params': True,                       
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': False,                          
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'force_string_serializer': True,                  
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': False,              
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [], 'mcp_config': {},                             
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[04/12/26 23:59:30] INFO     Loaded 0 tools from spec: []           base.py:341
+[openhands-gateway] run_turn error model='openai/gpt-5.2-codex': Binary tool adapter failed via ask_agent (ValidationError: 4 validation errors for Event
+tools.0.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='FinishAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.0.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='FinishObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error) and OpenAI-compatible fallback (HTTPError: HTTP Error 401: Unauthorized). [debug llm_model='openai/gpt-5.2-codex' llm_base_url='http://127.0.0.1:8000/codex/v1' candidate_model='gpt-5.2-codex' candidate_provider='chatgpt_portal']
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7061, in run_binary_tool_adapter_turn
+    openai_compatible_chat_completion(
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\server.py", line 108, in patched_openai_compatible_chat_completion
+    return original(
+           ^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 3057, in openai_compatible_chat_completion
+    with urllib.request.urlopen(req, timeout=max(5, int(timeout_seconds))) as resp:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 401: Unauthorized
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7107, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: Binary tool adapter failed via ask_agent (ValidationError: 4 validation errors for Event
+tools.0.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='FinishAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.0.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='FinishObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error) and OpenAI-compatible fallback (HTTPError: HTTP Error 401: Unauthorized). [debug llm_model='openai/gpt-5.2-codex' llm_base_url='http://127.0.0.1:8000/codex/v1' candidate_model='gpt-5.2-codex' candidate_provider='chatgpt_portal']
+[04/12/26 23:59:31] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/google/gemma-4-26b-a4b-it:free': Binary tool adapter OpenAI-compatible request failed (HTTPError: HTTP Error 429: Too Many Requests). [debug candidate_model='google/gemma-4-26b-a4b-it:free' candidate_provider='openrouter']
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6965, in run_binary_tool_adapter_turn
+    openai_compatible_chat_completion(
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\server.py", line 108, in patched_openai_compatible_chat_completion
+    return original(
+           ^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 3057, in openai_compatible_chat_completion
+    with urllib.request.urlopen(req, timeout=max(5, int(timeout_seconds))) as resp:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 429: Too Many Requests
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7009, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: Binary tool adapter OpenAI-compatible request failed (HTTPError: HTTP Error 429: Too Many Requests). [debug candidate_model='google/gemma-4-26b-a4b-it:free' candidate_provider='openrouter']
+[04/12/26 23:59:31] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/google/gemma-4-26b-a4b-it:free': Binary tool adapter OpenAI-compatible request failed (HTTPError: HTTP Error 429: Too Many Requests). [debug candidate_model='google/gemma-4-26b-a4b-it:free' candidate_provider='openrouter']
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6965, in run_binary_tool_adapter_turn
+    openai_compatible_chat_completion(
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\server.py", line 108, in patched_openai_compatible_chat_completion
+    return original(
+           ^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 3057, in openai_compatible_chat_completion
+    with urllib.request.urlopen(req, timeout=max(5, int(timeout_seconds))) as resp:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 429: Too Many Requests
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7009, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: Binary tool adapter OpenAI-compatible request failed (HTTPError: HTTP Error 429: Too Many Requests). [debug candidate_model='google/gemma-4-26b-a4b-it:free' candidate_provider='openrouter']
+[04/12/26 23:59:31] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/12/26 23:59:47] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/12/26 23:59:56] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:00:20] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:00:20] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:00:20] INFO     Created new conversation              state.py:359
+                             ccd771e8-96d5-4aae-99ad-d60f12dc7820              
+                             State: {'id':                                     
+                             UUID('ccd771e8-96d5-4aae-99ad-d60f12d             
+                             c7820'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona\\services\\openhands-gateway             
+                             ', 'kind': 'LocalWorkspace'},                     
+                             'persistence_dir': None,                          
+                             'max_iterations': 500,                            
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.IDLE:                
+                             'idle'>, 'confirmation_policy':                   
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id': None,                     
+                             'stats': {'usage_to_metrics': {}},                
+                             'secret_registry': {'secret_sources':             
+                             {}}, 'agent_state': {}}                           
+                             Agent: {'llm': {'model':                          
+                             'openai/gpt-5.2-codex', 'api_key':                
+                             SecretStr('**********'), 'base_url':              
+                             'http://127.0.0.1:8000/codex/v1',                 
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 1.0,                 
+                             'max_input_tokens': 272000,                       
+                             'max_output_tokens': 128000,                      
+                             'model_canonical_name':                           
+                             'openai/gpt-5.1-codex-max', 'stream':             
+                             False, 'drop_params': True,                       
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': False,                          
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'force_string_serializer': True,                  
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': False,              
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [], 'mcp_config': {},                             
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'kind': 'Agent'}                                  
+[04/13/26 00:00:20] INFO     Loaded 0 tools from spec: []           base.py:341
+[openhands-gateway] run_turn error model='openai/gpt-5.2-codex': Binary tool adapter failed via ask_agent (ValidationError: 4 validation errors for Event
+tools.0.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='FinishAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.0.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='FinishObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error) and OpenAI-compatible fallback (HTTPError: HTTP Error 401: Unauthorized). [debug llm_model='openai/gpt-5.2-codex' llm_base_url='http://127.0.0.1:8000/codex/v1' candidate_model='gpt-5.2-codex' candidate_provider='chatgpt_portal']
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7061, in run_binary_tool_adapter_turn
+    openai_compatible_chat_completion(
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\server.py", line 108, in patched_openai_compatible_chat_completion
+    return original(
+           ^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 3057, in openai_compatible_chat_completion
+    with urllib.request.urlopen(req, timeout=max(5, int(timeout_seconds))) as resp:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 401: Unauthorized
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7107, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: Binary tool adapter failed via ask_agent (ValidationError: 4 validation errors for Event
+tools.0.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='FinishAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.0.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='FinishObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error) and OpenAI-compatible fallback (HTTPError: HTTP Error 401: Unauthorized). [debug llm_model='openai/gpt-5.2-codex' llm_base_url='http://127.0.0.1:8000/codex/v1' candidate_model='gpt-5.2-codex' candidate_provider='chatgpt_portal']
+[04/13/26 00:00:20] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/google/gemma-4-26b-a4b-it:free': Binary tool adapter OpenAI-compatible request failed (HTTPError: HTTP Error 429: Too Many Requests). [debug candidate_model='google/gemma-4-26b-a4b-it:free' candidate_provider='openrouter']
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6965, in run_binary_tool_adapter_turn
+    openai_compatible_chat_completion(
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\server.py", line 108, in patched_openai_compatible_chat_completion
+    return original(
+           ^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 3057, in openai_compatible_chat_completion
+    with urllib.request.urlopen(req, timeout=max(5, int(timeout_seconds))) as resp:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 429: Too Many Requests
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7009, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: Binary tool adapter OpenAI-compatible request failed (HTTPError: HTTP Error 429: Too Many Requests). [debug candidate_model='google/gemma-4-26b-a4b-it:free' candidate_provider='openrouter']
+[04/13/26 00:00:21] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/google/gemma-4-26b-a4b-it:free': Binary tool adapter OpenAI-compatible request failed (HTTPError: HTTP Error 429: Too Many Requests). [debug candidate_model='google/gemma-4-26b-a4b-it:free' candidate_provider='openrouter']
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6965, in run_binary_tool_adapter_turn
+    openai_compatible_chat_completion(
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\server.py", line 108, in patched_openai_compatible_chat_completion
+    return original(
+           ^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 3057, in openai_compatible_chat_completion
+    with urllib.request.urlopen(req, timeout=max(5, int(timeout_seconds))) as resp:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 429: Too Many Requests
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7009, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: Binary tool adapter OpenAI-compatible request failed (HTTPError: HTTP Error 429: Too Many Requests). [debug candidate_model='google/gemma-4-26b-a4b-it:free' candidate_provider='openrouter']
+[04/13/26 00:00:21] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:00:27] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:00:27] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:00:35] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:00:35] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:00:49] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:01:06] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:01:19] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:05:14] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:05:14] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:05:14] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:05:14] INFO     Created new conversation              state.py:359
+                             4cb70564-ca4e-2554-bd8f-4ec97246a9ef              
+                             State: {'id':                                     
+                             UUID('4cb70564-ca4e-2554-bd8f-4ec9724             
+                             6a9ef'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona\\services\\openhands-gateway             
+                             ', 'kind': 'LocalWorkspace'},                     
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\4cb70564ca4e2554bd8f4ec97246a9             
+                             ef', 'max_iterations': 8,                         
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.IDLE:                
+                             'idle'>, 'confirmation_policy':                   
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id': None,                     
+                             'stats': {'usage_to_metrics': {}},                
+                             'secret_registry': {'secret_sources':             
+                             {}}, 'agent_state': {}}                           
+                             Agent: {'llm': {'model':                          
+                             'openai/gpt-5.2-codex', 'api_key':                
+                             SecretStr('**********'), 'base_url':              
+                             'http://127.0.0.1:8000/codex/v1',                 
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 1.0,                 
+                             'max_input_tokens': 272000,                       
+                             'max_output_tokens': 128000,                      
+                             'model_canonical_name':                           
+                             'openai/gpt-5.1-codex-max', 'stream':             
+                             True, 'drop_params': True,                        
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': False,                          
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'force_string_serializer': True,                  
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': False,              
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'TerminalTool', 'params':               
+                             {'no_change_timeout_seconds': 5}},                
+                             {'name': 'apply_patch', 'params':                 
+                             {}}, {'name': 'DelegateTool',                     
+                             'params': {}}], 'mcp_config': {},                 
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'condenser': {'llm': {'model':                    
+                             'openai/gpt-5.2-codex', 'api_key':                
+                             SecretStr('**********'), 'base_url':              
+                             'http://127.0.0.1:8000/codex/v1',                 
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 1.0,                 
+                             'max_input_tokens': 272000,                       
+                             'max_output_tokens': 128000,                      
+                             'model_canonical_name':                           
+                             'openai/gpt-5.1-codex-max', 'stream':             
+                             True, 'drop_params': True,                        
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': False,                          
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'force_string_serializer': True,                  
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': False,              
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'condenser',                          
+                             'litellm_extra_body': {}},                        
+                             'max_size': 64, 'keep_first': 3,                  
+                             'minimum_progress': 0.1,                          
+                             'hard_context_reset_max_retries': 5,              
+                             'hard_context_reset_context_scaling':             
+                             0.8, 'kind':                                      
+                             'LLMSummarizingCondenser'}, 'kind':               
+                             'Agent'}                                          
+[04/13/26 00:05:14] INFO     Confirmation policy set  local_conversation.py:633
+                             to: kind='NeverConfirm'                           
+[04/13/26 00:05:14] INFO     Loaded 3 tools from spec:              base.py:341
+                             ['windows_terminal_fallback',                     
+                             'apply_patch', 'binary_delegate']                 
+[openhands-gateway] run_turn error model='openai/gpt-5.2-codex': Conversation run failed for id=4cb70564-ca4e-2554-bd8f-4ec97246a9ef: 10 validation errors for Event
+tools.0.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='WindowsTerminalAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.0.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='WindowsTerminalObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='ApplyPatchAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='ApplyPatchObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.2.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='BinaryDelegateAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.2.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='BinaryDelegateObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.3.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='FinishAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.3.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='FinishObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.4.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.4.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+
+Conversation logs are stored at: C:\Users\suatb\.openhands\binary-runs\4cb70564ca4e2554bd8f4ec97246a9ef
+
+To help debug this issue, please file a bug report at:
+  https://github.com/OpenHands/software-agent-sdk/issues/new
+and attach the conversation logs from the directory above.
+Traceback (most recent call last):
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\conversation\impl\local_conversation.py", line 560, in run
+    is_stuck = self._stuck_detector.is_stuck()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\conversation\stuck_detector.py", line 70, in is_stuck
+    events = list(self.state.events[-MAX_EVENTS_TO_SCAN_FOR_STUCK_DETECTION:])
+                  ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\conversation\event_store.py", line 73, in __getitem__
+    return [self._get_single_item(i) for i in range(start, stop, step)]
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\conversation\event_store.py", line 85, in _get_single_item
+    return Event.model_validate_json(txt)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\pydantic\main.py", line 766, in model_validate_json
+    return cls.__pydantic_validator__.validate_json(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pydantic_core._pydantic_core.ValidationError: 10 validation errors for Event
+tools.0.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='WindowsTerminalAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.0.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='WindowsTerminalObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='ApplyPatchAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='ApplyPatchObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.2.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='BinaryDelegateAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.2.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='BinaryDelegateObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.3.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='FinishAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.3.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='FinishObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.4.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.4.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7929, in _run_turn_with_candidate
+    conversation.run()
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\lmnr\opentelemetry_lib\decorators\__init__.py", line 161, in wrap
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\conversation\impl\local_conversation.py", line 625, in run
+    raise ConversationRunError(
+openhands.sdk.conversation.exceptions.ConversationRunError: Conversation run failed for id=4cb70564-ca4e-2554-bd8f-4ec97246a9ef: 10 validation errors for Event
+tools.0.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='WindowsTerminalAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.0.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='WindowsTerminalObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='ApplyPatchAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='ApplyPatchObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.2.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='BinaryDelegateAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.2.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='BinaryDelegateObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.3.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='FinishAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.3.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='FinishObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.4.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.4.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+
+Conversation logs are stored at: C:\Users\suatb\.openhands\binary-runs\4cb70564ca4e2554bd8f4ec97246a9ef
+
+To help debug this issue, please file a bug report at:
+  https://github.com/OpenHands/software-agent-sdk/issues/new
+and attach the conversation logs from the directory above.
+[04/13/26 00:05:19] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openai/gpt-5.2-codex': Portal bridge authentication failed during chat-only fast path: HTTPError: HTTP Error 401: Unauthorized
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6909, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: Portal bridge authentication failed during chat-only fast path: HTTPError: HTTP Error 401: Unauthorized
+[04/13/26 00:05:19] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/google/gemma-4-26b-a4b-it:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/13/26 00:05:20] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openrouter/google/gemma-4-26b-a4b-it:free': OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7639, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6903, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: OpenRouter free capacity exhausted during chat-only fast path: HTTPError: HTTP Error 429: Too Many Requests
+[04/13/26 00:05:21] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:05:27] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:05:27] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:05:27] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/13/26 00:05:27] INFO     Created new conversation              state.py:359
+                             7f3260a4-4680-db0b-1dd1-4836bed69221              
+                             State: {'id':                                     
+                             UUID('7f3260a4-4680-db0b-1dd1-4836bed             
+                             69221'), 'workspace': {'working_dir':             
+                             'C:\\Users\\suatb\\Desktop\\Frieren\\             
+                             Xpersona\\services\\openhands-gateway             
+                             ', 'kind': 'LocalWorkspace'},                     
+                             'persistence_dir':                                
+                             'C:\\Users\\suatb\\.openhands\\binary             
+                             -runs\\7f3260a44680db0b1dd14836bed692             
+                             21', 'max_iterations': 8,                         
+                             'stuck_detection': True,                          
+                             'execution_status':                               
+                             <ConversationExecutionStatus.IDLE:                
+                             'idle'>, 'confirmation_policy':                   
+                             {'kind': 'NeverConfirm'},                         
+                             'security_analyzer': None,                        
+                             'activated_knowledge_skills': [],                 
+                             'blocked_actions': {},                            
+                             'blocked_messages': {},                           
+                             'last_user_message_id': None,                     
+                             'stats': {'usage_to_metrics': {}},                
+                             'secret_registry': {'secret_sources':             
+                             {}}, 'agent_state': {}}                           
+                             Agent: {'llm': {'model':                          
+                             'openai/gpt-5.2-codex', 'api_key':                
+                             SecretStr('**********'), 'base_url':              
+                             'http://127.0.0.1:8000/codex/v1',                 
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 1.0,                 
+                             'max_input_tokens': 272000,                       
+                             'max_output_tokens': 128000,                      
+                             'model_canonical_name':                           
+                             'openai/gpt-5.1-codex-max', 'stream':             
+                             True, 'drop_params': True,                        
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': False,                          
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'force_string_serializer': True,                  
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': False,              
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'default',                            
+                             'litellm_extra_body': {}}, 'tools':               
+                             [{'name': 'TerminalTool', 'params':               
+                             {'no_change_timeout_seconds': 5}},                
+                             {'name': 'apply_patch', 'params':                 
+                             {}}, {'name': 'DelegateTool',                     
+                             'params': {}}], 'mcp_config': {},                 
+                             'include_default_tools':                          
+                             ['FinishTool', 'ThinkTool'],                      
+                             'system_prompt_filename':                         
+                             'system_prompt.j2',                               
+                             'security_policy_filename':                       
+                             'security_policy.j2',                             
+                             'system_prompt_kwargs':                           
+                             {'llm_security_analyzer': True},                  
+                             'condenser': {'llm': {'model':                    
+                             'openai/gpt-5.2-codex', 'api_key':                
+                             SecretStr('**********'), 'base_url':              
+                             'http://127.0.0.1:8000/codex/v1',                 
+                             'openrouter_site_url':                            
+                             'https://docs.all-hands.dev/',                    
+                             'openrouter_app_name': 'OpenHands',               
+                             'num_retries': 5, 'retry_multiplier':             
+                             8.0, 'retry_min_wait': 8,                         
+                             'retry_max_wait': 64, 'timeout': 300,             
+                             'max_message_chars': 30000,                       
+                             'temperature': 0.0, 'top_p': 1.0,                 
+                             'max_input_tokens': 272000,                       
+                             'max_output_tokens': 128000,                      
+                             'model_canonical_name':                           
+                             'openai/gpt-5.1-codex-max', 'stream':             
+                             True, 'drop_params': True,                        
+                             'modify_params': True,                            
+                             'disable_stop_word': False,                       
+                             'caching_prompt': False,                          
+                             'log_completions': False,                         
+                             'log_completions_folder':                         
+                             'logs\\completions',                              
+                             'native_tool_calling': True,                      
+                             'force_string_serializer': True,                  
+                             'reasoning_effort': 'high',                       
+                             'enable_encrypted_reasoning': False,              
+                             'extended_thinking_budget': 200000,               
+                             'usage_id': 'condenser',                          
+                             'litellm_extra_body': {}},                        
+                             'max_size': 64, 'keep_first': 3,                  
+                             'minimum_progress': 0.1,                          
+                             'hard_context_reset_max_retries': 5,              
+                             'hard_context_reset_context_scaling':             
+                             0.8, 'kind':                                      
+                             'LLMSummarizingCondenser'}, 'kind':               
+                             'Agent'}                                          
+[04/13/26 00:05:27] INFO     Confirmation policy set  local_conversation.py:633
+                             to: kind='NeverConfirm'                           
+[04/13/26 00:05:27] INFO     Loaded 3 tools from spec:              base.py:341
+                             ['windows_terminal_fallback',                     
+                             'apply_patch', 'binary_delegate']                 
+[openhands-gateway] run_turn error model='openai/gpt-5.2-codex': Conversation run failed for id=7f3260a4-4680-db0b-1dd1-4836bed69221: 10 validation errors for Event
+tools.0.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='WindowsTerminalAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.0.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='WindowsTerminalObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='ApplyPatchAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='ApplyPatchObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.2.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='BinaryDelegateAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.2.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='BinaryDelegateObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.3.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='FinishAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.3.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='FinishObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.4.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.4.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+
+Conversation logs are stored at: C:\Users\suatb\.openhands\binary-runs\7f3260a44680db0b1dd14836bed69221
+
+To help debug this issue, please file a bug report at:
+  https://github.com/OpenHands/software-agent-sdk/issues/new
+and attach the conversation logs from the directory above.
+Traceback (most recent call last):
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\conversation\impl\local_conversation.py", line 560, in run
+    is_stuck = self._stuck_detector.is_stuck()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\conversation\stuck_detector.py", line 70, in is_stuck
+    events = list(self.state.events[-MAX_EVENTS_TO_SCAN_FOR_STUCK_DETECTION:])
+                  ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\conversation\event_store.py", line 73, in __getitem__
+    return [self._get_single_item(i) for i in range(start, stop, step)]
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\conversation\event_store.py", line 85, in _get_single_item
+    return Event.model_validate_json(txt)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\pydantic\main.py", line 766, in model_validate_json
+    return cls.__pydantic_validator__.validate_json(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pydantic_core._pydantic_core.ValidationError: 10 validation errors for Event
+tools.0.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='WindowsTerminalAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.0.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='WindowsTerminalObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='ApplyPatchAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='ApplyPatchObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.2.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='BinaryDelegateAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.2.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='BinaryDelegateObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.3.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='FinishAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.3.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='FinishObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.4.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.4.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8165, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7929, in _run_turn_with_candidate
+    conversation.run()
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\lmnr\opentelemetry_lib\decorators\__init__.py", line 161, in wrap
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\AppData\Local\Programs\Python\Python312\Lib\site-packages\openhands\sdk\conversation\impl\local_conversation.py", line 625, in run
+    raise ConversationRunError(
+openhands.sdk.conversation.exceptions.ConversationRunError: Conversation run failed for id=7f3260a4-4680-db0b-1dd1-4836bed69221: 10 validation errors for Event
+tools.0.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='WindowsTerminalAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.0.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='WindowsTerminalObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='ApplyPatchAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.1.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='ApplyPatchObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.2.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='BinaryDelegateAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.2.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='BinaryDelegateObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.3.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='FinishAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.3.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='FinishObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.4.action_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateAction / openhands.sdk.tool.schema.Action (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkAction', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+tools.4.observation_type
+  Value error, Local classes not supported! agent_turn.BinaryDelegateObservation / openhands.sdk.tool.schema.Observation (Since they may not exist at deserialization time) [type=value_error, input_value='ThinkObservation', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/value_error
+
+Conversation logs are stored at: C:\Users\suatb\.openhands\binary-runs\7f3260a44680db0b1dd14836bed69221
+
+To help debug this issue, please file a bug report at:
+  https://github.com/OpenHands/software-agent-sdk/issues/new
+and attach the conversation logs from the directory above.

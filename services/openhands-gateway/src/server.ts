@@ -26,6 +26,27 @@ type GatewayToolCall = {
   summary?: string;
 };
 
+type GatewayDelegationMode = "auto";
+type GatewayDelegationVisibility = "summary_only";
+type GatewayDelegationAgentType = "default";
+
+type GatewayDelegationConfig = {
+  enabled?: boolean;
+  mode?: GatewayDelegationMode;
+  maxChildren?: number;
+  visibility?: GatewayDelegationVisibility;
+  supportedAgentTypes?: GatewayDelegationAgentType[];
+};
+
+type GatewayDelegationChildSummary = {
+  childId: string;
+  status?: string;
+  summary?: string;
+  agentType?: string;
+  traceId?: string;
+  completedAt?: string;
+};
+
 type GatewayPayload = {
   protocol: "xpersona_openhands_gateway_v1";
   runId?: string;
@@ -82,6 +103,7 @@ type GatewayPayload = {
       | "pine_specialization";
     reason?: string;
   } | null;
+  delegation?: GatewayDelegationConfig;
   model?: GatewayModelPayload;
 };
 
@@ -121,6 +143,12 @@ type PythonTurnResult = {
   skillSources?: unknown[];
   traceId?: string | null;
   jsonlPath?: string | null;
+  delegationUsed?: boolean;
+  delegationReason?: string;
+  childCount?: number;
+  completedChildren?: number;
+  failedChildren?: number;
+  childSummaries?: GatewayDelegationChildSummary[];
 };
 
 const PORT = Number(process.env.OPENHANDS_GATEWAY_PORT || 8010);
@@ -189,7 +217,22 @@ type GatewayRunState = {
     recordedAt: string;
     toolName?: string;
     finalPreview?: string;
+    delegationUsed?: boolean;
+    childCount?: number;
   }>;
+  latestResult?: {
+    conversationId?: string | null;
+    persistenceDir?: string | null;
+    jsonlPath?: string | null;
+    executionLane?: string;
+    traceId?: string | null;
+    delegationUsed?: boolean;
+    delegationReason?: string;
+    childCount?: number;
+    completedChildren?: number;
+    failedChildren?: number;
+    childSummaries?: GatewayDelegationChildSummary[];
+  };
 };
 
 const runState = new Map<string, GatewayRunState>();
@@ -330,10 +373,43 @@ function upsertRunState(input: {
               recordedAt: new Date(now).toISOString(),
               toolName: input.result.toolCall?.name,
               finalPreview: compactWhitespace(String(input.result.final || "")).slice(0, 280),
+              delegationUsed:
+                typeof input.result.delegationUsed === "boolean" ? input.result.delegationUsed : undefined,
+              childCount:
+                typeof input.result.childCount === "number"
+                  ? Math.max(0, Math.round(input.result.childCount))
+                  : undefined,
             },
           ]
         : []),
     ].slice(-24),
+    latestResult: input.result
+      ? {
+          conversationId: input.result.conversationId || undefined,
+          persistenceDir: input.result.persistenceDir || undefined,
+          jsonlPath: input.result.jsonlPath || undefined,
+          executionLane: input.result.executionLane || undefined,
+          traceId: input.result.traceId || undefined,
+          delegationUsed:
+            typeof input.result.delegationUsed === "boolean" ? input.result.delegationUsed : undefined,
+          delegationReason: input.result.delegationReason || undefined,
+          childCount:
+            typeof input.result.childCount === "number"
+              ? Math.max(0, Math.round(input.result.childCount))
+              : undefined,
+          completedChildren:
+            typeof input.result.completedChildren === "number"
+              ? Math.max(0, Math.round(input.result.completedChildren))
+              : undefined,
+          failedChildren:
+            typeof input.result.failedChildren === "number"
+              ? Math.max(0, Math.round(input.result.failedChildren))
+              : undefined,
+          childSummaries: Array.isArray(input.result.childSummaries)
+            ? input.result.childSummaries
+            : undefined,
+        }
+      : previous?.latestResult,
   };
   if (input.rehydrated && !previous) {
     next.turns.unshift({
@@ -354,17 +430,115 @@ function validateGatewayPayload(body: Record<string, unknown>): body is GatewayP
   );
 }
 
+function buildGatewayFailureBody(result: PythonTurnResult): Record<string, unknown> {
+  return {
+    error: result.error || "OpenHands failed to produce the next tool turn.",
+    details: result.details || "Check the OpenHands SDK installation and model credentials.",
+    failureReason: result.failureReason || undefined,
+    modelCandidate: result.modelCandidate || undefined,
+    fallbackAttempt: result.fallbackAttempt ?? undefined,
+    fallbackTrail: result.fallbackTrail || undefined,
+    adapterMode: result.adapterMode || undefined,
+    latencyPolicy: result.latencyPolicy || undefined,
+    timeoutPolicy: result.timeoutPolicy || undefined,
+    budgetProfile: result.budgetProfile || undefined,
+    firstTurnBudgetMs: typeof result.firstTurnBudgetMs === "number" ? result.firstTurnBudgetMs : undefined,
+    smallModelForced: typeof result.smallModelForced === "boolean" ? result.smallModelForced : undefined,
+    coercionApplied: typeof result.coercionApplied === "boolean" ? result.coercionApplied : undefined,
+    seedToolInjected: typeof result.seedToolInjected === "boolean" ? result.seedToolInjected : undefined,
+    invalidToolNameRecovered:
+      typeof result.invalidToolNameRecovered === "boolean" ? result.invalidToolNameRecovered : undefined,
+    delegationUsed: typeof result.delegationUsed === "boolean" ? result.delegationUsed : undefined,
+    delegationReason: result.delegationReason || undefined,
+    childCount: typeof result.childCount === "number" ? Math.max(0, Math.round(result.childCount)) : undefined,
+    completedChildren:
+      typeof result.completedChildren === "number" ? Math.max(0, Math.round(result.completedChildren)) : undefined,
+    failedChildren:
+      typeof result.failedChildren === "number" ? Math.max(0, Math.round(result.failedChildren)) : undefined,
+    childSummaries: Array.isArray(result.childSummaries) ? result.childSummaries : undefined,
+    executionLane: result.executionLane || undefined,
+    pluginPacks: result.pluginPacks || undefined,
+    skillSources: result.skillSources || undefined,
+    traceId: result.traceId || undefined,
+    jsonlPath: result.jsonlPath || undefined,
+    persistenceDir: result.persistenceDir || undefined,
+    conversationId: result.conversationId || undefined,
+  };
+}
+
+function buildGatewaySuccessBody(
+  runId: string,
+  state: GatewayRunState,
+  result: PythonTurnResult,
+  runLifecycleLabel: string
+): Record<string, unknown> {
+  return {
+    runId,
+    adapter: "text_actions",
+    final: String(result.final || ""),
+    toolCall: result.toolCall || undefined,
+    logs: [
+      "engine=openhands_sdk",
+      runLifecycleLabel,
+      `gateway_turns=${state.turns.length}`,
+      ...(result.logs || []),
+    ],
+    version: result.version || null,
+    adapterMode: result.adapterMode || undefined,
+    latencyPolicy: result.latencyPolicy || undefined,
+    timeoutPolicy: result.timeoutPolicy || undefined,
+    budgetProfile: result.budgetProfile || undefined,
+    firstTurnBudgetMs: typeof result.firstTurnBudgetMs === "number" ? result.firstTurnBudgetMs : undefined,
+    smallModelForced: typeof result.smallModelForced === "boolean" ? result.smallModelForced : undefined,
+    coercionApplied: typeof result.coercionApplied === "boolean" ? result.coercionApplied : undefined,
+    seedToolInjected: typeof result.seedToolInjected === "boolean" ? result.seedToolInjected : undefined,
+    invalidToolNameRecovered:
+      typeof result.invalidToolNameRecovered === "boolean" ? result.invalidToolNameRecovered : undefined,
+    modelCandidate: result.modelCandidate || undefined,
+    fallbackAttempt: result.fallbackAttempt ?? undefined,
+    failureReason: result.failureReason || undefined,
+    persistenceDir: result.persistenceDir || undefined,
+    conversationId: result.conversationId || undefined,
+    fallbackTrail: result.fallbackTrail || undefined,
+    executionLane: result.executionLane || undefined,
+    pluginPacks: result.pluginPacks || undefined,
+    skillSources: result.skillSources || undefined,
+    traceId: result.traceId || undefined,
+    jsonlPath: result.jsonlPath || undefined,
+    delegationUsed: typeof result.delegationUsed === "boolean" ? result.delegationUsed : undefined,
+    delegationReason: result.delegationReason || undefined,
+    childCount: typeof result.childCount === "number" ? Math.max(0, Math.round(result.childCount)) : undefined,
+    completedChildren:
+      typeof result.completedChildren === "number" ? Math.max(0, Math.round(result.completedChildren)) : undefined,
+    failedChildren:
+      typeof result.failedChildren === "number" ? Math.max(0, Math.round(result.failedChildren)) : undefined,
+    childSummaries: Array.isArray(result.childSummaries) ? result.childSummaries : undefined,
+  };
+}
+
+function writeSseEvent(res: ServerResponse, event: Record<string, unknown>): void {
+  res.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
+function writeSseDone(res: ServerResponse): void {
+  res.write("data: [DONE]\n\n");
+}
+
 async function invokePythonTurnWithCommand(
   pythonCommand: PythonCommand,
   input: {
     payload?: GatewayPayload;
     doctor?: boolean;
+    stream?: boolean;
+    onEvent?: (event: Record<string, unknown>) => Promise<void> | void;
   }
 ): Promise<PythonTurnResult> {
   return await new Promise((resolve, reject) => {
     const args = input.doctor
       ? [...pythonCommand.argsPrefix, RUNNER_PATH, "--doctor"]
-      : [...pythonCommand.argsPrefix, RUNNER_PATH];
+      : input.stream
+        ? [...pythonCommand.argsPrefix, RUNNER_PATH, "--stream-jsonl"]
+        : [...pythonCommand.argsPrefix, RUNNER_PATH];
     const pythonEnv = {
       ...process.env,
       PYTHONIOENCODING: process.env.PYTHONIOENCODING || "utf-8",
@@ -379,28 +553,88 @@ async function invokePythonTurnWithCommand(
 
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    let lineBuffer = "";
+    let streamedResult: PythonTurnResult | null = null;
+    let dispatchChain = Promise.resolve();
+    let dispatchError: Error | null = null;
 
-    child.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
+    const dispatchEvent = (event: Record<string, unknown>): void => {
+      if (!input.onEvent) return;
+      dispatchChain = dispatchChain
+        .then(async () => {
+          await input.onEvent?.(event);
+        })
+        .catch((error) => {
+          dispatchError = error instanceof Error ? error : new Error(String(error));
+        });
+    };
+
+    const parseStreamLine = (line: string): void => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      } catch {
+        return;
+      }
+      const recordType = typeof parsed.type === "string" ? parsed.type : "";
+      if (recordType === "event" && parsed.event && typeof parsed.event === "object" && !Array.isArray(parsed.event)) {
+        dispatchEvent(parsed.event as Record<string, unknown>);
+        return;
+      }
+      if (recordType === "result" && parsed.result && typeof parsed.result === "object" && !Array.isArray(parsed.result)) {
+        streamedResult = parsed.result as PythonTurnResult;
+        return;
+      }
+      if (typeof parsed.ok === "boolean") {
+        streamedResult = parsed as PythonTurnResult;
+      }
+    };
+
+    child.stdout.on("data", (chunk) => {
+      const buffer = Buffer.from(chunk);
+      stdout.push(buffer);
+      if (!input.stream) return;
+      lineBuffer += buffer.toString("utf8");
+      while (true) {
+        const boundary = lineBuffer.indexOf("\n");
+        if (boundary < 0) break;
+        const line = lineBuffer.slice(0, boundary);
+        lineBuffer = lineBuffer.slice(boundary + 1);
+        parseStreamLine(line);
+      }
+    });
     child.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
     child.on("error", reject);
     child.on("close", (code) => {
       const rawOut = Buffer.concat(stdout).toString("utf8").trim();
       const rawErr = Buffer.concat(stderr).toString("utf8").trim();
-      const parsed = tryParsePythonTurnResult(rawOut);
-      if (parsed) {
-        resolve(parsed);
-        return;
+      if (input.stream && lineBuffer.trim()) {
+        parseStreamLine(lineBuffer);
+        lineBuffer = "";
       }
+      void dispatchChain.finally(() => {
+        if (dispatchError) {
+          reject(dispatchError);
+          return;
+        }
+        const parsed = streamedResult || tryParsePythonTurnResult(rawOut);
+        if (parsed) {
+          resolve(parsed);
+          return;
+        }
 
-      reject(
-        new Error(
-          rawErr ||
-            rawOut ||
-            (code === 0
-              ? "The OpenHands helper returned an empty response."
-              : `The OpenHands helper exited with code ${code ?? "unknown"}.`)
-        )
-      );
+        reject(
+          new Error(
+            rawErr ||
+              rawOut ||
+              (code === 0
+                ? "The OpenHands helper returned an empty response."
+                : `The OpenHands helper exited with code ${code ?? "unknown"}.`)
+          )
+        );
+      });
     });
 
     if (input.doctor) {
@@ -416,6 +650,8 @@ async function invokePythonTurnWithCommand(
 async function invokePythonTurn(input: {
   payload?: GatewayPayload;
   doctor?: boolean;
+  stream?: boolean;
+  onEvent?: (event: Record<string, unknown>) => Promise<void> | void;
 }): Promise<PythonTurnResult> {
   let lastError: Error | null = null;
   for (const pythonCommand of PYTHON_COMMANDS) {
@@ -529,7 +765,9 @@ async function resolveHealthResponse(): Promise<{ statusCode: number; body: Reco
 
 const server = createServer(async (req, res) => {
   const method = String(req.method || "GET").toUpperCase();
-  const pathname = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`).pathname;
+  const requestUrl = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+  const pathname = requestUrl.pathname;
+  const wantsStream = requestUrl.searchParams.get("stream") === "1";
 
   if (method === "OPTIONS") {
     res.writeHead(204, {
@@ -566,32 +804,33 @@ const server = createServer(async (req, res) => {
 
       const runId = randomUUID();
       const payload = withRunContext(body, runId, "start");
-      const result = await invokePythonTurn({ payload });
-      if (!result.ok) {
-        writeJson(res, 502, {
-          error: result.error || "OpenHands failed to produce the next tool turn.",
-          details: result.details || "Check the OpenHands SDK installation and model credentials.",
-          failureReason: result.failureReason || undefined,
-          modelCandidate: result.modelCandidate || undefined,
-          fallbackAttempt: result.fallbackAttempt ?? undefined,
-          fallbackTrail: result.fallbackTrail || undefined,
-          adapterMode: result.adapterMode || undefined,
-          latencyPolicy: result.latencyPolicy || undefined,
-          timeoutPolicy: result.timeoutPolicy || undefined,
-          budgetProfile: result.budgetProfile || undefined,
-          firstTurnBudgetMs:
-            typeof result.firstTurnBudgetMs === "number" ? result.firstTurnBudgetMs : undefined,
-          smallModelForced:
-            typeof result.smallModelForced === "boolean" ? result.smallModelForced : undefined,
-          coercionApplied:
-            typeof result.coercionApplied === "boolean" ? result.coercionApplied : undefined,
-          seedToolInjected:
-            typeof result.seedToolInjected === "boolean" ? result.seedToolInjected : undefined,
-          invalidToolNameRecovered:
-            typeof result.invalidToolNameRecovered === "boolean"
-              ? result.invalidToolNameRecovered
-              : undefined,
+      if (wantsStream) {
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-store",
+          Connection: "keep-alive",
         });
+      }
+      const result = await invokePythonTurn({
+        payload,
+        stream: wantsStream,
+        onEvent: wantsStream
+          ? async (event) => {
+              writeSseEvent(res, event);
+            }
+          : undefined,
+      });
+      if (!result.ok) {
+        if (wantsStream) {
+          writeSseEvent(res, {
+            event: "gateway.error",
+            data: buildGatewayFailureBody(result),
+          });
+          writeSseDone(res);
+          res.end();
+        } else {
+          writeJson(res, 502, buildGatewayFailureBody(result));
+        }
         return;
       }
 
@@ -600,52 +839,35 @@ const server = createServer(async (req, res) => {
         payload,
         result,
       });
-      writeJson(res, 200, {
-        runId,
-        adapter: "text_actions",
-        final: String(result.final || ""),
-        toolCall: result.toolCall || undefined,
-        logs: [
-          "engine=openhands_sdk",
-          `gateway_run=persisted`,
-          `gateway_turns=${state.turns.length}`,
-          ...(result.logs || []),
-        ],
-        version: result.version || null,
-        adapterMode: result.adapterMode || undefined,
-        latencyPolicy: result.latencyPolicy || undefined,
-        timeoutPolicy: result.timeoutPolicy || undefined,
-        budgetProfile: result.budgetProfile || undefined,
-        firstTurnBudgetMs:
-          typeof result.firstTurnBudgetMs === "number" ? result.firstTurnBudgetMs : undefined,
-        smallModelForced:
-          typeof result.smallModelForced === "boolean" ? result.smallModelForced : undefined,
-        coercionApplied:
-          typeof result.coercionApplied === "boolean" ? result.coercionApplied : undefined,
-        seedToolInjected:
-          typeof result.seedToolInjected === "boolean" ? result.seedToolInjected : undefined,
-        invalidToolNameRecovered:
-          typeof result.invalidToolNameRecovered === "boolean"
-            ? result.invalidToolNameRecovered
-            : undefined,
-        modelCandidate: result.modelCandidate || undefined,
-        fallbackAttempt: result.fallbackAttempt ?? undefined,
-        failureReason: result.failureReason || undefined,
-        persistenceDir: result.persistenceDir || undefined,
-        conversationId: result.conversationId || undefined,
-        fallbackTrail: result.fallbackTrail || undefined,
-        executionLane: result.executionLane || undefined,
-        pluginPacks: result.pluginPacks || undefined,
-        skillSources: result.skillSources || undefined,
-        traceId: result.traceId || undefined,
-        jsonlPath: result.jsonlPath || undefined,
-      });
+      const responseBody = buildGatewaySuccessBody(runId, state, result, "gateway_run=persisted");
+      if (wantsStream) {
+        writeSseEvent(res, {
+          event: "gateway.result",
+          data: responseBody,
+        });
+        writeSseDone(res);
+        res.end();
+      } else {
+        writeJson(res, 200, responseBody);
+      }
       return;
     } catch (error) {
-      writeJson(res, 500, {
-        error: "Failed to start OpenHands run.",
-        details: error instanceof Error ? error.message : String(error),
-      });
+      if (wantsStream) {
+        writeSseEvent(res, {
+          event: "gateway.error",
+          data: {
+            error: "Failed to start OpenHands run.",
+            details: error instanceof Error ? error.message : String(error),
+          },
+        });
+        writeSseDone(res);
+        res.end();
+      } else {
+        writeJson(res, 500, {
+          error: "Failed to start OpenHands run.",
+          details: error instanceof Error ? error.message : String(error),
+        });
+      }
       return;
     }
   }
@@ -664,39 +886,40 @@ const server = createServer(async (req, res) => {
 
       const existing = getRunState(runId);
       const payload = withRunContext(clonePayload(body), runId, "continue");
-      const effectiveState =
-        existing ||
+      if (!existing) {
         upsertRunState({
           runId,
           payload,
           rehydrated: true,
         });
-      const result = await invokePythonTurn({ payload });
-      if (!result.ok) {
-        writeJson(res, 502, {
-          error: result.error || "OpenHands failed to continue the run.",
-          details: result.details || "Check the OpenHands SDK installation and model credentials.",
-          failureReason: result.failureReason || undefined,
-          modelCandidate: result.modelCandidate || undefined,
-          fallbackAttempt: result.fallbackAttempt ?? undefined,
-          fallbackTrail: result.fallbackTrail || undefined,
-          adapterMode: result.adapterMode || undefined,
-          latencyPolicy: result.latencyPolicy || undefined,
-          timeoutPolicy: result.timeoutPolicy || undefined,
-          budgetProfile: result.budgetProfile || undefined,
-          firstTurnBudgetMs:
-            typeof result.firstTurnBudgetMs === "number" ? result.firstTurnBudgetMs : undefined,
-          smallModelForced:
-            typeof result.smallModelForced === "boolean" ? result.smallModelForced : undefined,
-          coercionApplied:
-            typeof result.coercionApplied === "boolean" ? result.coercionApplied : undefined,
-          seedToolInjected:
-            typeof result.seedToolInjected === "boolean" ? result.seedToolInjected : undefined,
-          invalidToolNameRecovered:
-            typeof result.invalidToolNameRecovered === "boolean"
-              ? result.invalidToolNameRecovered
-              : undefined,
+      }
+      if (wantsStream) {
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-store",
+          Connection: "keep-alive",
         });
+      }
+      const result = await invokePythonTurn({
+        payload,
+        stream: wantsStream,
+        onEvent: wantsStream
+          ? async (event) => {
+              writeSseEvent(res, event);
+            }
+          : undefined,
+      });
+      if (!result.ok) {
+        if (wantsStream) {
+          writeSseEvent(res, {
+            event: "gateway.error",
+            data: buildGatewayFailureBody(result),
+          });
+          writeSseDone(res);
+          res.end();
+        } else {
+          writeJson(res, 502, buildGatewayFailureBody(result));
+        }
         return;
       }
 
@@ -705,52 +928,40 @@ const server = createServer(async (req, res) => {
         payload,
         result,
       });
-      writeJson(res, 200, {
+      const responseBody = buildGatewaySuccessBody(
         runId,
-        adapter: "text_actions",
-        final: String(result.final || ""),
-        toolCall: result.toolCall || undefined,
-        logs: [
-          "engine=openhands_sdk",
-          existing ? "gateway_run=resumed" : "gateway_run=rehydrated",
-          `gateway_turns=${state.turns.length}`,
-          ...(result.logs || []),
-        ],
-        version: result.version || null,
-        adapterMode: result.adapterMode || undefined,
-        latencyPolicy: result.latencyPolicy || undefined,
-        timeoutPolicy: result.timeoutPolicy || undefined,
-        budgetProfile: result.budgetProfile || undefined,
-        firstTurnBudgetMs:
-          typeof result.firstTurnBudgetMs === "number" ? result.firstTurnBudgetMs : undefined,
-        smallModelForced:
-          typeof result.smallModelForced === "boolean" ? result.smallModelForced : undefined,
-        coercionApplied:
-          typeof result.coercionApplied === "boolean" ? result.coercionApplied : undefined,
-        seedToolInjected:
-          typeof result.seedToolInjected === "boolean" ? result.seedToolInjected : undefined,
-        invalidToolNameRecovered:
-          typeof result.invalidToolNameRecovered === "boolean"
-            ? result.invalidToolNameRecovered
-            : undefined,
-        modelCandidate: result.modelCandidate || undefined,
-        fallbackAttempt: result.fallbackAttempt ?? undefined,
-        failureReason: result.failureReason || undefined,
-        persistenceDir: result.persistenceDir || undefined,
-        conversationId: result.conversationId || undefined,
-        fallbackTrail: result.fallbackTrail || undefined,
-        executionLane: result.executionLane || undefined,
-        pluginPacks: result.pluginPacks || undefined,
-        skillSources: result.skillSources || undefined,
-        traceId: result.traceId || undefined,
-        jsonlPath: result.jsonlPath || undefined,
-      });
+        state,
+        result,
+        existing ? "gateway_run=resumed" : "gateway_run=rehydrated"
+      );
+      if (wantsStream) {
+        writeSseEvent(res, {
+          event: "gateway.result",
+          data: responseBody,
+        });
+        writeSseDone(res);
+        res.end();
+      } else {
+        writeJson(res, 200, responseBody);
+      }
       return;
     } catch (error) {
-      writeJson(res, 500, {
-        error: "Failed to continue OpenHands run.",
-        details: error instanceof Error ? error.message : String(error),
-      });
+      if (wantsStream) {
+        writeSseEvent(res, {
+          event: "gateway.error",
+          data: {
+            error: "Failed to continue OpenHands run.",
+            details: error instanceof Error ? error.message : String(error),
+          },
+        });
+        writeSseDone(res);
+        res.end();
+      } else {
+        writeJson(res, 500, {
+          error: "Failed to continue OpenHands run.",
+          details: error instanceof Error ? error.message : String(error),
+        });
+      }
       return;
     }
   }

@@ -522,6 +522,11 @@ export class BrowserToolExecutor {
               query = stripBrowserSiteHintFromQuery(query, inferredUrl);
             }
           }
+          if (!url && !pageId && query) {
+            url = /\b(song|music|album|artist|track|playlist|video|watch|listen)\b/i.test(query)
+              ? "https://www.youtube.com"
+              : "https://www.google.com";
+          }
           if (!query || (!url && !pageId)) {
             return fail(toolCall, "browser_search_and_open_best_result requires query and either url or pageId.");
           }

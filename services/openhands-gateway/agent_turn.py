@@ -36,6 +36,23 @@ def compact_whitespace(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
 
 
+def configure_process_text_io() -> None:
+    if os.name != "nt":
+        return
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
+configure_process_text_io()
+
+
 def preferred_text_encoding() -> str:
     try:
         encoding = locale.getpreferredencoding(False)
@@ -989,6 +1006,16 @@ def normalize_provider_failure_reason(detail: str, status_code: int | None = Non
     if not low:
         return None
     if (
+        status_code == 401
+        or "http error 401" in low
+        or "status code 401" in low
+        or "unauthorized" in low
+        or "authentication token" in low
+        or "could not parse your authentication token" in low
+        or "please try signing in again" in low
+    ):
+        return "portal_auth_invalid"
+    if (
         "depleted your monthly included credits" in low
         or "purchase pre-paid credits" in low
         or "included credits" in low
@@ -1138,6 +1165,111 @@ def describe_latest_tool_result(latest_tool: dict[str, Any] | None) -> str:
     return "\n".join(lines)
 
 
+DEFAULT_DELEGATION_MAX_CHILDREN = 3
+DEFAULT_DELEGATION_SUPPORTED_AGENT_TYPES = ["default"]
+_BINARY_DELEGATION_RUNTIME_CONTEXT: dict[str, Any] | None = None
+_BINARY_DELEGATE_TOOL_CLASS: Any | None = None
+
+
+def normalize_delegation_agent_types(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return list(DEFAULT_DELEGATION_SUPPORTED_AGENT_TYPES)
+    allowed = [str(item).strip() for item in value if str(item).strip() == "default"]
+    return allowed or list(DEFAULT_DELEGATION_SUPPORTED_AGENT_TYPES)
+
+
+def resolve_delegation_config(payload: dict[str, Any]) -> dict[str, Any]:
+    request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+    raw = payload.get("delegation") if isinstance(payload.get("delegation"), dict) else {}
+    if not raw and isinstance(request.get("delegation"), dict):
+        raw = request.get("delegation")
+    enabled = raw.get("enabled")
+    max_children = raw.get("maxChildren")
+    try:
+        normalized_max_children = int(max_children) if max_children is not None else DEFAULT_DELEGATION_MAX_CHILDREN
+    except Exception:
+        normalized_max_children = DEFAULT_DELEGATION_MAX_CHILDREN
+    return {
+        "enabled": enabled is not False,
+        "mode": "auto",
+        "maxChildren": max(1, min(normalized_max_children, DEFAULT_DELEGATION_MAX_CHILDREN)),
+        "visibility": "summary_only",
+        "supportedAgentTypes": normalize_delegation_agent_types(raw.get("supportedAgentTypes")),
+    }
+
+
+def resolve_delegation_block_reason(payload: dict[str, Any], config: dict[str, Any]) -> str | None:
+    if config.get("enabled") is not True:
+        return "disabled_by_request"
+    request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+    interaction_kind = compact_whitespace(request.get("interactionKind")).lower()
+    policy_lane = resolve_policy_lane(payload)
+    if policy_lane in {"browser", "desktop"}:
+        return f"blocked_{policy_lane}_lane"
+    if interaction_kind in {"browser_task", "machine_desktop"}:
+        return f"blocked_{interaction_kind}"
+    task = compact_whitespace(request.get("task")).lower()
+    if any(snippet in task for snippet in ("takeover", "take over", "remote control", "control my computer")):
+        return "blocked_takeover_sensitive"
+    return None
+
+
+def build_delegation_prompt_guidance(payload: dict[str, Any]) -> str:
+    config = resolve_delegation_config(payload)
+    block_reason = resolve_delegation_block_reason(payload, config)
+    if block_reason:
+        return f"Sub-agent delegation is disabled for this run ({block_reason}). Keep all work in the parent agent."
+    return "\n".join(
+        [
+            "Sub-agent delegation is available through DelegateTool for this run.",
+            "Use it only for clearly independent subtasks such as repo exploration, parallel analysis, independent fix/test work, or multi-file investigation.",
+            "Do not delegate browser-use work, native desktop control, takeover-sensitive steps, or tasks that require shared mutable state coordination.",
+            f"If you delegate, keep it summary-only, use stable short child IDs, use only the default child agent type, and cap yourself at {config.get('maxChildren', DEFAULT_DELEGATION_MAX_CHILDREN)} child agents.",
+            "Complete spawn and delegate within the same run segment before returning to the user.",
+        ]
+    )
+
+
+def set_binary_delegation_runtime_context(value: dict[str, Any] | None) -> None:
+    global _BINARY_DELEGATION_RUNTIME_CONTEXT
+    _BINARY_DELEGATION_RUNTIME_CONTEXT = value
+
+
+def get_binary_delegation_runtime_context() -> dict[str, Any]:
+    return _BINARY_DELEGATION_RUNTIME_CONTEXT or {}
+
+
+def clear_binary_delegation_runtime_context() -> None:
+    global _BINARY_DELEGATION_RUNTIME_CONTEXT
+    _BINARY_DELEGATION_RUNTIME_CONTEXT = None
+
+
+def truncate_delegation_text(value: Any, limit: int = 220) -> str:
+    text = compact_whitespace(value)
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)].rstrip() + "..."
+
+
+def build_delegation_child_trace_id(parent_trace_id: str | None, child_id: str) -> str | None:
+    if not compact_whitespace(child_id):
+        return None
+    base = compact_whitespace(parent_trace_id) or "binary-delegation"
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{base}:{child_id}"))
+
+
+def build_delegation_result_summary(context: dict[str, Any]) -> dict[str, Any] | None:
+    executor = context.get("executor")
+    build_summary = getattr(executor, "build_summary", None)
+    if not callable(build_summary):
+        return None
+    try:
+        summary = build_summary()
+    except Exception:
+        return None
+    return summary if isinstance(summary, dict) and summary.get("delegationUsed") else None
+
+
 def build_autonomous_openhands_message(payload: dict[str, Any], turn_phase: str) -> str:
     request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
     target = payload.get("targetInference") if isinstance(payload.get("targetInference"), dict) else {}
@@ -1172,6 +1304,7 @@ def build_autonomous_openhands_message(payload: dict[str, Any], turn_phase: str)
         "Never stop at 'I will do X next' for workspace tasks. Perform X with tools in the same turn.",
         "Only ask for approval when the runtime policy truly blocks an irreversible or trust-sensitive action.",
         "Prefer finishing the task end-to-end instead of stopping after analysis whenever the workspace and tools allow it.",
+        build_delegation_prompt_guidance(payload),
         "If TOM is available, you may consult it for vague or preference-sensitive requests.",
         f"TOM enabled: {'true' if tom_enabled else 'false'}",
         f"MCP enabled: {'true' if mcp_enabled else 'false'}",
@@ -1215,6 +1348,7 @@ def build_autonomous_continue_message(payload: dict[str, Any]) -> str:
         "Continue the existing OpenHands conversation for this Binary run.",
         "Stay calm, concise, and practical.",
         "Keep narrating your work naturally so the user can follow along.",
+        build_delegation_prompt_guidance(payload),
         describe_latest_tool_result(latest_tool),
     ]
     if repair and repair.get("stage"):
@@ -1263,7 +1397,369 @@ def build_probe_continue_message(payload: dict[str, Any]) -> str:
     return "\n\n".join(part for part in parts if part)
 
 
-def build_native_openhands_tools(file_edit_backend: str = "file_editor") -> tuple[list[Any], list[str]]:
+def ensure_binary_delegate_tool_registration() -> tuple[str | None, str | None]:
+    global _BINARY_DELEGATE_TOOL_CLASS
+    if _BINARY_DELEGATE_TOOL_CLASS is None:
+        try:
+            from pydantic import Field
+            from openhands.sdk.conversation.impl.local_conversation import LocalConversation
+            from openhands.sdk.conversation.response_utils import get_agent_final_response
+            from openhands.sdk.tool.registry import register_tool
+            from openhands.sdk.tool.tool import Action, Observation, ToolAnnotations, ToolDefinition, ToolExecutor
+        except Exception as exc:
+            return None, f"delegate_tool_unavailable:{type(exc).__name__}"
+
+        class BinaryDelegateAction(Action):
+            command: str = Field(description="Allowed commands: spawn or delegate.")
+            ids: list[str] | None = Field(default=None, description="Sub-agent identifiers for spawn.")
+            agent_types: list[str] | None = Field(
+                default=None,
+                description="Optional agent types for spawn. Binary v1 supports only the default agent type.",
+            )
+            tasks: dict[str, str] | None = Field(
+                default=None,
+                description="Mapping of spawned child IDs to delegated task descriptions.",
+            )
+
+        class BinaryDelegateObservation(Observation):
+            command: str = Field(description="The delegate command that was executed.")
+
+        class BinaryDelegateExecutor(ToolExecutor):
+            def __init__(
+                self,
+                *,
+                max_children: int,
+                child_agent_factory: Callable[[Any], Any] | None,
+                event_emitter: Callable[[str, dict[str, Any]], None] | None,
+                supported_agent_types: list[str],
+                parent_trace_id: str | None,
+                delegation_reason: str,
+            ) -> None:
+                self._parent_conversation: Any | None = None
+                self._sub_agents: dict[str, Any] = {}
+                self._child_summaries: dict[str, dict[str, Any]] = {}
+                self._max_children = max_children
+                self._child_agent_factory = child_agent_factory
+                self._event_emitter = event_emitter
+                self._supported_agent_types = supported_agent_types or list(DEFAULT_DELEGATION_SUPPORTED_AGENT_TYPES)
+                self._parent_trace_id = parent_trace_id
+                self._delegation_reason = delegation_reason
+                self._delegation_used = False
+                self._started_emitted = False
+
+            @property
+            def parent_conversation(self) -> Any:
+                if self._parent_conversation is None:
+                    raise RuntimeError("Parent conversation not set for DelegateTool.")
+                return self._parent_conversation
+
+            def __call__(self, action: Any, conversation: Any) -> Any:  # type: ignore[override]
+                if self._parent_conversation is None:
+                    self._parent_conversation = conversation
+                command = compact_whitespace(getattr(action, "command", "")).lower()
+                if command == "spawn":
+                    return self._spawn_agents(action)
+                if command == "delegate":
+                    return self._delegate_tasks(action)
+                return BinaryDelegateObservation.from_text(
+                    text="Unsupported DelegateTool command. Use spawn or delegate.",
+                    command=command or "unknown",
+                    is_error=True,
+                )
+
+            def _build_child_summary(self, child_id: str, **patch: Any) -> dict[str, Any]:
+                existing = self._child_summaries.get(child_id, {})
+                summary = {
+                    "childId": child_id,
+                    "agentType": existing.get("agentType") or "default",
+                    "traceId": existing.get("traceId") or build_delegation_child_trace_id(self._parent_trace_id, child_id),
+                    **existing,
+                    **patch,
+                }
+                self._child_summaries[child_id] = summary
+                return summary
+
+            def _emit(self, event_name: str, data: dict[str, Any]) -> None:
+                if callable(self._event_emitter):
+                    self._event_emitter(event_name, data)
+
+            def _emit_started(self) -> None:
+                if self._started_emitted or not self._child_summaries:
+                    return
+                self._started_emitted = True
+                self._delegation_used = True
+                child_summaries = list(self._child_summaries.values())
+                self._emit(
+                    "delegation.started",
+                    {
+                        "delegationUsed": True,
+                        "delegationReason": self._delegation_reason,
+                        "childCount": len(child_summaries),
+                        "childSummaries": child_summaries,
+                    },
+                )
+
+            def _emit_child_status(self, child_summary: dict[str, Any]) -> None:
+                self._emit(
+                    "delegation.child_status",
+                    {
+                        **child_summary,
+                        "delegationUsed": True,
+                        "delegationReason": self._delegation_reason,
+                    },
+                )
+
+            def _emit_completed(self) -> None:
+                summary = self.build_summary()
+                if summary:
+                    self._emit("delegation.completed", summary)
+
+            def build_summary(self) -> dict[str, Any] | None:
+                if not self._delegation_used:
+                    return None
+                child_summaries = list(self._child_summaries.values())
+                completed = sum(1 for item in child_summaries if item.get("status") == "completed")
+                failed = sum(1 for item in child_summaries if item.get("status") in {"failed", "cancelled"})
+                return {
+                    "delegationUsed": True,
+                    "delegationReason": self._delegation_reason,
+                    "childCount": len(child_summaries),
+                    "completedChildren": completed,
+                    "failedChildren": failed,
+                    "childSummaries": child_summaries,
+                }
+
+            def _spawn_agents(self, action: Any) -> Any:
+                ids = getattr(action, "ids", None) or []
+                agent_types = getattr(action, "agent_types", None) or []
+                if not isinstance(ids, list) or not ids:
+                    return BinaryDelegateObservation.from_text(
+                        text="DelegateTool spawn requires at least one child ID.",
+                        command="spawn",
+                        is_error=True,
+                    )
+                if len(self._sub_agents) + len(ids) > self._max_children:
+                    return BinaryDelegateObservation.from_text(
+                        text=(
+                            f"DelegateTool cannot spawn {len(ids)} children because Binary v1 is capped at "
+                            f"{self._max_children} concurrent sub-agents."
+                        ),
+                        command="spawn",
+                        is_error=True,
+                    )
+                if not callable(self._child_agent_factory):
+                    return BinaryDelegateObservation.from_text(
+                        text="DelegateTool is unavailable because the child agent factory is missing.",
+                        command="spawn",
+                        is_error=True,
+                    )
+                parent_llm = self.parent_conversation.agent.llm
+                sub_agent_llm = (
+                    parent_llm.model_copy(update={"stream": False})
+                    if callable(getattr(parent_llm, "model_copy", None))
+                    else parent_llm
+                )
+                workspace_path = self.parent_conversation.state.workspace.working_dir
+                parent_visualizer = getattr(self.parent_conversation, "_visualizer", None)
+                created_labels: list[str] = []
+                for index, raw_child_id in enumerate(ids):
+                    child_id = compact_whitespace(raw_child_id)
+                    if not child_id:
+                        continue
+                    agent_type = compact_whitespace(agent_types[index] if index < len(agent_types) else "default") or "default"
+                    if agent_type not in self._supported_agent_types:
+                        return BinaryDelegateObservation.from_text(
+                            text=f"Binary v1 only supports the default child agent type. Received: {agent_type}",
+                            command="spawn",
+                            is_error=True,
+                        )
+                    worker_agent = self._child_agent_factory(sub_agent_llm)
+                    sub_visualizer = (
+                        parent_visualizer.create_sub_visualizer(child_id)
+                        if parent_visualizer is not None and callable(getattr(parent_visualizer, "create_sub_visualizer", None))
+                        else None
+                    )
+                    self._sub_agents[child_id] = LocalConversation(
+                        agent=worker_agent,
+                        workspace=workspace_path,
+                        visualizer=sub_visualizer,
+                    )
+                    self._build_child_summary(
+                        child_id,
+                        status="queued",
+                        summary="Ready to receive a delegated subtask.",
+                        agentType=agent_type,
+                    )
+                    created_labels.append(child_id)
+                self._emit_started()
+                return BinaryDelegateObservation.from_text(
+                    text=f"Spawned {len(created_labels)} sub-agent(s): {', '.join(created_labels)}.",
+                    command="spawn",
+                )
+
+            def _send_child_message(self, conversation: Any, task: str, parent_name: str | None) -> None:
+                send_message = getattr(conversation, "send_message", None)
+                if not callable(send_message):
+                    raise RuntimeError("Sub-agent conversation does not support send_message().")
+                if parent_name:
+                    try:
+                        kwargs = filter_supported_kwargs(send_message, {"sender": parent_name})
+                        send_message(task, **kwargs)
+                        return
+                    except TypeError:
+                        pass
+                send_message(task)
+
+            def _delegate_tasks(self, action: Any) -> Any:
+                tasks = getattr(action, "tasks", None) or {}
+                if not isinstance(tasks, dict) or not tasks:
+                    return BinaryDelegateObservation.from_text(
+                        text="DelegateTool delegate requires at least one child task.",
+                        command="delegate",
+                        is_error=True,
+                    )
+                missing = [child_id for child_id in tasks.keys() if child_id not in self._sub_agents]
+                if missing:
+                    return BinaryDelegateObservation.from_text(
+                        text=f"DelegateTool cannot find these child IDs: {', '.join(missing)}.",
+                        command="delegate",
+                        is_error=True,
+                    )
+                self._delegation_used = True
+                self._emit_started()
+                parent_name = None
+                parent_visualizer = getattr(self.parent_conversation, "_visualizer", None)
+                if parent_visualizer is not None:
+                    parent_name = getattr(parent_visualizer, "_name", None)
+                results: dict[str, str] = {}
+                errors: dict[str, str] = {}
+                threads: list[threading.Thread] = []
+
+                def run_task(child_id: str, conversation: Any, task: str) -> None:
+                    running_summary = self._build_child_summary(
+                        child_id,
+                        status="running",
+                        summary=truncate_delegation_text(task, 180) or "Working on delegated subtask.",
+                    )
+                    self._emit_child_status(running_summary)
+                    try:
+                        self._send_child_message(conversation, task, parent_name)
+                        conversation.run()
+                        final_response = get_agent_final_response(conversation.state.events)
+                        result_text = truncate_delegation_text(final_response or "Completed delegated subtask.")
+                        results[child_id] = result_text
+                        completed_summary = self._build_child_summary(
+                            child_id,
+                            status="completed",
+                            summary=result_text,
+                            completedAt=iso_now(),
+                        )
+                        self._emit_child_status(completed_summary)
+                    except Exception as exc:
+                        error_text = truncate_delegation_text(f"{type(exc).__name__}: {exc}")
+                        errors[child_id] = error_text
+                        failed_summary = self._build_child_summary(
+                            child_id,
+                            status="failed",
+                            summary=error_text or "Delegated subtask failed.",
+                            completedAt=iso_now(),
+                        )
+                        self._emit_child_status(failed_summary)
+
+                for child_id, task in tasks.items():
+                    thread = threading.Thread(
+                        target=run_task,
+                        args=(child_id, self._sub_agents[child_id], str(task or "")),
+                        name=f"binary-delegate-{child_id}",
+                    )
+                    threads.append(thread)
+                    thread.start()
+
+                for thread in threads:
+                    thread.join()
+
+                self._emit_completed()
+                result_lines = []
+                for child_id in tasks.keys():
+                    if child_id in results:
+                        result_lines.append(f"{child_id}: {results[child_id]}")
+                    elif child_id in errors:
+                        result_lines.append(f"{child_id}: ERROR - {errors[child_id]}")
+                headline = (
+                    f"Delegated {len(tasks)} subtask(s) with {len(errors)} failure(s)."
+                    if errors
+                    else f"Delegated {len(tasks)} subtask(s) successfully."
+                )
+                return BinaryDelegateObservation.from_text(
+                    text="\n".join([headline, *result_lines]).strip(),
+                    command="delegate",
+                    is_error=False,
+                )
+
+        class BinaryDelegateTool(ToolDefinition[BinaryDelegateAction, BinaryDelegateObservation]):
+            @classmethod
+            def create(
+                cls,
+                conv_state: Any,
+                max_children: int = DEFAULT_DELEGATION_MAX_CHILDREN,
+            ) -> Any:
+                runtime_context = get_binary_delegation_runtime_context()
+                supported_agent_types = runtime_context.get("supported_agent_types") or list(
+                    DEFAULT_DELEGATION_SUPPORTED_AGENT_TYPES
+                )
+                effective_max_children = runtime_context.get("maxChildren") or max_children
+                executor = BinaryDelegateExecutor(
+                    max_children=max(1, min(int(effective_max_children), DEFAULT_DELEGATION_MAX_CHILDREN)),
+                    child_agent_factory=runtime_context.get("child_agent_factory"),
+                    event_emitter=runtime_context.get("event_emitter"),
+                    supported_agent_types=supported_agent_types,
+                    parent_trace_id=runtime_context.get("traceId"),
+                    delegation_reason=runtime_context.get("delegation_reason")
+                    or "Independent delegated subtasks inside the Binary workspace.",
+                )
+                runtime_context["executor"] = executor
+                set_binary_delegation_runtime_context(runtime_context)
+                description = (
+                    "Spawn and delegate work to default Binary sub-agents for independent repo analysis, "
+                    "verification, or other parallelizable coding subtasks. Keep child work summary-only."
+                )
+                return [
+                    cls(
+                        action_type=BinaryDelegateAction,
+                        observation_type=BinaryDelegateObservation,
+                        description=description,
+                        annotations=ToolAnnotations(
+                            title="delegate",
+                            readOnlyHint=False,
+                            destructiveHint=False,
+                            idempotentHint=False,
+                            openWorldHint=True,
+                        ),
+                        executor=executor,
+                    )
+                ]
+
+        _BINARY_DELEGATE_TOOL_CLASS = BinaryDelegateTool
+        try:
+            register_tool("DelegateTool", _BINARY_DELEGATE_TOOL_CLASS)
+        except Exception as exc:
+            return None, f"delegate_tool_registration_failed:{type(exc).__name__}"
+    else:
+        try:
+            from openhands.sdk.tool.registry import register_tool
+
+            register_tool("DelegateTool", _BINARY_DELEGATE_TOOL_CLASS)
+        except Exception as exc:
+            return None, f"delegate_tool_registration_failed:{type(exc).__name__}"
+    return "DelegateTool", None
+
+
+def build_native_openhands_tools(
+    file_edit_backend: str = "file_editor",
+    *,
+    include_browser: bool = True,
+    include_delegate: bool = False,
+) -> tuple[list[Any], list[str]]:
     tool_cls = import_optional_attr(
         [
             ("openhands.sdk", "Tool"),
@@ -1310,11 +1806,18 @@ def build_native_openhands_tools(file_edit_backend: str = "file_editor") -> tupl
             terminal_tool,
         ),
         workspace_tool,
-        (
-            "BrowserToolSet",
-            browser_toolset_cls,
-        ),
     ]
+    if include_browser:
+        tool_defs.append(
+            (
+                "BrowserToolSet",
+                browser_toolset_cls,
+            )
+        )
+    delegate_name = None
+    delegate_reason = None
+    if include_delegate:
+        delegate_name, delegate_reason = ensure_binary_delegate_tool_registration()
 
     tool_names: list[str] = []
     for tool_name, tool_def in tool_defs:
@@ -1327,6 +1830,8 @@ def build_native_openhands_tools(file_edit_backend: str = "file_editor") -> tupl
             except Exception:
                 continue
         tool_names.append(tool_name)
+    if delegate_name:
+        tool_names.append(delegate_name)
 
     if not tool_names:
         diagnostics = ["native_tools=none", *terminal_diagnostics]
@@ -1349,7 +1854,8 @@ def build_native_openhands_tools(file_edit_backend: str = "file_editor") -> tupl
     diagnostics = [
         f"native_tools={','.join(tool_names)}",
         f"file_edit_backend={edit_label}",
-        *( [f"browser_toolset={browser_support_reason}"] if browser_support_reason else [] ),
+        *([f"browser_toolset={browser_support_reason}"] if include_browser and browser_support_reason else []),
+        *([delegate_reason] if delegate_reason else []),
         *terminal_diagnostics,
     ]
     return tool_specs, list(dict.fromkeys(diagnostics))
@@ -1428,6 +1934,12 @@ def detect_supported_openhands_tools() -> tuple[list[str], list[str]]:
         supported.extend(["TomConsultTool", "SleeptimeComputeTool"])
     else:
         degraded.append("tom_tools_unavailable")
+
+    delegate_tool_name, delegate_reason = ensure_binary_delegate_tool_registration()
+    if delegate_tool_name:
+        supported.append(delegate_tool_name)
+    elif delegate_reason:
+        degraded.append(delegate_reason)
 
     if import_optional_attr(
         [
@@ -2600,6 +3112,21 @@ def build_chat_only_fast_prompt(payload: dict[str, Any]) -> str:
     )
 
 
+def is_internal_orchestration_prompt_leak(text: str) -> bool:
+    normalized = compact_whitespace(text).lower()
+    if not normalized:
+        return False
+    leak_markers = (
+        "you are openhands acting as the orchestration brain for a coding ide extension",
+        "i am openhands, acting as the orchestration brain for a coding ide extension",
+        "you are openhands operating directly inside binary ide's workspace",
+        "the ide executes tools locally. you must not assume any tool has run unless it appears in the trace",
+        "return json only",
+        "choose exactly one of these shapes",
+    )
+    return any(marker in normalized for marker in leak_markers)
+
+
 def parse_turn_response(
     raw_text: str, available_tools: list[str], allow_internal_browser_use: bool = False
 ) -> dict[str, Any]:
@@ -2608,7 +3135,10 @@ def parse_turn_response(
         extracted = extract_tool_turn(parsed, available_tools, allow_internal_browser_use=allow_internal_browser_use)
         if extracted:
             return extracted
-    return {"final": raw_text.strip()}
+    stripped = raw_text.strip()
+    if is_internal_orchestration_prompt_leak(stripped):
+        return {"final": "", "toolCall": None, "internalPromptLeak": True}
+    return {"final": stripped}
 
 
 def should_use_binary_tool_adapter(payload: dict[str, Any], supported_tools: list[str], degraded_reasons: list[str]) -> bool:
@@ -5639,9 +6169,15 @@ def coerce_binary_tool_adapter_response(
     latest_tool = payload.get("latestToolResult") if isinstance(payload.get("latestToolResult"), dict) else None
     final_text = compact_whitespace(parsed.get("final"))
     tool_call = parsed.get("toolCall")
+    internal_prompt_leak = parsed.get("internalPromptLeak") is True or is_internal_orchestration_prompt_leak(final_text)
     coercion_applied = False
     seed_tool_injected = False
     invalid_tool_name_recovered = False
+
+    if internal_prompt_leak:
+        final_text = ""
+        tool_call = None
+        coercion_applied = True
 
     invalid_tool_name = extract_invalid_tool_name_for_adapter(parsed, available_tools)
     if invalid_tool_name:
@@ -5890,6 +6426,15 @@ def coerce_binary_tool_adapter_response(
                 "seedToolInjected": seed_tool_injected,
                 "invalidToolNameRecovered": invalid_tool_name_recovered,
             }
+
+    if internal_prompt_leak and not tool_call:
+        return {
+            "final": "Binary hit an internal runtime formatting error before any real action completed. Please retry.",
+            "toolCall": None,
+            "coercionApplied": True,
+            "seedToolInjected": seed_tool_injected,
+            "invalidToolNameRecovered": invalid_tool_name_recovered,
+        }
 
     return {
         "final": parsed.get("final") or "",
@@ -6298,7 +6843,7 @@ def run_binary_tool_adapter_turn(
                     openai_compatible_chat_completion(
                         base_url=str(candidate.get("baseUrl") or ""),
                         api_key=str(candidate.get("apiKey") or ""),
-                        model_id=str(candidate.get("model") or resolve_openhands_model(candidate)),
+                        model_id=resolve_openai_compatible_model_id(candidate),
                         user_prompt=fast_prompt,
                         extra_headers=candidate.get("extraHeaders") if isinstance(candidate.get("extraHeaders"), dict) else None,
                         max_tokens=420,
@@ -6343,6 +6888,7 @@ def run_binary_tool_adapter_turn(
         if chat_only_fast_response_error:
             reason = normalize_provider_failure_reason(str(chat_only_fast_response_error)) or "unknown_provider_failure"
             if reason in {
+                "portal_auth_invalid",
                 "transient_api_failure",
                 "provider_credits_exhausted",
                 "router_blocked",
@@ -6353,6 +6899,21 @@ def run_binary_tool_adapter_turn(
                     if reason in {"router_blocked", "unknown_provider_failure"}
                     else reason
                 )
+                if is_openrouter_free_candidate(candidate):
+                    raise RuntimeError(
+                        "OpenRouter free capacity exhausted during chat-only fast path: "
+                        f"{type(chat_only_fast_response_error).__name__}: {chat_only_fast_response_error}"
+                    )
+                if is_portal_bridge_candidate(candidate):
+                    if reason == "portal_auth_invalid":
+                        raise RuntimeError(
+                            "Portal bridge authentication failed during chat-only fast path: "
+                            f"{type(chat_only_fast_response_error).__name__}: {chat_only_fast_response_error}"
+                        )
+                    raise RuntimeError(
+                        "Portal bridge capacity exhausted during chat-only fast path: "
+                        f"{type(chat_only_fast_response_error).__name__}: {chat_only_fast_response_error}"
+                    )
                 return {
                     "ok": True,
                     "final": "I hit temporary provider capacity. Please retry in a few seconds.",
@@ -6390,54 +6951,109 @@ def run_binary_tool_adapter_turn(
             "supportsInternalBrowserUse": supports_internal_browser_use,
         },
     }
-
-    agent_kwargs: dict[str, Any] = {
-        "llm": llm,
-        "tools": [],
-    }
-    agent = agent_cls(**filter_supported_kwargs(agent_cls, agent_kwargs))
-    conversation_kwargs: dict[str, Any] = {
-        "agent": agent,
-        "workspace": workspace,
-    }
-    conversation = instantiate_with_supported_kwargs(conversation_cls, conversation_kwargs)
     prompt = build_prompt(prompt_payload)
+    llm_model_debug = compact_whitespace(getattr(llm, "model", ""))
+    llm_base_url_debug = compact_whitespace(getattr(llm, "base_url", ""))
 
     raw_text = ""
     ask_agent_error = None
     ask_agent_sanitized_retry = False
-    ask_agent = getattr(conversation, "ask_agent", None)
-    if callable(ask_agent):
-        raw_text, ask_agent_error, ask_agent_sanitized_retry = ask_agent_with_unicode_retry(ask_agent, prompt)
-        if not raw_text and isinstance(ask_agent_error, UnicodeEncodeError):
-            safe_prompt, changed = make_text_encoding_safe(prompt, "cp1252" if os.name == "nt" else None)
-            if changed and safe_prompt:
-                retry_conversation = None
-                try:
-                    retry_conversation = instantiate_with_supported_kwargs(conversation_cls, conversation_kwargs)
-                    retry_ask_agent = getattr(retry_conversation, "ask_agent", None)
-                    if callable(retry_ask_agent):
-                        raw_text, ask_agent_error, _ = ask_agent_with_unicode_retry(retry_ask_agent, safe_prompt)
-                        ask_agent_sanitized_retry = True
-                except Exception as retry_exc:
-                    ask_agent_error = retry_exc
-                finally:
-                    close_retry = getattr(retry_conversation, "close", None) if retry_conversation is not None else None
-                    if callable(close_retry):
-                        try:
-                            close_retry()
-                        except Exception:
-                            pass
+    skip_ask_agent = is_openrouter_candidate(candidate)
+    if skip_ask_agent and compact_whitespace(candidate.get("baseUrl")):
+        try:
+            raw_text = compact_whitespace(
+                openai_compatible_chat_completion(
+                    base_url=str(candidate.get("baseUrl") or ""),
+                    api_key=str(candidate.get("apiKey") or ""),
+                    model_id=resolve_openai_compatible_model_id(candidate),
+                    user_prompt=make_text_encoding_safe(prompt, "cp1252" if os.name == "nt" else None)[0],
+                    extra_headers=candidate.get("extraHeaders") if isinstance(candidate.get("extraHeaders"), dict) else None,
+                )
+            )
+        except Exception as exc:
+            deterministic_after_error = build_forced_small_deterministic_turn(payload, available_tools)
+            if deterministic_after_error:
+                return {
+                    "ok": True,
+                    "final": deterministic_after_error.get("final") or "",
+                    "toolCall": apply_intent_layers_to_tool_call(
+                        deterministic_after_error.get("toolCall"), task, step_count, latest_tool
+                    ),
+                    "logs": [
+                        "runtime=binary_tool_adapter",
+                        f"model={resolve_openhands_model(candidate)}",
+                        f"candidate_alias={candidate.get('alias')}",
+                        f"fallback_attempt={attempt_index}",
+                        "deterministic_short_circuit=true",
+                        "deterministic_scope=openrouter_direct_error_recovery",
+                        f"openai_fallback_error={type(exc).__name__}",
+                        "ask_agent_skipped=openrouter",
+                    ],
+                    "coercionApplied": deterministic_after_error.get("coercionApplied") is True,
+                    "seedToolInjected": deterministic_after_error.get("seedToolInjected") is True,
+                    "invalidToolNameRecovered": deterministic_after_error.get("invalidToolNameRecovered") is True,
+                    "version": version,
+                    "modelCandidate": {
+                        "alias": candidate.get("alias"),
+                        "model": candidate.get("model"),
+                        "provider": candidate.get("provider"),
+                        "baseUrl": candidate.get("baseUrl"),
+                        "routeKind": candidate.get("routeKind"),
+                    },
+                    "fallbackAttempt": attempt_index,
+                    "failureReason": None,
+                    "persistenceDir": str(resolve_run_artifact_dir(resolve_gateway_run_id(payload))),
+                    "conversationId": str(resolve_gateway_conversation_id(resolve_gateway_run_id(payload))),
+                    **base_result_metadata(payload, execution, version, "binary_host"),
+                }
+            raise RuntimeError(
+                f"Binary tool adapter OpenAI-compatible request failed ({type(exc).__name__}: {exc}). "
+                f"[debug candidate_model={compact_whitespace(candidate.get('model'))!r} "
+                f"candidate_provider={compact_whitespace(candidate.get('provider'))!r}]"
+            ) from exc
     else:
-        send_message = getattr(conversation, "send_message", None)
-        run_method = getattr(conversation, "run", None)
-        if callable(send_message):
-            send_message(prompt)
-            if callable(run_method):
-                run_method()
-        elif callable(run_method):
-            run_method(prompt)
-        raw_text = compact_whitespace(extract_final_message([]))
+        agent_kwargs: dict[str, Any] = {
+            "llm": llm,
+            "tools": [],
+        }
+        agent = agent_cls(**filter_supported_kwargs(agent_cls, agent_kwargs))
+        conversation_kwargs: dict[str, Any] = {
+            "agent": agent,
+            "workspace": workspace,
+        }
+        conversation = instantiate_with_supported_kwargs(conversation_cls, conversation_kwargs)
+        ask_agent = getattr(conversation, "ask_agent", None)
+        if callable(ask_agent):
+            raw_text, ask_agent_error, ask_agent_sanitized_retry = ask_agent_with_unicode_retry(ask_agent, prompt)
+            if not raw_text and isinstance(ask_agent_error, UnicodeEncodeError):
+                safe_prompt, changed = make_text_encoding_safe(prompt, "cp1252" if os.name == "nt" else None)
+                if changed and safe_prompt:
+                    retry_conversation = None
+                    try:
+                        retry_conversation = instantiate_with_supported_kwargs(conversation_cls, conversation_kwargs)
+                        retry_ask_agent = getattr(retry_conversation, "ask_agent", None)
+                        if callable(retry_ask_agent):
+                            raw_text, ask_agent_error, _ = ask_agent_with_unicode_retry(retry_ask_agent, safe_prompt)
+                            ask_agent_sanitized_retry = True
+                    except Exception as retry_exc:
+                        ask_agent_error = retry_exc
+                    finally:
+                        close_retry = getattr(retry_conversation, "close", None) if retry_conversation is not None else None
+                        if callable(close_retry):
+                            try:
+                                close_retry()
+                            except Exception:
+                                pass
+        else:
+            send_message = getattr(conversation, "send_message", None)
+            run_method = getattr(conversation, "run", None)
+            if callable(send_message):
+                send_message(prompt)
+                if callable(run_method):
+                    run_method()
+            elif callable(run_method):
+                run_method(prompt)
+            raw_text = compact_whitespace(extract_final_message([]))
 
     if not raw_text and compact_whitespace(candidate.get("baseUrl")):
         try:
@@ -6445,7 +7061,7 @@ def run_binary_tool_adapter_turn(
                 openai_compatible_chat_completion(
                     base_url=str(candidate.get("baseUrl") or ""),
                     api_key=str(candidate.get("apiKey") or ""),
-                    model_id=str(candidate.get("model") or resolve_openhands_model(candidate)),
+                    model_id=resolve_openai_compatible_model_id(candidate),
                     user_prompt=make_text_encoding_safe(prompt, "cp1252" if os.name == "nt" else None)[0],
                     extra_headers=candidate.get("extraHeaders") if isinstance(candidate.get("extraHeaders"), dict) else None,
                 )
@@ -6490,7 +7106,10 @@ def run_binary_tool_adapter_turn(
                     }
                 raise RuntimeError(
                     f"Binary tool adapter failed via ask_agent ({type(ask_agent_error).__name__}: {ask_agent_error}) "
-                    f"and OpenAI-compatible fallback ({type(exc).__name__}: {exc})."
+                    f"and OpenAI-compatible fallback ({type(exc).__name__}: {exc}). "
+                    f"[debug llm_model={llm_model_debug!r} llm_base_url={llm_base_url_debug!r} "
+                    f"candidate_model={compact_whitespace(candidate.get('model'))!r} "
+                    f"candidate_provider={compact_whitespace(candidate.get('provider'))!r}]"
                 ) from exc
             raise
     if not raw_text and ask_agent_error:
@@ -6527,6 +7146,7 @@ def run_binary_tool_adapter_turn(
             f"fallback_attempt={attempt_index}",
             f"supports_internal_browser_use={'true' if supports_internal_browser_use else 'false'}",
             f"available_tools={','.join(available_tools)}",
+            *(["ask_agent_skipped=openrouter"] if skip_ask_agent else []),
             *( [logs_hint] if logs_hint else [] ),
             *([f"chat_only_fast_path_error={type(chat_only_fast_response_error).__name__}"] if chat_only_fast_response_error else []),
             *([f"ask_agent_error={type(ask_agent_error).__name__}"] if ask_agent_error else []),
@@ -6585,7 +7205,9 @@ def resolve_openhands_model(model: dict[str, Any]) -> str:
         "bedrock/",
         "azure/",
     )
-    if raw_model.startswith(known_prefixes):
+    if (provider == "openrouter" or "openrouter.ai" in base_lower) and raw_model and not raw_model.startswith("openrouter/"):
+        resolved = f"openrouter/{raw_model}"
+    elif raw_model.startswith(known_prefixes):
         resolved = raw_model
     elif base_url or provider in {"openai", "openai_compatible", "hf"}:
         resolved = f"openai/{raw_model}"
@@ -6598,6 +7220,37 @@ def resolve_openhands_model(model: dict[str, Any]) -> str:
     if is_hf_router and resolved.startswith("openai/") and not resolved.startswith("openai/openai/"):
         resolved = f"openai/{resolved}"
     return resolved
+
+
+def resolve_openai_compatible_model_id(model: dict[str, Any]) -> str:
+    raw_model = str(model.get("model") or model.get("openhandsModel") or "").strip()
+    provider = str(model.get("provider") or "").strip().lower()
+    base_url = str(model.get("baseUrl") or "").strip().lower()
+    if provider == "openrouter" or "openrouter.ai" in base_url:
+        if raw_model.startswith("openrouter/"):
+            return raw_model.split("/", 1)[1]
+        return raw_model
+    return resolve_openhands_model(model)
+
+
+def is_openrouter_candidate(candidate: dict[str, Any]) -> bool:
+    provider = compact_whitespace(candidate.get("provider")).lower()
+    base_url = compact_whitespace(candidate.get("baseUrl")).lower()
+    return provider == "openrouter" or "openrouter.ai" in base_url
+
+
+def is_openrouter_free_candidate(candidate: dict[str, Any]) -> bool:
+    if not is_openrouter_candidate(candidate):
+        return False
+    model = compact_whitespace(candidate.get("model")).lower()
+    alias = compact_whitespace(candidate.get("alias")).lower()
+    openhands_model = compact_whitespace(candidate.get("openhandsModel")).lower()
+    return (
+        model.endswith(":free")
+        or alias == "user:openrouter"
+        or openhands_model.endswith(":free")
+        or openhands_model == "openrouter/free"
+    )
 
 
 def is_portal_bridge_candidate(candidate: dict[str, Any]) -> bool:
@@ -6883,6 +7536,25 @@ def _build_candidate_failure(
     }
 
 
+def apply_delegation_summary_to_result(
+    result: dict[str, Any],
+    delegation_summary: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not delegation_summary:
+        return result
+    result.update(
+        {
+            "delegationUsed": delegation_summary.get("delegationUsed") is True,
+            "delegationReason": delegation_summary.get("delegationReason") or None,
+            "childCount": delegation_summary.get("childCount"),
+            "completedChildren": delegation_summary.get("completedChildren"),
+            "failedChildren": delegation_summary.get("failedChildren"),
+            "childSummaries": delegation_summary.get("childSummaries") or [],
+        }
+    )
+    return result
+
+
 def _run_turn_with_candidate(
     payload: dict[str, Any],
     candidate: dict[str, Any],
@@ -6915,6 +7587,11 @@ def _run_turn_with_candidate(
     execution = resolve_execution_context(payload)
     run_artifact_dir = resolve_run_artifact_dir(run_id)
     jsonl_path = run_artifact_dir / "events.jsonl"
+    if is_openrouter_candidate(candidate):
+        candidate = {
+            **candidate,
+            "openhandsModel": resolve_openhands_model(candidate),
+        }
     model_name = resolve_openhands_model(candidate)
 
     from pydantic import SecretStr
@@ -6984,11 +7661,12 @@ def _run_turn_with_candidate(
     route_policy = resolve_route_policy(payload)
     speed_profile = resolve_speed_profile(payload)
     tool_concurrency_limit = resolve_tool_concurrency_limit(payload)
+    delegation_config = resolve_delegation_config(payload)
+    delegation_block_reason = resolve_delegation_block_reason(payload, delegation_config)
+    delegation_enabled = delegation_config.get("enabled") is True and not delegation_block_reason
     condenser, condenser_log = build_context_condenser(payload, llm)
     llm_messages: list[dict[str, Any]] = []
     file_edit_backend = resolve_file_edit_backend(model_name, supported_tools)
-    native_tools, native_logs = build_native_openhands_tools(file_edit_backend)
-    tools: list[Any] = [*native_tools]
     sleeptime_tool = None
     logs = [
         "runtime=openhands_sdk_autonomous",
@@ -7008,10 +7686,33 @@ def _run_turn_with_candidate(
     logs.append(f"native_terminal_available={'true' if native_terminal_available else 'false'}")
     if terminal_health_reason:
         logs.append(f"terminal_health_reason={terminal_health_reason}")
-    logs.extend(native_logs)
     logs.append(condenser_log)
+    if delegation_enabled:
+        logs.append(f"delegation=enabled:max_children={delegation_config.get('maxChildren')}")
+    elif delegation_block_reason:
+        logs.append(f"delegation=disabled:{delegation_block_reason}")
+    else:
+        logs.append("delegation=disabled")
     if mcp_requested and mcp_config is not None:
         logs.append(f"mcp=enabled:{len(mcp_config.get('mcpServers', {}))}")
+    clear_binary_delegation_runtime_context()
+    child_native_tools: list[Any] = []
+    child_tool_logs: list[str] = []
+    if delegation_enabled:
+        child_native_tools, child_tool_logs = build_native_openhands_tools(
+            file_edit_backend,
+            include_browser=False,
+            include_delegate=False,
+        )
+    native_tools, native_logs = build_native_openhands_tools(
+        file_edit_backend,
+        include_browser=True,
+        include_delegate=delegation_enabled,
+    )
+    logs.extend(native_logs)
+    if child_tool_logs:
+        logs.extend([f"delegation_child_{entry}" for entry in child_tool_logs])
+    tools: list[Any] = [*native_tools]
     if tom_context:
         try:
             tom_tools, sleeptime_tool, tom_logs = build_tom_tools(llm, workspace, tom_context)
@@ -7021,6 +7722,52 @@ def _run_turn_with_candidate(
             print(f"[openhands-gateway] TOM setup failed, falling back to standard agent: {exc}", file=sys.stderr)
             logs.append(f"tom=fallback:{type(exc).__name__}")
             sleeptime_tool = None
+    if delegation_enabled:
+        def emit_delegation_event(event_name: str, data: dict[str, Any]) -> None:
+            emit_stream_event(
+                jsonl_path,
+                {
+                    "event": event_name,
+                    "data": data,
+                    "runId": run_id,
+                    "conversationId": str(conversation_id),
+                    "executionLane": execution["lane"],
+                    "traceId": execution["traceId"],
+                    "fallbackAttempt": attempt_index,
+                },
+                event_callback,
+            )
+
+        def create_child_agent(sub_agent_llm: Any) -> Any:
+            child_agent_kwargs: dict[str, Any] = {
+                "llm": sub_agent_llm,
+                "tools": [
+                    tool.model_copy(deep=True) if callable(getattr(tool, "model_copy", None)) else tool
+                    for tool in child_native_tools
+                ],
+                "tool_concurrency_limit": max(1, min(tool_concurrency_limit, 2)),
+            }
+            if condenser is not None:
+                child_agent_kwargs["condenser"] = condenser
+            if mcp_requested and mcp_config is not None:
+                child_agent_kwargs["mcp_config"] = mcp_config
+                child_agent_kwargs["mcp"] = mcp_config
+            return Agent(**filter_supported_kwargs(Agent, child_agent_kwargs))
+
+        set_binary_delegation_runtime_context(
+            {
+                "runId": run_id,
+                "conversationId": str(conversation_id),
+                "executionLane": execution["lane"],
+                "traceId": execution["traceId"],
+                "maxChildren": delegation_config.get("maxChildren"),
+                "supported_agent_types": delegation_config.get("supportedAgentTypes")
+                or list(DEFAULT_DELEGATION_SUPPORTED_AGENT_TYPES),
+                "delegation_reason": "Independent delegated repo analysis, verification, or multi-file subtasks.",
+                "event_emitter": emit_delegation_event,
+                "child_agent_factory": create_child_agent,
+            }
+        )
     agent_kwargs: dict[str, Any] = {
         "llm": llm,
         "tools": tools,
@@ -7044,6 +7791,7 @@ def _run_turn_with_candidate(
     try:
         agent = Agent(**supported_agent_kwargs)
     except Exception as exc:
+        clear_binary_delegation_runtime_context()
         if mcp_requested:
             return _build_candidate_failure(
                 candidate,
@@ -7101,6 +7849,7 @@ def _run_turn_with_candidate(
     try:
         conversation = instantiate_with_supported_kwargs(Conversation, conversation_kwargs)
     except Exception as exc:
+        clear_binary_delegation_runtime_context()
         if mcp_requested:
             return _build_candidate_failure(
                 candidate,
@@ -7175,6 +7924,7 @@ def _run_turn_with_candidate(
         event_callback,
     )
 
+    delegation_summary: dict[str, Any] | None = None
     try:
         conversation.run()
     finally:
@@ -7199,6 +7949,8 @@ def _run_turn_with_candidate(
                 close_method()
             except Exception:
                 pass
+        delegation_summary = build_delegation_result_summary(get_binary_delegation_runtime_context())
+        clear_binary_delegation_runtime_context()
 
     final_text = extract_final_message(llm_messages)
     if not final_text and callable(getattr(conversation, "ask_agent", None)):
@@ -7239,7 +7991,7 @@ def _run_turn_with_candidate(
             normalize_provider_failure_reason(execution_status),
         )
         result.update(terminal_metadata)
-        return result
+        return apply_delegation_summary_to_result(result, delegation_summary)
     if execution_status == "waiting_for_confirmation":
         emit_stream_event(
             jsonl_path,
@@ -7262,7 +8014,7 @@ def _run_turn_with_candidate(
             None,
         )
         result.update(terminal_metadata)
-        return result
+        return apply_delegation_summary_to_result(result, delegation_summary)
 
     if tom_context and sleeptime_tool and execution_status == "finished":
         if invoke_optional_tool(
@@ -7293,7 +8045,7 @@ def _run_turn_with_candidate(
         event_callback,
     )
 
-    return {
+    result = {
         "ok": True,
         "final": final_text or "OpenHands completed the run.",
         "toolCall": None,
@@ -7318,6 +8070,7 @@ def _run_turn_with_candidate(
         **terminal_metadata,
         **base_result_metadata(payload, execution, version, "openhands_native"),
     }
+    return apply_delegation_summary_to_result(result, delegation_summary)
 
 
 def run_turn(
@@ -7864,6 +8617,7 @@ def doctor() -> int:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--doctor", action="store_true")
+    parser.add_argument("--stream-jsonl", action="store_true")
     args = parser.parse_args()
 
     if args.doctor:
@@ -7876,8 +8630,17 @@ def main() -> int:
         print(json.dumps({"ok": False, "error": "Invalid JSON input.", "details": str(exc)}))
         return 1
 
-    result = run_turn(payload)
-    print(json.dumps(result))
+    if args.stream_jsonl:
+        def stream_callback(event: dict[str, Any]) -> None:
+            sys.stdout.write(json.dumps({"type": "event", "event": event}, ensure_ascii=True) + "\n")
+            sys.stdout.flush()
+
+        result = run_turn(payload, event_callback=stream_callback)
+        sys.stdout.write(json.dumps({"type": "result", "result": result}, ensure_ascii=True) + "\n")
+        sys.stdout.flush()
+    else:
+        result = run_turn(payload)
+        print(json.dumps(result))
     return 0 if result.get("ok") else 1
 
 

@@ -8,6 +8,9 @@ import type {
   PlaygroundToolName,
   ProgressStateContract,
   ToolTraceEntryContract,
+  UserInputOptionContract,
+  UserInputQuestionContract,
+  UserInputRequestContract,
 } from "@/lib/playground/contracts";
 import {
   DEFAULT_PLAYGROUND_MODEL_ALIAS,
@@ -340,6 +343,10 @@ export type AssistValidationPlan = {
   reason: string;
 };
 
+export type AssistUserInputOption = UserInputOptionContract;
+export type AssistUserInputQuestion = UserInputQuestionContract;
+export type AssistUserInputRequest = UserInputRequestContract;
+
 export type AssistIntent = {
   type: "code_edit" | "command_run" | "plan" | "unknown";
   confidence: number;
@@ -418,6 +425,7 @@ export type AssistResult = {
   };
   completionStatus: "complete" | "incomplete";
   missingRequirements: string[];
+  userInputRequest?: AssistUserInputRequest;
   progressState: AssistProgressState;
   objectiveState: AssistObjectiveState;
   lane: AssistExecutionLane;
@@ -460,6 +468,7 @@ type ParsedModelOutput = {
   final: string;
   plan: AssistPlan | null;
   actions: ExecuteAction[];
+  userInputRequest: AssistUserInputRequest | null;
 };
 
 const HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
@@ -1729,7 +1738,7 @@ export function buildValidationPlan(input: {
 function buildModelSystemPrompt(mode: AssistMode): string {
   const modeRule =
     mode === "plan"
-      ? "Return a plan only. Do not emit executable actions."
+      ? "Return a plan only. Do not emit executable actions. If key planning details are missing, set userInputRequest instead of guessing."
       : mode === "auto"
         ? "Return executable file actions plus validation commands only. Do not emit implementation/build/install commands."
         : "Return executable file actions plus safe shell commands when they materially help complete the task.";
@@ -1738,10 +1747,12 @@ function buildModelSystemPrompt(mode: AssistMode): string {
     "You are Playground, a minimal agentic coding model.",
     "Return JSON only.",
     "Use this response shape exactly:",
-    '{"final":"string","plan":{"objective":"string","files":["path"],"steps":["step"],"acceptanceTests":["cmd"],"risks":["risk"]}|null,"actions":[{"type":"edit","path":"file","patch":"unified diff"},{"type":"write_file","path":"file","content":"full file text","overwrite":true},{"type":"mkdir","path":"dir"},{"type":"command","command":"npm run lint -- file","category":"validation"}]}',
+    '{"final":"string","plan":{"objective":"string","files":["path"],"steps":["step"],"acceptanceTests":["cmd"],"risks":["risk"]}|null,"actions":[{"type":"edit","path":"file","patch":"unified diff"},{"type":"write_file","path":"file","content":"full file text","overwrite":true},{"type":"mkdir","path":"dir"},{"type":"command","command":"npm run lint -- file","category":"validation"}],"userInputRequest":{"requestId":"string","questions":[{"id":"string","header":"string","question":"string","options":[{"label":"string","description":"string"}]}]}|null}',
     "Paths must stay workspace-relative.",
     "Prefer edit for targeted changes and write_file for full rewrites/new files.",
     "Do not wrap the JSON in markdown fences.",
+    "When mode is plan and you need more context, ask 1-3 concise multiple-choice questions with recommended options first.",
+    "Do not emit filler answers like Other/Not sure unless the task truly requires freeform input.",
     modeRule,
   ].join("\n");
 }
@@ -1757,6 +1768,9 @@ function buildModelUserPrompt(input: {
     input.contextSelection.files.length
       ? `Context files:\n${input.contextSelection.files.map((item) => `- ${item.path} (${item.reason})`).join("\n")}`
       : "Context files: none.",
+    input.request.mode === "plan"
+      ? "If the task is underspecified, ask the minimum number of clarification questions needed to produce a concrete plan."
+      : "If you have enough context, produce executable actions directly.",
     buildHistoryPrompt(input.request.conversationHistory),
     buildContextPrompt(input.request.context),
     `Task:\n${input.request.task}`,
@@ -1948,6 +1962,63 @@ function sanitizePlanObject(value: unknown, fallback: AssistPlan): AssistPlan | 
   };
 }
 
+function sanitizeUserInputOptions(value: unknown): AssistUserInputOption[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as Record<string, unknown>;
+      const label = compactWhitespace(String(record.label || "")).slice(0, 120);
+      const description = compactWhitespace(String(record.description || "")).slice(0, 220);
+      if (!label) return null;
+      const key = `${label}\u0000${description}`.toLowerCase();
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return {
+        label,
+        ...(description ? { description } : {}),
+      } satisfies AssistUserInputOption;
+    })
+    .filter((item): item is AssistUserInputOption => Boolean(item))
+    .slice(0, 4);
+}
+
+function sanitizeUserInputRequest(value: unknown, mode: AssistMode): AssistUserInputRequest | null {
+  if (mode !== "plan" || !value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const requestId = compactWhitespace(String(record.requestId || "")).slice(0, 240) || `plan-${Date.now().toString(36)}`;
+  const rawQuestions = Array.isArray(record.questions) ? record.questions : [];
+  const questions = rawQuestions
+    .map((item): AssistUserInputQuestion | null => {
+      if (!item || typeof item !== "object") return null;
+      const questionRecord = item as Record<string, unknown>;
+      const id = compactWhitespace(String(questionRecord.id || "")).slice(0, 240);
+      const question = compactWhitespace(String(questionRecord.question || "")).slice(0, 280);
+      const header = compactWhitespace(String(questionRecord.header || "")).slice(0, 120);
+      const options = sanitizeUserInputOptions(questionRecord.options);
+      if (!id || !header || !question || options.length === 0) return null;
+      const sanitizedQuestion: AssistUserInputQuestion = {
+        id,
+        header,
+        question,
+        options,
+        ...(questionRecord.isOther === true ? { isOther: true } : {}),
+        ...(typeof questionRecord.placeholder === "string" && questionRecord.placeholder.trim()
+          ? { placeholder: compactWhitespace(questionRecord.placeholder).slice(0, 120) }
+          : {}),
+      };
+      return sanitizedQuestion;
+    })
+    .filter((item): item is AssistUserInputQuestion => Boolean(item))
+    .slice(0, 3);
+  if (!questions.length) return null;
+  return {
+    requestId,
+    questions,
+  };
+}
+
 function normalizeActionFromRecord(input: {
   value: Record<string, unknown>;
   targetPath?: string;
@@ -2058,14 +2129,23 @@ export function parseStructuredAssistResponse(input: {
   let final = "";
   let plan: AssistPlan | null = input.mode === "plan" ? input.fallbackPlan : null;
   const actions: ExecuteAction[] = [];
+  let userInputRequest: AssistUserInputRequest | null = null;
 
   if (parsed) {
     final = typeof parsed.final === "string" ? parsed.final.trim() : "";
     plan = input.mode === "plan"
       ? sanitizePlanObject(parsed.plan, input.fallbackPlan)
-      : parsed.plan
-        ? sanitizePlanObject(parsed.plan, input.fallbackPlan)
-        : null;
+        : parsed.plan
+          ? sanitizePlanObject(parsed.plan, input.fallbackPlan)
+          : null;
+    userInputRequest =
+      sanitizeUserInputRequest(parsed.userInputRequest, input.mode) ||
+      (Array.isArray(parsed.questions)
+        ? sanitizeUserInputRequest({
+            requestId: parsed.requestId,
+            questions: parsed.questions,
+          }, input.mode)
+        : null);
 
     const rawActions = Array.isArray(parsed.actions)
       ? parsed.actions
@@ -2094,15 +2174,18 @@ export function parseStructuredAssistResponse(input: {
   }
 
   const normalizedActions = dedupeActions(actions);
+  const normalizedPlan = userInputRequest ? null : plan;
   const finalText =
     final ||
-    (input.mode === "plan"
+    (userInputRequest
+      ? "I need a bit more context before I can finish the plan."
+      : input.mode === "plan"
       ? `Plan ready for ${input.targetPath || "the current workspace context"}.`
       : normalizedActions.length
         ? `Prepared ${normalizedActions.length} actionable workspace change${normalizedActions.length === 1 ? "" : "s"}.`
         : "No concrete file actions were produced.");
 
-  return { final: finalText, plan, actions: normalizedActions };
+  return { final: finalText, plan: normalizedPlan, actions: normalizedActions, userInputRequest };
 }
 
 function buildFallbackNoModelResult(input: {
@@ -2148,6 +2231,7 @@ export function buildDecoratedAssistResult(input: {
   targetInference: AssistTargetInference;
   contextSelection: AssistContextSelection;
   missingRequirements: string[];
+  userInputRequest?: AssistUserInputRequest | null;
   logs?: string[];
   objectiveState?: AssistObjectiveState;
   progressState?: AssistProgressState;
@@ -2214,7 +2298,7 @@ export function buildDecoratedAssistResult(input: {
       final: input.final,
     });
   const completionStatus: "complete" | "incomplete" =
-    objectiveState.status === "satisfied" && input.missingRequirements.length === 0
+    !input.userInputRequest && objectiveState.status === "satisfied" && input.missingRequirements.length === 0
       ? "complete"
       : "incomplete";
   const progressState =
@@ -2225,9 +2309,9 @@ export function buildDecoratedAssistResult(input: {
     });
   const nextBestActions = buildNextBestActions(input.request.mode, completionStatus);
   const actionability: AssistResult["actionability"] = {
-    summary: completionStatus === "complete" ? "valid_actions" : "clarification_needed",
+    summary: completionStatus === "complete" && !input.userInputRequest ? "valid_actions" : "clarification_needed",
     reason:
-      completionStatus === "complete"
+      completionStatus === "complete" && !input.userInputRequest
         ? "Action set is acceptable for this request."
         : input.missingRequirements[0] || "The run needs a clearer target or more actionable file changes.",
   };
@@ -2292,6 +2376,7 @@ export function buildDecoratedAssistResult(input: {
     actionability,
     completionStatus,
     missingRequirements: input.missingRequirements,
+    ...(input.userInputRequest ? { userInputRequest: input.userInputRequest } : {}),
     progressState,
     objectiveState,
     lane: agentArtifacts.lane,
@@ -2454,7 +2539,11 @@ export async function runAssist(request: AssistRuntimeInput, options?: { userId?
     fallbackPlan,
   });
   const validationPlan = buildValidationPlan({ actions: parsed.actions });
-  const missingRequirements = request.mode === "plan" || parsed.actions.length > 0 ? [] : ["actionable_actions_required"];
+  const missingRequirements = parsed.userInputRequest
+    ? ["user_input_required", ...parsed.userInputRequest.questions.map((question) => question.id)]
+    : request.mode === "plan" || parsed.actions.length > 0
+      ? []
+      : ["actionable_actions_required"];
 
   return buildDecoratedAssistResult({
     request,
@@ -2466,6 +2555,7 @@ export async function runAssist(request: AssistRuntimeInput, options?: { userId?
     targetInference,
     contextSelection,
     missingRequirements,
+    userInputRequest: parsed.userInputRequest,
     logs: [
       `route=text_actions`,
       `chat_model_source=${modelMetadataOverride?.chatModelSource || request.chatModelSource || "platform"}`,

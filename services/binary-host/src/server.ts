@@ -17,7 +17,15 @@ import {
 import {
   AgentJobManager,
 } from "./agent-job-manager.js";
-import { continueHostedRun, runHostedAgentProbe, streamHostedAssist } from "./hosted-transport.js";
+import {
+  continueHostedRun,
+  runHostedAgentProbe,
+  submitHostedUserInput,
+  streamHostedAssist,
+  type HostedDelegationChildSummary,
+  type HostedDelegationConfig,
+  type HostedUserInputRequest,
+} from "./hosted-transport.js";
 import { decorateUiEvent } from "./ui-events.js";
 import {
   AutonomyExecutionController,
@@ -223,6 +231,13 @@ type ToolResult = {
   createdAt?: string;
 };
 
+type UserInputAnswer = {
+  answers: string[];
+};
+
+type BinaryDelegationConfig = HostedDelegationConfig;
+type BinaryDelegationChildSummary = HostedDelegationChildSummary;
+
 type AssistRunEnvelope = {
   sessionId?: string;
   traceId?: string;
@@ -287,6 +302,12 @@ type AssistRunEnvelope = {
   conversationId?: string | null;
   persistenceDir?: string | null;
   jsonlPath?: string | null;
+  delegationUsed?: boolean;
+  delegationReason?: string;
+  childCount?: number;
+  completedChildren?: number;
+  failedChildren?: number;
+  childSummaries?: BinaryDelegationChildSummary[];
   final?: string;
   closureSummary?: string;
   unfinishedChecklistItems?: string[];
@@ -295,6 +316,7 @@ type AssistRunEnvelope = {
   completionStatus?: "complete" | "incomplete";
   runId?: string;
   adapter?: string;
+  userInputRequest?: HostedUserInputRequest | null;
   pendingToolCall?: PendingToolCall | null;
   receipt?: Record<string, unknown> | null;
   escalationStage?: string;
@@ -357,6 +379,7 @@ type LocalGatewayAssistInput = {
   executionLane: BinaryExecutionLane;
   pluginPacks: BinaryPluginPack[];
   skillSources: BinarySkillSource[];
+  delegation?: BinaryDelegationConfig;
   traceId: string;
   traceSampled: boolean;
   policyLane?: BinaryPromptLane;
@@ -405,6 +428,7 @@ type BinaryHostPreferences = {
   artifactHistory: Array<{ id: string; label: string; url?: string; createdAt: string }>;
   preferredTransport: "host" | "direct";
   orchestrationPolicy: BinaryOrchestrationPolicy;
+  preferredExecutionLane?: BinaryExecutionLane;
   defaultPluginPacks: Array<BinaryPluginPack["id"]>;
   defaultProviderId?: BinaryProviderId;
   machineAutonomy: MachineAutonomyPolicy;
@@ -496,6 +520,7 @@ type AssistRequest = {
     stallTimeoutMs?: number;
     missionFirstBrowser?: boolean;
   };
+  delegation?: BinaryDelegationConfig;
   imageInputs?: BinaryImageInput[];
   client?: BinaryHostClientInfo;
   userConnectedModels?: BinaryUserConnectedModelCandidate[];
@@ -674,6 +699,12 @@ type BinaryHostExecutionState = {
   firstToolMs?: number;
   totalRunMs?: number;
   fallbackCount?: number;
+  delegationUsed?: boolean;
+  delegationReason?: string;
+  childCount?: number;
+  completedChildren?: number;
+  failedChildren?: number;
+  childSummaries?: BinaryDelegationChildSummary[];
 };
 
 type StoredEvent = {
@@ -703,6 +734,12 @@ type StoredHostRun = {
   skillSources?: BinarySkillSource[];
   conversationId?: string | null;
   persistenceDir?: string | null;
+  delegationUsed?: boolean;
+  delegationReason?: string;
+  childCount?: number;
+  completedChildren?: number;
+  failedChildren?: number;
+  childSummaries?: BinaryDelegationChildSummary[];
   automationId?: string;
   automationTriggerKind?: BinaryAutomationTriggerKind;
   automationEventId?: string;
@@ -721,6 +758,8 @@ type StoredHostRun = {
   toolResults: ToolResult[];
   checkpoints: Array<{ capturedAt: string; summary: string; step?: number }>;
   events: StoredEvent[];
+  pendingUserInputRequest?: HostedUserInputRequest | null;
+  userInputResponses?: Array<{ requestId: string; answers: Record<string, UserInputAnswer>; capturedAt: string }>;
   timingState?: BinaryHostRunTimingState;
   finalEnvelope?: AssistRunEnvelope;
   lastExecutionState?: BinaryHostExecutionState | null;
@@ -763,11 +802,18 @@ const MAX_TOOL_RESULT_HISTORY = 400;
 const MAX_CHECKPOINT_HISTORY = 100;
 const HEARTBEAT_INTERVAL_MS = 4_000;
 const STALE_LEASE_MS = 20_000;
+const DEFAULT_HOSTED_DELEGATION_CONFIG: BinaryDelegationConfig = {
+  enabled: true,
+  mode: "auto",
+  maxChildren: 3,
+  visibility: "summary_only",
+  supportedAgentTypes: ["default"],
+};
 const MAX_OBSERVATION_ONLY_STREAK = 8;
 const MAX_PENDING_SIGNATURE_REPEATS = 3;
 const QUALITY_GATE_MAX_REPAIR_ATTEMPTS = 2;
 const FAST_TURN_BUDGET_MS = 35_000;
-const FAST_FIRST_TURN_BUDGET_MS = 20_000;
+const FAST_FIRST_TURN_BUDGET_MS = 30_000;
 const BALANCED_TURN_BUDGET_MS = 75_000;
 const THOROUGH_TURN_BUDGET_MS = 90_000;
 const FORCED_SMALL_MODEL_FIRST_TURN_BUDGET_MS = 15_000;
@@ -782,7 +828,7 @@ const FAST_TURN_MAX_ITERATIONS = 10;
 const BALANCED_TURN_MAX_ITERATIONS = 20;
 const THOROUGH_TURN_MAX_ITERATIONS = 80;
 const FAST_STALL_TIMEOUT_MS = 10_000;
-const FAST_FIRST_TURN_STALL_TIMEOUT_MS = 6_500;
+const FAST_FIRST_TURN_STALL_TIMEOUT_MS = 10_000;
 const BALANCED_STALL_TIMEOUT_MS = 18_000;
 const THOROUGH_STALL_TIMEOUT_MS = 30_000;
 const BROWSER_MICRO_STALL_REPEATS = 2;
@@ -2087,7 +2133,7 @@ function isTransientNetworkTurnError(error: unknown): boolean {
 function isRecoverableLocalGatewayTurnError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || "");
   if (isTurnBudgetTimeoutError(error)) return true;
-  return /provider_credits_exhausted|router_blocked|tool_schema_incompatible|transient_api_failure|unknown_provider_failure|usage limit has been reached|usage_limit_reached|insufficient_quota|rate.?limit|gateway unreachable|connection refused/i.test(
+  return /provider_credits_exhausted|router_blocked|tool_schema_incompatible|transient_api_failure|unknown_provider_failure|portal_auth_invalid|usage limit has been reached|usage_limit_reached|insufficient_quota|rate.?limit|gateway unreachable|connection refused|http error 401|unauthorized|authentication token|signing in again/i.test(
     message
   );
 }
@@ -2158,6 +2204,96 @@ function isFreeModelCandidate(candidate: BinaryUserConnectedModelCandidate): boo
   const model = String(candidate.model || "").toLowerCase();
   const display = String(candidate.displayName || "").toLowerCase();
   return alias.includes(":free") || model.includes(":free") || display.includes(" free");
+}
+
+function isOpenRouterCandidate(candidate: BinaryUserConnectedModelCandidate | null | undefined): boolean {
+  return String(candidate?.provider || "").trim().toLowerCase() === "openrouter";
+}
+
+function isChatGptPortalCandidate(candidate: BinaryUserConnectedModelCandidate | null | undefined): boolean {
+  return String(candidate?.provider || "").trim().toLowerCase() === "chatgpt_portal";
+}
+
+function isOpenRouterFreeCandidate(candidate: BinaryUserConnectedModelCandidate | null | undefined): boolean {
+  if (!candidate || !isOpenRouterCandidate(candidate)) return false;
+  const model = String(candidate.model || "").trim().toLowerCase();
+  return model.endsWith(":free") || model === "openrouter/free";
+}
+
+function isOpenRouterFreeCapacityError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /http error 429|http error 5\d\d|too many requests|rate.?limit|quota exceeded|resource_exhausted|provider_credits_exhausted|insufficient_quota|bad gateway|gateway timeout|service unavailable|temporarily unavailable|capacity exhausted|retry in \d+/i.test(
+    message
+  );
+}
+
+function isPortalBridgeAuthError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /portal_auth_invalid|http error 401|unauthorized|authentication token|could not parse your authentication token|signing in again/i.test(
+    message
+  );
+}
+
+function buildOpenRouterFreeFallbackCandidates(
+  preferred: BinaryUserConnectedModelCandidate,
+  candidates: BinaryUserConnectedModelCandidate[]
+): BinaryUserConnectedModelCandidate[] {
+  const filtered = candidates.filter((candidate) => isOpenRouterFreeCandidate(candidate));
+  if (!filtered.length) return [preferred];
+  return [
+    preferred,
+    ...filtered.filter((candidate) => candidate.alias !== preferred.alias),
+  ];
+}
+
+function shouldAttemptOpenRouterFreeFallback(input: {
+  current: BinaryUserConnectedModelCandidate | null | undefined;
+  candidates: BinaryUserConnectedModelCandidate[];
+  error: unknown;
+  attemptedAliases: Set<string>;
+}): boolean {
+  if (!isOpenRouterFreeCandidate(input.current)) return false;
+  if (!isOpenRouterFreeCapacityError(input.error)) return false;
+  return input.candidates.some(
+    (candidate) => candidate.alias !== input.current?.alias && !input.attemptedAliases.has(candidate.alias)
+  );
+}
+
+function shouldAttemptExplicitCodexCapacityFallback(input: {
+  current: BinaryUserConnectedModelCandidate | null | undefined;
+  candidates: BinaryUserConnectedModelCandidate[];
+  error: unknown;
+  attemptedAliases: Set<string>;
+  explicitRequestedUserModel: boolean;
+}): boolean {
+  if (!input.explicitRequestedUserModel) return false;
+  if (!isChatGptPortalCandidate(input.current)) return false;
+  if (!isOpenRouterFreeCapacityError(input.error) && !isPortalBridgeAuthError(input.error)) return false;
+  return input.candidates.some(
+    (candidate) => candidate.alias !== input.current?.alias && !input.attemptedAliases.has(candidate.alias)
+  );
+}
+
+function summarizeOpenRouterFreeExhaustion(input: {
+  current: BinaryUserConnectedModelCandidate | null | undefined;
+  candidates: BinaryUserConnectedModelCandidate[];
+  attemptedAliases: Set<string>;
+  error: unknown;
+}): string | null {
+  if (!isOpenRouterFreeCandidate(input.current)) return null;
+  if (!isOpenRouterFreeCapacityError(input.error)) return null;
+  const freeCandidates = input.candidates.filter((candidate) => isOpenRouterFreeCandidate(candidate));
+  if (!freeCandidates.length) return null;
+  const attemptedCount = freeCandidates.filter(
+    (candidate) => input.attemptedAliases.has(candidate.alias) || candidate.alias === input.current?.alias
+  ).length;
+  const hasRemaining = freeCandidates.some(
+    (candidate) => !input.attemptedAliases.has(candidate.alias) && candidate.alias !== input.current?.alias
+  );
+  if (hasRemaining) return null;
+  return attemptedCount > 1
+    ? `OpenRouter free is busy right now. Binary tried ${attemptedCount} free backup models and they were all rate-limited. Please retry in a minute.`
+    : "OpenRouter free is busy right now. The current free model is rate-limited. Please retry in a minute.";
 }
 
 function resolveFixedPolicyCandidate(
@@ -4328,11 +4464,33 @@ function deriveWorkspaceTrustMode(grant: BinaryHostTrustGrant | null | undefined
   return "trusted_full_access";
 }
 
+function resolveWorkspaceTrustGrant(
+  preferences: BinaryHostPreferences,
+  workspaceRoot?: string
+): BinaryHostTrustGrant | null {
+  const resolvedWorkspaceRoot = normalizeOptionalPath(workspaceRoot);
+  if (!resolvedWorkspaceRoot) return null;
+  const explicitGrant =
+    preferences.trustedWorkspaces.find((grant) => normalizeWorkspacePath(grant.path) === resolvedWorkspaceRoot) || null;
+  if (explicitGrant) return explicitGrant;
+  if (preferences.machineTrustMode === "full_machine_mutate") {
+    return {
+      path: resolvedWorkspaceRoot,
+      mutate: true,
+      commands: "allow",
+      network: "allow",
+      elevated: "allow",
+      grantedAt: "implicit_full_machine_mutate",
+    };
+  }
+  return null;
+}
+
 function deriveEffectiveTrustMode(
   preferences: BinaryHostPreferences,
   workspaceRoot?: string
 ): BinaryHostWorkspaceTrustMode {
-  if (workspaceRoot) return deriveWorkspaceTrustMode(isWorkspaceTrusted(preferences, workspaceRoot));
+  if (workspaceRoot) return deriveWorkspaceTrustMode(resolveWorkspaceTrustGrant(preferences, workspaceRoot));
   if (preferences.machineTrustMode === "full_machine_mutate") return "trusted_full_access";
   if (preferences.machineTrustMode === "home_mutate") return "trusted_prompt_commands";
   return "trusted_read_only";
@@ -4688,6 +4846,7 @@ function resolveRunExecutionConfig(input: {
   run: StoredHostRun;
   taskSpeedClass: BinaryTaskSpeedClass;
   remoteConfigured: boolean;
+  preferredExecutionLane?: BinaryExecutionLane;
   defaultPluginPacks?: Array<BinaryPluginPack["id"]>;
 }): {
   executionLane: BinaryExecutionLane;
@@ -4702,7 +4861,7 @@ function resolveRunExecutionConfig(input: {
     defaultPacks: input.defaultPluginPacks,
   });
   const skillSources = resolveOpenHandsSkillSources(input.run.workspaceRoot);
-  const explicitLane = input.run.request.executionLane;
+  const explicitLane = input.run.request.executionLane || input.preferredExecutionLane;
   const shouldUseAdaptiveLaneSelection =
     Boolean(explicitLane) ||
     input.run.request.detach === true ||
@@ -4801,6 +4960,24 @@ function mapLocalGatewayTurnToEnvelope(
         : Array.isArray(turn.fallbackTrail)
           ? Math.max(0, turn.fallbackTrail.length - 1)
           : undefined;
+  const delegationUsed =
+    Object.prototype.hasOwnProperty.call(turn, "delegationUsed") && typeof turn.delegationUsed === "boolean"
+      ? turn.delegationUsed
+      : undefined;
+  const delegationReason = typeof turn.delegationReason === "string" ? turn.delegationReason : undefined;
+  const childCount =
+    typeof turn.childCount === "number" && Number.isFinite(turn.childCount)
+      ? Math.max(0, Math.round(turn.childCount))
+      : undefined;
+  const completedChildren =
+    typeof turn.completedChildren === "number" && Number.isFinite(turn.completedChildren)
+      ? Math.max(0, Math.round(turn.completedChildren))
+      : undefined;
+  const failedChildren =
+    typeof turn.failedChildren === "number" && Number.isFinite(turn.failedChildren)
+      ? Math.max(0, Math.round(turn.failedChildren))
+      : undefined;
+  const childSummaries = normalizeDelegationChildSummaries(turn.childSummaries);
   const adapterMode =
     turn.adapterMode === "force_binary_tool_adapter" || turn.adapterMode === "auto"
       ? (turn.adapterMode as BinaryAdapterMode)
@@ -4953,6 +5130,12 @@ function mapLocalGatewayTurnToEnvelope(
     final: typeof turn.final === "string" ? turn.final : "",
     pendingToolCall,
     completionStatus: pendingToolCall ? "incomplete" : "complete",
+    ...(typeof delegationUsed === "boolean" ? { delegationUsed } : {}),
+    ...(typeof delegationReason === "string" ? { delegationReason } : {}),
+    ...(typeof childCount === "number" ? { childCount } : {}),
+    ...(typeof completedChildren === "number" ? { completedChildren } : {}),
+    ...(typeof failedChildren === "number" ? { failedChildren } : {}),
+    ...(childSummaries ? { childSummaries } : {}),
     ...(qualityGateState ? { qualityGateState } : {}),
     ...(requiredProofs ? { requiredProofs } : {}),
     ...(satisfiedProofs ? { satisfiedProofs } : {}),
@@ -5099,6 +5282,9 @@ async function consumeLocalGatewaySseTurn(
           pendingDelta += payloadData;
           await flushPartial(false);
           continue;
+        }
+        if (onEvent && eventName && eventName !== "gateway.result" && eventName !== "gateway.error") {
+          await onEvent(parsed);
         }
         if (eventName === "gateway.result" && payloadData && typeof payloadData === "object" && !Array.isArray(payloadData)) {
           await flushPartial(true);
@@ -5282,6 +5468,10 @@ async function runLocalGatewayAssist(input: LocalGatewayAssistInput): Promise<As
       risks: [],
       nextActions: [],
     },
+    delegation:
+      input.delegation && input.delegation.enabled === false
+        ? { ...DEFAULT_HOSTED_DELEGATION_CONFIG, enabled: false }
+        : input.delegation || DEFAULT_HOSTED_DELEGATION_CONFIG,
     toolTrace: buildLocalGatewayToolTrace(input.run),
     loopSummary: {
       stepCount: input.run.budgetState?.usedSteps || input.run.toolResults.length,
@@ -5381,7 +5571,17 @@ async function runLocalGatewayAssist(input: LocalGatewayAssistInput): Promise<As
     if (isSseContentType(response)) {
       parsed = await consumeLocalGatewaySseTurn(
         response,
-        input.onEvent,
+        async (event) => {
+          if (input.onEvent) {
+            await input.onEvent(event);
+          }
+          const patch = buildDelegationEnvelopePatchFromEvent(event);
+          if (patch) {
+            applyEnvelopeToRun(input.run, patch);
+            await persistHostRun(input.run);
+            await agentJobManager.syncFromRun(input.run);
+          }
+        },
         input.taskSpeedClass === "chat_only"
       );
     } else {
@@ -5435,6 +5635,10 @@ async function runLocalGatewayAssist(input: LocalGatewayAssistInput): Promise<As
 
 function isTerminalStatus(status: BinaryHostRunStatus): boolean {
   return status === "completed" || status === "failed" || status === "cancelled";
+}
+
+function isWaitingForUserInput(run: StoredHostRun | null | undefined): boolean {
+  return Boolean(run && run.status === "paused" && run.pendingUserInputRequest);
 }
 
 function extractDirectChatText(payload: Record<string, unknown>): string {
@@ -5919,6 +6123,7 @@ function defaultPreferences(): BinaryHostPreferences {
     artifactHistory: [],
     preferredTransport: "host",
     orchestrationPolicy: defaultOrchestrationPolicy(),
+    preferredExecutionLane: undefined,
     defaultPluginPacks: [],
     defaultProviderId: undefined,
     machineAutonomy: defaultMachineAutonomyPolicy(),
@@ -5957,6 +6162,12 @@ async function loadPreferences(): Promise<BinaryHostPreferences> {
         : undefined,
       defaultValue.orchestrationPolicy
     ),
+    preferredExecutionLane:
+      existing?.preferredExecutionLane === "local_interactive" ||
+      existing?.preferredExecutionLane === "openhands_headless" ||
+      existing?.preferredExecutionLane === "openhands_remote"
+        ? existing.preferredExecutionLane
+        : defaultValue.preferredExecutionLane,
     defaultPluginPacks: normalizePluginPackIds(existing?.defaultPluginPacks) || defaultValue.defaultPluginPacks,
     backgroundAgents,
     automations,
@@ -8065,8 +8276,7 @@ async function persistHostRun(run: StoredHostRun): Promise<void> {
 }
 
 function isWorkspaceTrusted(preferences: BinaryHostPreferences, workspaceRoot: string): BinaryHostTrustGrant | null {
-  const resolved = normalizeWorkspacePath(workspaceRoot);
-  return preferences.trustedWorkspaces.find((grant) => normalizeWorkspacePath(grant.path) === resolved) || null;
+  return resolveWorkspaceTrustGrant(preferences, workspaceRoot);
 }
 
 async function readAllRuns(): Promise<StoredHostRun[]> {
@@ -8420,6 +8630,27 @@ function attachHostMetadata(envelope: AssistRunEnvelope, run: StoredHostRun): As
       (typeof envelope.jsonlPath === "string" ? envelope.jsonlPath : undefined) ||
       (typeof run.lastExecutionState?.jsonlPath === "string" ? run.lastExecutionState.jsonlPath : undefined) ||
       null,
+    ...(typeof envelope.delegationUsed === "boolean" || typeof run.delegationUsed === "boolean"
+      ? { delegationUsed: envelope.delegationUsed ?? run.delegationUsed }
+      : {}),
+    ...(typeof envelope.delegationReason === "string" || typeof run.delegationReason === "string"
+      ? { delegationReason: envelope.delegationReason || run.delegationReason }
+      : {}),
+    ...(typeof envelope.childCount === "number" || typeof run.childCount === "number"
+      ? { childCount: envelope.childCount ?? run.childCount }
+      : {}),
+    ...(typeof envelope.completedChildren === "number" || typeof run.completedChildren === "number"
+      ? { completedChildren: envelope.completedChildren ?? run.completedChildren }
+      : {}),
+    ...(typeof envelope.failedChildren === "number" || typeof run.failedChildren === "number"
+      ? { failedChildren: envelope.failedChildren ?? run.failedChildren }
+      : {}),
+    ...(Array.isArray(envelope.childSummaries) || Array.isArray(run.childSummaries)
+      ? { childSummaries: envelope.childSummaries || run.childSummaries || [] }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(envelope, "userInputRequest") || run.pendingUserInputRequest
+      ? { userInputRequest: envelope.userInputRequest ?? run.pendingUserInputRequest ?? null }
+      : {}),
     ...(envelope.policyLane || run.lastExecutionState?.policyLane
       ? { policyLane: envelope.policyLane || run.lastExecutionState?.policyLane }
       : {}),
@@ -8657,6 +8888,34 @@ function applyEnvelopeToRun(run: StoredHostRun, envelope: AssistRunEnvelope): vo
   if (Array.isArray(envelope.skillSources)) run.skillSources = envelope.skillSources;
   if (typeof envelope.conversationId === "string") run.conversationId = envelope.conversationId;
   if (typeof envelope.persistenceDir === "string") run.persistenceDir = envelope.persistenceDir;
+  const hasExplicitDelegationChildCount =
+    typeof envelope.childCount === "number" && Number.isFinite(envelope.childCount);
+  const hasExplicitCompletedChildren =
+    typeof envelope.completedChildren === "number" && Number.isFinite(envelope.completedChildren);
+  const hasExplicitFailedChildren =
+    typeof envelope.failedChildren === "number" && Number.isFinite(envelope.failedChildren);
+  if (typeof envelope.delegationUsed === "boolean") run.delegationUsed = envelope.delegationUsed;
+  if (typeof envelope.delegationReason === "string") run.delegationReason = envelope.delegationReason;
+  if (typeof envelope.childCount === "number") run.childCount = Math.max(0, Math.round(envelope.childCount));
+  if (typeof envelope.completedChildren === "number") {
+    run.completedChildren = Math.max(0, Math.round(envelope.completedChildren));
+  }
+  if (typeof envelope.failedChildren === "number") run.failedChildren = Math.max(0, Math.round(envelope.failedChildren));
+  if (Object.prototype.hasOwnProperty.call(envelope, "userInputRequest")) {
+    run.pendingUserInputRequest = envelope.userInputRequest || null;
+  }
+  if (Array.isArray(envelope.childSummaries)) {
+    run.childSummaries = mergeDelegationChildSummaries(run.childSummaries, envelope.childSummaries);
+  }
+  if (run.childSummaries?.length) {
+    if (!hasExplicitDelegationChildCount) run.childCount = run.childSummaries.length;
+    if (!hasExplicitCompletedChildren) {
+      run.completedChildren = countDelegationChildren(run.childSummaries, ["completed"]);
+    }
+    if (!hasExplicitFailedChildren) {
+      run.failedChildren = countDelegationChildren(run.childSummaries, ["failed", "cancelled"]);
+    }
+  }
   run.lastExecutionState = {
     ...(run.lastExecutionState || {}),
     ...(envelope.orchestrator ? { orchestrator: envelope.orchestrator } : {}),
@@ -8762,7 +9021,39 @@ function applyEnvelopeToRun(run: StoredHostRun, envelope: AssistRunEnvelope): vo
     ...(typeof envelope.firstToolMs === "number" ? { firstToolMs: envelope.firstToolMs } : {}),
     ...(typeof envelope.totalRunMs === "number" ? { totalRunMs: envelope.totalRunMs } : {}),
     ...(typeof envelope.fallbackCount === "number" ? { fallbackCount: envelope.fallbackCount } : {}),
+    ...(typeof envelope.delegationUsed === "boolean" ? { delegationUsed: envelope.delegationUsed } : {}),
+    ...(typeof envelope.delegationReason === "string" ? { delegationReason: envelope.delegationReason } : {}),
+    ...(typeof envelope.childCount === "number" ? { childCount: Math.max(0, Math.round(envelope.childCount)) } : {}),
+    ...(typeof envelope.completedChildren === "number"
+      ? { completedChildren: Math.max(0, Math.round(envelope.completedChildren)) }
+      : {}),
+    ...(typeof envelope.failedChildren === "number"
+      ? { failedChildren: Math.max(0, Math.round(envelope.failedChildren)) }
+      : {}),
+    ...(Array.isArray(envelope.childSummaries)
+      ? {
+          childSummaries: mergeDelegationChildSummaries(
+            run.lastExecutionState?.childSummaries,
+            envelope.childSummaries
+          ),
+        }
+      : {}),
   };
+  if (Array.isArray(run.lastExecutionState?.childSummaries) && run.lastExecutionState.childSummaries.length) {
+    if (!hasExplicitDelegationChildCount) run.lastExecutionState.childCount = run.lastExecutionState.childSummaries.length;
+    if (!hasExplicitCompletedChildren) {
+      run.lastExecutionState.completedChildren = countDelegationChildren(
+        run.lastExecutionState.childSummaries,
+        ["completed"]
+      );
+    }
+    if (!hasExplicitFailedChildren) {
+      run.lastExecutionState.failedChildren = countDelegationChildren(
+        run.lastExecutionState.childSummaries,
+        ["failed", "cancelled"]
+      );
+    }
+  }
   const receipt = envelope.receipt && typeof envelope.receipt === "object" ? envelope.receipt : null;
   const fallbackTrail =
     receipt && Array.isArray((receipt as Record<string, unknown>).fallbackTrail)
@@ -8931,6 +9222,67 @@ function sanitizeToolResultForUi(toolResult: ToolResult): Record<string, unknown
     ...(data ? { data } : {}),
     ...(toolResult.createdAt ? { createdAt: toolResult.createdAt } : {}),
   };
+}
+
+function normalizeUserInputAnswer(value: unknown): UserInputAnswer {
+  const strings = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? Array.isArray((value as Record<string, unknown>).answers)
+        ? ((value as Record<string, unknown>).answers as unknown[])
+        : [
+            (value as Record<string, unknown>).value,
+            (value as Record<string, unknown>).selectedOptionLabel,
+            (value as Record<string, unknown>).text,
+          ]
+      : [value];
+  return {
+    answers: strings
+      .map((entry) => String(entry || "").trim())
+      .filter(Boolean),
+  };
+}
+
+function normalizeUserInputAnswers(value: unknown): Record<string, UserInputAnswer> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const normalized: Record<string, UserInputAnswer> = {};
+  for (const [key, rawValue] of Object.entries(value)) {
+    const id = String(key || "").trim();
+    if (!id) continue;
+    const answer = normalizeUserInputAnswer(rawValue);
+    if (answer.answers.length === 0) continue;
+    normalized[id] = answer;
+  }
+  return normalized;
+}
+
+function summarizeUserInputAnswers(
+  request: HostedUserInputRequest,
+  answers: Record<string, UserInputAnswer>
+): string {
+  const lines = request.questions
+    .map((question) => {
+      const answer = answers[question.id];
+      if (!answer?.answers.length) return null;
+      return `- ${question.question}: ${answer.answers.join("; ")}`;
+    })
+    .filter((line): line is string => Boolean(line));
+  if (lines.length > 0) {
+    return lines.join("\n");
+  }
+  return Object.entries(answers)
+    .map(([key, answer]) => `- ${key}: ${answer.answers.join("; ")}`)
+    .join("\n");
+}
+
+function appendPlanUserInputContext(
+  task: string,
+  request: HostedUserInputRequest,
+  answers: Record<string, UserInputAnswer>
+): string {
+  const summary = summarizeUserInputAnswers(request, answers).trim();
+  if (!summary) return task;
+  return `${String(task || "").trim()}\n\nAdditional planning context from the user:\n${summary}`;
 }
 
 function extractDesktopToolMetadata(toolResult: ToolResult): {
@@ -9135,6 +9487,136 @@ function buildExecutionLaneStatusMessage(lane: BinaryExecutionLane): string {
   if (lane === "local_interactive") return "Using the local runtime for this request.";
   if (lane === "openhands_headless") return "Running this in the background runtime.";
   return "Using an isolated runtime for this request.";
+}
+
+function normalizeDelegationConfig(value: unknown): BinaryDelegationConfig | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const enabled = typeof record.enabled === "boolean" ? record.enabled : undefined;
+  const mode = record.mode === "auto" ? "auto" : undefined;
+  const maxChildren =
+    typeof record.maxChildren === "number" && Number.isFinite(record.maxChildren)
+      ? Math.max(1, Math.round(record.maxChildren))
+      : undefined;
+  const visibility = record.visibility === "summary_only" ? "summary_only" : undefined;
+  const supportedAgentTypes = Array.isArray(record.supportedAgentTypes)
+    ? record.supportedAgentTypes.filter((item): item is "default" => item === "default")
+    : undefined;
+  if (
+    typeof enabled !== "boolean" &&
+    !mode &&
+    typeof maxChildren !== "number" &&
+    !visibility &&
+    !supportedAgentTypes?.length
+  ) {
+    return undefined;
+  }
+  return {
+    enabled: enabled ?? DEFAULT_HOSTED_DELEGATION_CONFIG.enabled,
+    mode: mode ?? DEFAULT_HOSTED_DELEGATION_CONFIG.mode,
+    maxChildren: maxChildren ?? DEFAULT_HOSTED_DELEGATION_CONFIG.maxChildren,
+    visibility: visibility ?? DEFAULT_HOSTED_DELEGATION_CONFIG.visibility,
+    supportedAgentTypes:
+      supportedAgentTypes?.length ? supportedAgentTypes : DEFAULT_HOSTED_DELEGATION_CONFIG.supportedAgentTypes,
+  };
+}
+
+function normalizeDelegationChildSummary(value: unknown): BinaryDelegationChildSummary | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const childId =
+    typeof record.childId === "string" && record.childId.trim()
+      ? record.childId.trim()
+      : typeof record.id === "string" && record.id.trim()
+        ? record.id.trim()
+        : "";
+  if (!childId) return null;
+  return {
+    childId,
+    ...(typeof record.status === "string" && record.status.trim() ? { status: record.status.trim() } : {}),
+    ...(typeof record.summary === "string" && record.summary.trim() ? { summary: record.summary.trim() } : {}),
+    ...(typeof record.agentType === "string" && record.agentType.trim() ? { agentType: record.agentType.trim() } : {}),
+    ...(typeof record.traceId === "string" && record.traceId.trim() ? { traceId: record.traceId.trim() } : {}),
+    ...(typeof record.completedAt === "string" && record.completedAt.trim()
+      ? { completedAt: record.completedAt.trim() }
+      : {}),
+  };
+}
+
+function normalizeDelegationChildSummaries(value: unknown): BinaryDelegationChildSummary[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const childSummaries = value
+    .map((item) => normalizeDelegationChildSummary(item))
+    .filter((item): item is BinaryDelegationChildSummary => Boolean(item));
+  return childSummaries.length ? childSummaries : undefined;
+}
+
+function countDelegationChildren(
+  childSummaries: BinaryDelegationChildSummary[] | undefined,
+  statuses: readonly string[]
+): number | undefined {
+  if (!childSummaries?.length) return undefined;
+  const wanted = new Set(statuses);
+  return childSummaries.filter((item) => wanted.has(String(item.status || "").trim())).length;
+}
+
+function mergeDelegationChildSummaries(
+  existing: BinaryDelegationChildSummary[] | undefined,
+  incoming: BinaryDelegationChildSummary[] | undefined
+): BinaryDelegationChildSummary[] | undefined {
+  if (!incoming?.length) return existing;
+  const merged = new Map<string, BinaryDelegationChildSummary>();
+  for (const item of existing || []) {
+    merged.set(item.childId, item);
+  }
+  for (const item of incoming) {
+    merged.set(item.childId, {
+      ...(merged.get(item.childId) || {}),
+      ...item,
+    });
+  }
+  return [...merged.values()];
+}
+
+function buildDelegationEnvelopePatchFromEvent(event: Record<string, unknown>): AssistRunEnvelope | null {
+  const eventName = typeof event.event === "string" ? event.event : "";
+  if (eventName === "meta" && event.data && typeof event.data === "object") {
+    return event.data as AssistRunEnvelope;
+  }
+  if (
+    eventName !== "delegation.started" &&
+    eventName !== "delegation.child_status" &&
+    eventName !== "delegation.completed"
+  ) {
+    return null;
+  }
+  const data = event.data && typeof event.data === "object" ? (event.data as Record<string, unknown>) : {};
+  const directChildSummary = normalizeDelegationChildSummary(data.childSummary || data);
+  return {
+    delegationUsed: typeof data.delegationUsed === "boolean" ? data.delegationUsed : true,
+    ...(typeof data.delegationReason === "string" && data.delegationReason.trim()
+      ? { delegationReason: data.delegationReason.trim() }
+      : {}),
+    ...(typeof data.childCount === "number" && Number.isFinite(data.childCount)
+      ? { childCount: Math.max(0, Math.round(data.childCount)) }
+      : {}),
+    ...(typeof data.completedChildren === "number" && Number.isFinite(data.completedChildren)
+      ? { completedChildren: Math.max(0, Math.round(data.completedChildren)) }
+      : {}),
+    ...(typeof data.failedChildren === "number" && Number.isFinite(data.failedChildren)
+      ? { failedChildren: Math.max(0, Math.round(data.failedChildren)) }
+      : {}),
+    ...(normalizeDelegationChildSummaries(data.childSummaries) ||
+    normalizeDelegationChildSummaries(data.children) ||
+    (directChildSummary ? [directChildSummary] : undefined)
+      ? {
+          childSummaries:
+            normalizeDelegationChildSummaries(data.childSummaries) ||
+            normalizeDelegationChildSummaries(data.children) ||
+            (directChildSummary ? [directChildSummary] : undefined),
+        }
+      : {}),
+  };
 }
 
 function startFirstResponseProgressTicker(
@@ -9670,6 +10152,7 @@ async function createQueuedRun(input: {
     toolResults: [],
     checkpoints: [],
     events: [],
+    userInputResponses: [],
     timingState: {
       startedAt: createdAt,
       selectedSpeedProfile: normalizeSpeedProfile(input.request.speedProfile),
@@ -9757,6 +10240,9 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
     task: run.request.task,
     preferences,
   });
+  let localGatewayModelCandidate: BinaryUserConnectedModelCandidate | null = null;
+  let localGatewayModelCandidates: BinaryUserConnectedModelCandidate[] = [];
+  const attemptedFallbackAliases = new Set<string>();
 
   try {
     const speedProfile = normalizeSpeedProfile(run.request.speedProfile);
@@ -9772,11 +10258,16 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
       run,
       taskSpeedClass,
       remoteConfigured: Boolean(remoteHealth?.available && remoteHealth.compatibility === "gateway_compatible"),
+      preferredExecutionLane: preferences.preferredExecutionLane,
       defaultPluginPacks: preferences.defaultPluginPacks,
     });
     run.executionLane = executionConfig.executionLane;
     run.pluginPacks = executionConfig.pluginPacks;
     run.skillSources = executionConfig.skillSources;
+    run.request.delegation =
+      run.request.delegation && run.request.delegation.enabled === false
+        ? { ...DEFAULT_HOSTED_DELEGATION_CONFIG, enabled: false }
+        : run.request.delegation || DEFAULT_HOSTED_DELEGATION_CONFIG;
     if (!run.timingState) {
       run.timingState = {
         startedAt: run.createdAt || nowIso(),
@@ -9974,24 +10465,53 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
       typeof orchestrationPolicy.fixedModelAlias === "string" && orchestrationPolicy.fixedModelAlias.trim()
         ? orchestrationPolicy.fixedModelAlias.trim()
         : undefined;
-    let localGatewayModelCandidate =
-      orchestrationPolicy.modelRoutingMode === "single_fixed_free"
+    const explicitRequestedUserModel =
+      resolvedModelRequest.source === "user_connected" &&
+      typeof run.request.model === "string" &&
+      run.request.model.trim() &&
+      run.request.model.trim().toLowerCase() !== "binary ide"
+        ? orderedUserConnectedModels.find((candidate) => candidate.alias === resolvedModelRequest.model) || null
+        : null;
+    localGatewayModelCandidate =
+      explicitRequestedUserModel ||
+      (orchestrationPolicy.modelRoutingMode === "single_fixed_free"
         ? resolveFixedPolicyCandidate(orderedUserConnectedModels, fixedPolicyModelAlias)
         : resolvedModelRequest.source === "user_connected"
           ? orderedUserConnectedModels.find((candidate) => candidate.alias === resolvedModelRequest.model) || null
-          : orderedUserConnectedModels[0] || null;
-    let localGatewayModelCandidates = localGatewayModelCandidate
+          : orderedUserConnectedModels[0] || null);
+    localGatewayModelCandidates = localGatewayModelCandidate
       ? (() => {
           const preferredAlias = localGatewayModelCandidate.alias;
           const prioritized = [
             localGatewayModelCandidate,
             ...orderedUserConnectedModels.filter((candidate) => candidate.alias !== preferredAlias),
           ];
+          const fixedPolicyCandidate = resolveFixedPolicyCandidate(orderedUserConnectedModels, fixedPolicyModelAlias);
+          const openRouterFreeFallbackCandidates = isOpenRouterFreeCandidate(localGatewayModelCandidate)
+            ? buildOpenRouterFreeFallbackCandidates(localGatewayModelCandidate, prioritized)
+            : [];
+          const explicitPortalFallbackCandidates =
+            explicitRequestedUserModel &&
+            isChatGptPortalCandidate(localGatewayModelCandidate) &&
+            fixedPolicyCandidate &&
+            isOpenRouterFreeCandidate(fixedPolicyCandidate)
+              ? [
+                  localGatewayModelCandidate,
+                  ...buildOpenRouterFreeFallbackCandidates(fixedPolicyCandidate, prioritized).filter(
+                    (candidate) => candidate.alias !== localGatewayModelCandidate?.alias
+                  ),
+                ]
+              : [];
           if (
             orchestrationPolicy.modelRoutingMode === "single_fixed_free" ||
             orchestrationPolicy.fallbackEnabled !== true
           ) {
-            return prioritized.slice(0, 1);
+            if (explicitPortalFallbackCandidates.length > 1) {
+              return explicitPortalFallbackCandidates;
+            }
+            return openRouterFreeFallbackCandidates.length
+              ? openRouterFreeFallbackCandidates
+              : prioritized.slice(0, 1);
           }
           return prioritized;
         })()
@@ -10004,9 +10524,10 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
     if (orchestrationPolicy.modelRoutingMode === "single_fixed_free" && localGatewayModelCandidate?.alias) {
       forcedSmallModelAliases.add(localGatewayModelCandidate.alias);
     }
-    const attemptedFallbackAliases = new Set<string>(
-      localGatewayModelCandidate?.alias ? [localGatewayModelCandidate.alias] : []
-    );
+    attemptedFallbackAliases.clear();
+    if (localGatewayModelCandidate?.alias) {
+      attemptedFallbackAliases.add(localGatewayModelCandidate.alias);
+    }
     let initialGatewayExecutionHints = gatewayHintsForCandidate(localGatewayModelCandidate, true);
     if (run.timingState) {
       run.timingState.selectedLatencyTier = localGatewayModelCandidate?.latencyTier;
@@ -10143,6 +10664,7 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
       );
       return await runLocalGatewayAssist({
         ...args,
+        delegation: args.run.request.delegation,
         adapterMode: hints.adapterMode,
         latencyPolicy: hints.latencyPolicy,
         timeoutPolicy: hints.timeoutPolicy,
@@ -10164,7 +10686,7 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
       const gatewayBaseUrl = resolveGatewayBaseUrl({
         executionLane: executionConfig.executionLane,
         remoteGatewayUrl: remoteHealth?.available ? remoteHealth.gatewayUrl : null,
-        localGatewayUrl: openhandsRuntime?.gatewayUrl || null,
+        localGatewayUrl: getLocalGatewayUrl(),
       });
       await emitHostStatus(run, "Binary is routing this run through OpenHands.", attachedRes, {
         provider: localGatewayModelCandidate?.provider || null,
@@ -10227,6 +10749,19 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
           const recoverable = isRecoverableLocalGatewayTurnError(error);
           const timeoutLikeFailure = isTurnBudgetTimeoutError(error);
           const transientNetworkFailure = isTransientNetworkTurnError(error);
+          const openRouterFreeFallbackAllowed = shouldAttemptOpenRouterFreeFallback({
+            current: selectedCandidate,
+            candidates: localGatewayModelCandidates,
+            error,
+            attemptedAliases: attemptedFallbackAliases,
+          });
+          const explicitCodexCapacityFallbackAllowed = shouldAttemptExplicitCodexCapacityFallback({
+            current: selectedCandidate,
+            candidates: localGatewayModelCandidates,
+            error,
+            attemptedAliases: attemptedFallbackAliases,
+            explicitRequestedUserModel: Boolean(explicitRequestedUserModel),
+          });
           if (!allowModelFallback && recoverable && transientNetworkFailure && !timeoutLikeFailure && !transientNetworkRetryUsed) {
             transientNetworkRetryUsed = true;
             await emitHostStatus(
@@ -10241,6 +10776,8 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
             continue;
           }
           const canAttemptFallback = (() => {
+            if (openRouterFreeFallbackAllowed) return true;
+            if (explicitCodexCapacityFallbackAllowed) return true;
             if (!allowModelFallback) return false;
             if (!recoverable) return false;
             if (forceNoTimeoutRetryChain) {
@@ -10266,12 +10803,18 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
             ...localGatewayModelCandidates.filter((candidate) => candidate.alias !== nextCandidate.alias),
           ];
           selectedCandidate = nextCandidate;
-          await emitHostStatus(
-            run,
-            `Binary is retrying the first OpenHands turn with fallback model candidate (${nextCandidate.displayName || nextCandidate.alias}).`,
-            attachedRes,
-            {
-              escalationStage: "fallback_model_candidate",
+            await emitHostStatus(
+              run,
+              openRouterFreeFallbackAllowed
+              ? `Binary is switching to the next OpenRouter free model because the current one is rate-limited.`
+              : explicitCodexCapacityFallbackAllowed
+                ? isPortalBridgeAuthError(error)
+                  ? `Binary is switching from Codex to your backup model because the Codex bridge needs to be signed in again.`
+                  : `Binary is switching from Codex to your backup model because Codex is temporarily busy.`
+                : `Binary is retrying the first OpenHands turn with fallback model candidate (${nextCandidate.displayName || nextCandidate.alias}).`,
+              attachedRes,
+              {
+                escalationStage: "fallback_model_candidate",
               reason: error instanceof Error ? error.message : String(error),
               modelAlias: nextCandidate.alias,
             }
@@ -10325,9 +10868,12 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
                     supportedTools: buildHostSupportedTools(run.workspaceRoot),
                     supportsNativeToolResults: true,
                   },
+                  delegation:
+                    run.request.delegation && run.request.delegation.enabled === false
+                      ? { ...DEFAULT_HOSTED_DELEGATION_CONFIG, enabled: false }
+                      : run.request.delegation || DEFAULT_HOSTED_DELEGATION_CONFIG,
                 },
                 onEvent: async (event) => {
-                  await appendRunEvent(run, event, attachedRes);
                   if (typeof event.sessionId === "string") run.sessionId = event.sessionId;
                   const eventName = typeof event.event === "string" ? event.event : "";
                   if (eventName === "meta" && event.data && typeof event.data === "object") {
@@ -10335,6 +10881,13 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
                     if (typeof data.traceId === "string") run.traceId = data.traceId;
                     if (typeof data.sessionId === "string") run.sessionId = data.sessionId;
                     if (typeof data.runId === "string") run.runId = data.runId;
+                  }
+                  await appendRunEvent(run, event, attachedRes);
+                  const patch = buildDelegationEnvelopePatchFromEvent(event);
+                  if (patch) {
+                    applyEnvelopeToRun(run, patch);
+                    await persistHostRun(run);
+                    await agentJobManager.syncFromRun(run);
                   }
                 },
               },
@@ -10414,6 +10967,18 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
     updatePendingStats(run, envelope);
     await persistHostRun(run);
     await agentJobManager.syncFromRun(run);
+    if (envelope.userInputRequest) {
+      await appendRunEvent(
+        run,
+        {
+          event: "request_user_input",
+          data: envelope.userInputRequest,
+        },
+        attachedRes
+      );
+      await pauseRun(run, attachedRes, "Binary Host is waiting for user input before continuing the plan.");
+      return;
+    }
     await emitHostBudget(run, attachedRes);
     const nextWorldContextTier = selectNextWorldContextTier({
       currentTier: worldContextTier,
@@ -10886,82 +11451,24 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
                 )
               )) as unknown as AssistRunEnvelope);
       } catch (error) {
-        if (!isTurnBudgetTimeoutError(error)) {
-          throw error;
-        }
-        const timeoutReason =
-          error instanceof Error
-            ? error.message
-            : `Turn budget exceeded (${turnRoutePolicy.turnBudgetMs}ms) before the planner produced the next action.`;
-        if (await tryCompleteDesktopRunFromProof(run, envelope, timeoutReason, attachedRes)) {
-          return;
-        }
-        markEscalation(run, "turn_budget_timeout", timeoutReason);
-        await emitHostStatus(run, "Binary is escalating because this turn exceeded the fast budget.", attachedRes, {
-          escalationStage: "turn_budget_timeout",
-          reason: timeoutReason,
-          turnBudgetMs: turnRoutePolicy.turnBudgetMs,
-        });
-        if (
-          await tryDirectMachineShortcut({
-            run,
-            preferences,
-            taskSpeedClass,
-            speedProfile,
-            machineAutonomyController,
-            attachedRes,
-          })
-        ) {
-          return;
-        }
-
-        const missionCandidate =
-          turnRoutePolicy.missionFirstBrowser && isBrowserMicroToolName(pendingToolCall.toolCall.name)
-            ? buildBrowserMissionToolCall(run.request.task, run.toolResults.length + 1)
-            : null;
-        if (missionCandidate) {
-          markEscalation(
-            run,
-            "browser_mission",
-            "Budget timeout triggered mission-first browser recovery."
-          );
-          envelope = {
-            ...envelope,
-            pendingToolCall: missionCandidate,
-            completionStatus: "incomplete",
-            escalationStage: "browser_mission",
-            escalationReason: timeoutReason,
-            progressState: {
-              ...(envelope.progressState || {}),
-              status: "in_progress",
-              stallReason: timeoutReason,
-              nextDeterministicAction:
-                "Run browser_search_and_open_best_result to collapse open/search/click into a single mission step.",
-            },
-          };
-          applyEnvelopeToRun(run, envelope);
-          updatePendingStats(run, envelope);
-          await persistHostRun(run);
-          await appendRunEvent(
-            run,
-            {
-              event: "meta",
-              data: attachHostMetadata(envelope, run),
-            },
-            attachedRes
-          );
-          await appendRunEvent(
-            run,
-            {
-              event: "tool_request",
-              data: enrichPendingToolCallForUi(run, preferences, missionCandidate),
-            },
-            attachedRes
-          );
-          continue;
-        }
-
-        if (assistTransport === "local_gateway" && allowModelFallback && localGatewayModelCandidates.length > 1) {
+        const openRouterFreeFallbackAllowed =
+          assistTransport === "local_gateway" &&
+          shouldAttemptOpenRouterFreeFallback({
+            current: localGatewayModelCandidate,
+            candidates: localGatewayModelCandidates,
+            error,
+            attemptedAliases: attemptedFallbackAliases,
+          });
+        const explicitCodexCapacityFallbackAllowed =
+          assistTransport === "local_gateway" &&
+          shouldAttemptExplicitCodexCapacityFallback({
+            current: localGatewayModelCandidate,
+            candidates: localGatewayModelCandidates,
+            error,
+            attemptedAliases: attemptedFallbackAliases,
+            explicitRequestedUserModel: Boolean(explicitRequestedUserModel),
+          });
+        if ((openRouterFreeFallbackAllowed || explicitCodexCapacityFallbackAllowed) && localGatewayModelCandidate) {
           const nextCandidate = selectNextModelCandidate(
             localGatewayModelCandidate,
             localGatewayModelCandidates,
@@ -10978,7 +11485,7 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
             markEscalation(
               run,
               "fallback_model_candidate",
-              `Switching to ${nextCandidate.alias} after timeout on ${pendingToolCall.toolCall.name}.`
+              `Switching to ${nextCandidate.alias} after OpenRouter free-tier capacity was exhausted.`
             );
             run.lastExecutionState = {
               ...(run.lastExecutionState || {}),
@@ -11007,11 +11514,15 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
             };
             await emitHostStatus(
               run,
-              `Binary is trying a fallback model candidate (${nextCandidate.displayName || nextCandidate.alias}) after a timeout.`,
+              openRouterFreeFallbackAllowed
+                ? "Binary is switching to the next OpenRouter free model because the current one is rate-limited."
+                : isPortalBridgeAuthError(error)
+                  ? "Binary is switching from Codex to your backup model because the Codex bridge needs to be signed in again."
+                  : "Binary is switching from Codex to your backup model because Codex is temporarily busy.",
               attachedRes,
               {
                 escalationStage: "fallback_model_candidate",
-                reason: timeoutReason,
+                reason: error instanceof Error ? error.message : String(error),
                 modelAlias: nextCandidate.alias,
                 adapterMode: nextCandidateHints.adapterMode,
                 latencyPolicy: nextCandidateHints.latencyPolicy,
@@ -11031,31 +11542,226 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
                 policyLane: nextCandidateHints.policyLane,
               }
             );
-            envelope = await runLocalGatewayAssistWithHints({
+            envelope = withEnvelopeLatency(
+              await runLocalGatewayAssistWithHints({
+                run,
+                modelCandidate: nextCandidate,
+                modelCandidates: localGatewayModelCandidates,
+                desktopContext,
+                browserContext,
+                worldContext,
+                repoContext,
+                verificationPlan,
+                mcp,
+                latestToolResult: toolResult,
+                gatewayRunId: envelope.runId as string,
+                startupPhase: "full_run",
+                taskSpeedClass,
+                executionLane: executionConfig.executionLane,
+                pluginPacks: executionConfig.pluginPacks,
+                skillSources: executionConfig.skillSources,
+                traceId: run.traceId,
+                traceSampled: executionConfig.traceSampled,
+                routePolicy: turnRoutePolicy,
+                repairDirective,
+                onEvent: async (event) => {
+                  await appendRunEvent(run, event, attachedRes);
+                },
+              }),
+              Date.now() - continuePlannerStartedAt
+            );
+          } else {
+            throw error;
+          }
+        } else if (!isTurnBudgetTimeoutError(error)) {
+          throw error;
+        } else {
+          const timeoutReason =
+            error instanceof Error
+              ? error.message
+              : `Turn budget exceeded (${turnRoutePolicy.turnBudgetMs}ms) before the planner produced the next action.`;
+          if (await tryCompleteDesktopRunFromProof(run, envelope, timeoutReason, attachedRes)) {
+            return;
+          }
+          markEscalation(run, "turn_budget_timeout", timeoutReason);
+          await emitHostStatus(run, "Binary is escalating because this turn exceeded the fast budget.", attachedRes, {
+            escalationStage: "turn_budget_timeout",
+            reason: timeoutReason,
+            turnBudgetMs: turnRoutePolicy.turnBudgetMs,
+          });
+          if (
+            await tryDirectMachineShortcut({
               run,
-              modelCandidate: nextCandidate,
-              modelCandidates: localGatewayModelCandidates,
-              desktopContext,
-              browserContext,
-              worldContext,
-              repoContext,
-              verificationPlan,
-              mcp,
-              latestToolResult: toolResult,
-              gatewayRunId: envelope.runId as string,
-              startupPhase: "full_run",
+              preferences,
               taskSpeedClass,
-              executionLane: executionConfig.executionLane,
-              pluginPacks: executionConfig.pluginPacks,
-              skillSources: executionConfig.skillSources,
-              traceId: run.traceId,
-              traceSampled: executionConfig.traceSampled,
-              routePolicy: turnRoutePolicy,
-              repairDirective,
-              onEvent: async (event) => {
-                await appendRunEvent(run, event, attachedRes);
+              speedProfile,
+              machineAutonomyController,
+              attachedRes,
+            })
+          ) {
+            return;
+          }
+
+          const missionCandidate =
+            turnRoutePolicy.missionFirstBrowser && isBrowserMicroToolName(pendingToolCall.toolCall.name)
+              ? buildBrowserMissionToolCall(run.request.task, run.toolResults.length + 1)
+              : null;
+          if (missionCandidate) {
+            markEscalation(
+              run,
+              "browser_mission",
+              "Budget timeout triggered mission-first browser recovery."
+            );
+            envelope = {
+              ...envelope,
+              pendingToolCall: missionCandidate,
+              completionStatus: "incomplete",
+              escalationStage: "browser_mission",
+              escalationReason: timeoutReason,
+              progressState: {
+                ...(envelope.progressState || {}),
+                status: "in_progress",
+                stallReason: timeoutReason,
+                nextDeterministicAction:
+                  "Run browser_search_and_open_best_result to collapse open/search/click into a single mission step.",
               },
-            });
+            };
+            applyEnvelopeToRun(run, envelope);
+            updatePendingStats(run, envelope);
+            await persistHostRun(run);
+            await appendRunEvent(
+              run,
+              {
+                event: "meta",
+                data: attachHostMetadata(envelope, run),
+              },
+              attachedRes
+            );
+            await appendRunEvent(
+              run,
+              {
+                event: "tool_request",
+                data: enrichPendingToolCallForUi(run, preferences, missionCandidate),
+              },
+              attachedRes
+            );
+            continue;
+          }
+
+          if (assistTransport === "local_gateway" && allowModelFallback && localGatewayModelCandidates.length > 1) {
+            const nextCandidate = selectNextModelCandidate(
+              localGatewayModelCandidate,
+              localGatewayModelCandidates,
+              attemptedFallbackAliases
+            );
+            if (nextCandidate) {
+              attemptedFallbackAliases.add(nextCandidate.alias);
+              localGatewayModelCandidate = nextCandidate;
+              localGatewayModelCandidates = [
+                nextCandidate,
+                ...localGatewayModelCandidates.filter((candidate) => candidate.alias !== nextCandidate.alias),
+              ];
+              const nextCandidateHints = gatewayHintsForCandidate(nextCandidate, false);
+              markEscalation(
+                run,
+                "fallback_model_candidate",
+                `Switching to ${nextCandidate.alias} after timeout on ${pendingToolCall.toolCall.name}.`
+              );
+              run.lastExecutionState = {
+                ...(run.lastExecutionState || {}),
+                latencyTier: nextCandidate.latencyTier,
+                intendedUse: nextCandidate.intendedUse,
+                adapterMode: nextCandidateHints.adapterMode,
+                latencyPolicy: nextCandidateHints.latencyPolicy,
+                timeoutPolicy: nextCandidateHints.timeoutPolicy,
+                modelRoutingMode: nextCandidateHints.modelRoutingMode,
+                fixedModelAlias: nextCandidateHints.fixedModelAlias,
+                fallbackEnabled: nextCandidateHints.fallbackEnabled,
+                budgetProfile: nextCandidateHints.budgetProfile,
+                firstTurnBudgetMs: nextCandidateHints.firstTurnBudgetMs,
+                smallModelForced: nextCandidateHints.smallModelForced,
+                terminalBackendMode: nextCandidateHints.terminalBackendMode,
+                requireNativeTerminalTool: nextCandidateHints.requireNativeTerminalTool,
+                terminalStrictMode: nextCandidateHints.terminalStrictMode,
+                terminalBackend: terminalRuntimeMetadata.terminalBackend,
+                nativeTerminalAvailable: terminalRuntimeMetadata.nativeTerminalAvailable,
+                ...(terminalRuntimeMetadata.terminalHealthReason
+                  ? { terminalHealthReason: terminalRuntimeMetadata.terminalHealthReason }
+                  : {}),
+                policyLane: nextCandidateHints.policyLane,
+                ...(nextCandidate.routeKind ? { chosenRoute: nextCandidate.routeKind } : {}),
+                ...(nextCandidate.routeReason ? { routeReason: nextCandidate.routeReason } : {}),
+              };
+              await emitHostStatus(
+                run,
+                `Binary is trying a fallback model candidate (${nextCandidate.displayName || nextCandidate.alias}) after a timeout.`,
+                attachedRes,
+                {
+                  escalationStage: "fallback_model_candidate",
+                  reason: timeoutReason,
+                  modelAlias: nextCandidate.alias,
+                  adapterMode: nextCandidateHints.adapterMode,
+                  latencyPolicy: nextCandidateHints.latencyPolicy,
+                  timeoutPolicy: nextCandidateHints.timeoutPolicy,
+                  modelRoutingMode: nextCandidateHints.modelRoutingMode,
+                  fixedModelAlias: nextCandidateHints.fixedModelAlias,
+                  fallbackEnabled: nextCandidateHints.fallbackEnabled,
+                  budgetProfile: nextCandidateHints.budgetProfile,
+                  firstTurnBudgetMs: nextCandidateHints.firstTurnBudgetMs,
+                  smallModelForced: nextCandidateHints.smallModelForced,
+                  terminalBackendMode: nextCandidateHints.terminalBackendMode,
+                  requireNativeTerminalTool: nextCandidateHints.requireNativeTerminalTool,
+                  terminalStrictMode: nextCandidateHints.terminalStrictMode,
+                  terminalBackend: terminalRuntimeMetadata.terminalBackend,
+                  nativeTerminalAvailable: terminalRuntimeMetadata.nativeTerminalAvailable,
+                  terminalHealthReason: terminalRuntimeMetadata.terminalHealthReason,
+                  policyLane: nextCandidateHints.policyLane,
+                }
+              );
+              envelope = await runLocalGatewayAssistWithHints({
+                run,
+                modelCandidate: nextCandidate,
+                modelCandidates: localGatewayModelCandidates,
+                desktopContext,
+                browserContext,
+                worldContext,
+                repoContext,
+                verificationPlan,
+                mcp,
+                latestToolResult: toolResult,
+                gatewayRunId: envelope.runId as string,
+                startupPhase: "full_run",
+                taskSpeedClass,
+                executionLane: executionConfig.executionLane,
+                pluginPacks: executionConfig.pluginPacks,
+                skillSources: executionConfig.skillSources,
+                traceId: run.traceId,
+                traceSampled: executionConfig.traceSampled,
+                routePolicy: turnRoutePolicy,
+                repairDirective,
+                onEvent: async (event) => {
+                  await appendRunEvent(run, event, attachedRes);
+                },
+              });
+            } else {
+              if (await tryCompleteDesktopRunFromProof(run, envelope, timeoutReason, attachedRes)) {
+                return;
+              }
+              const blockedEnvelope = buildEscalationBlockedEnvelope({
+                run,
+                reason: timeoutReason,
+                stage: "blocked_after_escalation",
+                nextDeterministicAction:
+                  "Use Take over and run the next concrete action manually, then resume for closure.",
+              });
+              run.finalEnvelope = blockedEnvelope;
+              run.takeoverReason = timeoutReason;
+              await finalizeRun(run, "takeover_required", attachedRes, {
+                message: "Binary paused after exhausting deterministic timeout recoveries.",
+              });
+              await emitTakeoverRequired(run, timeoutReason, attachedRes);
+              return;
+            }
           } else {
             if (await tryCompleteDesktopRunFromProof(run, envelope, timeoutReason, attachedRes)) {
               return;
@@ -11075,24 +11781,6 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
             await emitTakeoverRequired(run, timeoutReason, attachedRes);
             return;
           }
-        } else {
-          if (await tryCompleteDesktopRunFromProof(run, envelope, timeoutReason, attachedRes)) {
-            return;
-          }
-          const blockedEnvelope = buildEscalationBlockedEnvelope({
-            run,
-            reason: timeoutReason,
-            stage: "blocked_after_escalation",
-            nextDeterministicAction:
-              "Use Take over and run the next concrete action manually, then resume for closure.",
-          });
-          run.finalEnvelope = blockedEnvelope;
-          run.takeoverReason = timeoutReason;
-          await finalizeRun(run, "takeover_required", attachedRes, {
-            message: "Binary paused after exhausting deterministic timeout recoveries.",
-          });
-          await emitTakeoverRequired(run, timeoutReason, attachedRes);
-          return;
         }
       }
       envelope = withEnvelopeLatency(envelope, Date.now() - continuePlannerStartedAt);
@@ -12016,24 +12704,39 @@ async function executeHostRun(runId: string, attachedRes?: ServerResponse | null
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    run.error = message;
+    const openRouterFreeExhaustionMessage = summarizeOpenRouterFreeExhaustion({
+      current: localGatewayModelCandidate,
+      candidates: localGatewayModelCandidates,
+      attemptedAliases: attemptedFallbackAliases,
+      error,
+    });
+    const publicMessage = openRouterFreeExhaustionMessage || message;
+    run.error = publicMessage;
     run.updatedAt = nowIso();
+    if (openRouterFreeExhaustionMessage) {
+      await emitHostStatus(run, openRouterFreeExhaustionMessage, attachedRes, {
+        failureReason: "openrouter_free_capacity_exhausted",
+        rawError: message,
+      });
+    }
     if (run.runId || run.toolResults.length > 0) {
       run.status = "takeover_required";
-      run.takeoverReason = message;
+      run.takeoverReason = publicMessage;
       await persistHostRun(run);
-      await emitTakeoverRequired(run, message, attachedRes);
+      await emitTakeoverRequired(run, publicMessage, attachedRes);
       await emitHostStatus(
         run,
-        `Binary Host preserved the run for takeover after an execution failure. Cause: ${message}`,
+        openRouterFreeExhaustionMessage
+          ? openRouterFreeExhaustionMessage
+          : `Binary Host preserved the run for takeover after an execution failure. Cause: ${message}`,
         attachedRes,
-        { error: message }
+        { error: publicMessage, ...(openRouterFreeExhaustionMessage ? { rawError: message } : {}) }
       );
       return;
     }
     await finalizeRun(run, "failed", attachedRes, {
-      error: message,
-      message: "Binary Host failed on the local OpenHands path.",
+      error: publicMessage,
+      message: openRouterFreeExhaustionMessage || "Binary Host failed on the local OpenHands path.",
     });
   } finally {
     stopFirstResponseProgressTicker();
@@ -12176,6 +12879,7 @@ async function handleAssist(req: IncomingMessage, res: ServerResponse): Promise<
     expectedLongRun: body.expectedLongRun === true,
     requireIsolation: body.requireIsolation === true,
     debugTracing: body.debugTracing === true,
+    delegation: normalizeDelegationConfig(body.delegation),
     imageInputs: normalizeImageInputs(body.imageInputs),
     client:
       body.client && typeof body.client === "object" ? (body.client as BinaryHostClientInfo) : { surface: "unknown" },
@@ -12207,6 +12911,198 @@ async function handleAssist(req: IncomingMessage, res: ServerResponse): Promise<
     }
   });
   await startRunExecution(run.id, res);
+}
+
+async function handleRunUserInput(
+  req: IncomingMessage,
+  res: ServerResponse,
+  runId: string
+): Promise<void> {
+  const run = await loadRunRecord(runId);
+  if (!run) {
+    writeJson(res, 404, { error: "Not found", message: "Unknown Binary Host run." });
+    return;
+  }
+  if (activeExecutions.has(run.id)) {
+    writeJson(res, 409, { error: "Run active", message: "The run is still active." });
+    return;
+  }
+
+  const body = await readJsonBody(req);
+  const requestId = String(body.requestId || "").trim();
+  const pendingRequest = run.pendingUserInputRequest;
+  if (!pendingRequest || !requestId || pendingRequest.requestId !== requestId) {
+    writeJson(res, 409, {
+      error: "No pending user input",
+      message: "This run is not waiting for the specified user-input request.",
+    });
+    return;
+  }
+
+  const answers = normalizeUserInputAnswers(body.answers);
+  if (Object.keys(answers).length === 0) {
+    writeJson(res, 400, { error: "Invalid request", message: "answers are required" });
+    return;
+  }
+
+  const capturedAt = nowIso();
+  const acceptHeader = String(req.headers.accept || "");
+  const wantsStream = acceptHeader.includes("text/event-stream");
+  if (wantsStream) {
+    writeSseHeaders(res);
+    req.on("close", () => {
+      if (!res.writableEnded) {
+        res.end();
+      }
+    });
+  }
+
+  const attachedRes = wantsStream ? res : null;
+  await appendRunEvent(
+    run,
+    {
+      event: "user_input_received",
+      data: {
+        requestId,
+        answers,
+      },
+    },
+    attachedRes
+  );
+
+  const finalReceipt =
+    run.finalEnvelope?.receipt && typeof run.finalEnvelope.receipt === "object"
+      ? (run.finalEnvelope.receipt as Record<string, unknown>)
+      : null;
+  const receiptEngine = typeof finalReceipt?.engine === "string" ? String(finalReceipt.engine) : "";
+  const canResumeHostedRun =
+    Boolean(run.runId && run.sessionId) && receiptEngine !== "local_openhands_gateway";
+
+  if (canResumeHostedRun) {
+    const preferences = await loadPreferences();
+    const auth = await getApiKeyRecord();
+    if (!auth.apiKey) {
+      if (wantsStream) {
+        await emitHostStatus(run, "Binary Host could not resume because no API key is configured.", attachedRes);
+        if (!res.writableEnded) {
+          res.write("data: [DONE]\n\n");
+          res.end();
+        }
+      } else {
+        writeJson(res, 503, {
+          error: "Hosted auth missing",
+          message: "Binary Host could not resume because no API key is configured.",
+        });
+      }
+      return;
+    }
+
+    run.pendingUserInputRequest = null;
+    run.userInputResponses = [
+      ...(run.userInputResponses || []),
+      {
+        requestId,
+        answers,
+        capturedAt,
+      },
+    ].slice(-20);
+    run.status = "running";
+    run.takeoverReason = undefined;
+    run.error = undefined;
+    run.updatedAt = capturedAt;
+    await persistHostRun(run);
+    await agentJobManager.syncFromRun(run);
+
+    const hostedEnvelope = await submitHostedUserInput(
+      {
+        baseUrl: preferences.baseUrl,
+        apiKey: auth.apiKey as string,
+        runId: run.runId as string,
+        requestId,
+        sessionId: run.sessionId,
+        answers: Object.fromEntries(
+          Object.entries(answers).map(([key, value]) => [key, [...value.answers]])
+        ),
+      },
+      {
+        fetchTimeoutMs: 90_000,
+      }
+    );
+    applyEnvelopeToRun(run, hostedEnvelope as AssistRunEnvelope);
+    updatePendingStats(run, hostedEnvelope as AssistRunEnvelope);
+    await persistHostRun(run);
+    await agentJobManager.syncFromRun(run);
+    await appendRunEvent(
+      run,
+      {
+        event: "meta",
+        data: attachHostMetadata(hostedEnvelope as AssistRunEnvelope, run),
+      },
+      attachedRes
+    );
+    if (hostedEnvelope.userInputRequest) {
+      await appendRunEvent(
+        run,
+        {
+          event: "request_user_input",
+          data: hostedEnvelope.userInputRequest,
+        },
+        attachedRes
+      );
+      await pauseRun(run, attachedRes, "Binary Host is waiting for more user input before continuing the plan.");
+    } else {
+      if (hostedEnvelope.final) {
+        await appendRunEvent(
+          run,
+          {
+            event: "final",
+            data: hostedEnvelope.final,
+          },
+          attachedRes
+        );
+      }
+      await finalizeRun(run, "completed", attachedRes, {
+        message: "Binary Host resumed the plan after user input.",
+      });
+    }
+
+    if (wantsStream && !res.writableEnded) {
+      res.write("data: [DONE]\n\n");
+      res.end();
+    } else if (!wantsStream) {
+      writeJson(res, 200, buildRunSummary(run));
+    }
+    return;
+  }
+
+  run.request = {
+    ...run.request,
+    task: appendPlanUserInputContext(run.request.task, pendingRequest, answers),
+    historySessionId: run.sessionId || run.request.historySessionId,
+  };
+  run.pendingUserInputRequest = null;
+  run.userInputResponses = [
+    ...(run.userInputResponses || []),
+    {
+      requestId,
+      answers,
+      capturedAt,
+    },
+  ].slice(-20);
+  run.status = "queued";
+  run.takeoverReason = undefined;
+  run.error = undefined;
+  run.updatedAt = capturedAt;
+  await persistHostRun(run);
+  await agentJobManager.syncFromRun(run);
+
+  if (wantsStream) {
+    await startRunExecution(run.id, res);
+    return;
+  }
+
+  void startRunExecution(run.id);
+  writeJson(res, 202, buildRunSummary(run));
 }
 
 async function handleAgentJobCreate(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -12259,6 +13155,7 @@ async function handleAgentJobCreate(req: IncomingMessage, res: ServerResponse): 
     expectedLongRun: body.expectedLongRun !== false,
     requireIsolation: body.requireIsolation === true,
     debugTracing: body.debugTracing === true,
+    delegation: normalizeDelegationConfig(body.delegation),
     imageInputs: normalizeImageInputs(body.imageInputs),
     client:
       body.client && typeof body.client === "object" ? (body.client as BinaryHostClientInfo) : { surface: "unknown" },
@@ -12290,6 +13187,7 @@ async function handleAgentJobCreate(req: IncomingMessage, res: ServerResponse): 
     } as StoredHostRun,
     taskSpeedClass: previewTaskSpeedClass,
     remoteConfigured: Boolean(remoteHealth?.available && remoteHealth.compatibility === "gateway_compatible"),
+    preferredExecutionLane: preferences.preferredExecutionLane,
     defaultPluginPacks: preferences.defaultPluginPacks,
   });
   request.executionLane = executionConfig.executionLane;
@@ -12351,7 +13249,7 @@ async function streamExistingRun(runId: string, res: ServerResponse, after = 0):
       sendSseEvent(res, event.event);
       lastSeq = Math.max(lastSeq, event.seq);
     }
-    if (isTerminalStatus(run.status) || run.status === "takeover_required") {
+    if (isTerminalStatus(run.status) || run.status === "takeover_required" || run.status === "paused") {
       break;
     }
     await new Promise((resolve) => setTimeout(resolve, 700));
@@ -12434,7 +13332,7 @@ async function getMergedAgentJobEvents(jobId: string, after = 0): Promise<{
   return {
     job: response.job,
     events: combined,
-    done: response.done || Boolean(run && (isTerminalStatus(run.status) || run.status === "takeover_required")),
+    done: response.done || Boolean(run && (isTerminalStatus(run.status) || run.status === "takeover_required" || isWaitingForUserInput(run))),
   };
 }
 
@@ -12671,6 +13569,7 @@ const server = createServer(async (req, res) => {
       ).catch(() => null);
       writeJson(res, 200, {
         pluginPacks: getOpenHandsPluginCatalog(),
+        preferredExecutionLane: preferences.preferredExecutionLane,
         defaultPluginPacks: preferences.defaultPluginPacks,
         skillSources: resolveOpenHandsSkillSources(workspaceRoot),
         offerings: buildOpenHandsOfferings({
@@ -13687,6 +14586,14 @@ const server = createServer(async (req, res) => {
                 defaultOrchestrationPolicy()
               )
             : current.orchestrationPolicy,
+        preferredExecutionLane:
+          body.preferredExecutionLane === null
+            ? undefined
+            : body.preferredExecutionLane === "local_interactive" ||
+                body.preferredExecutionLane === "openhands_headless" ||
+                body.preferredExecutionLane === "openhands_remote"
+              ? body.preferredExecutionLane
+              : current.preferredExecutionLane,
         defaultPluginPacks:
           body.defaultPluginPacks !== undefined
             ? normalizePluginPackIds(body.defaultPluginPacks) ?? []
@@ -13937,7 +14844,7 @@ const server = createServer(async (req, res) => {
       writeJson(res, 200, {
         run: buildRunSummary(run),
         events: run.events.filter((event) => event.seq > (Number.isFinite(after) ? after : 0)),
-        done: isTerminalStatus(run.status) || run.status === "takeover_required",
+        done: isTerminalStatus(run.status) || run.status === "takeover_required" || isWaitingForUserInput(run),
       });
       return;
     }
@@ -13958,6 +14865,12 @@ const server = createServer(async (req, res) => {
         }
       });
       await streamExistingRun(runId, res, Number.isFinite(after) ? after : 0);
+      return;
+    }
+
+    const userInputMatch = url.pathname.match(/^\/v1\/runs\/([^/]+)\/user-input$/);
+    if (method === "POST" && userInputMatch) {
+      await handleRunUserInput(req, res, decodeURIComponent(userInputMatch[1] || ""));
       return;
     }
 

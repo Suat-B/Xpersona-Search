@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/v1/cron/clawhub",
+      "schedule": "10 6 * * *"
+    },
+    {
       "path": "/api/v1/cron/crawl",
       "schedule": "0 6 * * *"
     },

@@ -1,0 +1,19 @@
+[04/12/26 14:14:00] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/12/26 14:19:33] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[04/12/26 14:19:33] WARNING  Duplicate tool name registerd      registry.py:153
+                             DelegateTool                                      
+[openhands-gateway] run_turn error model='openai/gpt-5.2-codex': Portal bridge capacity exhausted during chat-only fast path: HTTPError: HTTP Error 401: Unauthorized
+Traceback (most recent call last):
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 8149, in run_turn
+    result = _run_turn_with_candidate(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 7623, in _run_turn_with_candidate
+    result = run_binary_tool_adapter_turn(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\suatb\Desktop\Frieren\Xpersona\services\openhands-gateway\agent_turn.py", line 6897, in run_binary_tool_adapter_turn
+    raise RuntimeError(
+RuntimeError: Portal bridge capacity exhausted during chat-only fast path: HTTPError: HTTP Error 401: Unauthorized
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 49386)

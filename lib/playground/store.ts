@@ -887,6 +887,7 @@ export async function updateAgentRun(input: {
   userId: string;
   runId: string;
   status?: "queued" | "running" | "completed" | "failed";
+  input?: Record<string, unknown> | null;
   output?: Record<string, unknown> | null;
   errorMessage?: string | null;
   confidence?: number | null;
@@ -897,6 +898,7 @@ export async function updateAgentRun(input: {
       .update(playgroundAgentRuns)
       .set({
         ...(input.status ? { status: input.status } : {}),
+        ...(input.input !== undefined ? { input: input.input as any } : {}),
         ...(input.output !== undefined ? { output: input.output as any } : {}),
         ...(input.errorMessage !== undefined ? { errorMessage: input.errorMessage ?? null } : {}),
         ...(input.confidence !== undefined ? { confidence: input.confidence } : {}),
@@ -926,6 +928,7 @@ export async function updateAgentRun(input: {
     const row: AgentRunRecord = {
       ...existing[index],
       ...(input.status ? { status: input.status } : {}),
+      ...(input.input !== undefined ? { input: input.input } : {}),
       ...(input.output !== undefined ? { output: input.output } : {}),
       ...(input.errorMessage !== undefined ? { errorMessage: input.errorMessage ?? null } : {}),
       ...(input.confidence !== undefined ? { confidence: input.confidence } : {}),
