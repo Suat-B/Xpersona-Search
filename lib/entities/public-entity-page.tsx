@@ -1,5 +1,6 @@
 import React from "react";
 import type { Metadata } from "next";
+import { AgentMinimalDossier } from "@/components/agent/AgentMinimalDossier";
 import { cookies } from "next/headers";
 import { notFound, permanentRedirect } from "next/navigation";
 import { AgentTechnicalDossier } from "@/components/agent/AgentTechnicalDossier";
@@ -239,6 +240,7 @@ export async function renderPublicEntityPage(input: {
   const from = isSafeInternalPath(input.rawFrom);
   const jsonLd = buildJsonLd(dossier, evidencePack);
   const baseApiUrl = new URL(dossier.canonicalUrl).origin;
+  const isAgentEntity = dossier.entityType === "agent";
   const freshness =
     dossier.release.lastVerifiedAt ??
     dossier.release.lastCrawledAt ??
@@ -270,26 +272,32 @@ export async function renderPublicEntityPage(input: {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <main className="mx-auto w-full max-w-7xl px-4 py-8 md:py-10">
-        <CrawlerSummaryCard
-          eyebrow="Crawler Summary"
-          title={`${dossier.name} answer-first brief`}
-          summary={summaryText}
-          bestFor={bestFor}
-          notIdealFor={notIdealFor}
-          freshness={`Last checked ${new Date(freshness).toLocaleDateString("en-US")}`}
-          evidenceSources={evidenceSources}
-          links={[
-            { href: `/api/v1/agents/${encodeURIComponent(dossier.slug)}/card`, label: "Card" },
-            { href: `/api/v1/agents/${encodeURIComponent(dossier.slug)}/facts`, label: "Facts" },
-            { href: `/api/v1/agents/${encodeURIComponent(dossier.slug)}/snapshot`, label: "Snapshot" },
-            { href: `/api/v1/agents/${encodeURIComponent(dossier.slug)}/contract`, label: "Contract" },
-            { href: `/api/v1/agents/${encodeURIComponent(dossier.slug)}/trust`, label: "Trust" },
-          ]}
-        />
+        {isAgentEntity ? (
+          <AgentMinimalDossier dossier={dossier} from={from} publicEvidence={evidencePack} />
+        ) : (
+          <>
+            <CrawlerSummaryCard
+              eyebrow="Crawler Summary"
+              title={`${dossier.name} answer-first brief`}
+              summary={summaryText}
+              bestFor={bestFor}
+              notIdealFor={notIdealFor}
+              freshness={`Last checked ${new Date(freshness).toLocaleDateString("en-US")}`}
+              evidenceSources={evidenceSources}
+              links={[
+                { href: `/api/v1/agents/${encodeURIComponent(dossier.slug)}/card`, label: "Card" },
+                { href: `/api/v1/agents/${encodeURIComponent(dossier.slug)}/facts`, label: "Facts" },
+                { href: `/api/v1/agents/${encodeURIComponent(dossier.slug)}/snapshot`, label: "Snapshot" },
+                { href: `/api/v1/agents/${encodeURIComponent(dossier.slug)}/contract`, label: "Contract" },
+                { href: `/api/v1/agents/${encodeURIComponent(dossier.slug)}/trust`, label: "Trust" },
+              ]}
+            />
 
-        <div className="mt-6">
-          <AgentTechnicalDossier dossier={dossier} from={from} publicEvidence={evidencePack} />
-        </div>
+            <div className="mt-6">
+              <AgentTechnicalDossier dossier={dossier} from={from} publicEvidence={evidencePack} />
+            </div>
+          </>
+        )}
       </main>
 
       <AgentPageAds

@@ -51,18 +51,13 @@ vi.mock("@/components/agent/AgentMiniCard", () => ({
 
 vi.mock("@/components/agent/AgentTechnicalDossier", () => ({
   AgentTechnicalDossier: () => (
-    <section data-testid="agent-technical-dossier">
-      <h1>Agent Profile</h1>
-      <h2>Evidence Ledger</h2>
-      <h2>Artifacts Archive</h2>
-      <h2>Docs &amp; README</h2>
-      <h2>Contract &amp; API</h2>
-      <h2>Reliability &amp; Benchmarks</h2>
-      <h2>Machine Appendix</h2>
-      <h2>Custom technical brief</h2>
-      <h2>Release &amp; Crawl Timeline</h2>
-      <a href="https://github.com/demo/demo-agent">View Source</a>
-    </section>
+    <section data-testid="agent-technical-dossier">Shared Dossier Shell</section>
+  ),
+}));
+
+vi.mock("@/components/agent/CrawlerSummaryCard", () => ({
+  CrawlerSummaryCard: ({ title }: { title: string }) => (
+    <section data-testid="crawler-summary-card">Crawler Summary Card: {title}</section>
   ),
 }));
 
@@ -106,6 +101,7 @@ vi.mock("next/navigation", async () => {
   };
 });
 
+import { renderPublicEntityPage } from "@/lib/entities/public-entity-page";
 import AgentPage, { generateMetadata } from "./page";
 
 const dossierFixture = {
@@ -466,31 +462,40 @@ describe("Agent page dossier SSR", () => {
     });
   });
 
-  it("renders the new dossier sections and removes the old nested shell", async () => {
+  it("renders the minimal agent-only section map and skips the shared crawler shell", async () => {
     const element = await AgentPage({
       params: Promise.resolve({ slug: "demo-agent" }),
       searchParams: Promise.resolve({ from: "/search?q=demo" }),
     });
     const html = renderToStaticMarkup(element);
 
-    expect(html).toContain("Agent Profile");
-    expect(html).toContain("Evidence Ledger");
-    expect(html).toContain("Artifacts Archive");
-    expect(html).toContain("Docs &amp; README");
-    expect(html).toContain("Contract &amp; API");
-    expect(html).toContain("Reliability &amp; Benchmarks");
+    expect(html).toContain("Overview");
+    expect(html).toContain("Evidence &amp; Timeline");
+    expect(html).toContain("Artifacts &amp; Docs");
+    expect(html).toContain("API &amp; Reliability");
+    expect(html).toContain("Media &amp; Related");
     expect(html).toContain("Machine Appendix");
     expect(html).toContain("Custom technical brief");
-    expect(html).toContain("Release &amp; Crawl Timeline");
-    expect(html).toContain("answer-first brief");
     expect(html).toContain("Best For");
     expect(html).toContain("Not Ideal For");
     expect(html).toContain("/api/v1/agents/demo-agent/card");
     expect(html).toContain("/api/v1/agents/demo-agent/trust");
-    expect(html).not.toContain("Agent Experience");
+    expect(html).not.toContain("Crawler Summary Card");
+    expect(html).not.toContain("Shared Dossier Shell");
   });
 
-  it("dedupes source/homepage CTA links in the summary band", async () => {
+  it("dedupes repeated primary links in the minimal hero", async () => {
+    mockGetAgentDossier.mockResolvedValueOnce({
+      ...dossierFixture,
+      summary: {
+        ...dossierFixture.summary,
+        primaryLinks: [
+          { label: "View Source", url: "https://github.com/demo/demo-agent", kind: "source" },
+          { label: "Homepage", url: "https://github.com/demo/demo-agent", kind: "homepage" },
+          { label: "Docs", url: "https://docs.example.com", kind: "docs" },
+        ],
+      },
+    });
     const element = await AgentPage({
       params: Promise.resolve({ slug: "demo-agent" }),
       searchParams: Promise.resolve({}),
@@ -526,4 +531,25 @@ describe("Agent page dossier SSR", () => {
     expect(metadata.description).toBe("Demo Agent technical dossier on Xpersona.");
     expect(metadata.robots).toEqual({ index: true, follow: true });
   });
+
+  it.each(["mcp", "skill"] as const)(
+    "keeps the shared renderer for %s detail pages",
+    async (entityType) => {
+      mockGetAgentDossier.mockResolvedValueOnce({
+        ...dossierFixture,
+        entityType,
+        canonicalPath: `/${entityType}/demo-agent`,
+        canonicalUrl: `https://xpersona.co/${entityType}/demo-agent`,
+      });
+
+      const element = await renderPublicEntityPage({
+        slug: "demo-agent",
+        expectedEntityType: entityType,
+      });
+      const html = renderToStaticMarkup(element);
+
+      expect(html).toContain("Crawler Summary Card");
+      expect(html).toContain("Shared Dossier Shell");
+    }
+  );
 });
